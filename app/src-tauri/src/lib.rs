@@ -96,6 +96,24 @@ async fn playlist_tracks(
     official::playlist_tracks(&state.client, &id).await
 }
 
+/// Every track of an album (album token = last segment of its page url).
+#[tauri::command]
+async fn album_tracks(
+    token: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<Track>, String> {
+    official::album_tracks(&state.client, &token).await
+}
+
+/// An artist's top tracks (artist token, same shape as the album token).
+#[tauri::command]
+async fn artist_tracks(
+    token: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<Track>, String> {
+    official::artist_tracks(&state.client, &token).await
+}
+
 /// Strip characters that are illegal in file names on any desktop OS.
 fn safe_file_name(s: &str) -> String {
     let cleaned: String = s
@@ -181,7 +199,9 @@ pub fn run() {
             proxy_base,
             download_song,
             home_feed,
-            playlist_tracks
+            playlist_tracks,
+            album_tracks,
+            artist_tracks
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");

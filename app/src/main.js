@@ -668,6 +668,7 @@ async function playQueueItem(index) {
   }
 
   current = info;
+  pushPlay(track);
   setBadge(info.range_status, info);
   renderQueue();
   diag(`play ${track.id}`, true, info.proxy_url.slice(0, 70) + "…");
@@ -1237,6 +1238,10 @@ async function loadHome() {
     diag("home", false, String(err));
     npText("hero-title", "Home feed unavailable");
     npText("hero-artist", String(err).slice(0, 120));
+    for (const sel of ["#home-albums", "#home-artists", "#home-stations", "#playlists-grid"]) {
+      const el = $(sel);
+      if (el) el.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant">Unavailable right now.</p>';
+    }
     return;
   }
   diag(
@@ -1247,6 +1252,12 @@ async function loadHome() {
   renderHero();
   renderHomePlaylists();
   renderHomeTop();
+  renderPlaylistsGrid();
+  renderHomeAlbums();
+  renderHomeArtists();
+  renderHomeStations();
+  renderLibrary();
+  renderPlays();
 }
 
 $("#home-playlists-prev")?.addEventListener("click", () => {
@@ -1259,7 +1270,7 @@ $("#home-playlists-next")?.addEventListener("click", () => {
 });
 $("#home-playlists")?.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-playlist-id]");
-  if (btn) playList(btn.dataset.playlistId);
+  if (btn) openPlaylist(plItemById(btn.dataset.playlistId));
 });
 $("#home-top-list")?.addEventListener("click", (e) => {
   const hit = e.target.closest("[data-top-index]");
@@ -1303,6 +1314,317 @@ $('[data-view="home"]')?.addEventListener("click", (e) => {
   if (!chip) return;
   $("#search-input").value = chip.dataset.query;
   doSearch({ query: chip.dataset.query });
+});
+
+// ------------------------------------------------------- detail screens -
+const PLAYS_KEY = "tm-plays";
+
+function loadLibrary() {
+  try {
+    return JSON.parse(localStorage.getItem(LIBRARY_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+function loadPlays() {
+  try {
+    return JSON.parse(localStorage.getItem(PLAYS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+/// One listening session, recorded where playback actually starts.
+function pushPlay(track) {
+  try {
+    const next = [{ ...track, ts: Date.now() }, ...loadPlays().filter((x) => x.id !== track.id)].slice(0, 100);
+    localStorage.setItem(PLAYS_KEY, JSON.stringify(next));
+    renderPlays();
+  } catch {}
+}
+
+function playTracksAt(list, index) {
+  queue.length = 0;
+  for (const t of list) queue.push({ track: t, state: null });
+  queueTab = "next";
+  queueIndex = -1;
+  renderQueue();
+  playQueueItem(index);
+}
+
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/// Shared track rows: click a row to play the whole list from there.
+function trackRows(list, box, emptyMsg) {
+  if (!box) return;
+  if (!list.length) {
+    box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">${emptyMsg || "Nothing here yet."}</p>`;
+    return;
+  }
+  box.innerHTML = "";
+  list.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className =
+      "flex items-center justify-between gap-4 px-4 py-2.5 hover:bg-surface-container-low transition-colors cursor-pointer group";
+    row.innerHTML = `
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="font-label-mono text-[11px] text-on-surface-variant w-5 text-right shrink-0">${i + 1}</span>
+        <div class="w-9 h-9 rounded overflow-hidden bg-surface-container-high shrink-0">
+          <img alt="" loading="lazy" class="w-full h-full object-cover" src="${esc(t.image || "")}" onerror="this.style.display='none'" />
+        </div>
+        <div class="min-w-0">
+          <div class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(t.title || "")}</div>
+          <div class="font-body-sm text-body-sm text-secondary truncate">${esc(t.artist || "")}</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 shrink-0 font-label-mono text-label-mono text-secondary">
+        <span class="hidden sm:inline">${esc(t.duration || "")}</span>
+        <span class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-100">play_arrow</span>
+      </div>`;
+    row.addEventListener("click", () => playTracksAt(list, i));
+    box.appendChild(row);
+  });
+}
+
+let pdTracks = [];
+let ddTracks = [];
+
+function plItemById(id) {
+  const pools = homeFeed
+    ? [...homeFeed.playlists, ...homeFeed.charts, homeFeed.spotlight].filter(Boolean)
+    : [];
+  return (
+    pools.find((p) => p.id === id) ||
+    loadLibrary().find((p) => p.id === id) ||
+    { id, title: "Playlist" }
+  );
+}
+
+/// Playlists screen: grid opens the detail section in the same view.
+async function openPlaylist(item) {
+  showView("playlists");
+  const detail = $("#playlist-detail");
+  detail?.classList.remove("hidden");
+  npText("pd-title", item.title || "Playlist");
+  npText("pd-subtitle", item.subtitle || "Loading tracks…");
+  const img = $("#pd-image");
+  if (img) {
+    if (item.image) {
+      img.src = item.image;
+      img.classList.remove("hidden");
+    } else {
+      img.classList.add("hidden");
+    }
+  }
+  const box = $("#pd-tracks");
+  if (box) box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracks…</p>';
+  detail?.scrollIntoView({ behavior: "smooth", block: "start" });
+  try {
+    pdTracks = await invoke("playlist_tracks", { id: item.id });
+  } catch (err) {
+    diag("playlist", false, String(err));
+    npText("pd-subtitle", `Could not load: ${String(err).slice(0, 90)}`);
+    if (box) box.innerHTML = "";
+    return;
+  }
+  npText("pd-subtitle", [item.subtitle, `${pdTracks.length} tracks`].filter(Boolean).join(" · "));
+  trackRows(pdTracks, box, "That playlist has no tracks.");
+  diag("playlist", true, `${pdTracks.length} tracks`);
+}
+
+/// Album / artist screen (the `detail` view) — token comes from the card.
+async function openDetail(kind, item) {
+  showView("detail");
+  npText("dd-kind", kind.toUpperCase());
+  npText("dd-title", item.title || "—");
+  npText("dd-subtitle", "Loading tracks…");
+  const img = $("#dd-image");
+  if (img) {
+    if (item.image) {
+      img.src = item.image;
+      img.classList.remove("hidden");
+    } else {
+      img.classList.add("hidden");
+    }
+  }
+  const box = $("#dd-tracks");
+  if (box) box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracks…</p>';
+  try {
+    ddTracks = await invoke(kind === "artist" ? "artist_tracks" : "album_tracks", { token: item.token });
+  } catch (err) {
+    diag(kind, false, String(err));
+    npText("dd-subtitle", `Could not load ${kind}: ${String(err).slice(0, 80)}`);
+    if (box) box.innerHTML = "";
+    return;
+  }
+  npText("dd-subtitle", [item.subtitle, `${ddTracks.length} tracks`].filter(Boolean).join(" · "));
+  trackRows(ddTracks, box, `No tracks found for this ${kind}.`);
+  diag(kind, true, `${ddTracks.length} tracks`);
+}
+
+function plCard(p) {
+  return `
+    <div data-pl-id="${esc(p.id)}" class="p-3.5 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer">
+      <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
+        <img alt="" loading="lazy" class="w-full h-full object-cover" src="${esc(p.image || "")}" onerror="this.style.display='none'" />
+        <div class="absolute inset-0 bg-gradient-to-t from-primary/85 to-primary/20 flex flex-col justify-end p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span class="font-headline-md text-on-primary font-semibold text-[14px] leading-tight line-clamp-2">${esc(p.title || "")}</span>
+        </div>
+        <button type="button" title="Open playlist" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+          <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+        </button>
+      </div>
+      <div class="min-w-0">
+        <p class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(p.title || "")}</p>
+        <p class="font-body-sm text-body-sm text-secondary truncate">${esc(p.subtitle || "JioSaavn")}</p>
+      </div>
+    </div>`;
+}
+
+function ddCard(kind, a) {
+  return `
+    <div data-dd-kind="${kind}" data-dd-token="${esc(a.token || "")}" data-dd-title="${esc(a.title || "")}" data-dd-sub="${esc(a.subtitle || "")}" data-dd-img="${esc(a.image || "")}" class="p-3.5 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer">
+      <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
+        <img alt="" loading="lazy" class="w-full h-full object-cover" src="${esc(a.image || "")}" onerror="this.style.display='none'" />
+        <button type="button" title="Open" class="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-md hover:scale-105">
+          <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+        </button>
+      </div>
+      <div class="min-w-0">
+        <p class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(a.title || "")}</p>
+        <p class="font-body-sm text-body-sm text-secondary truncate">${esc(a.subtitle || (kind === "album" ? "New album" : "Artist"))}</p>
+      </div>
+    </div>`;
+}
+
+function stationCard(c, i) {
+  return `
+    <div data-pl-id="${esc(c.id)}" class="p-5 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #0${i + 1}</span>
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+        </div>
+        <h4 class="font-headline-md text-headline-md text-on-surface group-hover:text-primary transition-colors">${esc(c.title || "")}</h4>
+        <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">${c.count ? `${c.count} tracks` : esc(c.subtitle || "")}</p>
+      </div>
+      <div class="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between">
+        <span class="font-label-mono text-[10px] text-secondary">JioSaavn chart</span>
+        <span class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[18px]">radio</span></span>
+      </div>
+    </div>`;
+}
+
+const GRID_EMPTY = '<p class="font-body-sm text-body-sm text-on-surface-variant">Unavailable right now.</p>';
+
+function renderPlaylistsGrid() {
+  const box = $("#playlists-grid");
+  if (!box || !homeFeed) return;
+  box.innerHTML = homeFeed.playlists.length
+    ? homeFeed.playlists.map(plCard).join("")
+    : '<p class="font-body-sm text-body-sm text-on-surface-variant">No playlists right now.</p>';
+}
+function renderHomeAlbums() {
+  const box = $("#home-albums");
+  if (!box || !homeFeed) return;
+  box.innerHTML = homeFeed.albums.length ? homeFeed.albums.map((a) => ddCard("album", a)).join("") : GRID_EMPTY;
+}
+function renderHomeArtists() {
+  const box = $("#home-artists");
+  if (!box || !homeFeed) return;
+  box.innerHTML = homeFeed.artists.length ? homeFeed.artists.map((a) => ddCard("artist", a)).join("") : GRID_EMPTY;
+}
+function renderHomeStations() {
+  const box = $("#home-stations");
+  if (!box || !homeFeed) return;
+  const list = homeFeed.charts.slice(0, 3);
+  box.innerHTML = list.length ? list.map(stationCard).join("") : GRID_EMPTY;
+}
+function renderLibrary() {
+  const box = $("#library-saved");
+  if (!box) return;
+  const lib = loadLibrary();
+  box.innerHTML = lib.length
+    ? lib.map(plCard).join("")
+    : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — hit “Save to Library” on Home.</p>';
+}
+function renderPlays() {
+  const plays = loadPlays();
+  const count = $("#history-count");
+  if (count) count.textContent = `${plays.length} session${plays.length === 1 ? "" : "s"}`;
+  trackRows(plays, $("#history-plays"), "Nothing played yet.");
+  trackRows(plays.slice(0, 5), $("#library-recent"), "No plays yet.");
+}
+
+// Click wiring — one delegated listener per grid.
+function wirePlGrid(sel) {
+  $(sel)?.addEventListener("click", (e) => {
+    const card = e.target.closest("[data-pl-id]");
+    if (card) openPlaylist(plItemById(card.dataset.plId));
+  });
+}
+wirePlGrid("#playlists-grid");
+wirePlGrid("#home-stations");
+wirePlGrid("#library-saved");
+
+function wireDdGrid(sel) {
+  $(sel)?.addEventListener("click", (e) => {
+    const card = e.target.closest("[data-dd-token]");
+    if (!card) return;
+    const item = {
+      token: card.dataset.ddToken,
+      title: card.dataset.ddTitle,
+      subtitle: card.dataset.ddSub,
+      image: card.dataset.ddImg,
+    };
+    // No token (payload oddity) → fall back to a real search instead of dead click.
+    if (!item.token) {
+      doSearch({ query: item.title || "" });
+      return;
+    }
+    openDetail(card.dataset.ddKind, item);
+  });
+}
+wireDdGrid("#home-albums");
+wireDdGrid("#home-artists");
+
+$("#pd-play")?.addEventListener("click", () => pdTracks.length && playTracksAt(pdTracks, 0));
+$("#pd-shuffle")?.addEventListener("click", () => {
+  if (!pdTracks.length) return;
+  pdTracks = shuffled(pdTracks);
+  trackRows(pdTracks, $("#pd-tracks"));
+  shuffleMode = true;
+  paintModes();
+  playTracksAt(pdTracks, 0);
+});
+$("#pd-back")?.addEventListener("click", () => $("#playlist-detail")?.classList.add("hidden"));
+$("#dd-play")?.addEventListener("click", () => ddTracks.length && playTracksAt(ddTracks, 0));
+$("#dd-shuffle")?.addEventListener("click", () => {
+  if (!ddTracks.length) return;
+  ddTracks = shuffled(ddTracks);
+  trackRows(ddTracks, $("#dd-tracks"));
+  shuffleMode = true;
+  paintModes();
+  playTracksAt(ddTracks, 0);
+});
+$("#dd-back")?.addEventListener("click", () => showView("home"));
+$("#history-clear")?.addEventListener("click", () => {
+  try {
+    localStorage.removeItem(PLAYS_KEY);
+  } catch {}
+  renderPlays();
+  diag("history", null, "cleared");
+});
+document.addEventListener("click", (e) => {
+  const jump = e.target.closest("[data-path-jump]");
+  if (jump) showView(jump.dataset.pathJump);
 });
 
 // ------------------------------------------------------------------- boot -

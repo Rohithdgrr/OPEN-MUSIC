@@ -1,0 +1,336 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<meta content="web_standard" name="shell-type">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        "colors": {
+          "on-tertiary": "#ffffff",
+          "inverse-primary": "#c8c5ca",
+          "inverse-surface": "#2f3132",
+          "on-background": "#1a1c1d",
+          "on-primary-container": "#858387",
+          "error": "#ba1a1a",
+          "on-secondary": "#ffffff",
+          "tertiary-fixed-dim": "#c6c5cf",
+          "error-container": "#ffdad6",
+          "surface-variant": "#e2e2e4",
+          "surface-container-highest": "#e2e2e4",
+          "on-secondary-container": "#656467",
+          "tertiary": "#000000",
+          "on-tertiary-fixed": "#1a1b22",
+          "on-surface-variant": "#47464b",
+          "surface-container-high": "#e8e8ea",
+          "secondary-container": "#e4e1e5",
+          "tertiary-container": "#1a1b22",
+          "surface-container-low": "#f3f3f5",
+          "on-tertiary-fixed-variant": "#46464e",
+          "on-primary": "#ffffff",
+          "on-surface": "#1a1c1d",
+          "primary-fixed": "#e4e1e6",
+          "background": "#f9f9fb",
+          "on-secondary-fixed-variant": "#47464a",
+          "tertiary-fixed": "#e3e1ec",
+          "surface-container": "#eeeef0",
+          "primary-fixed-dim": "#c8c5ca",
+          "on-secondary-fixed": "#1b1b1e",
+          "on-tertiary-container": "#83838c",
+          "on-error": "#ffffff",
+          "outline-variant": "#c8c5cb",
+          "surface-tint": "#5f5e61",
+          "surface-container-lowest": "#ffffff",
+          "primary": "#000000",
+          "inverse-on-surface": "#f0f0f2",
+          "primary-container": "#1b1b1e",
+          "surface-bright": "#f9f9fb",
+          "outline": "#77767b",
+          "secondary-fixed-dim": "#c8c6c9",
+          "on-error-container": "#93000a",
+          "on-primary-fixed": "#1b1b1e",
+          "secondary": "#5f5e61",
+          "surface": "#f9f9fb",
+          "on-primary-fixed-variant": "#47464a",
+          "secondary-fixed": "#e4e1e5",
+          "surface-dim": "#d9dadc"
+        },
+        "borderRadius": {
+          "DEFAULT": "0.125rem",
+          "lg": "0.25rem",
+          "xl": "0.5rem",
+          "full": "0.75rem"
+        },
+        "spacing": {
+          "space-xl": "2rem",
+          "margin": "1.5rem",
+          "space-xs": "0.25rem",
+          "space-sm": "0.5rem",
+          "gutter": "1rem",
+          "space-lg": "1.25rem",
+          "space-md": "0.75rem"
+        },
+        "fontFamily": {
+          "body-md": [
+            "Geist"
+          ],
+          "body-sm": [
+            "Geist"
+          ],
+          "label-md": [
+            "Geist"
+          ],
+          "headline-xl": [
+            "Geist"
+          ],
+          "label-mono": [
+            "JetBrains Mono"
+          ],
+          "headline-md": [
+            "Geist"
+          ],
+          "label-sm": [
+            "Geist"
+          ],
+          "headline-lg": [
+            "Geist"
+          ],
+          "body-lg": [
+            "Geist"
+          ]
+        },
+        "fontSize": {
+          "body-md": [
+            "13px",
+            {
+              "lineHeight": "19px",
+              "letterSpacing": "-0.005em",
+              "fontWeight": "400"
+            }
+          ],
+          "body-sm": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0em",
+              "fontWeight": "400"
+            }
+          ],
+          "label-md": [
+            "12px",
+            {
+              "lineHeight": "16px",
+              "letterSpacing": "0.01em",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-xl": [
+            "32px",
+            {
+              "lineHeight": "38px",
+              "letterSpacing": "-0.03em",
+              "fontWeight": "600"
+            }
+          ],
+          "label-mono": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "400"
+            }
+          ],
+          "headline-md": [
+            "18px",
+            {
+              "lineHeight": "24px",
+              "letterSpacing": "-0.015em",
+              "fontWeight": "500"
+            }
+          ],
+          "label-sm": [
+            "11px",
+            {
+              "lineHeight": "14px",
+              "letterSpacing": "0.02em",
+              "fontWeight": "500"
+            }
+          ],
+          "headline-lg": [
+            "24px",
+            {
+              "lineHeight": "30px",
+              "letterSpacing": "-0.025em",
+              "fontWeight": "600"
+            }
+          ],
+          "body-lg": [
+            "15px",
+            {
+              "lineHeight": "22px",
+              "letterSpacing": "-0.01em",
+              "fontWeight": "400"
+            }
+          ]
+        }
+      },
+    },
+  }
+</script>
+</head>
+<body class="bg-surface font-body-md text-on-surface antialiased relative min-h-screen pb-20 selection:bg-surface-container selection:text-on-surface">
+<!-- Minimal Hairline Header -->
+<header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-b border-black/[0.06]">
+<div class="h-16 w-full max-w-[1180px] mx-auto px-margin flex items-center justify-between">
+<!-- Branding with TRANCE MUSIC Optical Signifier -->
+<div class="flex items-center gap-space-md">
+<div class="w-7 h-7 rounded-lg bg-primary flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[16px]">graphic_eq</span>
+</div>
+<div class="flex items-baseline gap-space-xs select-none"><span class="font-headline-md text-headline-md tracking-tight font-semibold text-on-surface uppercase">TRANCE MUSIC</span></div>
+</div>
+<!-- Segmented Navigation with Search, Playlists, Downloads, Now Playing, and Settings -->
+<nav class="flex items-center p-1 rounded-full bg-surface-container/70 border border-black/[0.04]" data-active-classes="bg-surface-container-lowest text-on-surface shadow-sm font-medium">
+<a class="px-space-md py-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-all duration-150 flex items-center justify-center" data-path="search" href="#">Search</a>
+
+<a class="px-space-md py-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-all duration-150 flex items-center justify-center" data-path="downloads" href="#">Downloads</a>
+<a class="px-space-md py-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-all duration-150 flex items-center justify-center" data-path="now-playing" href="#">Now Playing</a>
+<a class="px-space-md py-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-all duration-150 flex items-center justify-center" data-path="settings" href="#">Settings</a>
+</nav>
+<!-- CoreAudio Bit-Perfect Status & Minimal Profile -->
+<div class="flex items-center gap-space-md">
+<div class="hidden sm:flex items-center gap-1.5 px-space-sm py-0.5 rounded-full bg-surface-container-low border border-black/[0.05] text-on-surface-variant font-label-mono text-label-mono select-none">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="">CoreAudio Bit-Perfect</span>
+</div>
+<div class="w-8 h-8 rounded-full border border-black/[0.08] bg-surface-container-lowest flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:border-black/20 transition-colors cursor-pointer shadow-sm">
+<span class="material-symbols-outlined text-[17px]">person</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content Slot -->
+<main class="relative z-10 w-full pt-16 min-h-[calc(100vh-64px)]"><div class="flex flex-col w-full">
+<div class="w-full max-w-[1180px] mx-auto px-margin pt-space-lg pb-space-xl flex flex-col gap-space-xl"><div class="flex items-center justify-between pb-space-xs -mb-space-md border-b border-black/[0.04]"><button onclick="window.history.back()" class="group flex items-center gap-2 px-space-md py-1.5 rounded-full bg-surface-container-lowest border border-black/[0.06] shadow-sm hover:bg-surface-container-low hover:border-black/20 text-on-surface transition-all duration-150"><svg class="w-4 h-4 text-on-surface-variant group-hover:text-on-surface group-hover:-translate-x-0.5 transition-all" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></svg><span class="font-label-md text-label-md font-medium">Back to Library</span><kbd class="hidden sm:inline-block px-1.5 py-0.5 text-[9px] font-label-mono text-on-surface-variant bg-surface-container rounded border border-black/[0.06]">ESC</kbd></button><div class="flex items-center gap-space-xs font-label-mono text-[11px] text-on-surface-variant"><span class="text-on-surface font-medium">Playlists Overview</span></div></div>
+<!-- Top Context Ribbon & Master Actions -->
+<section class="flex flex-col md:flex-row md:items-end justify-between gap-space-lg"><div class="flex flex-col gap-1"><div class="flex items-center gap-space-xs font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider select-none"><span class="">Library</span><span class="text-outline-variant">/</span><span class="text-on-surface font-medium">Playlists</span></div><div class="flex items-baseline gap-space-md mt-1"><h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight font-semibold">Playlists</h1><span class="font-body-md text-body-md text-on-surface-variant hidden sm:inline">Your library, custom mixes, artist radios, and queue</span></div></div><div class="flex items-center gap-space-sm flex-shrink-0"><button class="w-8 h-8 rounded bg-surface-container-lowest text-on-surface flex items-center justify-center shadow-sm hover:bg-surface-container transition-colors" id="btn-sync" title="Refresh Library"><span class="material-symbols-outlined text-[17px]">refresh</span></button><button class="px-space-md py-1.5 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md flex items-center gap-1.5 shadow-sm hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined text-[16px]">file_upload</span><span class="">Import Playlist</span></button><button class="px-space-md py-1.5 rounded bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1.5 shadow-sm hover:opacity-90 active:scale-95 transition-all"><span class="material-symbols-outlined text-[16px]">add</span><span class="">New Playlist</span></button></div></section>
+<!-- Source Filter Pills & Sort Bar -->
+<section class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-space-md"><div class="flex items-center p-0.5 rounded bg-surface-container overflow-x-auto text-nowrap scrollbar-none" id="category-tabs"><button class="px-space-md py-1 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shadow-sm transition-all" data-filter="all">All Playlists <span class="font-label-mono text-[10px] text-on-surface-variant ml-1">24</span></button><button class="px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all" data-filter="created">Created by You <span class="font-label-mono text-[10px] ml-1">8</span></button><button class="px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all" data-filter="radios">Artist Radios &amp; Discographies <span class="font-label-mono text-[10px] ml-1">6</span></button><button class="px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all" data-filter="queue">Queue &amp; Smart Mixes <span class="font-label-mono text-[10px] ml-1">5</span></button><button class="px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all" data-filter="saved">Saved Albums <span class="font-label-mono text-[10px] ml-1">5</span></button></div><div class="flex items-center gap-space-sm flex-wrap sm:flex-nowrap"><div class="relative flex-1 sm:w-64"><span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">search</span><input class="w-full pl-8 pr-3 py-1 rounded bg-surface-container-lowest text-on-surface font-body-sm text-body-sm shadow-sm focus:outline-none focus:bg-surface-bright placeholder:text-outline transition-all" placeholder="Search in playlists..." type="text"></div><div class="flex items-center gap-1 bg-surface-container-lowest px-space-sm py-1 rounded shadow-sm"><span class="font-label-mono text-label-mono text-on-surface-variant text-[10px] uppercase">Sort:</span><select class="bg-transparent font-label-md text-label-md text-on-surface focus:outline-none cursor-pointer pr-1"><option>Recently Played</option><option>Alphabetical</option><option>Track Count</option><option>Date Added</option></select></div><div class="flex items-center p-0.5 rounded bg-surface-container"><button class="p-1 rounded bg-surface-container-lowest text-on-surface shadow-sm" title="Grid View"><span class="material-symbols-outlined text-[16px]">grid_view</span></button><button class="p-1 rounded text-on-surface-variant hover:text-on-surface" title="List View"><span class="material-symbols-outlined text-[16px]">view_agenda</span></button></div></div></section>
+<!-- Spotlight Hero Playlist Stage -->
+<section class="w-full rounded-xl bg-surface-container-lowest shadow-sm p-space-lg md:p-space-xl flex flex-col lg:flex-row gap-space-xl items-center relative overflow-hidden"><div class="w-full sm:w-[240px] md:w-[280px] flex-shrink-0 relative aspect-square rounded-lg overflow-hidden bg-black shadow-md"><img class="w-full h-full object-cover transition-transform duration-500 hover:scale-105" src="https://lh3.googleusercontent.com/aida/AEtjO1XN2UlUgnrt_eQP6kUewFHIMzcsr8MJUdH28szFbuXnM6ONvZVVaI_lsgsip9mcYX3PeQ-s-oroA2UGCfgoHjV-8n1ybsNH9ouTd_9jkO1uO3g493lSa0dXdtIv75UbpamswSZ0Xn2bjdOmAsgVWihRFujhhG7-ualJN9Cq6zyS13Zr0swqDe5xPIwa08QTUlKIgRuZxP-4i4TJ2T93adV2yVYr0U_JTD-gMmTSZtq6sh2hTAbwLTHf3WiQ" alt="Nocturne Trance Sessions Cover Art"><div class="absolute top-3 left-3"><span class="px-2 py-0.5 rounded bg-black/70 backdrop-blur-sm text-white font-label-mono text-[10px] tracking-wider uppercase">FEATURED PLAYLIST</span></div><div class="absolute bottom-3 right-3"><span class="px-2 py-0.5 rounded bg-black/70 backdrop-blur-sm text-white font-label-mono text-[10px]">FLAC 24/96</span></div></div><div class="flex-1 flex flex-col justify-between gap-space-md w-full"><div class="flex flex-col gap-2"><div class="flex items-center gap-2"><span class="text-[11px] font-label-mono uppercase tracking-wider text-on-surface-variant font-medium">PLAYLIST</span><span class="text-outline-variant">•</span><span class="text-[11px] font-label-mono text-emerald-600 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> IN ROTATION</span></div><h2 class="font-headline-xl text-headline-xl text-on-surface font-semibold tracking-tight">Nocturne Trance Sessions</h2><p class="font-body-md text-body-md text-on-surface-variant max-w-2xl leading-relaxed">Continuous deep progressive trance and crystalline hypnotic soundscapes. Precision mastered with bit-perfect gain preservation and 138-BPM progression.</p><div class="flex items-center gap-2 text-body-sm text-on-surface-variant pt-1"><span class="font-medium text-on-surface">Curated by You</span><span class="">•</span><span class="">28 tracks</span><span class="">•</span><span class="">2h 42m</span><span class="">•</span><span class="font-label-mono text-[11px] bg-surface-container-high px-1.5 py-0.5 rounded text-on-surface">Lossless Audio</span></div></div><div class="flex flex-wrap items-center gap-space-sm pt-2"><button class="px-space-lg py-2 rounded bg-primary text-on-primary font-label-md text-label-md flex items-center gap-2 shadow-sm hover:opacity-90 active:scale-95 transition-all"><span class="material-symbols-outlined text-[18px]">play_arrow</span><span class="">Play</span></button><button class="px-space-md py-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md flex items-center gap-2 shadow-sm hover:bg-surface-container transition-colors"><span class="material-symbols-outlined text-[16px]">shuffle</span><span class="">Shuffle</span></button><button class="px-space-md py-2 rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-2 transition-colors"><span class="material-symbols-outlined text-[16px]">download</span><span class="">Download</span></button><button class="w-9 h-9 rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" title="Favorite"><span class="material-symbols-outlined text-[18px]">favorite</span></button><button class="w-9 h-9 rounded bg-surface-container-low text-on-surface-variant hover:text-on-surface flex items-center justify-center transition-colors" title="More options"><span class="material-symbols-outlined text-[18px]">more_horiz</span></button></div></div></section>
+<!-- Bento Grid Section: Curated Playlists Catalog -->
+<section class="flex flex-col gap-space-md"><div class="flex items-center justify-between"><div class="flex items-baseline gap-space-xs"><h3 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Your Playlists &amp; Mixes</h3><span class="font-label-mono text-label-mono text-on-surface-variant font-normal">(6 Featured Collections)</span></div><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1" href="#"><span class="">View all 24 playlists</span><span class="material-symbols-outlined text-[14px]">arrow_forward</span></a></div><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-space-md"><!-- Playlist Card 1: Liked Songs --><div class="group rounded-xl bg-surface-container-lowest p-space-md flex flex-col gap-space-md shadow-sm hover:shadow transition-all duration-200 cursor-pointer"><div class="relative w-full aspect-square rounded-lg overflow-hidden bg-primary flex items-center justify-center"><div class="flex flex-col items-center justify-center text-on-primary gap-2"><span class="material-symbols-outlined text-[48px]">favorite</span><span class="font-label-mono text-[11px] uppercase tracking-wider">Auto-generated</span></div><div class="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button class="w-12 h-12 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform"><span class="material-symbols-outlined text-[24px]">play_arrow</span></button></div><div class="absolute top-2 left-2"><span class="font-label-mono text-[9px] bg-black/60 backdrop-blur-sm text-white px-1.5 py-0.5 rounded uppercase">COLLECTION</span></div></div><div class="flex flex-col gap-1 min-w-0"><div class="flex items-center justify-between"><h4 class="font-headline-md text-headline-md text-on-surface truncate group-hover:text-primary font-medium">Liked Songs</h4><span class="material-symbols-outlined text-[16px] text-primary">push_pin</span></div><p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">All tracks you've marked with a heart across your library.</p><div class="flex items-center justify-between pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">142 Tracks • 11h 24m</span><span class="text-on-surface font-medium">Quick Access</span></div></div></div><!-- Playlist Card 2: Current Queue & Session Stash --><div class="group rounded-xl bg-surface-container-lowest p-space-md flex flex-col gap-space-md shadow-sm hover:shadow transition-all duration-200 cursor-pointer"><div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high"><img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida/AEtjO1X9d9KGgsN-1xrnluR12MDwFEH7jwC4D6Ca1H9oSjOSeR5lSrD7muDaZ3eZsRNxBa-5zUOikEcQWzF-FC6zVgcN2p7rJHmhJKmcZ1Fe_ogOztAs5k5kvFILmB4tQDG0VmGuPPan7poKqEWeedMplTpdTuHMFNkSGmV5QP_dfuy3S5gatZIiDSWH2JNmt6saK2UQh_7TPz-LmX6Fj6y60v9PQnY_BiDGxEE_v3D8zjFbu8iKSemi3_rhDgka" alt="Session Stash Artwork"><div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform"><span class="material-symbols-outlined text-[24px]">play_arrow</span></button></div><div class="absolute top-2 left-2 flex items-center gap-1"><span class="font-label-mono text-[9px] bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded uppercase">TEMPORARY QUEUE</span></div></div><div class="flex flex-col gap-1 min-w-0"><div class="flex items-center justify-between"><h4 class="font-headline-md text-headline-md text-on-surface truncate group-hover:text-primary font-medium">Current Queue &amp; Session Stash</h4><button class="text-on-surface-variant hover:text-on-surface p-1"><span class="material-symbols-outlined text-[16px]">favorite_border</span></button></div><p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">On-the-fly tracks queued during your current listening session.</p><div class="flex items-center justify-between pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">28 Tracks • 2h 42m</span><span class="text-emerald-700 font-medium">Active Session</span></div></div></div><!-- Playlist Card 3: Artist Spotlight --><div class="group rounded-xl bg-surface-container-lowest p-space-md flex flex-col gap-space-md shadow-sm hover:shadow transition-all duration-200 cursor-pointer"><div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high"><img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAR-KNPWLcN15kTYNZS-YLNUNjAJwS9DZFMceC7WkpjIyRoElvxCSvCHS8TPIbDACGdPN5gav_B1YT9P_JpWSjoDBIzeLU3rVA-jP8xTmb7cPPOTHxARZoqkjHd2EOpbJ_W9LyNF01KGqY24sTcz540sHd8zdqnI-zPpHZ55-shUJw0RnG1stUwSFM8gwkMD_yIFipq8RRyfufU9n1PZmYdjaBjKm6v8XIjZPP2jgu6tvm4Hx8TvPlgdw" alt="Solaris &amp; Kaelen Discography"><div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform"><span class="material-symbols-outlined text-[24px]">play_arrow</span></button></div><div class="absolute top-2 left-2 flex items-center gap-1"><span class="font-label-mono text-[9px] bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded uppercase">DISCOGRAPHY</span></div></div><div class="flex flex-col gap-1 min-w-0"><div class="flex items-center justify-between"><h4 class="font-headline-md text-headline-md text-on-surface truncate group-hover:text-primary font-medium">Artist Spotlight: Solaris &amp; Kaelen</h4><button class="text-on-surface-variant hover:text-on-surface p-1"><span class="material-symbols-outlined text-[16px]">favorite</span></button></div><p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">Complete discography, live bootleg edits, and unreleased studio remasters.</p><div class="flex items-center justify-between pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">42 Tracks • 4h 12m</span><span class="text-on-surface font-medium">Artist Anthology</span></div></div></div><!-- Playlist Card 4: Deep Progressive Trance --><div class="group rounded-xl bg-surface-container-lowest p-space-md flex flex-col gap-space-md shadow-sm hover:shadow transition-all duration-200 cursor-pointer"><div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high"><img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAYYqnML9SppE6Hzbco4B-ZePQB-uJDnNdh8WIY33jz5pezPgbrjcO65Ot3rLARs1VUkX4EtV9gILnCLgHf4S85ihORWmtfCoDfQg0HZ78TL-2Birfts3rquJ1jLLqaJ0Wt1IUDCtZsVxHKenoAulWnV8AEKVVVkvcsxwI0CvyKaWtdpEmYHwFdcyOIFXkLxAp13wOn8Ei7ePIOG0ZBsEq9ePJVQjrePhxUdbH40nk9lRPAi2WXRQcmsg" alt="Deep Progressive Trance 138 BPM"><div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform"><span class="material-symbols-outlined text-[24px]">play_arrow</span></button></div><div class="absolute top-2 left-2 flex items-center gap-1"><span class="font-label-mono text-[9px] bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded uppercase">GENRE / VIBE</span></div></div><div class="flex flex-col gap-1 min-w-0"><div class="flex items-center justify-between"><h4 class="font-headline-md text-headline-md text-on-surface truncate group-hover:text-primary font-medium">Deep Progressive Trance (138 BPM)</h4><button class="text-on-surface-variant hover:text-on-surface p-1"><span class="material-symbols-outlined text-[16px]">favorite_border</span></button></div><p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">Driving uplifting basslines with hypnotic breakdown chords and crisp melodies.</p><div class="flex items-center justify-between pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">34 Tracks • 3h 18m</span><span class="text-on-surface font-medium">Curated Mix</span></div></div></div><!-- Playlist Card 5: Above & Beyond Radio --><div class="group rounded-xl bg-surface-container-lowest p-space-md flex flex-col gap-space-md shadow-sm hover:shadow transition-all duration-200 cursor-pointer"><div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high"><img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2V6G1uPGUW0dzEx0ojMlVNg2UwrVDHFFsurZ3whqVD4Bn8pppYAuePr3GPLWKV-T-Sih0aQRvu4ke47i6R9yPW45MvkAjgoGloQoWwyhJz7xqI3dVxesgsEi3WtEIfO21DVWhPCvOmBH3ncHBAB6nQupQHuVM85YlTR4IoPJWs9Zd7GxASTDqCCo7xy1AGtYo3uIsustrX-cbzHpcegCNSoiBoHOf9tg6txggoa34Yg0SyCcaUe8ZiQ" alt="Above &amp; Beyond Radio"><div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform"><span class="material-symbols-outlined text-[24px]">play_arrow</span></button></div><div class="absolute top-2 left-2 flex items-center gap-1"><span class="font-label-mono text-[9px] bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded uppercase">ARTIST RADIO</span></div></div><div class="flex flex-col gap-1 min-w-0"><div class="flex items-center justify-between"><h4 class="font-headline-md text-headline-md text-on-surface truncate group-hover:text-primary font-medium">Above &amp; Beyond Radio</h4><button class="text-on-surface-variant hover:text-on-surface p-1"><span class="material-symbols-outlined text-[16px]">favorite_border</span></button></div><p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">Infinite radio stream generated around Anjunabeats anthems and sound-alikes.</p><div class="flex items-center justify-between pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">Endless Radio</span><span class="text-on-surface font-medium">Auto-refreshed</span></div></div></div><!-- Playlist Card 6: Heavy Rotation Weekly Mix --><div class="group rounded-xl bg-surface-container-lowest p-space-md flex flex-col gap-space-md shadow-sm hover:shadow transition-all duration-200 cursor-pointer"><div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high"><img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBS6NreJR4ujDW8ARiacxeFhqPVa4iJjsJTlS4TUFjDVmpq8sluSmy_LWO4tX7L-DTrugRQLwA2dCqz_Z8XISTHCKJob0fJT02csvFGUhcPbTADi1j3JQ_IRRifOHqQgroYNMa5BG9AAr-dzmg3KBMIBRW0-UGZhmPmkstfeq6OUucosApDnV4Uk5ahTR_GfRqsUC74R4I66dxdCnw6vqIxp144Z5ja6eB5-SwRz8Qtf3OQELrEIkMYWA" alt="Heavy Rotation Weekly Mix"><div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"><button class="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition-transform"><span class="material-symbols-outlined text-[24px]">play_arrow</span></button></div><div class="absolute top-2 left-2 flex items-center gap-1"><span class="font-label-mono text-[9px] bg-black/70 backdrop-blur-sm text-white px-1.5 py-0.5 rounded uppercase">SMART MIX</span></div></div><div class="flex flex-col gap-1 min-w-0"><div class="flex items-center justify-between"><h4 class="font-headline-md text-headline-md text-on-surface truncate group-hover:text-primary font-medium">Heavy Rotation: Weekly Mix</h4><button class="text-on-surface-variant hover:text-on-surface p-1"><span class="material-symbols-outlined text-[16px]">favorite</span></button></div><p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">Your most-played electronic anthems and recent discoveries this week.</p><div class="flex items-center justify-between pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">30 Tracks • 2h 55m</span><span class="text-emerald-700 font-medium">Updated Today</span></div></div></div></div></section>
+<!-- Deep-Dive / Detailed Tracklist Drawer Section: Nocturne Sessions Vol. IV -->
+<section class="rounded-xl bg-surface-container-lowest p-space-lg flex flex-col gap-space-md shadow-sm"><div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm pb-space-sm border-b border-black/[0.05]"><div class="flex items-baseline gap-space-sm"><h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Playlist Tracks</h3><span class="font-label-mono text-label-mono text-on-surface-variant">Nocturne Trance Sessions • Vol. IV</span></div><div class="flex items-center gap-space-sm font-label-mono text-[10px] text-on-surface-variant"><span class="">28 TRACKS TOTAL</span><span class="">•</span><button class="text-on-surface hover:underline font-medium flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">download</span> Download Playlist</button></div></div><div class="w-full overflow-x-auto"><table class="w-full text-left border-collapse"><thead><tr class="font-label-mono text-[10px] uppercase text-on-surface-variant border-b border-black/[0.04]"><th class="py-2 pl-3 w-10">#</th><th class="py-2">Title</th><th class="py-2 hidden md:table-cell">Album</th><th class="py-2 hidden lg:table-cell">Date Added</th><th class="py-2 text-right pr-3">Time</th><th class="py-2 w-16 text-center">Actions</th></tr></thead><tbody class="divide-y divide-black/[0.03] font-body-sm text-body-sm"><!-- Track 1 --><tr class="bg-surface-container-low/70 hover:bg-surface-container-high transition-colors group"><td class="py-2.5 pl-3 font-label-mono text-[11px] text-on-surface font-medium"><span class="group-hover:hidden flex items-center text-primary"><span class="material-symbols-outlined text-[15px] animate-pulse">volume_up</span></span><span class="hidden group-hover:flex items-center text-on-surface"><span class="material-symbols-outlined text-[15px] cursor-pointer">pause</span></span></td><td class="py-2.5"><div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-semibold flex items-center gap-2">Sun &amp; Moon (Club Mix)<span class="text-[9px] font-label-mono bg-primary text-on-primary px-1 rounded uppercase">PLAYING</span></span><span class="font-body-sm text-[11px] text-on-surface-variant">Above &amp; Beyond feat. Richard Bedford</span></div></td><td class="py-2.5 hidden md:table-cell text-on-surface-variant">Group Therapy (10th Anniversary Remasters)</td><td class="py-2.5 hidden lg:table-cell font-label-mono text-[11px] text-on-surface-variant">2 days ago</td><td class="py-2.5 text-right pr-3 font-label-mono text-[11px] text-on-surface">07:44</td><td class="py-2.5 text-center"><div class="flex items-center justify-center gap-1 text-on-surface-variant"><button class="hover:text-on-surface p-1" title="Favorite"><span class="material-symbols-outlined text-[15px] text-primary">favorite</span></button><button class="hover:text-on-surface p-1" title="More"><span class="material-symbols-outlined text-[15px]">more_vert</span></button></div></td></tr><!-- Track 2 --><tr class="hover:bg-surface-container-low transition-colors group"><td class="py-2.5 pl-3 font-label-mono text-[11px] text-on-surface-variant"><span class="group-hover:hidden">02</span><span class="hidden group-hover:flex items-center text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[15px]">play_arrow</span></span></td><td class="py-2.5"><div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-medium">Midnight City Lights</span><span class="font-body-sm text-[11px] text-on-surface-variant">Solaris &amp; Kaelen</span></div></td><td class="py-2.5 hidden md:table-cell text-on-surface-variant">Architectural Echoes LP</td><td class="py-2.5 hidden lg:table-cell font-label-mono text-[11px] text-on-surface-variant">3 days ago</td><td class="py-2.5 text-right pr-3 font-label-mono text-[11px] text-on-surface">06:21</td><td class="py-2.5 text-center"><div class="flex items-center justify-center gap-1 text-on-surface-variant"><button class="hover:text-on-surface p-1" title="Favorite"><span class="material-symbols-outlined text-[15px]">favorite_border</span></button><button class="hover:text-on-surface p-1" title="More"><span class="material-symbols-outlined text-[15px]">more_vert</span></button></div></td></tr><!-- Track 3 --><tr class="hover:bg-surface-container-low transition-colors group"><td class="py-2.5 pl-3 font-label-mono text-[11px] text-on-surface-variant"><span class="group-hover:hidden">03</span><span class="hidden group-hover:flex items-center text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[15px]">play_arrow</span></span></td><td class="py-2.5"><div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-medium">Neon Horizons (Extended Reconstruct)</span><span class="font-body-sm text-[11px] text-on-surface-variant">Aura Sound</span></div></td><td class="py-2.5 hidden md:table-cell text-on-surface-variant">Hyperion Sessions 03</td><td class="py-2.5 hidden lg:table-cell font-label-mono text-[11px] text-on-surface-variant">May 18, 2024</td><td class="py-2.5 text-right pr-3 font-label-mono text-[11px] text-on-surface">08:12</td><td class="py-2.5 text-center"><div class="flex items-center justify-center gap-1 text-on-surface-variant"><button class="hover:text-on-surface p-1" title="Favorite"><span class="material-symbols-outlined text-[15px]">favorite_border</span></button><button class="hover:text-on-surface p-1" title="More"><span class="material-symbols-outlined text-[15px]">more_vert</span></button></div></td></tr><!-- Track 4 --><tr class="hover:bg-surface-container-low transition-colors group"><td class="py-2.5 pl-3 font-label-mono text-[11px] text-on-surface-variant"><span class="group-hover:hidden">04</span><span class="hidden group-hover:flex items-center text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[15px]">play_arrow</span></span></td><td class="py-2.5"><div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-medium">Subtle Echoes</span><span class="font-body-sm text-[11px] text-on-surface-variant">Mirage</span></div></td><td class="py-2.5 hidden md:table-cell text-on-surface-variant">Anjunadeep 14</td><td class="py-2.5 hidden lg:table-cell font-label-mono text-[11px] text-on-surface-variant">May 12, 2024</td><td class="py-2.5 text-right pr-3 font-label-mono text-[11px] text-on-surface">05:40</td><td class="py-2.5 text-center"><div class="flex items-center justify-center gap-1 text-on-surface-variant"><button class="hover:text-on-surface p-1" title="Favorite"><span class="material-symbols-outlined text-[15px]">favorite_border</span></button><button class="hover:text-on-surface p-1" title="More"><span class="material-symbols-outlined text-[15px]">more_vert</span></button></div></td></tr><!-- Track 5 --><tr class="hover:bg-surface-container-low transition-colors group"><td class="py-2.5 pl-3 font-label-mono text-[11px] text-on-surface-variant"><span class="group-hover:hidden">05</span><span class="hidden group-hover:flex items-center text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[15px]">play_arrow</span></span></td><td class="py-2.5"><div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-medium">Crystalline Dispersion</span><span class="font-body-sm text-[11px] text-on-surface-variant">Kaelen</span></div></td><td class="py-2.5 hidden md:table-cell text-on-surface-variant">Dispersion EP</td><td class="py-2.5 hidden lg:table-cell font-label-mono text-[11px] text-on-surface-variant">Apr 30, 2024</td><td class="py-2.5 text-right pr-3 font-label-mono text-[11px] text-on-surface">06:49</td><td class="py-2.5 text-center"><div class="flex items-center justify-center gap-1 text-on-surface-variant"><button class="hover:text-on-surface p-1" title="Favorite"><span class="material-symbols-outlined text-[15px]">favorite_border</span></button><button class="hover:text-on-surface p-1" title="More"><span class="material-symbols-outlined text-[15px]">more_vert</span></button></div></td></tr><!-- Track 6 --><tr class="hover:bg-surface-container-low transition-colors group"><td class="py-2.5 pl-3 font-label-mono text-[11px] text-on-surface-variant"><span class="group-hover:hidden">06</span><span class="hidden group-hover:flex items-center text-on-surface cursor-pointer"><span class="material-symbols-outlined text-[15px]">play_arrow</span></span></td><td class="py-2.5"><div class="flex flex-col"><span class="font-label-md text-label-md text-on-surface font-medium">Equinox (Above &amp; Beyond Respray)</span><span class="font-body-sm text-[11px] text-on-surface-variant">Solaris</span></div></td><td class="py-2.5 hidden md:table-cell text-on-surface-variant">Trance Classics Resprayed</td><td class="py-2.5 hidden lg:table-cell font-label-mono text-[11px] text-on-surface-variant">Apr 24, 2024</td><td class="py-2.5 text-right pr-3 font-label-mono text-[11px] text-on-surface">07:05</td><td class="py-2.5 text-center"><div class="flex items-center justify-center gap-1 text-on-surface-variant"><button class="hover:text-on-surface p-1" title="Favorite"><span class="material-symbols-outlined text-[15px]">favorite</span></button><button class="hover:text-on-surface p-1" title="More"><span class="material-symbols-outlined text-[15px]">more_vert</span></button></div></td></tr></tbody></table></div><div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs pt-space-xs font-label-mono text-[10px] text-on-surface-variant"><span class="">Showing 6 of 28 tracks in playlist</span><button class="text-on-surface hover:underline self-start sm:self-auto font-medium">Load all 28 tracks</button></div></section>
+</div>
+</div>
+<script>
+  // Interactive Pill Filter Switcher
+  const filterTabs = document.querySelectorAll('#category-tabs button');
+  filterTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      filterTabs.forEach(t => {
+        t.className = "px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all";
+      });
+      tab.className = "px-space-md py-1 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shadow-sm transition-all";
+    });
+  });
+
+  // Sync button rotation animation
+  const syncBtn = document.getElementById('btn-sync');
+  if (syncBtn) {
+    syncBtn.addEventListener('click', () => {
+      const icon = syncBtn.querySelector('.material-symbols-outlined');
+      icon.classList.add('animate-spin');
+      setTimeout(() => {
+        icon.classList.remove('animate-spin');
+      }, 1200);
+    });
+  }
+</script></main>
+<!-- Persistent Mini-Player Bottom Bar -->
+<aside aria-label="Persistent Mini-Player" class="fixed bottom-0 left-0 right-0 z-40 bg-surface/90 backdrop-blur-xl border-t border-black/[0.06] shadow-sm">
+<div class="h-16 w-full max-w-[1180px] mx-auto px-margin flex items-center justify-between gap-gutter">
+<!-- Track Metadata & Status Indicator -->
+<div class="flex items-center gap-space-md min-w-0 max-w-[30%]">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high border border-black/[0.06] flex items-center justify-center flex-shrink-0 text-on-surface-variant">
+<span class="material-symbols-outlined text-[20px]">album</span>
+</div>
+<div class="min-w-0 flex flex-col">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-md text-label-md text-on-surface truncate">Sun &amp; Moon (Club Mix)</span>
+<span class="text-[9px] font-label-mono text-on-surface-variant border border-black/[0.08] px-1 py-0.2 rounded uppercase flex-shrink-0">24/96</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Above &amp; Beyond</span>
+</div>
+</div>
+<!-- Playback Controls & Progress Bar -->
+<div class="flex flex-col items-center gap-1 w-full max-w-[420px]">
+<div class="flex items-center gap-space-md">
+<button aria-label="Previous track" class="text-on-surface-variant hover:text-on-surface transition-colors p-1 flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">skip_previous</span>
+</button>
+<button aria-label="Play or pause" class="w-7 h-7 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[16px]">pause</span>
+</button>
+<button aria-label="Next track" class="text-on-surface-variant hover:text-on-surface transition-colors p-1 flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">skip_next</span>
+</button>
+</div>
+<div class="w-full flex items-center gap-space-xs text-on-surface-variant font-label-mono text-[10px]">
+<span class="">04:18</span>
+<div class="h-1 flex-1 bg-surface-container-highest rounded-full overflow-hidden relative cursor-pointer group">
+<div class="h-full w-2/3 bg-on-surface rounded-full transition-all group-hover:bg-primary"></div>
+</div>
+<span class="">07:44</span>
+</div>
+</div>
+<!-- Audio Engine Output & Output Device Status -->
+<div class="flex items-center justify-end gap-space-md min-w-0 max-w-[30%]">
+<div class="hidden md:flex items-center gap-1.5 text-on-surface-variant font-label-mono text-[10px]">
+<span class="material-symbols-outlined text-[14px]">volume_up</span>
+<span class="truncate">Direct DSD/PCM Out</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button aria-label="Toggle repeat mode" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[17px]">repeat</span>
+</button>
+<button aria-label="Open queue" class="p-1 text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[17px]">queue_music</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+<!-- Clean Monochrome Engine Telemetry Footer -->
+<footer class="relative z-10 w-full border-t border-black/[0.05] bg-surface py-space-md mb-16">
+<div class="max-w-[1180px] mx-auto px-margin flex items-center justify-between font-label-mono text-label-mono text-on-surface-variant">
+<div class="flex items-center gap-space-sm">
+<span class="font-medium text-on-surface">TRANCE MUSIC Engine v2.4</span>
+<span class="text-outline-variant">/</span>
+<span class="">FLAC 192kHz/24bit Float</span>
+</div>
+<div class="flex items-center gap-space-lg">
+<a class="hover:text-on-surface transition-colors" data-path="telemetry-status" href="#">DSP Pipeline</a>
+<a class="hover:text-on-surface transition-colors" data-path="audio-preferences" href="#">Audio Routing</a>
+<a class="hover:text-on-surface transition-colors" data-path="settings" href="#">Engine Telemetry</a>
+</div>
+</div>
+</footer>
+
+
+</body></html>

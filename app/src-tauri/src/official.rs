@@ -154,7 +154,13 @@ fn hq_available(v: &Value) -> bool {
 /// Official payloads use different field names than the mirrors and HTML
 /// entities inside titles (`&quot;`), so this parses its own shape.
 fn parse_song(v: &Value) -> Track {
-    let duration_secs = num_any(v, "duration").unwrap_or(0.0).max(0.0) as u64;
+    // `webapi.get` (album/artist pages) nests duration, album and the 320
+    // flag one level down; search results keep them at the top.
+    let info = &v["more_info"];
+    let duration_secs = num_any(v, "duration")
+        .or_else(|| num_any(info, "duration"))
+        .unwrap_or(0.0)
+        .max(0.0) as u64;
     let title = text(v, "song")
         .or_else(|| text(v, "title"))
         .unwrap_or_default();
@@ -163,7 +169,9 @@ fn parse_song(v: &Value) -> Track {
         .or_else(|| text(v, "music"))
         .or_else(|| text(v, "subtitle"))
         .unwrap_or_default();
-    let album = text(v, "album").unwrap_or_default();
+    let album = text(v, "album")
+        .or_else(|| text(info, "album"))
+        .unwrap_or_default();
     // Prefer the 500x500 artwork when the payload only carries the 150px thumb.
     let image = text(v, "image")
         .or_else(|| Some(best_image(&v["image"])))
@@ -179,7 +187,7 @@ fn parse_song(v: &Value) -> Track {
         duration: fmt_duration(duration_secs),
         image,
         page_url: text(v, "perma_url").or_else(|| text(v, "url")).unwrap_or_default(),
-        hq: hq_available(v),
+        hq: hq_available(v) || hq_available(info),
         plays: num_any(v, "play_count")
             .or_else(|| num_any(v, "playCount"))
             .unwrap_or(0.0)
@@ -276,6 +284,9 @@ pub struct FeedItem {
     pub image: String,
     /// Track count when the payload declares one, else 0.
     pub count: u64,
+    /// Last path segment of `perma_url` — resolves albums/artists via
+    /// `webapi.get`. Empty when the payload carries no url.
+    pub token: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -289,6 +300,10 @@ pub struct HomeFeed {
     pub chart_id: String,
     /// First five tracks of `chart_id` — the countdown rows.
     pub top_tracks: Vec<Track>,
+    /// New releases ("New Lossless Masters").
+    pub albums: Vec<FeedItem>,
+    /// Recommended artists ("Featured Artists in Residence").
+    pub artists: Vec<FeedItem>,
 }
 
 fn feed_item(v: &Value) -> Option<FeedItem> {
@@ -306,6 +321,9 @@ fn feed_item(v: &Value) -> Option<FeedItem> {
                     .and_then(|s| s.parse().ok())
             })
             .unwrap_or(0),
+        token: text(v, "perma_url")
+            .and_then(|u| u.rsplit('/').next().map(str::to_string))
+            .unwrap_or_default(),
     })
 }
 
@@ -341,6 +359,13 @@ pub async fn home(client: &reqwest::Client) -> Result<HomeFeed, String> {
         .next()
         .or_else(|| playlists.first().cloned());
     let chart_id = charts.first().map(|c| c.id.clone()).unwrap_or_default();
+    let mut albums = feed_list(&value["new_trending"], "album");
+    for extra in feed_list(&value["new_albums"], "album") {
+        if !albums.iter().any(|a| a.id == extra.id) {
+            albums.push(extra);
+        }
+    }
+    let artists = feed_list(&value["artist_recos"], "radio_station");
     // A missing chart only costs the countdown rows — the rest still renders.
     let top_tracks = match playlist_tracks(client, &chart_id).await {
         Ok(tracks) => tracks.into_iter().take(5).collect(),
@@ -353,7 +378,52 @@ pub async fn home(client: &reqwest::Client) -> Result<HomeFeed, String> {
         charts,
         chart_id,
         top_tracks,
+        albums,
+        artists,
     })
+}
+
+/// Every track of an album, resolved through `webapi.get` + the album token
+/// (the last segment of its `perma_url`). `album.getDetails` is dead upstream.
+pub async fn album_tracks(client: &reqwest::Client, token: &str) -> Result<Vec<Track>, String> {
+    let songs = token_page(client, token, "album").await?;
+    Ok(songs.iter().map(parse_song).collect())
+}
+
+/// The artist's top tracks — same route, `type=artist`, list under `topSongs`.
+pub async fn artist_tracks(client: &reqwest::Client, token: &str) -> Result<Vec<Track>, String> {
+    let songs = token_page(client, token, "artist").await?;
+    Ok(songs.iter().map(parse_song).collect())
+}
+
+/// Shared `webapi.get` fetch: album pages keep their list in `list`,
+/// artist pages in `topSongs`.
+async fn token_page(
+    client: &reqwest::Client,
+    token: &str,
+    kind: &str,
+) -> Result<Vec<Value>, String> {
+    check_id(token)?;
+    let value = call(
+        client,
+        &[
+            ("__call", "webapi.get"),
+            ("token", token),
+            ("type", kind),
+            ("includeMetaTags", "0"),
+            ("ctx", "web6dot0"),
+            ("api_version", "4"),
+            ("_format", "json"),
+            ("_marker", "0"),
+        ],
+    )
+    .await?;
+    let key = if kind == "artist" { "topSongs" } else { "list" };
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .cloned()
+        .ok_or_else(|| format!("{kind} has no songs: {token}"))
 }
 
 /// Every song of a playlist / chart, in order.
@@ -460,6 +530,34 @@ mod tests {
         assert_eq!(t.plays, 0);
     }
 
+    /// `webapi.get` album/artist items nest duration, album and the 320
+    /// flag under `more_info` — the shape the detail screens resolve.
+    #[test]
+    fn parse_song_reads_webapi_get_nested_fields() {
+        let v: Value = serde_json::from_str(
+            r#"{
+              "id": "Yw_FPwcp",
+              "title": "Samjho Na",
+              "subtitle": "Tanishk Bagchi - The Vvaan",
+              "image": "https://c.saavncdn.com/765/x-150x150.jpg",
+              "play_count": "537010",
+              "more_info": {
+                "duration": "253",
+                "album": "The Vvaan",
+                "320kbps": "true"
+              }
+            }"#,
+        )
+        .unwrap();
+        let t = parse_song(&v);
+        assert_eq!(t.title, "Samjho Na");
+        assert_eq!(t.artist, "Tanishk Bagchi - The Vvaan");
+        assert_eq!(t.duration_secs, 253);
+        assert_eq!(t.album, "The Vvaan");
+        assert!(t.hq);
+        assert_eq!(t.image, "https://c.saavncdn.com/765/x-500x500.jpg");
+    }
+
     // ---- Home feed ----
 
     #[test]
@@ -521,10 +619,33 @@ mod tests {
         let feed = home(&client).await.expect("home feed");
         assert!(feed.playlists.len() >= 5, "enough for one carousel page");
         assert!(feed.charts.len() >= 1);
+        assert!(
+            feed.albums.len() >= 4 && feed.albums.iter().all(|a| !a.token.is_empty()),
+            "albums carry resolve tokens"
+        );
+        assert!(feed.artists.len() >= 3, "artist row for Home");
         assert_eq!(feed.top_tracks.len(), 5, "countdown needs five rows");
         assert!(feed.top_tracks[0].title.is_empty() == false);
         let tracks = playlist_tracks(&client, &feed.chart_id).await.expect("chart");
         assert!(tracks.len() >= 5);
+    }
+
+    #[tokio::test]
+    async fn live_album_and_artist_tokens_yield_playable_tracks() {
+        if std::env::var("OP_OFFLINE").is_ok() {
+            return;
+        }
+        let client = crate::jiosaavn::api_client();
+        // Tokens captured from perma_url: an album and an artist page.
+        let album = album_tracks(&client, "izWEkFlheoQ_")
+            .await
+            .expect("album tracks");
+        assert!(!album.is_empty(), "album must yield its songs");
+        assert!(album.iter().all(|t| t.duration_secs > 0), "durations parse");
+        let artist = artist_tracks(&client, "634AK8t6tAU_")
+            .await
+            .expect("artist tracks");
+        assert!(!artist.is_empty(), "artist must yield top songs");
     }
 
     #[tokio::test]

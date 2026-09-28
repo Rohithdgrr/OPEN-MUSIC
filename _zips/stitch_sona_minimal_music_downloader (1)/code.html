@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_standard" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+    .lyrics-container {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .lyrics-container::-webkit-scrollbar {
+      display: none;
+    }
+    .lyric-blur-mask {
+      mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%, black 88%, transparent 100%);
+    }
+    @keyframes subtlePulse {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(1.08); opacity: 1; }
+    }
+    .active-rhythm-wave {
+      animation: subtlePulse 1.8s ease-in-out infinite;
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            surface: "#f9f9fb",
+            "surface-dim": "#f2f2f5",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f4f4f6",
+            "surface-container": "#ececee",
+            "surface-container-high": "#e4e4e7",
+            "surface-container-highest": "#e2e2e4",
+            primary: "#18181b",
+            "primary-container": "#1b1b1e",
+            "on-primary": "#ffffff",
+            "on-surface": "#18181b",
+            "on-surface-variant": "#71717a",
+            outline: "#a1a1aa",
+            "outline-variant": "#e4e4e7"
+          },
+          fontFamily: {
+            sans: ["Geist", "system-ui", "-apple-system", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-surface font-sans text-on-surface antialiased relative min-h-screen selection:bg-neutral-200 selection:text-neutral-900">
+<!-- Minimal Hairline Header -->
+<header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-black/[0.05]">
+<div class="h-16 w-full max-w-[1180px] mx-auto px-6 sm:px-8 flex items-center justify-between">
+<!-- Minimalist Monochrome Logo -->
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-white shadow-sm">
+<span class="material-symbols-outlined text-[16px]">graphic_eq</span>
+</div>
+<span class="font-semibold text-[15px] tracking-tight text-on-surface select-none">Sona</span>
+</div>
+<!-- Segmented Navigation with Active Pill Contract -->
+<nav class="flex items-center p-1 rounded-full bg-surface-container/60 border border-black/[0.04]" data-active-classes="bg-white text-on-surface shadow-sm font-semibold">
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="search" href="#">Search</a>
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="downloads" href="#">Downloads</a>
+<a aria-current="page" class="px-4 py-1.5 rounded-full transition-all duration-150 flex items-center justify-center bg-white text-on-surface shadow-sm font-semibold" data-path="now-playing" href="#">Now Playing</a>
+</nav>
+<!-- Clean Monochrome Avatar & Global Settings -->
+<div class="flex items-center gap-3">
+<div class="relative">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-black/[0.08] shadow-sm hover:border-black/20 text-xs font-mono transition-all text-on-surface" id="dac-menu-toggle">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="tracking-tight font-medium" id="dac-current-label">CoreAudio Bit-Perfect</span>
+<span class="material-symbols-outlined text-[15px] text-neutral-400">expand_more</span>
+</button>
+<!-- Output Selector Dropdown -->
+<div class="hidden absolute right-0 mt-2 w-64 rounded-xl bg-white border border-black/[0.08] shadow-xl p-2 z-50 flex flex-col gap-1 text-xs" id="dac-dropdown">
+<div class="px-2.5 py-1.5 text-[10px] font-mono text-neutral-400 uppercase tracking-wider">Audio Routing Devices</div>
+<button class="dac-opt-btn w-full text-left px-3 py-2 rounded-lg bg-surface-container-low flex items-center justify-between font-medium text-on-surface" data-mode="24-BIT / 96.0 kHz" data-name="CoreAudio Bit-Perfect">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-neutral-900">headphones</span>
+<span>CoreAudio Bit-Perfect</span>
+</span>
+<span class="material-symbols-outlined text-[15px] text-neutral-900">check</span>
+</button>
+<button class="dac-opt-btn w-full text-left px-3 py-2 rounded-lg hover:bg-surface-container-low flex items-center justify-between text-neutral-600 transition-colors" data-mode="32-BIT / 768.0 kHz DSD" data-name="Chord Hugo 2 (USB Direct)">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-neutral-500">speaker_group</span>
+<span>Chord Hugo 2 Direct</span>
+</span>
+</button>
+<button class="dac-opt-btn w-full text-left px-3 py-2 rounded-lg hover:bg-surface-container-low flex items-center justify-between text-neutral-600 transition-colors" data-mode="24-BIT / 192.0 kHz PCM" data-name="Schiit Yggdrasil DAC">
+<span class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-neutral-500">router</span>
+<span>Schiit Yggdrasil DAC</span>
+</span>
+</button>
+</div>
+</div>
+<div class="w-8 h-8 rounded-full border border-black/[0.08] bg-white flex items-center justify-center text-neutral-700 shadow-sm hover:border-black/20 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[17px]">person</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="relative z-10 w-full pt-16 min-h-[calc(100vh-64px)]">
+<div class="flex flex-col w-full">
+<div class="w-full max-w-[1180px] mx-auto px-6 sm:px-8 py-8 flex flex-col gap-8">
+<!-- Top Meta Strip -->
+<div class="flex flex-wrap items-center justify-between gap-4 border-b border-black/[0.04] pb-4">
+<div class="flex items-center gap-3">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface-container-high text-on-surface text-xs font-mono">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+          ACTIVE DAC SESSION
+        </span>
+<span class="text-on-surface-variant font-mono text-xs tracking-tight" id="dac-status-text">SRC: 24-BIT / 96.0 kHz CoreAudio [Bit-Perfect]</span>
+<span class="hidden sm:inline-block px-2 py-0.5 rounded bg-surface-container text-[11px] font-mono text-neutral-600">JITTER &lt; 0.05 ps</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors flex items-center gap-1.5 text-xs font-medium" id="btn-toggle-dsp" title="DSP Parametric EQ">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span class="hidden sm:inline">Flat EQ</span>
+</button>
+<button class="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors flex items-center gap-1.5 text-xs font-mono" id="btn-crossfade-mode" title="Crossfade Config">
+<span class="material-symbols-outlined text-[16px]">timelapse</span>
+<span id="crossfade-pill-text">XFADE: 4s</span>
+</button>
+<button class="p-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors flex items-center justify-center" title="Share Session">
+<span class="material-symbols-outlined text-[17px]">ios_share</span>
+</button>
+</div>
+</div>
+<!-- Main Audiophile Stage: Two Balanced Columns -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+<!-- Left Column: Master Artwork & Real-Time Waveform & Transport -->
+<div class="lg:col-span-6 flex flex-col gap-6">
+<!-- Large Album Artwork Container -->
+<div class="relative group w-full aspect-square rounded-2xl bg-surface-container overflow-hidden shadow-xl shadow-black/5 flex items-center justify-center border border-black/[0.04]">
+<img alt="Solaris &amp; Kaelen Midnight City Lights Album Artwork" class="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]" id="master-album-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw"/>
+<!-- Gloss Reflection Overlay -->
+<div class="absolute inset-0 bg-gradient-to-tr from-black/40 via-transparent to-white/10 pointer-events-none"></div>
+<!-- Top Floating Lossless Pill -->
+<div class="absolute top-4 left-4 flex items-center gap-2 backdrop-blur-md bg-white/85 px-3 py-1.5 rounded-full shadow-sm border border-white/40">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="text-on-surface font-mono text-[11px] uppercase tracking-wider font-semibold">MASTER LOSSLESS • 24-BIT / 96kHz</span>
+</div>
+<!-- Bottom Floating Vinyl Indicator -->
+<div class="absolute bottom-4 right-4 backdrop-blur-md bg-neutral-900/85 text-white px-3 py-1.5 rounded-full shadow-md flex items-center gap-2 border border-white/10">
+<span class="material-symbols-outlined text-[15px] animate-spin" id="spinning-vinyl-icon" style="animation-duration: 8s;">album</span>
+<span class="font-mono text-[11px]">FLAC • 4,608 kbps</span>
+</div>
+</div>
+<!-- Embedded Procedural Audio Visualizer -->
+<div class="relative w-full rounded-xl bg-surface-container-lowest p-4 shadow-sm border border-black/[0.04] flex flex-col gap-2">
+<div class="flex items-center justify-between text-on-surface-variant font-mono text-[11px]">
+<span class="flex items-center gap-1.5 font-medium text-neutral-800">
+<span class="material-symbols-outlined text-[14px]">graphic_eq</span>
+              SPECTRAL FLUID VELOCITY
+            </span>
+<span class="text-neutral-500 font-mono tracking-tight" id="spectral-lufs-meter">+14.2 LUFS PEAK</span>
+</div>
+
+<div class="flex items-center justify-between text-[10px] font-mono text-neutral-400 pt-0.5">
+<span>20 Hz</span>
+<span>500 Hz</span>
+<span>2 kHz</span>
+<span>8 kHz</span>
+<span>24 kHz DIRECT</span>
+</div>
+</div>
+<!-- Scrubber & Controls Panel -->
+<div class="w-full bg-surface-container-lowest rounded-xl p-5 shadow-sm border border-black/[0.04] flex flex-col gap-4">
+<!-- Timeline Slider -->
+<div class="flex flex-col gap-1.5">
+<div class="relative w-full h-2.5 bg-surface-container rounded-full cursor-pointer flex items-center group select-none" id="timeline-bar">
+<!-- Buffered Stream Cache -->
+<div class="absolute left-0 top-0 bottom-0 w-[72%] bg-surface-container-high rounded-full pointer-events-none" id="buffered-bar"></div>
+<!-- Playback Progress Bar -->
+<div class="absolute left-0 top-0 bottom-0 w-[39.5%] bg-primary rounded-full transition-all duration-75 pointer-events-none" id="progress-bar"></div>
+<!-- Scrubber Thumb -->
+<div class="absolute left-[39.5%] w-3.5 h-3.5 bg-primary rounded-full shadow-md -translate-x-1/2 scale-90 group-hover:scale-125 transition-transform pointer-events-none" id="progress-thumb"></div>
+</div>
+<div class="flex justify-between items-center text-on-surface-variant font-mono text-xs">
+<span class="font-medium text-on-surface" id="track-current">01:42</span>
+<span class="text-on-surface-variant/60 tracking-wider text-[11px]">STEREO L/R CH 01-02 • BIT-PERFECT</span>
+<span id="track-total">04:18</span>
+</div>
+</div>
+<!-- Transport Actions -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-1.5">
+<button class="w-8 h-8 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="btn-shuffle" title="Shuffle (S)">
+<span class="material-symbols-outlined text-[18px]">shuffle</span>
+</button>
+<button class="w-8 h-8 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="btn-repeat" title="Repeat (R)">
+<span class="material-symbols-outlined text-[18px]">repeat</span>
+</button>
+</div>
+<div class="flex items-center gap-3">
+<button class="w-10 h-10 rounded-lg hover:bg-surface-container text-on-surface transition-colors flex items-center justify-center active:scale-95" id="btn-prev" title="Previous Track">
+<span class="material-symbols-outlined text-[22px]">skip_previous</span>
+</button>
+<button class="w-12 h-12 rounded-full bg-primary text-on-primary shadow-lg shadow-black/15 flex items-center justify-center transition-all hover:scale-105 active:scale-90" id="master-play-btn" title="Play / Pause (Space)">
+<span class="material-symbols-outlined text-[26px]" id="master-play-icon">pause</span>
+</button>
+<button class="w-10 h-10 rounded-lg hover:bg-surface-container text-on-surface transition-colors flex items-center justify-center active:scale-95" id="btn-next" title="Next Track">
+<span class="material-symbols-outlined text-[22px]">skip_next</span>
+</button>
+</div>
+<!-- Volume Slider Block with Tooltip -->
+<div class="flex items-center gap-2 relative group/vol">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="vol-mute-btn" title="Mute Toggle">
+<span class="material-symbols-outlined text-[19px]" id="vol-icon">volume_up</span>
+</button>
+<div class="w-20 h-2 bg-surface-container rounded-full overflow-hidden flex items-center cursor-pointer relative" id="volume-track">
+<div class="w-[75%] h-full bg-primary rounded-full transition-all duration-75" id="volume-fill"></div>
+</div>
+<span class="font-mono text-[10px] text-neutral-500 w-8 text-right" id="vol-val-tooltip">75%</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column: Track Meta, Real-Time Synchronized Lyrics & Rich Up Next Queue -->
+<div class="lg:col-span-6 flex flex-col gap-6">
+<!-- Track Telemetry & Title Block -->
+<div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-black/[0.04] flex flex-col gap-4">
+<div class="flex items-start justify-between">
+<div class="flex flex-col">
+<div class="flex items-center gap-2">
+<span class="font-mono text-xs text-on-surface-variant tracking-wider uppercase">TRACK 04 • STEREO DIRECT</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-low text-[10px] font-mono font-medium text-neutral-600">PCM 96k</span>
+</div>
+<h1 class="text-2xl sm:text-[28px] font-semibold text-on-surface mt-1 tracking-tight" id="track-title-heading">Midnight City Lights</h1>
+<p class="text-[15px] text-on-surface-variant mt-0.5 font-normal" id="track-artist-heading">Solaris &amp; Kaelen</p>
+</div>
+<div class="flex items-center gap-1.5">
+<button class="p-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors" id="track-fav-btn" title="Favorite Track">
+<span class="material-symbols-outlined text-[20px]" id="fav-icon" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<button class="p-2.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors" title="Track Credits &amp; Lineage">
+<span class="material-symbols-outlined text-[20px]">info</span>
+</button>
+</div>
+</div>
+<!-- Studio Metadata Grid -->
+<div class="grid grid-cols-3 gap-2.5 pt-1">
+<div class="flex flex-col p-3 rounded-lg bg-surface-container-low border border-black/[0.02]">
+<span class="font-mono text-on-surface-variant text-[10px] uppercase">Album</span>
+<span class="text-xs text-on-surface font-medium truncate mt-0.5">Nocturne EP (2024)</span>
+</div>
+<div class="flex flex-col p-3 rounded-lg bg-surface-container-low border border-black/[0.02]">
+<span class="font-mono text-on-surface-variant text-[10px] uppercase">Publisher</span>
+<span class="text-xs text-on-surface font-medium truncate mt-0.5">Hyperion Sound</span>
+</div>
+<div class="flex flex-col p-3 rounded-lg bg-surface-container-low border border-black/[0.02]">
+<span class="font-mono text-on-surface-variant text-[10px] uppercase">Latency</span>
+<span class="text-xs text-on-surface font-medium truncate mt-0.5">1.2ms Buffer</span>
+</div>
+</div>
+</div>
+<!-- REAL-TIME INTERACTIVE SYNCHRONIZED LYRICS STAGE -->
+<div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-black/[0.04] flex flex-col gap-4 transition-all duration-300" id="lyrics-card">
+<div class="flex items-center justify-between border-b border-black/[0.04] pb-3">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[17px] text-neutral-800">subtitles</span>
+<span class="text-xs font-semibold tracking-wide text-on-surface uppercase">SYNCHRONIZED SCORE &amp; SCRIPT</span>
+<span class="px-2 py-0.5 rounded-full bg-neutral-900 text-white font-mono text-[10px] tracking-tight">LIVE</span>
+</div>
+<!-- Lyrics Stage Action Buttons -->
+<div class="flex items-center gap-2">
+<button class="px-2.5 py-1 rounded-full bg-surface-container hover:bg-neutral-200 text-[11px] font-mono text-neutral-700 transition-colors flex items-center gap-1.5" id="toggle-sync-mode" title="Auto-follow Playhead">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+<span id="sync-mode-label">Auto-Scroll: ON</span>
+</button>
+<button class="px-2.5 py-1 rounded-full bg-surface-container hover:bg-neutral-200 text-[11px] font-mono text-neutral-600 transition-colors" id="toggle-translation-btn" title="Toggle English / Poetic Gloss">
+              GLOSS: EN
+            </button>
+<button class="p-1 rounded hover:bg-surface-container text-neutral-500 hover:text-neutral-900 transition-colors" id="btn-fullscreen-lyrics" title="Lyrics Stage Fullscreen">
+<span class="material-symbols-outlined text-[17px]">open_in_full</span>
+</button>
+</div>
+</div>
+<!-- Fluid Lyrics Scroll Container -->
+<div class="lyrics-container lyric-blur-mask relative max-h-[260px] overflow-y-auto pr-1 flex flex-col gap-3.5 scroll-smooth py-4" id="lyrics-scroll-box">
+<!-- Lyric Item [00:18] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="18">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[00:18]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">A cold harmonic resonance wakes the streetlights</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">Whispering through concrete canyons</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+<!-- Lyric Item [00:42] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="42">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[00:42]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">Signal echoes float between the high tension wires</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">High altitude static in steady decay</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+<!-- Lyric Item [01:15] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="75">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[01:15]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">Across the carbon bridges where the silence bends</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">Suspended under an acoustic vault</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+<!-- Active Lyric Item [01:42] -->
+<div class="lyric-line active-line group flex items-start gap-3 p-3 rounded-xl bg-surface-container-low border border-black/[0.04] transition-all duration-200 cursor-pointer select-none" data-seconds="102">
+<span class="font-mono text-[11px] font-semibold text-neutral-800 w-10 flex-shrink-0 pt-1">[01:42]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[18px] sm:text-[20px] font-semibold text-neutral-900 leading-snug tracking-tight">Reflections shatter on the obsidian glass</p>
+<p class="lyric-subtext hidden text-xs text-neutral-500 font-mono mt-1">Light splits into prism waves across dark stone</p>
+</div>
+<div class="flex items-center gap-1.5 pt-1.5 flex-shrink-0">
+<span class="active-rhythm-wave w-2 h-2 rounded-full bg-primary inline-block"></span>
+<span class="font-mono text-[10px] text-neutral-600 font-medium">VOCAL LEAD</span>
+</div>
+</div>
+<!-- Lyric Item [02:08] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="128">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[02:08]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">We chase the flicker of the midnight city lights</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">Golden filaments through the obsidian fog</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+<!-- Lyric Item [02:35] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="155">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[02:35]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">Before the morning air dissolves the frequencies</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">Every wave sinks softly back to earth</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+<!-- Lyric Item [03:10] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="190">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[03:10]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">The low bass throb returns to sub-harmonic rest</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">Analog warmth fades toward pure silence</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+<!-- Lyric Item [03:45] -->
+<div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="225">
+<span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[03:45]</span>
+<div class="flex flex-col flex-1">
+<p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">Nothing remains except the fading silver tape</p>
+<p class="lyric-subtext hidden text-xs text-neutral-400 font-mono mt-0.5">End of cycle loop</p>
+</div>
+<span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
+</div>
+</div>
+<!-- Lyrics Footer Telemetry -->
+<div class="flex items-center justify-between text-[11px] font-mono text-neutral-500 pt-1 border-t border-black/[0.04]">
+<span class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">graphic_eq</span>
+              TIMECODE <span class="text-neutral-900 font-medium" id="lyric-live-time">01:42</span> / 04:18
+            </span>
+<span class="text-neutral-400">Click any line to seek</span>
+</div>
+</div>
+<!-- UPGRADED ENGAGING UP NEXT QUEUE -->
+<div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-black/[0.04] flex flex-col gap-4">
+<!-- Tabbed Queue Header -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-1 p-0.5 bg-surface-container-low rounded-lg border border-black/[0.03]">
+<button class="px-3 py-1 rounded-md bg-white text-xs font-medium text-neutral-900 shadow-sm transition-all" id="queue-tab-next">
+                Playing Next (<span id="queue-count-badge">3</span>)
+              </button>
+<button class="px-3 py-1 rounded-md text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-all" id="queue-tab-history">
+                History
+              </button>
+</div>
+<!-- Queue Action Controls -->
+<div class="flex items-center gap-2">
+<button class="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-neutral-200 text-[11px] font-mono text-neutral-600 transition-colors flex items-center gap-1" id="btn-shuffle-queue" title="Shuffle queue sequence">
+<span class="material-symbols-outlined text-[13px]">shuffle</span>
+<span>Shuffle</span>
+</button>
+<button class="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-neutral-200 text-[11px] font-mono text-neutral-600 hover:text-neutral-900 transition-colors" id="btn-clear-queue">
+                Clear
+              </button>
+</div>
+</div>
+<!-- Radio Autoplay Switch Bar -->
+<div class="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-container-low border border-black/[0.02] text-xs">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-neutral-700">sensors</span>
+<div class="flex flex-col">
+<span class="font-medium text-neutral-900">Infinite Audiophile Radio</span>
+<span class="text-[10px] text-neutral-500 font-mono">Autoplay similar bit-perfect master tracks</span>
+</div>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" id="infinite-radio-toggle" type="checkbox"/>
+<div class="w-9 h-5 bg-neutral-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-neutral-900"></div>
+</label>
+</div>
+<!-- Queue Tracks List Container -->
+<div class="flex flex-col gap-2" id="queue-tracks-list">
+<!-- Queue Item 1 -->
+<div class="queue-item group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low border border-transparent hover:border-black/[0.04] transition-all cursor-pointer">
+<div class="flex items-center gap-3 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-600 transition-colors cursor-grab" title="Drag to reorder">drag_indicator</span>
+<div class="relative w-12 h-12 rounded-lg bg-surface-container overflow-hidden flex-shrink-0 shadow-sm">
+<img alt="Aura Sound Neon Horizons Artwork" class="w-full h-full object-cover group-hover:scale-105 transition-transform" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQ5BnA0rDVKwQRhHtmz9SyHBU5I_37Q6knxzJ0ropy2HMBCSEmrZGz9_daonA7bMbC1VWAWXRAHjLMkPVsfwgUYrBzOrjyD_7cBMCDEbBxp5L0NJrlhUeMz_rBxQGxN_jhVKWuXAB6_vdvXOqzI6_N_I1qWhEe_W7bQKdLVOj90a6yAOtL3i7xN3SoKi172KAi_KkB0uLj4W2cPmOZmbM_ijmi3w3hfik_GhiqmVu7dSK0yO5H7QHBtg"/>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] text-on-surface font-semibold truncate">Neon Horizons</span>
+<span class="text-xs text-on-surface-variant truncate">Aura Sound • Monolith Suite</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-mono text-[10px] text-neutral-700 bg-surface-container px-1.5 py-0.5 rounded font-medium">FLAC 192k / 24b</span>
+<span class="font-mono text-[10px] text-neutral-400">84.2 MB</span>
+</div>
+</div>
+</div>
+<!-- Actions and Stats -->
+<div class="flex items-center gap-2 flex-shrink-0">
+<!-- Hover Action Pills -->
+<div class="hidden group-hover:flex items-center gap-1">
+<button class="queue-play-now px-2 py-1 rounded bg-neutral-900 text-white text-[10px] font-mono font-medium hover:bg-neutral-800 transition-colors" title="Play immediately">Play</button>
+<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">✕</button>
+</div>
+<span class="font-mono text-xs text-on-surface-variant pl-1">05:14</span>
+</div>
+</div>
+<!-- Queue Item 2 -->
+<div class="queue-item group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low border border-transparent hover:border-black/[0.04] transition-all cursor-pointer">
+<div class="flex items-center gap-3 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-600 transition-colors cursor-grab" title="Drag to reorder">drag_indicator</span>
+<div class="relative w-12 h-12 rounded-lg bg-surface-container overflow-hidden flex-shrink-0 shadow-sm">
+<img alt="Mirage Subtle Echoes Artwork" class="w-full h-full object-cover group-hover:scale-105 transition-transform" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZv5Rb-ENTYcGsxdrv5ZqNwURHuU6FfdKfRkGqi2qPalltoW5vaa3o0hrb0KbRawY3tBdf_br98d8Tg9XTqV7fEpMYAeo5W8RduQ15mldx4yAYyJFNC6-8nJWz3IBCc9cu_9wCrG96wWKRJAML313C17iy5AVRdtM_Lf9QYICFpI4_blUpOxr56U6FMcvc1qCWgYSVWspR_tf0UozcGuB7Ys84SDztYfv2An2TJIVr2ob5bGv_NLqSaA"/>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] text-on-surface font-semibold truncate">Subtle Echoes</span>
+<span class="text-xs text-on-surface-variant truncate">Mirage • Resonant Architectures</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-mono text-[10px] text-neutral-700 bg-surface-container px-1.5 py-0.5 rounded font-medium">DSD 2.8M (1-bit)</span>
+<span class="font-mono text-[10px] text-neutral-400">142.0 MB</span>
+</div>
+</div>
+</div>
+<!-- Actions and Stats -->
+<div class="flex items-center gap-2 flex-shrink-0">
+<div class="hidden group-hover:flex items-center gap-1">
+<button class="queue-play-now px-2 py-1 rounded bg-neutral-900 text-white text-[10px] font-mono font-medium hover:bg-neutral-800 transition-colors" title="Play immediately">Play</button>
+<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">✕</button>
+</div>
+<span class="font-mono text-xs text-on-surface-variant pl-1">03:52</span>
+</div>
+</div>
+<!-- Queue Item 3 -->
+<div class="queue-item group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low border border-transparent hover:border-black/[0.04] transition-all cursor-pointer">
+<div class="flex items-center gap-3 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-600 transition-colors cursor-grab" title="Drag to reorder">drag_indicator</span>
+<div class="relative w-12 h-12 rounded-lg bg-surface-container overflow-hidden flex-shrink-0 shadow-sm">
+<img alt="Kaelen Solo Tape Sessions Artwork" class="w-full h-full object-cover group-hover:scale-105 transition-transform" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw"/>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-[13px] text-on-surface font-semibold truncate">Crystalline Dispersion</span>
+<span class="text-xs text-on-surface-variant truncate">Kaelen • Analog Archive Vol. II</span>
+<div class="flex items-center gap-2 mt-0.5">
+<span class="font-mono text-[10px] text-neutral-700 bg-surface-container px-1.5 py-0.5 rounded font-medium">WAV 32-bit Float</span>
+<span class="font-mono text-[10px] text-neutral-400">118.5 MB</span>
+</div>
+</div>
+</div>
+<!-- Actions and Stats -->
+<div class="flex items-center gap-2 flex-shrink-0">
+<div class="hidden group-hover:flex items-center gap-1">
+<button class="queue-play-now px-2 py-1 rounded bg-neutral-900 text-white text-[10px] font-mono font-medium hover:bg-neutral-800 transition-colors" title="Play immediately">Play</button>
+<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">✕</button>
+</div>
+<span class="font-mono text-xs text-on-surface-variant pl-1">04:47</span>
+</div>
+</div>
+</div>
+<!-- Queue Bottom Toolbar -->
+<div class="flex items-center justify-between pt-2 border-t border-black/[0.04] text-[11px] font-mono text-neutral-500">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">tune</span>
+<span>CROSSFADE DURATION: 4.0s (EQUIPOWER)</span>
+</div>
+<button class="hover:text-neutral-900 flex items-center gap-1 transition-colors" id="btn-save-as-playlist">
+<span class="material-symbols-outlined text-[14px]">playlist_add</span>
+<span>Save as Playlist</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Clean Monochrome Footer -->
+<footer class="relative z-10 w-full border-t border-black/[0.05] bg-surface py-6">
+<div class="max-w-[1180px] mx-auto px-6 sm:px-8 flex flex-col sm:flex-row items-center justify-between text-[12px] text-neutral-500 gap-3">
+<span>Sona Optical Instrument v2.4 • Bit-Perfect Engine</span>
+<div class="flex items-center gap-6">
+<a class="hover:text-neutral-900 transition-colors" data-path="telemetry-status" href="#">Engine Telemetry</a>
+<a class="hover:text-neutral-900 transition-colors" data-path="audio-preferences" href="#">Audio Stream Config</a>
+<span class="text-neutral-400 font-mono text-[11px]">BUFFER: 1.2ms [ZERO DROPOUTS]</span>
+</div>
+</div>
+</footer>
+<!-- Interactive Player & Synchronized Lyrics Engine Script -->
+<script>
+  (function () {
+    // Audio Player State Simulation
+    let isPlaying = true;
+    let currentSeconds = 102; // starts at 01:42
+    const totalSeconds = 258; // 04:18
+    let autoScrollLyrics = true;
+    let showTranslations = false;
+    let timer = null;
+
+    const playBtn = document.getElementById('master-play-btn');
+    const playIcon = document.getElementById('master-play-icon');
+    const trackCurrent = document.getElementById('track-current');
+    const lyricLiveTime = document.getElementById('lyric-live-time');
+    const progressBar = document.getElementById('progress-bar');
+    const progressThumb = document.getElementById('progress-thumb');
+    const timelineBar = document.getElementById('timeline-bar');
+    const vinylIcon = document.getElementById('spinning-vinyl-icon');
+    const spectralLufs = document.getElementById('spectral-lufs-meter');
+
+    const lyricLines = document.querySelectorAll('.lyric-line');
+    const lyricsScrollBox = document.getElementById('lyrics-scroll-box');
+    const toggleSyncMode = document.getElementById('toggle-sync-mode');
+    const syncModeLabel = document.getElementById('sync-mode-label');
+    const toggleTranslationBtn = document.getElementById('toggle-translation-btn');
+    const fullscreenLyricsBtn = document.getElementById('btn-fullscreen-lyrics');
+    const lyricsCard = document.getElementById('lyrics-card');
+
+    function formatTime(sec) {
+      const m = Math.floor(sec / 60);
+      const s = Math.floor(sec % 60);
+      return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function updateLyricsState(sec) {
+      let activeIndex = 0;
+      lyricLines.forEach((line, index) => {
+        const lineSec = parseInt(line.getAttribute('data-seconds'), 10);
+        if (sec >= lineSec) {
+          activeIndex = index;
+        }
+      });
+
+      lyricLines.forEach((line, index) => {
+        const textElem = line.querySelector('.lyric-text');
+        const badge = line.querySelector('.lyric-rhythm-badge');
+        const timeElem = line.querySelector('span:first-child');
+
+        if (index === activeIndex) {
+          line.className = 'lyric-line active-line group flex items-start gap-3 p-3 rounded-xl bg-surface-container-low border border-black/[0.04] transition-all duration-200 cursor-pointer select-none';
+          if (textElem) {
+            textElem.className = 'lyric-text text-[18px] sm:text-[20px] font-semibold text-neutral-900 leading-snug tracking-tight';
+          }
+          if (timeElem) {
+            timeElem.className = 'font-mono text-[11px] font-semibold text-neutral-900 w-10 flex-shrink-0 pt-1';
+          }
+          // ensure live indicator
+          if (!line.querySelector('.active-rhythm-wave')) {
+            const ind = document.createElement('div');
+            ind.className = 'flex items-center gap-1.5 pt-1.5 flex-shrink-0 lyric-indicator';
+            ind.innerHTML = '<span class="active-rhythm-wave w-2 h-2 rounded-full bg-primary inline-block"></span><span class="font-mono text-[10px] text-neutral-600 font-medium">LIVE VOCAL</span>';
+            line.appendChild(ind);
+          }
+        } else {
+          line.className = 'lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none';
+          if (textElem) {
+            textElem.className = 'lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300';
+          }
+          if (timeElem) {
+            timeElem.className = 'font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5';
+          }
+          const ind = line.querySelector('.lyric-indicator');
+          if (ind) ind.remove();
+        }
+      });
+
+      if (autoScrollLyrics && lyricsScrollBox && lyricLines[activeIndex]) {
+        const activeElem = lyricLines[activeIndex];
+        const offset = activeElem.offsetTop - lyricsScrollBox.offsetTop - 50;
+        lyricsScrollBox.scrollTo({ top: offset, behavior: 'smooth' });
+      }
+    }
+
+    function renderProgress() {
+      const pct = (currentSeconds / totalSeconds) * 100;
+      if (progressBar) progressBar.style.width = pct + '%';
+      if (progressThumb) progressThumb.style.left = pct + '%';
+      const timeStr = formatTime(currentSeconds);
+      if (trackCurrent) trackCurrent.textContent = timeStr;
+      if (lyricLiveTime) lyricLiveTime.textContent = timeStr;
+
+      // Update spectral meter subtly
+      if (spectralLufs && isPlaying) {
+        const lufs = (14.0 + (Math.random() * 0.8)).toFixed(1);
+        spectralLufs.textContent = `+${lufs} LUFS PEAK`;
+      }
+    }
+
+    function seekTo(sec) {
+      currentSeconds = Math.max(0, Math.min(totalSeconds, sec));
+      renderProgress();
+      updateLyricsState(currentSeconds);
+    }
+
+    // Playback loop
+    function startTimer() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        if (isPlaying) {
+          currentSeconds += 1;
+          if (currentSeconds > totalSeconds) {
+            currentSeconds = 0;
+          }
+          renderProgress();
+          updateLyricsState(currentSeconds);
+        }
+      }, 1000);
+    }
+
+    if (playBtn && playIcon) {
+      playBtn.addEventListener('click', () => {
+        isPlaying = !isPlaying;
+        playIcon.textContent = isPlaying ? 'pause' : 'play_arrow';
+        if (vinylIcon) {
+          vinylIcon.style.animationPlayState = isPlaying ? 'running' : 'paused';
+        }
+      });
+    }
+
+    // Timeline Scrubber Click & Drag
+    if (timelineBar) {
+      timelineBar.addEventListener('click', (e) => {
+        const rect = timelineBar.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const pct = Math.max(0, Math.min(1, clickX / rect.width));
+        seekTo(Math.floor(pct * totalSeconds));
+      });
+    }
+
+    // Lyric Line Click-to-seek
+    lyricLines.forEach(line => {
+      line.addEventListener('click', () => {
+        const sec = parseInt(line.getAttribute('data-seconds'), 10);
+        seekTo(sec);
+      });
+    });
+
+    // Toggle Auto Sync Mode
+    if (toggleSyncMode && syncModeLabel) {
+      toggleSyncMode.addEventListener('click', () => {
+        autoScrollLyrics = !autoScrollLyrics;
+        if (autoScrollLyrics) {
+          toggleSyncMode.classList.remove('opacity-60');
+          syncModeLabel.textContent = 'Auto-Scroll: ON';
+          updateLyricsState(currentSeconds);
+        } else {
+          toggleSyncMode.classList.add('opacity-60');
+          syncModeLabel.textContent = 'Free Scroll: MAN';
+        }
+      });
+    }
+
+    // Toggle Translation / Gloss
+    if (toggleTranslationBtn) {
+      toggleTranslationBtn.addEventListener('click', () => {
+        showTranslations = !showTranslations;
+        toggleTranslationBtn.classList.toggle('bg-neutral-900', showTranslations);
+        toggleTranslationBtn.classList.toggle('text-white', showTranslations);
+        toggleTranslationBtn.classList.toggle('bg-surface-container', !showTranslations);
+        toggleTranslationBtn.classList.toggle('text-neutral-600', !showTranslations);
+
+        document.querySelectorAll('.lyric-subtext').forEach(sub => {
+          if (showTranslations) {
+            sub.classList.remove('hidden');
+          } else {
+            sub.classList.add('hidden');
+          }
+        });
+      });
+    }
+
+    // Fullscreen / Expanded Lyrics stage
+    if (fullscreenLyricsBtn && lyricsCard) {
+      let isMaximized = false;
+      fullscreenLyricsBtn.addEventListener('click', () => {
+        isMaximized = !isMaximized;
+        if (isMaximized) {
+          lyricsScrollBox.classList.remove('max-h-[260px]');
+          lyricsScrollBox.classList.add('max-h-[460px]');
+          fullscreenLyricsBtn.innerHTML = '<span class="material-symbols-outlined text-[17px]">close_fullscreen</span>';
+        } else {
+          lyricsScrollBox.classList.add('max-h-[260px]');
+          lyricsScrollBox.classList.remove('max-h-[460px]');
+          fullscreenLyricsBtn.innerHTML = '<span class="material-symbols-outlined text-[17px]">open_in_full</span>';
+        }
+      });
+    }
+
+    // Volume Slider
+    const volTrack = document.getElementById('volume-track');
+    const volFill = document.getElementById('volume-fill');
+    const volValTooltip = document.getElementById('vol-val-tooltip');
+    const volMuteBtn = document.getElementById('vol-mute-btn');
+    const volIcon = document.getElementById('vol-icon');
+    let prevVolume = 75;
+    let currentVolume = 75;
+
+    if (volTrack) {
+      volTrack.addEventListener('click', (e) => {
+        const rect = volTrack.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        let pct = Math.round((clickX / rect.width) * 100);
+        pct = Math.max(0, Math.min(100, pct));
+        currentVolume = pct;
+        if (volFill) volFill.style.width = pct + '%';
+        if (volValTooltip) volValTooltip.textContent = pct + '%';
+        if (volIcon) {
+          volIcon.textContent = pct === 0 ? 'volume_off' : pct < 50 ? 'volume_down' : 'volume_up';
+        }
+      });
+    }
+
+    if (volMuteBtn) {
+      volMuteBtn.addEventListener('click', () => {
+        if (currentVolume > 0) {
+          prevVolume = currentVolume;
+          currentVolume = 0;
+          if (volFill) volFill.style.width = '0%';
+          if (volValTooltip) volValTooltip.textContent = '0%';
+          if (volIcon) volIcon.textContent = 'volume_off';
+        } else {
+          currentVolume = prevVolume || 75;
+          if (volFill) volFill.style.width = currentVolume + '%';
+          if (volValTooltip) volValTooltip.textContent = currentVolume + '%';
+          if (volIcon) volIcon.textContent = currentVolume < 50 ? 'volume_down' : 'volume_up';
+        }
+      });
+    }
+
+    // Favorite Button Toggle
+    const favBtn = document.getElementById('track-fav-btn');
+    const favIcon = document.getElementById('fav-icon');
+    let isFav = true;
+    if (favBtn && favIcon) {
+      favBtn.addEventListener('click', () => {
+        isFav = !isFav;
+        favIcon.style.fontVariationSettings = isFav ? "'FILL' 1" : "'FILL' 0";
+        favIcon.classList.toggle('text-red-500', isFav);
+      });
+    }
+
+    // DAC Output Dropdown
+    const dacMenuToggle = document.getElementById('dac-menu-toggle');
+    const dacDropdown = document.getElementById('dac-dropdown');
+    const dacCurrentLabel = document.getElementById('dac-current-label');
+    const dacStatusText = document.getElementById('dac-status-text');
+
+    if (dacMenuToggle && dacDropdown) {
+      dacMenuToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dacDropdown.classList.toggle('hidden');
+      });
+
+      document.addEventListener('click', () => {
+        dacDropdown.classList.add('hidden');
+      });
+
+      document.querySelectorAll('.dac-opt-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const name = btn.getAttribute('data-name');
+          const mode = btn.getAttribute('data-mode');
+          if (dacCurrentLabel) dacCurrentLabel.textContent = name;
+          if (dacStatusText) dacStatusText.textContent = `SRC: ${mode} [Bit-Perfect]`;
+
+          document.querySelectorAll('.dac-opt-btn').forEach(b => {
+            b.classList.remove('bg-surface-container-low', 'font-medium', 'text-on-surface');
+            b.classList.add('text-neutral-600');
+            const check = b.querySelector('.material-symbols-outlined:last-child');
+            if (check && check.textContent === 'check') check.remove();
+          });
+
+          btn.classList.add('bg-surface-container-low', 'font-medium', 'text-on-surface');
+          btn.classList.remove('text-neutral-600');
+          const icon = document.createElement('span');
+          icon.className = 'material-symbols-outlined text-[15px] text-neutral-900';
+          icon.textContent = 'check';
+          btn.appendChild(icon);
+
+          dacDropdown.classList.add('hidden');
+        });
+      });
+    }
+
+    // Queue Interactive Tabs & Controls
+    const tabNext = document.getElementById('queue-tab-next');
+    const tabHistory = document.getElementById('queue-tab-history');
+    const queueList = document.getElementById('queue-tracks-list');
+    const queueCountBadge = document.getElementById('queue-count-badge');
+    const btnClearQueue = document.getElementById('btn-clear-queue');
+    const btnShuffleQueue = document.getElementById('btn-shuffle-queue');
+    const btnSavePlaylist = document.getElementById('btn-save-as-playlist');
+    const crossfadePillText = document.getElementById('crossfade-pill-text');
+
+    if (tabNext && tabHistory) {
+      tabNext.addEventListener('click', () => {
+        tabNext.className = 'px-3 py-1 rounded-md bg-white text-xs font-medium text-neutral-900 shadow-sm transition-all';
+        tabHistory.className = 'px-3 py-1 rounded-md text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-all';
+      });
+      tabHistory.addEventListener('click', () => {
+        tabHistory.className = 'px-3 py-1 rounded-md bg-white text-xs font-medium text-neutral-900 shadow-sm transition-all';
+        tabNext.className = 'px-3 py-1 rounded-md text-xs font-medium text-neutral-500 hover:text-neutral-900 transition-all';
+      });
+    }
+
+    // Queue Item Actions: Remove and Play Now
+    if (queueList) {
+      queueList.addEventListener('click', (e) => {
+        const removeBtn = e.target.closest('.queue-remove-btn');
+        if (removeBtn) {
+          e.stopPropagation();
+          const item = removeBtn.closest('.queue-item');
+          if (item) {
+            item.style.opacity = '0';
+            item.style.transform = 'translateX(20px)';
+            setTimeout(() => {
+              item.remove();
+              const remaining = queueList.querySelectorAll('.queue-item').length;
+              if (queueCountBadge) queueCountBadge.textContent = remaining;
+            }, 180);
+          }
+          return;
+        }
+
+        const playNowBtn = e.target.closest('.queue-play-now');
+        if (playNowBtn) {
+          e.stopPropagation();
+          const item = playNowBtn.closest('.queue-item');
+          if (item) {
+            const trackName = item.querySelector('.text-\\[13px\\]')?.textContent;
+            const artistName = item.querySelector('.text-xs')?.textContent;
+            const imgSrc = item.querySelector('img')?.getAttribute('src');
+
+            if (trackName) document.getElementById('track-title-heading').textContent = trackName;
+            if (artistName) document.getElementById('track-artist-heading').textContent = artistName;
+            if (imgSrc) document.getElementById('master-album-cover').setAttribute('src', imgSrc);
+
+            seekTo(0);
+            isPlaying = true;
+            if (playIcon) playIcon.textContent = 'pause';
+          }
+        }
+      });
+    }
+
+    // Clear Queue
+    if (btnClearQueue && queueList) {
+      btnClearQueue.addEventListener('click', () => {
+        queueList.innerHTML = '<div class="py-8 text-center text-xs font-mono text-neutral-400">Queue is empty. Autoplay will generate fresh streams.</div>';
+        if (queueCountBadge) queueCountBadge.textContent = '0';
+      });
+    }
+
+    // Shuffle Queue visual reorder
+    if (btnShuffleQueue && queueList) {
+      btnShuffleQueue.addEventListener('click', () => {
+        const items = Array.from(queueList.querySelectorAll('.queue-item'));
+        for (let i = items.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          queueList.appendChild(items[j]);
+        }
+      });
+    }
+
+    // Save as playlist feedback
+    if (btnSavePlaylist) {
+      btnSavePlaylist.addEventListener('click', () => {
+        const original = btnSavePlaylist.innerHTML;
+        btnSavePlaylist.innerHTML = '<span class="material-symbols-outlined text-[14px] text-emerald-600">check</span><span class="text-neutral-900">Saved to Library!</span>';
+        setTimeout(() => {
+          btnSavePlaylist.innerHTML = original;
+        }, 2000);
+      });
+    }
+
+    // Crossfade Toggle
+    const crossfadeBtn = document.getElementById('btn-crossfade-mode');
+    let xfadeTimes = ['0s (Gapless)', '2s', '4s', '8s'];
+    let xfadeIndex = 2;
+    if (crossfadeBtn && crossfadePillText) {
+      crossfadeBtn.addEventListener('click', () => {
+        xfadeIndex = (xfadeIndex + 1) % xfadeTimes.length;
+        crossfadePillText.textContent = `XFADE: ${xfadeTimes[xfadeIndex]}`;
+      });
+    }
+
+    // Keyboard Shortcuts (Space: Play/Pause, ArrowLeft: -5s, ArrowRight: +5s)
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (playBtn) playBtn.click();
+      } else if (e.code === 'ArrowRight') {
+        seekTo(currentSeconds + 5);
+      } else if (e.code === 'ArrowLeft') {
+        seekTo(currentSeconds - 5);
+      }
+    });
+
+    // Start playback loop
+    startTimer();
+    renderProgress();
+    updateLyricsState(currentSeconds);
+  })();
+</script>
+</body></html>

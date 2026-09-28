@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_standard" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            surface: "#f9f9fb",
+            "surface-dim": "#f2f2f5",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f4f4f6",
+            "surface-container": "#ececee",
+            "surface-container-high": "#e4e4e7",
+            primary: "#18181b",
+            "on-primary": "#ffffff",
+            "on-surface": "#18181b",
+            "on-surface-variant": "#71717a",
+            outline: "#a1a1aa",
+            "outline-variant": "#e4e4e7"
+          },
+          fontFamily: {
+            sans: ["Geist", "system-ui", "-apple-system", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-surface font-sans text-on-surface antialiased relative min-h-screen selection:bg-neutral-200 selection:text-neutral-900">
+<!-- Minimal Hairline Header -->
+<header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-black/[0.05]">
+<div class="h-16 w-full max-w-[1100px] mx-auto px-8 flex items-center justify-between">
+<!-- Minimalist Monochrome Logo -->
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-white shadow-sm">
+<span class="material-symbols-outlined text-[16px]">graphic_eq</span>
+</div>
+<span class="font-semibold text-[15px] tracking-tight text-on-surface select-none">Sona</span>
+</div>
+<!-- Segmented Navigation with Active Pill Contract -->
+<nav class="flex items-center p-1 rounded-full bg-surface-container/60 border border-black/[0.04]" data-active-classes="bg-white text-on-surface shadow-sm font-semibold">
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="search" href="#">Search</a>
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="downloads" href="#">Downloads</a>
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="now-playing" href="#">Now Playing</a>
+</nav>
+<!-- Clean Monochrome Avatar -->
+<div class="flex items-center">
+<div class="w-8 h-8 rounded-full border border-black/[0.08] bg-white flex items-center justify-center text-neutral-700 shadow-sm hover:border-black/20 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[17px]">person</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="relative z-10 w-full pt-16 min-h-[calc(100vh-64px)]"><div class="flex flex-col w-full">
+<div class="w-full max-w-[1100px] mx-auto px-8 pb-32">
+<!-- Breadcrumb & Telemetry Top Strip -->
+<section class="flex flex-col md:flex-row md:items-end justify-between pt-6 pb-8 gap-4 border-b border-black/[0.04]">
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center gap-2">
+<span class="inline-flex w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-mono text-label-mono uppercase text-on-surface-variant tracking-wider">
+            Active Pipeline • 3 Concurrent Streams • 18.4 MB/s Peak
+          </span>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Downloads &amp; Offline Vault</h1>
+</div>
+<!-- Action Controls -->
+<div class="flex items-center gap-2 self-start md:self-auto">
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded bg-surface-container-low hover:bg-surface-container transition-colors text-on-surface text-label-md font-label-md shadow-sm" id="pause-all-btn">
+<span class="material-symbols-outlined text-[16px]">pause</span>
+<span>Pause All</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded bg-surface-container-low hover:bg-surface-container transition-colors text-on-surface text-label-md font-label-md shadow-sm" id="clear-finished-btn">
+<span class="material-symbols-outlined text-[16px]">clear_all</span>
+<span>Clear Finished</span>
+</button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded bg-surface-container-low hover:bg-surface-container transition-colors text-on-surface text-label-md font-label-md shadow-sm">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span>Vault Preferences</span>
+</button>
+</div>
+</section>
+<!-- Active Transmissions Section -->
+<section class="mt-8 flex flex-col gap-4">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">In-Transit Encoded Streams</h2>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-mono text-[10px]">3 active</span>
+</div>
+<span class="font-label-mono text-label-mono text-on-surface-variant">Est. Completion: 14s</span>
+</div>
+<!-- Active Transfers Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Transfer Card 1: Midnight City Lights -->
+<article class="p-4 rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-4 hover:shadow-md transition-shadow">
+<div class="flex items-start gap-4">
+<div class="relative w-24 h-24 rounded-lg overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Monochromatic architectural perspective with sharp concrete brutalist angles, deep atmospheric shadows, geometric light rays cutting through fog, hyper-detailed minimalist album artwork in charcoal and cold white tones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCDqwWLWpyybJo3k9ParAxePpB3y9h4akGLdbF7ZDRFidy7lLtajVR3lDLWYKquF2gqa3qNGOCwwivdaY7XWmfs3LocTC0n750de5KRa3EB2Xc82BSqrBOLMRxUG-2U76gk4h8fHC7wKlMo2nmIExXyeT43TxQ4L9Upr1wjf3XuRK0-94AHvDs9EPm9LupXkkkyzXfeyKh4euyUhS6CZSSusTIaFVYeRAtm2BpS7RzHTR8XjEfBtfuvzw"/>
+<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-primary/80 backdrop-blur-md text-on-primary font-label-mono text-[9px] uppercase tracking-wider">
+                FLAC 96/24
+              </div>
+</div>
+<div class="flex flex-col flex-1 min-w-0">
+<div class="flex items-start justify-between gap-2">
+<div class="truncate">
+<h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Midnight City Lights</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Solaris &amp; Kaelen • Monolith Sessions</p>
+</div>
+<span class="font-label-mono text-label-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface shrink-0">68%</span>
+</div>
+<!-- Stream Performance Metrics -->
+<div class="mt-2.5 grid grid-cols-3 gap-2 font-label-mono text-label-mono text-on-surface-variant">
+<div>
+<span class="block text-[9px] uppercase text-outline">Rate</span>
+<span class="text-on-surface font-medium">8.4 MB/s</span>
+</div>
+<div>
+<span class="block text-[9px] uppercase text-outline">Payload</span>
+<span class="text-on-surface">59.8 / 88.0 MB</span>
+</div>
+<div>
+<span class="block text-[9px] uppercase text-outline">Remaining</span>
+<span class="text-on-surface">ETA: 3.3s</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Progress bar -->
+<div class="flex flex-col gap-2">
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden flex">
+<div class="h-full bg-primary rounded-full transition-all duration-300" style="width: 68%;"></div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label-mono text-[10px]">
+<span class="material-symbols-outlined text-[14px]">format_image_left</span>
+<span>SHA-256 On-the-fly Ingestion</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="w-7 h-7 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Pause Stream">
+<span class="material-symbols-outlined text-[16px]">pause</span>
+</button>
+<button class="w-7 h-7 rounded hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-error transition-colors" title="Cancel Download">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+<!-- Transfer Card 2: Neon Horizons -->
+<article class="p-4 rounded-xl bg-surface-container-lowest shadow-sm flex flex-col gap-4 hover:shadow-md transition-shadow">
+<div class="flex items-start gap-4">
+<div class="relative w-24 h-24 rounded-lg overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Minimalist brutalist tower structure emerging through heavy monochrome fog, soft ambient mist, grainy analog textures, crisp Scandinavian typographic artwork aesthetics in deep black and limestone white." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9DiUDAv4bgmUzsoY6-olOY__nyH7giHWkhAekyNPTfM0rsclxMsjea4zfSX1rk5_AFT1GmQvD_2FCJ0sR3gKoX6dCUyN2qhbcOaJRW8xEcWCl0Vfht6K2r6AT-Zc1V5KTO6vgPTPk20S8QeD5HoFSjSP76BSEEZu-iSpH9aK0CStYaLAwXHFO1xBcv1JlGQTl2sa9P6zkelE4iFYKHJBoPH1qXAltN0jVElxYTxPO_9HSDjPCE2ep4Q"/>
+<div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-primary/80 backdrop-blur-md text-on-primary font-label-mono text-[9px] uppercase tracking-wider">
+                DSD 11.2M
+              </div>
+</div>
+<div class="flex flex-col flex-1 min-w-0">
+<div class="flex items-start justify-between gap-2">
+<div class="truncate">
+<h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Neon Horizons</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Caelum • Kinetic Resonance Pt. II</p>
+</div>
+<span class="font-label-mono text-label-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface shrink-0">41%</span>
+</div>
+<!-- Stream Performance Metrics -->
+<div class="mt-2.5 grid grid-cols-3 gap-2 font-label-mono text-label-mono text-on-surface-variant">
+<div>
+<span class="block text-[9px] uppercase text-outline">Rate</span>
+<span class="text-on-surface font-medium">6.9 MB/s</span>
+</div>
+<div>
+<span class="block text-[9px] uppercase text-outline">Payload</span>
+<span class="text-on-surface">112.4 / 274.0 MB</span>
+</div>
+<div>
+<span class="block text-[9px] uppercase text-outline">Remaining</span>
+<span class="text-on-surface">ETA: 23.4s</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Progress bar -->
+<div class="flex flex-col gap-2">
+<div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden flex">
+<div class="h-full bg-primary rounded-full transition-all duration-300" style="width: 41%;"></div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-1.5 text-on-surface-variant font-label-mono text-[10px]">
+<span class="material-symbols-outlined text-[14px]">stream</span>
+<span>Direct Stream Digital Native Packaging</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="w-7 h-7 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Pause Stream">
+<span class="material-symbols-outlined text-[16px]">pause</span>
+</button>
+<button class="w-7 h-7 rounded hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-error transition-colors" title="Cancel Download">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+</div>
+</section>
+<!-- Completed Vault Repository -->
+<section class="mt-12 flex flex-col gap-4">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface tracking-tight">Offline Master Library</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Uncompressed offline soundstages verified bit-perfect</p>
+</div>
+<div class="flex items-center gap-2 text-on-surface font-label-mono text-label-mono">
+<span class="material-symbols-outlined text-[15px] text-on-surface-variant">verified</span>
+<span>6 Masters Cached (1.42 GB)</span>
+</div>
+</div>
+<!-- Vault Filter and Sorter Toolbar -->
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 bg-surface-container-low rounded-xl">
+<!-- Filter Pills -->
+<div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0" id="filter-container">
+<button class="filter-tab px-3 py-1.5 rounded text-label-md font-label-md bg-white text-on-surface shadow-sm cursor-pointer transition-all" data-filter="all">All (6)</button>
+<button class="filter-tab px-3 py-1.5 rounded text-label-md font-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer" data-filter="flac">FLAC 24-bit</button>
+<button class="filter-tab px-3 py-1.5 rounded text-label-md font-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer" data-filter="dsd">DSD 64/256</button>
+<button class="filter-tab px-3 py-1.5 rounded text-label-md font-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer" data-filter="wav">WAV 32-bit Float</button>
+</div>
+<!-- Search Input & Sort Selection -->
+<div class="flex items-center gap-2">
+<div class="relative flex-1 sm:w-64">
+<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant pointer-events-none">search</span>
+<input class="w-full pl-8 pr-3 py-1.5 rounded bg-surface-container-lowest text-body-sm font-body-sm text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary shadow-sm" id="vault-search" placeholder="Search masters, checksums..." type="text"/>
+</div>
+<button class="px-2.5 py-1.5 rounded bg-surface-container-lowest text-on-surface hover:bg-surface-container flex items-center gap-1 text-label-md font-label-md shadow-sm">
+<span class="material-symbols-outlined text-[15px]">sort</span>
+<span>Date Added</span>
+</button>
+</div>
+</div>
+<!-- Master Audio Inventory List -->
+<div class="flex flex-col gap-2 mt-2" id="vault-list">
+<!-- Master Item 1: Subtle Echoes -->
+<div class="vault-row flex items-center justify-between p-3.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group" data-format="flac">
+<div class="flex items-center gap-4 min-w-0">
+<div class="relative w-14 h-14 rounded overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Monochrome marble sculpture with fluid mathematical curves, pristine white stone texture against pure deep black background, contemporary fine art audio cover." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCURvx-9xA7duop9I4-7OPC4xXFY17jDY-T3IaWKkhEqPKe4Lc5ntZQPOZYxntPcWCq3dpmQJWwKfJSpXAiKkZYPSN_r7ADcH4M5fvayKXhrpyZH3i4rMG1_Vg1crqbUd-qvpig-ftEC3kTK1u1WDJWB53t0T0QCTsGjcod827_8dM_BVpvZWHUM6SnrfAoXh1YCNjj4DPeoo27NdQH24mig0ZNaWpDt6CoZXnwoiR6NZIxbDTFNRwDRg"/>
+<button class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-on-primary">
+<span class="material-symbols-outlined text-[20px]">play_arrow</span>
+</button>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Subtle Echoes</span>
+<span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface">FLAC 192kHz/24b</span>
+<span class="font-label-mono text-[9px] px-1.5 py-0.2 rounded text-on-surface bg-surface-container-high hidden md:inline">BIT-PERFECT VERIFIED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Elysian • Form &amp; Fracture (2024)</p>
+</div>
+</div>
+<div class="flex items-center gap-6 shrink-0">
+<div class="hidden sm:flex flex-col items-end font-label-mono text-label-mono">
+<span class="text-on-surface font-medium">142.8 MB</span>
+<span class="text-on-surface-variant text-[10px]">CRC: 0x8FA47B</span>
+</div>
+<span class="hidden md:inline font-label-mono text-label-mono text-on-surface-variant">2m ago</span>
+<div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Play Now">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Show in Local Directory">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Re-Verify Checksum">
+<span class="material-symbols-outlined text-[18px]">task_alt</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors" title="Options">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Master Item 2: Velvet Cascade -->
+<div class="vault-row flex items-center justify-between p-3.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group" data-format="dsd">
+<div class="flex items-center gap-4 min-w-0">
+<div class="relative w-14 h-14 rounded overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Monochromatic silky liquid texture in suspension, high speed droplet photography, pristine studio chiaroscuro lighting, deep black reflective pool." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXLGUWlQ-gNpJJemkJguDyXN-uRONExCm2WnAgdrXGpL5lfPXresbc4LraCephG0f5b0xdz6iWpKdKTF56i-_k0HAhW5mFUsuL5hX1C1FezcUeVyMgfI1HdMzk0KQ8elyNfk_SVBJDKPWyQJSKTQodeknDfD3vAL785hGgS7YKsO3sFCSXqEIqDhbJz38FKhLnX-2HD42vb3ugGBTOyGqfxxVZe8HX4Wy5Fn1BcQyOI0fUhPVJg3uKsw"/>
+<button class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-on-primary">
+<span class="material-symbols-outlined text-[20px]">play_arrow</span>
+</button>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Velvet Cascade (Direct Cut)</span>
+<span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface">DSD 5.6MHz (128x)</span>
+<span class="font-label-mono text-[9px] px-1.5 py-0.2 rounded text-on-surface bg-surface-container-high hidden md:inline">BIT-PERFECT VERIFIED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Aura &amp; The Chamber Ensemble • Pure Acoustic Session</p>
+</div>
+</div>
+<div class="flex items-center gap-6 shrink-0">
+<div class="hidden sm:flex flex-col items-end font-label-mono text-label-mono">
+<span class="text-on-surface font-medium">384.2 MB</span>
+<span class="text-on-surface-variant text-[10px]">CRC: 0x93C012</span>
+</div>
+<span class="hidden md:inline font-label-mono text-label-mono text-on-surface-variant">42m ago</span>
+<div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Play Now">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Show in Local Directory">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Re-Verify Checksum">
+<span class="material-symbols-outlined text-[18px]">task_alt</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors" title="Options">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Master Item 3: Luminescence -->
+<div class="vault-row flex items-center justify-between p-3.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group" data-format="wav">
+<div class="flex items-center gap-4 min-w-0">
+<div class="relative w-14 h-14 rounded overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Abstract refractive optical glass prism dispersing high key white light through darkness, sharp crystalline facets, minimal monochromatic styling." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBOwdYiXtacdlirpcv9GYSDgDpygKIIuZYUJ-HUG7O6wbLPsdHfA7kJhWSbOC1YpIHzEn2t-XxuEmbIDo9GwgnKRVpvfFY6S1Kh9isbVnh2130vCw2gA_P1lzOYEHHkFODwi-MDRpOhKdAA-oAJvW0Flg1AsKaOPvODbhZhTFpcOwmwFP7fOSw1m7kFHSWg-W_3XR9JgrWPd6QctBPpc2ikW0RS4eZVQU_prrJNTf1SnmVeZm666i5GUA"/>
+<button class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-on-primary">
+<span class="material-symbols-outlined text-[20px]">play_arrow</span>
+</button>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Luminescence in D Minor</span>
+<span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface">WAV 32-bit Float</span>
+<span class="font-label-mono text-[9px] px-1.5 py-0.2 rounded text-on-surface bg-surface-container-high hidden md:inline">BIT-PERFECT VERIFIED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Mira Thorne • Prismatics Studio Master</p>
+</div>
+</div>
+<div class="flex items-center gap-6 shrink-0">
+<div class="hidden sm:flex flex-col items-end font-label-mono text-label-mono">
+<span class="text-on-surface font-medium">210.6 MB</span>
+<span class="text-on-surface-variant text-[10px]">CRC: 0x4D19E5</span>
+</div>
+<span class="hidden md:inline font-label-mono text-label-mono text-on-surface-variant">3h ago</span>
+<div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Play Now">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Show in Local Directory">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Re-Verify Checksum">
+<span class="material-symbols-outlined text-[18px]">task_alt</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors" title="Options">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Master Item 4: Ghost in the Wire -->
+<div class="vault-row flex items-center justify-between p-3.5 rounded-lg bg-surface-container-lowest hover:bg-surface-container-low transition-colors shadow-sm group" data-format="flac">
+<div class="flex items-center gap-4 min-w-0">
+<div class="relative w-14 h-14 rounded overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Minimalist scanline waveform sculpture, oscillating frequency interference lines in deep charcoal and graphite grey, clinical studio lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB3ntuQZ83kPoi3ddeGQujZ3xOKzoE2ZMD5F3_RbMuvR_aijz2MyUaxEt2fCXWGot--IlJ-PmG35J0agMl2RgzvJZyc-S82j9uKxPinrT08Qi5uhnVybrk2F1xE691gRMYNJXzyx8z39Fjqc-6zIL5WK1w1o7ns9nOmDOIND23mCxhze0MMcZf3lon5Ll70HeZ7UEo90f1SYxr325lTq5JPQWUUUqVHUZ6rRAaIhoRmEbl7Vo03kuytGQ"/>
+<button class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-on-primary">
+<span class="material-symbols-outlined text-[20px]">play_arrow</span>
+</button>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Ghost in the Wire</span>
+<span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface">FLAC 96kHz/24b</span>
+<span class="font-label-mono text-[9px] px-1.5 py-0.2 rounded text-on-surface bg-surface-container-high hidden md:inline">BIT-PERFECT VERIFIED</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant truncate">Vectorial Void • Sub-surface Echoes</p>
+</div>
+</div>
+<div class="flex items-center gap-6 shrink-0">
+<div class="hidden sm:flex flex-col items-end font-label-mono text-label-mono">
+<span class="text-on-surface font-medium">98.1 MB</span>
+<span class="text-on-surface-variant text-[10px]">CRC: 0xEE704B</span>
+</div>
+<span class="hidden md:inline font-label-mono text-label-mono text-on-surface-variant">Yesterday</span>
+<div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Play Now">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Show in Local Directory">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors" title="Re-Verify Checksum">
+<span class="material-symbols-outlined text-[18px]">task_alt</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors" title="Options">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Storage & Vault Telemetry Footer Card -->
+<section class="mt-12 p-6 rounded-2xl bg-surface-container-low shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
+<div class="flex flex-col gap-2 max-w-xl">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-on-surface">database</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Physical Storage Allocator</h3>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant">
+          Bit-perfect audio blocks are stored directly without operating system resamplers into the protected offline container:
+        </p>
+<code class="font-label-mono text-label-mono px-3 py-1.5 rounded bg-surface-container-lowest text-on-surface self-start shadow-sm">
+          ~/Music/Sona Vault/Masters/Uncompressed_Linear/
+        </code>
+</div>
+<!-- Storage Metrics Graphic -->
+<div class="flex flex-col gap-2 min-w-[280px]">
+<div class="flex items-center justify-between font-label-mono text-label-mono">
+<span class="text-on-surface font-medium">1.42 GB Vault Allocated</span>
+<span class="text-on-surface-variant">412.8 GB NVMe Free</span>
+</div>
+<!-- Segmented bar -->
+<div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden flex">
+<div class="h-full bg-primary" style="width: 8%;"></div>
+<div class="h-full bg-outline" style="width: 2%;"></div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<span class="text-[11px] text-on-surface-variant font-label-mono">Max Offline Cache Limit: 100 GB</span>
+<button class="text-label-md font-label-md text-on-surface hover:underline font-medium">Relocate Vault</button>
+</div>
+</div>
+</section>
+</div>
+<!-- Persistent Audiophile Mini-Player -->
+<div class="fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-[900px] z-40">
+<div class="p-2.5 px-4 rounded-xl bg-surface-container-lowest/90 backdrop-blur-2xl shadow-xl flex items-center justify-between gap-4">
+<!-- Track Meta -->
+<div class="flex items-center gap-3 min-w-0">
+<div class="w-10 h-10 rounded overflow-hidden shrink-0 bg-surface-container">
+<img class="w-full h-full object-cover" data-alt="Architectural black and white minimalism with sharp angled brutalist facades and dark reflections." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDqCyq_zwfVVbQf8N4tEEgT9KqUE-gPQUEVjNch_2FFJ8SH7NtETKNCHcGnyCNYkL4Ms6WMqhRfXfSywBSUPQxZmhp9ocK4vAB5FgItnYG9LPztFbBwvOIJmye6M-9vwX0ghaqBo9FSTOPCY0ryZcpiPuCOSVEYMmlp3-HiyW-V1nUZ-s5wZhNA5XEFK-5kykRt6hQNSU1kC77NdAgtbq9IJcorXKzT8OmwxLppIDRil8KB5Hkp6il6uQ"/>
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2">
+<span class="font-headline-md text-body-md font-medium text-on-surface truncate">Midnight City Lights</span>
+<span class="font-label-mono text-[9px] px-1 py-0.2 rounded bg-surface-container text-on-surface shrink-0">DSD 2.8M</span>
+</div>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Solaris &amp; Kaelen</span>
+</div>
+</div>
+<!-- Center Player Controls & Scrub -->
+<div class="flex flex-col items-center gap-1.5 flex-1 max-w-md hidden sm:flex">
+<div class="flex items-center gap-3">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="Previous Master">
+<span class="material-symbols-outlined text-[18px]">skip_previous</span>
+</button>
+<button class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-sm" id="player-play-btn" title="Play">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="Next Master">
+<span class="material-symbols-outlined text-[18px]">skip_next</span>
+</button>
+</div>
+<div class="flex items-center gap-2 w-full">
+<span class="font-label-mono text-[10px] text-on-surface-variant">02:41</span>
+<div class="flex-1 h-1 bg-surface-container-high rounded-full overflow-hidden cursor-pointer relative group">
+<div class="h-full bg-primary rounded-full group-hover:bg-primary" style="width: 48%;"></div>
+</div>
+<span class="font-label-mono text-[10px] text-on-surface-variant">05:32</span>
+</div>
+</div>
+<!-- Quick Route to Now Playing Screen -->
+<div class="flex items-center gap-3 shrink-0">
+<div class="hidden md:flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">volume_up</span>
+<div class="w-16 h-1 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary" style="width: 72%;"></div>
+</div>
+</div>
+<a class="flex items-center gap-1 px-3 py-1.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md transition-colors" data-path="now-playing" href="#">
+<span class="material-symbols-outlined text-[15px]">graphic_eq</span>
+<span>View Master</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    // Sync downloads tab navigation active state
+    const navLinks = document.querySelectorAll('header nav a');
+    navLinks.forEach(link => {
+      if (link.getAttribute('data-path') === 'downloads') {
+        link.className = 'px-4 py-1.5 rounded-full text-[13px] font-semibold bg-white text-on-surface shadow-sm flex items-center justify-center';
+        link.setAttribute('aria-current', 'page');
+      } else {
+        link.className = 'px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center';
+        link.removeAttribute('aria-current');
+      }
+    });
+
+    // In-Vault filter chips interaction
+    const filterTabs = document.querySelectorAll('.filter-tab');
+    const vaultRows = document.querySelectorAll('.vault-row');
+
+    filterTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        filterTabs.forEach(t => {
+          t.className = 'filter-tab px-3 py-1.5 rounded text-label-md font-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer';
+        });
+        tab.className = 'filter-tab px-3 py-1.5 rounded text-label-md font-label-md bg-white text-on-surface shadow-sm cursor-pointer transition-all';
+
+        const filter = tab.getAttribute('data-filter');
+        vaultRows.forEach(row => {
+          if (filter === 'all' || row.getAttribute('data-format') === filter) {
+            row.style.display = 'flex';
+          } else {
+            row.style.display = 'none';
+          }
+        });
+      });
+    });
+
+    // Vault Master search query filtering
+    const searchInput = document.getElementById('vault-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        vaultRows.forEach(row => {
+          const text = row.innerText.toLowerCase();
+          row.style.display = text.includes(query) ? 'flex' : 'none';
+        });
+      });
+    }
+
+    // Pause all toggle
+    const pauseAllBtn = document.getElementById('pause-all-btn');
+    if (pauseAllBtn) {
+      let paused = false;
+      pauseAllBtn.addEventListener('click', () => {
+        paused = !paused;
+        pauseAllBtn.querySelector('span:last-child').textContent = paused ? 'Resume All' : 'Pause All';
+        pauseAllBtn.querySelector('.material-symbols-outlined').textContent = paused ? 'play_arrow' : 'pause';
+      });
+    }
+
+    // Mini player play/pause toggle
+    const playerPlayBtn = document.getElementById('player-play-btn');
+    if (playerPlayBtn) {
+      let isPlaying = false;
+      playerPlayBtn.addEventListener('click', () => {
+        isPlaying = !isPlaying;
+        playerPlayBtn.querySelector('.material-symbols-outlined').textContent = isPlaying ? 'pause' : 'play_arrow';
+      });
+    }
+  })();
+</script></main>
+<!-- Clean Monochrome Footer -->
+<footer class="relative z-10 w-full border-t border-black/[0.05] bg-surface py-6">
+<div class="max-w-[1100px] mx-auto px-8 flex items-center justify-between text-[12px] text-neutral-500">
+<span>Sona Optical Instrument v2.4</span>
+<div class="flex items-center gap-6">
+<a class="hover:text-neutral-900 transition-colors" data-path="telemetry-status" href="#">Engine Telemetry</a>
+<a class="hover:text-neutral-900 transition-colors" data-path="audio-preferences" href="#">Audio Stream Config</a>
+</div>
+</div>
+</footer>
+<!-- Micro-interactions Script -->
+<script>
+    (function () {
+      const filterChips = document.querySelectorAll('.filter-chip');
+      filterChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+          filterChips.forEach(c => {
+            c.className = 'filter-chip px-3.5 py-1.5 rounded-full text-[12px] font-medium bg-neutral-100 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200 transition-all cursor-pointer';
+          });
+          chip.className = 'filter-chip px-3.5 py-1.5 rounded-full text-[12px] font-medium bg-primary text-white shadow-sm cursor-pointer transition-all';
+        });
+      });
+
+      const downloadBtns = document.querySelectorAll('.download-action-btn');
+      downloadBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const originalContent = btn.innerHTML;
+          btn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>';
+          setTimeout(() => {
+            btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">check</span>';
+            setTimeout(() => {
+              btn.innerHTML = originalContent;
+            }, 2000);
+          }, 600);
+        });
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          const searchInput = document.getElementById('search-input');
+          if (searchInput) searchInput.focus();
+        }
+      });
+    })();
+  </script>
+</body></html>
