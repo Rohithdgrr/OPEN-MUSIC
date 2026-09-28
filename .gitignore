@@ -1,0 +1,14 @@
+# Build artifacts
+app/src-tauri/target/
+app/node_modules/
+app/dist/
+
+# Tauri generated
+app/src-tauri/gen/schemas/
+
+# Source design zips
+stitch_sona_minimal_music_downloader*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db

@@ -1,0 +1,71 @@
+/* TRANCE MUSIC — custom layer on top of the Stitch/Tailwind markup.
+ * Vanilla CSS only. Critical utilities are re-declared here so the app
+ * stays usable even if the Tailwind CDN is unreachable. */
+
+:root {
+  color-scheme: light;
+  --tm-text: #1a1c1d;
+  --tm-muted: #71717a;
+  --tm-ok: #15803d;
+  --tm-warn: #b45309;
+  --tm-bad: #b91c1c;
+}
+
+/* NOTE: no `.hidden` fallback here on purpose — Tailwind owns `hidden`
+ * and responsive variants like `md:flex`. A global `!important` fallback
+ * would permanently override them and break view switching. */
+
+/* Diagnostics */
+#diag {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#diag li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* History chips (rendered by JS) inherit Tailwind classes; keep them
+   inline on narrow windows. */
+#history:empty {
+  display: none;
+}
+
+/* Lyrics: active line emphasis (JS toggles text colour classes). */
+.lyric-line {
+  border-left: 2px solid transparent;
+}
+.lyric-line.text-on-surface {
+  border-left-color: #18181b;
+}
+
+/* Queue count badge floor. */
+#queue-count-badge:empty::after {
+  content: "0";
+}
+
+/* Keyboard access: visible focus on every interactive element. */
+:focus-visible {
+  outline: 2px solid #18181b;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respect reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Native audio fallback (hidden by default; shown only if custom
+   transport is unavailable). */
+#audio:not(.hidden) {
+  width: 100%;
+}

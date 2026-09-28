@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="web_standard" name="shell-type"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            surface: "#f9f9fb",
+            "surface-dim": "#f2f2f5",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f4f4f6",
+            "surface-container": "#ececee",
+            "surface-container-high": "#e4e4e7",
+            primary: "#18181b",
+            "on-primary": "#ffffff",
+            "on-surface": "#18181b",
+            "on-surface-variant": "#71717a",
+            outline: "#a1a1aa",
+            "outline-variant": "#e4e4e7"
+          },
+          fontFamily: {
+            sans: ["Geist", "system-ui", "-apple-system", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-surface font-sans text-on-surface antialiased relative min-h-screen selection:bg-neutral-200 selection:text-neutral-900">
+<!-- Minimal Hairline Header -->
+<header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-black/[0.05]">
+<div class="h-16 w-full max-w-[1100px] mx-auto px-8 flex items-center justify-between">
+<!-- Minimalist Monochrome Logo -->
+<div class="flex items-center gap-2.5">
+<div class="w-7 h-7 rounded-md bg-primary flex items-center justify-center text-white shadow-sm">
+<span class="material-symbols-outlined text-[16px]">graphic_eq</span>
+</div>
+<span class="font-semibold text-[15px] tracking-tight text-on-surface select-none">Sona</span>
+</div>
+<!-- Segmented Navigation with Active Pill Contract -->
+<nav class="flex items-center p-1 rounded-full bg-surface-container/60 border border-black/[0.04]" data-active-classes="bg-white text-on-surface shadow-sm font-semibold">
+<a aria-current="page" class="px-4 py-1.5 rounded-full transition-all duration-150 flex items-center justify-center bg-white text-on-surface shadow-sm font-semibold" data-path="search" href="#">Search</a>
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="downloads" href="#">Downloads</a>
+<a class="px-4 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-neutral-900 transition-all duration-150 flex items-center justify-center" data-path="now-playing" href="#">Now Playing</a>
+</nav>
+<!-- Clean Monochrome Avatar -->
+<div class="flex items-center">
+<div class="w-8 h-8 rounded-full border border-black/[0.08] bg-white flex items-center justify-center text-neutral-700 shadow-sm hover:border-black/20 transition-colors cursor-pointer">
+<span class="material-symbols-outlined text-[17px]">person</span>
+</div>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="relative z-10 w-full pt-16 min-h-[calc(100vh-64px)]"><div class="flex flex-col w-full">
+<div class="w-full max-w-[1100px] mx-auto px-8 pb-32">
+<!-- Search Section -->
+<section class="pt-8 pb-10 flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-3">
+<span class="px-2 py-0.5 rounded-lg bg-surface-container-high text-on-surface-variant font-label-mono text-label-mono uppercase">Lossless Index</span>
+<span class="text-on-surface-variant font-label-sm text-label-sm">• 82,410 Studio Captures</span>
+</div>
+<div class="hidden sm:flex items-center gap-1.5 font-label-mono text-label-mono text-on-surface-variant bg-surface-container px-2 py-1 rounded-lg">
+<span>QUICK QUERY</span>
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface text-[10px] shadow-sm font-label-mono">⌘K</kbd>
+</div>
+</div>
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Find your sound.</h1>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">
+          Search acoustic masters, architectural electronics, and pure bitstream captures engineered for high-fidelity spatial playback.
+        </p>
+</div>
+<!-- Search Input Container -->
+<div class="relative w-full group">
+<div class="absolute inset-0 -m-1 rounded-xl bg-gradient-to-r from-surface-container to-surface-container-high opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 pointer-events-none -z-10"></div>
+<div class="w-full bg-surface-container-lowest rounded-xl shadow-sm flex items-center px-4 py-2.5 transition-all">
+<span class="material-symbols-outlined text-outline mr-3 text-[22px]">search</span>
+<input class="w-full bg-transparent text-on-surface font-body-lg text-body-lg placeholder:text-outline focus:outline-none" id="search-input" placeholder="Search by artist, composer, format, acoustic hall..." type="text" value="Solaris &amp; Kaelen"/>
+<div class="flex items-center gap-2 pl-3">
+<button class="flex items-center justify-center w-7 h-7 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" title="Clear search">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+<button class="bg-primary text-on-primary font-label-md text-label-md px-4 py-2 rounded-lg hover:bg-inverse-surface transition-colors flex items-center gap-1.5 shadow-sm active:translate-y-0.5">
+<span>Search</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Filter Chips -->
+<div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+<button class="filter-chip px-3.5 py-1.5 rounded-full font-label-md text-label-md bg-primary text-on-primary shadow-sm cursor-pointer transition-all">All Tracks</button>
+<button class="filter-chip px-3.5 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer">Lossless Only</button>
+<button class="filter-chip px-3.5 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer">Studio Masters</button>
+<button class="filter-chip px-3.5 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer">Electronic</button>
+<button class="filter-chip px-3.5 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer">Ambient</button>
+<button class="filter-chip px-3.5 py-1.5 rounded-full font-label-md text-label-md bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-all cursor-pointer">Acoustic</button>
+<div class="ml-auto flex items-center gap-2 pl-4">
+<span class="font-label-mono text-label-mono text-on-surface-variant">SORT</span>
+<button class="px-2.5 py-1 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm flex items-center gap-1 hover:bg-surface-container-high transition-colors">
+<span>Bitrate: Descending</span>
+<span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Featured Master Releases Bento Section -->
+<section class="py-6 flex flex-col gap-5">
+<div class="flex items-end justify-between">
+<div>
+<div class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-label-mono text-label-mono text-on-surface-variant uppercase">Featured Collection</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface tracking-tight mt-1">Master Releases</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Studio grade 24-bit / 96kHz lossless captures rendered uncompressed</p>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<button class="w-8 h-8 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Bento Cards Grid with extended prominent artwork -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+<!-- Card 1: Solaris & Kaelen -->
+<div class="group relative bg-surface-container-lowest rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden">
+<div class="flex flex-col gap-3.5">
+<div class="relative w-full aspect-square rounded-lg overflow-hidden bg-primary-container">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Monochromatic brutalist architectural night scene with razor sharp light rays across glassy wet skyscraper reflections in charcoal black and cool silver tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDk1iu5Wd2-wb52wpKn8V4STUKw43VVJdITziU2WLQHCvgD6KB2lDu5-GCyUjj91AhKHX6_yD4NQlA3HOo9rqvrubVLWR8nXogdwk8MHWeK_CyOGiHItYbAVA6WjG5KiLdHFKo31M3_vLOUCKVCAi8Cs1e_-L-D6v7PwB8rNnQT4kPJurJTJ-XmwQRltebmv4jSMgBOehRhPZPZJZPhI2u6-baE5CQ4spYqZ6ow5KRExvGygAaADLMcgg"/>
+<div class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-primary/80 backdrop-blur text-on-primary font-label-mono text-[10px] tracking-wide uppercase">
+                MASTER
+              </div>
+<button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-on-primary text-primary flex items-center justify-center shadow-lg opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+<div>
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-headline-md text-on-surface truncate">Midnight City Lights</h3>
+<span class="font-label-mono text-label-mono text-on-surface-variant">2024</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant truncate">Solaris &amp; Kaelen</p>
+</div>
+</div>
+<div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface">graphic_eq</span>
+<span class="font-label-mono text-label-mono text-on-surface font-medium">FLAC 96/24 • 64.2 MB</span>
+</div>
+<button class="download-action-btn flex items-center justify-center w-7 h-7 rounded bg-surface-container-lowest hover:bg-primary hover:text-on-primary text-on-surface transition-colors shadow-xs" title="Download Master">
+<span class="material-symbols-outlined text-[15px]">download</span>
+</button>
+</div>
+</div>
+<!-- Card 2: Neon Horizons -->
+<div class="group relative bg-surface-container-lowest rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden">
+<div class="flex flex-col gap-3.5">
+<div class="relative w-full aspect-square rounded-lg overflow-hidden bg-primary-container">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" data-alt="Minimalist fog-shrouded monolithic concrete building in grayscale with horizontal light lines emerging through dense morning mist, stark geometric composition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBpgOlgJmGbjlYfWp08HOf0rr_tys6FhDp3NsZUWmQOzQCD7G_ucNjziqVf9q3QoT1kTWajrMhcv4VyD7a50AL7KTzGwy5jJO4fkZIZMIliR6kgt7y9Y34ho0ne50NpEl8PDLdKaP4BgQ6Vo_VXmQ6AWGknNqTKkjTjDILFnTcWrI9Yo9kKj2-GMrvU35EMHBrVi9KzBlH-2pxrw9epZUunC1X7UlhDEkmDsqBNKGWtLkb58CjONt6eSA"/>
+<div class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-primary/80 backdrop-blur text-on-primary font-label-mono text-[10px] tracking-wide uppercase">
+                192 kHz
+              </div>
+<button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-on-primary text-primary flex items-center justify-center shadow-lg opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+<div>
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-headline-md text-on-surface truncate">Neon Horizons</h3>
+<span class="font-label-mono text-label-mono text-on-surface-variant">2024</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant truncate">Aura Sound</p>
+</div>
+</div>
+<div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface">album</span>
+<span class="font-label-mono text-label-mono text-on-surface font-medium">FLAC 192k • 78.4 MB</span>
+</div>
+<button class="download-action-btn flex items-center justify-center w-7 h-7 rounded bg-surface-container-lowest hover:bg-primary hover:text-on-primary text-on-surface transition-colors shadow-xs" title="Download Master">
+<span class="material-symbols-outlined text-[15px]">download</span>
+</button>
+</div>
+</div>
+<!-- Card 3: Subtle Echoes -->
+<div class="group relative bg-surface-container-lowest rounded-xl p-4 shadow-sm hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden">
+<div class="flex flex-col gap-3.5">
+<div class="relative w-full aspect-square rounded-lg overflow-hidden bg-primary-container">
+<img alt="Subtle Echoes cover artwork" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZv5Rb-ENTYcGsxdrv5ZqNwURHuU6FfdKfRkGqi2qPalltoW5vaa3o0hrb0KbRawY3tBdf_br98d8Tg9XTqV7fEpMYAeo5W8RduQ15mldx4yAYyJFNC6-8nJWz3IBCc9cu_9wCrG96wWKRJAML313C17iy5AVRdtM_Lf9QYICFpI4_blUpOxr56U6FMcvc1qCWgYSVWspR_tf0UozcGuB7Ys84SDztYfv2An2TJIVr2ob5bGv_NLqSaA"/>
+<div class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-primary/80 backdrop-blur text-on-primary font-label-mono text-[10px] tracking-wide uppercase">
+                DSD BITSTREAM
+              </div>
+<button class="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-on-primary text-primary flex items-center justify-center shadow-lg opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+</div>
+<div>
+<div class="flex items-center justify-between">
+<h3 class="font-headline-md text-headline-md text-on-surface truncate">Subtle Echoes</h3>
+<span class="font-label-mono text-label-mono text-on-surface-variant">2023</span>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant truncate">Mirage • Spatial LP</p>
+</div>
+</div>
+<div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px] text-on-surface">waves</span>
+<span class="font-label-mono text-label-mono text-on-surface font-medium">DSD 2.8M • 142 MB</span>
+</div>
+<button class="download-action-btn flex items-center justify-center w-7 h-7 rounded bg-surface-container-lowest hover:bg-primary hover:text-on-primary text-on-surface transition-colors shadow-xs" title="Download Master">
+<span class="material-symbols-outlined text-[15px]">download</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Lossless Catalog Section with Extended 64px Thumbnails -->
+<section class="py-8 flex flex-col gap-4">
+<div class="flex items-center justify-between">
+<div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Lossless Catalog</h2>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Showing results matching "Solaris &amp; Kaelen" and correlated studio recordings</p>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span>Refine Filters</span>
+</button>
+<button class="px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-inverse-surface transition-colors flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[16px]">download_for_offline</span>
+<span>Batch Download</span>
+</button>
+</div>
+</div>
+<!-- Catalog Table Header -->
+<div class="grid grid-cols-12 gap-4 px-4 py-2 font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">
+<div class="col-span-1 text-center">#</div>
+<div class="col-span-6">Track &amp; Artist</div>
+<div class="col-span-2">Format / Rate</div>
+<div class="col-span-1 text-right">Size</div>
+<div class="col-span-1 text-right">Time</div>
+<div class="col-span-1 text-right">Actions</div>
+</div>
+<!-- List of Tracks -->
+<div class="flex flex-col gap-2">
+<!-- Item 1: Active Playing -->
+<div class="group grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-all">
+<div class="col-span-1 flex items-center justify-center">
+<!-- Animated Soundwave indicator -->
+<div class="flex items-end gap-0.5 h-4 w-4">
+<span class="w-0.5 bg-primary rounded-full animate-pulse h-2"></span>
+<span class="w-0.5 bg-primary rounded-full animate-pulse h-4" style="animation-delay: 150ms;"></span>
+<span class="w-0.5 bg-primary rounded-full animate-pulse h-3" style="animation-delay: 300ms;"></span>
+<span class="w-0.5 bg-primary rounded-full animate-pulse h-1" style="animation-delay: 450ms;"></span>
+</div>
+</div>
+<div class="col-span-6 flex items-center gap-4 min-w-0">
+<!-- Extended 64px Thumbnail -->
+<div class="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 shadow-sm bg-surface-container">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform" data-alt="Monochromatic brutalist architectural night scene with razor sharp light rays across glassy wet skyscraper reflections in charcoal black and cool silver tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUZlL2ZvUwFcADjZZmyUI5Dr9tWImD5T-TtzuwJkSy91FOGzmuCAphJIdXbDXBBfk8GZAXTXfUdEyZ3u6EOqvIkfI_jl5Ch2ytzyjcW6SHej-FilE50ar75VO1GABvk1MfDl4jeFnb_YfzzC24GUniMQAJrKQiIzJ8T6m0mb7YQU_co_nr_sMScd5mWkFOaRpWtARdEs23PhIRpuEj-rYnfI1ibnJLbmcpJsd3Wn13AyYNrFeSf45y0A"/>
+<div class="absolute inset-0 bg-primary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white text-[20px]">pause</span>
+</div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Midnight City Lights</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Solaris &amp; Kaelen • Spatial Motion EP</span>
+</div>
+</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-surface-container font-label-mono text-label-mono text-on-surface font-medium">FLAC 24-bit</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">96.0 kHz</span>
+</div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface-variant">
+            64.2 MB
+          </div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface">
+            05:42
+          </div>
+<div class="col-span-1 flex items-center justify-end gap-1">
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Download track">
+<span class="material-symbols-outlined text-[18px]">download</span>
+</button>
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="More options">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="group grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-all">
+<div class="col-span-1 flex items-center justify-center">
+<span class="font-label-mono text-label-mono text-on-surface-variant group-hover:hidden">02</span>
+<button class="hidden group-hover:flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<div class="col-span-6 flex items-center gap-4 min-w-0">
+<!-- Extended 64px Thumbnail -->
+<div class="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 shadow-sm bg-surface-container">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform" data-alt="Minimalist fog-shrouded monolithic concrete building in grayscale with horizontal light lines emerging through dense morning mist, stark geometric composition" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCl1u2Gs0cC0Z163eRKUTGK4fhLkWHBFk_kR30PgVKZrhG2JpuUNrbvPBfUYwmHhNCox39CZCpk-wjARFLWqgEwCZ9Eb3cW5NsHJWJNgBkzTOjZ7Me0ae6_7-2ozytvJBbAPZ92qxlF7toD5qggSZr1OgGlh4HXmHLZ3k_lcOdbACIkoXFHMLczsQKhdBQzMUgLq9w_yIXcrXe0N33g8SXm42IdUaZvSYTSBxPmpa5paZCG2LP-vYBNbw"/>
+<div class="absolute inset-0 bg-primary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white text-[20px]">play_arrow</span>
+</div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Neon Horizons (Deep Mix)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Aura Sound • Monolith Resonance</span>
+</div>
+</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-surface-container font-label-mono text-label-mono text-on-surface font-medium">FLAC 24-bit</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">192 kHz</span>
+</div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface-variant">
+            78.4 MB
+          </div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface">
+            04:18
+          </div>
+<div class="col-span-1 flex items-center justify-end gap-1">
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Download track">
+<span class="material-symbols-outlined text-[18px]">download</span>
+</button>
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="More options">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="group grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-all">
+<div class="col-span-1 flex items-center justify-center">
+<span class="font-label-mono text-label-mono text-on-surface-variant group-hover:hidden">03</span>
+<button class="hidden group-hover:flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<div class="col-span-6 flex items-center gap-4 min-w-0">
+<!-- Extended 64px Thumbnail -->
+<div class="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 shadow-sm bg-surface-container">
+<img alt="Subtle Echoes thumbnail" class="w-full h-full object-cover group-hover:scale-105 transition-transform" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZv5Rb-ENTYcGsxdrv5ZqNwURHuU6FfdKfRkGqi2qPalltoW5vaa3o0hrb0KbRawY3tBdf_br98d8Tg9XTqV7fEpMYAeo5W8RduQ15mldx4yAYyJFNC6-8nJWz3IBCc9cu_9wCrG96wWKRJAML313C17iy5AVRdtM_Lf9QYICFpI4_blUpOxr56U6FMcvc1qCWgYSVWspR_tf0UozcGuB7Ys84SDztYfv2An2TJIVr2ob5bGv_NLqSaA"/>
+<div class="absolute inset-0 bg-primary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white text-[20px]">play_arrow</span>
+</div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Subtle Echoes (Pure Acoustic)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Mirage • Hall Acoustic Sessions</span>
+</div>
+</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-primary text-on-primary font-label-mono text-label-mono font-medium">DSD 64</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">2.82 MHz</span>
+</div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface-variant">
+            142 MB
+          </div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface">
+            06:12
+          </div>
+<div class="col-span-1 flex items-center justify-end gap-1">
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Download track">
+<span class="material-symbols-outlined text-[18px]">download</span>
+</button>
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="More options">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="group grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-all">
+<div class="col-span-1 flex items-center justify-center">
+<span class="font-label-mono text-label-mono text-on-surface-variant group-hover:hidden">04</span>
+<button class="hidden group-hover:flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<div class="col-span-6 flex items-center gap-4 min-w-0">
+<!-- Extended 64px Thumbnail -->
+<div class="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 shadow-sm bg-surface-container">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform" data-alt="Close up black and white abstract photograph of analog synthesizer frequency oscillators and brushed metallic dials in subtle shadow" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9MGFDj0D0V9fDxOS-RK8U_a_kEVL3D99Yi5TRtx7NmzeiYkmE_vhmY1EXRBNIVJoliDCIC4_z9B2LtDJOXd8PsMXSTYWcoCqxXudnE64stveKt-msF6Kb9hQwD6_FstUuuClF_paund56eRa331TIxSVZbwppBGjI6WUH3DgIbL8zm2vVS8gzDX3X6msAEW2-umlYvCTfCwTnOiSK1wc5rqUG7fw8Mv6fkAdH-7y11vDwZmhJQWQVNw"/>
+<div class="absolute inset-0 bg-primary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white text-[20px]">play_arrow</span>
+</div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Oscillation Field IX</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Kaelen • Modulated Signals</span>
+</div>
+</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-surface-container font-label-mono text-label-mono text-on-surface font-medium">WAV 32-bit</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">96.0 kHz</span>
+</div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface-variant">
+            104 MB
+          </div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface">
+            05:08
+          </div>
+<div class="col-span-1 flex items-center justify-end gap-1">
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Download track">
+<span class="material-symbols-outlined text-[18px]">download</span>
+</button>
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="More options">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Item 5 -->
+<div class="group grid grid-cols-12 gap-4 items-center px-4 py-3 rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-all">
+<div class="col-span-1 flex items-center justify-center">
+<span class="font-label-mono text-label-mono text-on-surface-variant group-hover:hidden">05</span>
+<button class="hidden group-hover:flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<div class="col-span-6 flex items-center gap-4 min-w-0">
+<!-- Extended 64px Thumbnail -->
+<div class="relative w-16 h-16 rounded-lg overflow-hidden shrink-0 shadow-sm bg-surface-container">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform" data-alt="Minimalist monochromatic macro shot of violin strings and acoustic resonant wood bridge under clean cinematic overhead soft lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDoTZWSw1lsCYlAaGPI2Oc885yH8_xbIFt7vA4V1Hv26u_rtZATPnuv1ovshUcfKskacu_QpR2wapOQubHVy1OmDC51uNhObvS-wx1CitzKcpAZ8qPt7HtmY_LhIXCklMPE_9MixPshDT9VIEWPq_uoSu14wGGhqX-A8Pej0X9kHGg8cDgBkmSZGqi1euUlPJZvdGSoZmRGLaNGbaSRT9Yx9UrkvyR1Z3Y0L5aeravzH9fl-7rFJJdHRw"/>
+<div class="absolute inset-0 bg-primary/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+<span class="material-symbols-outlined text-white text-[20px]">play_arrow</span>
+</div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-body-lg font-medium text-on-surface truncate">Chamber Resonances (Nocturne)</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Solaris String Quartet • Studio Master Series</span>
+</div>
+</div>
+<div class="col-span-2 flex items-center gap-2">
+<span class="px-2 py-0.5 rounded bg-surface-container font-label-mono text-label-mono text-on-surface font-medium">ALAC 24-bit</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">88.2 kHz</span>
+</div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface-variant">
+            58.9 MB
+          </div>
+<div class="col-span-1 text-right font-label-mono text-label-mono text-on-surface">
+            03:54
+          </div>
+<div class="col-span-1 flex items-center justify-end gap-1">
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="Download track">
+<span class="material-symbols-outlined text-[18px]">download</span>
+</button>
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" title="More options">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- Docked Sticky Mini-Player Floating Bar (macOS Floating Glass Style) -->
+<div class="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-[960px] px-4 z-40">
+<div class="bg-surface-container-lowest/90 backdrop-blur-2xl rounded-2xl shadow-xl p-3.5 flex items-center justify-between gap-4">
+<!-- Current Track Info with Thumbnail -->
+<div class="flex items-center gap-3 min-w-0 w-64 shrink-0">
+<div class="relative w-12 h-12 rounded-lg overflow-hidden shrink-0 bg-primary-container shadow-xs">
+<img class="w-full h-full object-cover" data-alt="Monochromatic brutalist architectural night scene with razor sharp light rays across glassy wet skyscraper reflections in charcoal black and cool silver tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD7jLf5-tmm6c8F260mrRjF2sS3tzW2l9kKWOg8gnFxi6E73wvJKX_J42ImmjpQh3DrZ78wDjv5QCT9ETFsS4gCHjIv0Igp2tuWgMHlhbSDIKS-jn_2C2tQIGgi5aZKNVEONZqHxGAN0VtnqP6er1oHbuXCN4oxOEvr5ktQtjD0XRYr_Px2lQlZ-X9B6-JdxYLtxTWYsrabL__jXmkpTMX8v_jnM0rdY8m643TdVvbqIWS91VMGVdv98Q"/>
+<div class="absolute inset-0 bg-gradient-to-t from-primary/60 to-transparent"></div>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-md text-body-md font-medium text-on-surface truncate">Midnight City Lights</span>
+<span class="font-body-sm text-body-sm text-on-surface-variant truncate">Solaris &amp; Kaelen</span>
+</div>
+</div>
+<!-- Playback Central Controls & Live Scrubber -->
+<div class="flex flex-col items-center gap-1.5 flex-1 max-w-md">
+<div class="flex items-center gap-4">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="Shuffle">
+<span class="material-symbols-outlined text-[18px]">shuffle</span>
+</button>
+<button class="text-on-surface hover:text-primary transition-colors" title="Previous">
+<span class="material-symbols-outlined text-[20px]">skip_previous</span>
+</button>
+<button class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-inverse-surface transition-all shadow-sm" id="mini-play-toggle">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">pause</span>
+</button>
+<button class="text-on-surface hover:text-primary transition-colors" title="Next">
+<span class="material-symbols-outlined text-[20px]">skip_next</span>
+</button>
+<button class="text-on-surface-variant hover:text-on-surface transition-colors" title="Repeat">
+<span class="material-symbols-outlined text-[18px]">repeat</span>
+</button>
+</div>
+<div class="w-full flex items-center gap-2">
+<span class="font-label-mono text-[10px] text-on-surface-variant">02:14</span>
+<!-- Scrubber Bar with waveform overlay -->
+<div class="relative w-full h-1.5 bg-surface-container rounded-full overflow-hidden cursor-pointer group">
+<div class="absolute left-0 top-0 bottom-0 w-[42%] bg-primary rounded-full transition-all"></div>
+<div class="absolute left-[42%] top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"></div>
+</div>
+<span class="font-label-mono text-[10px] text-on-surface-variant">05:42</span>
+</div>
+</div>
+<!-- Volume & Format Utility Actions -->
+<div class="flex items-center gap-3 shrink-0">
+<div class="hidden md:flex items-center gap-2 px-2.5 py-1 rounded bg-surface-container font-label-mono text-label-mono text-on-surface">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-ping"></span>
+<span>96k / 24b</span>
+</div>
+<div class="hidden sm:flex items-center gap-2">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[18px]">volume_up</span>
+</button>
+<div class="w-16 h-1 bg-surface-container rounded-full overflow-hidden">
+<div class="w-3/4 h-full bg-on-surface"></div>
+</div>
+</div>
+<a class="bg-primary text-on-primary font-label-sm text-label-sm px-3 py-1.5 rounded-lg hover:bg-inverse-surface transition-colors flex items-center gap-1 shadow-xs" data-path="now-playing" href="#">
+<span>Expand</span>
+<span class="material-symbols-outlined text-[14px]">open_in_full</span>
+</a>
+</div>
+</div>
+</div>
+</div>
+<script>
+  (function() {
+    const playToggle = document.getElementById('mini-play-toggle');
+    if (playToggle) {
+      let isPlaying = true;
+      playToggle.addEventListener('click', () => {
+        isPlaying = !isPlaying;
+        playToggle.innerHTML = isPlaying 
+          ? '<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: \'FILL\' 1;">pause</span>'
+          : '<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: \'FILL\' 1;">play_arrow</span>';
+      });
+    }
+  })();
+</script></main>
+<!-- Clean Monochrome Footer -->
+<footer class="relative z-10 w-full border-t border-black/[0.05] bg-surface py-6">
+<div class="max-w-[1100px] mx-auto px-8 flex items-center justify-between text-[12px] text-neutral-500">
+<span>Sona Optical Instrument v2.4</span>
+<div class="flex items-center gap-6">
+<a class="hover:text-neutral-900 transition-colors" data-path="telemetry-status" href="#">Engine Telemetry</a>
+<a class="hover:text-neutral-900 transition-colors" data-path="audio-preferences" href="#">Audio Stream Config</a>
+</div>
+</div>
+</footer>
+<!-- Micro-interactions Script -->
+<script>
+    (function () {
+      const filterChips = document.querySelectorAll('.filter-chip');
+      filterChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+          filterChips.forEach(c => {
+            c.className = 'filter-chip px-3.5 py-1.5 rounded-full text-[12px] font-medium bg-neutral-100 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200 transition-all cursor-pointer';
+          });
+          chip.className = 'filter-chip px-3.5 py-1.5 rounded-full text-[12px] font-medium bg-primary text-white shadow-sm cursor-pointer transition-all';
+        });
+      });
+
+      const downloadBtns = document.querySelectorAll('.download-action-btn');
+      downloadBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const originalContent = btn.innerHTML;
+          btn.innerHTML = '<span class="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>';
+          setTimeout(() => {
+            btn.innerHTML = '<span class="material-symbols-outlined text-[15px]">check</span>';
+            setTimeout(() => {
+              btn.innerHTML = originalContent;
+            }, 2000);
+          }, 600);
+        });
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+          e.preventDefault();
+          const searchInput = document.getElementById('search-input');
+          if (searchInput) searchInput.focus();
+        }
+      });
+    })();
+  </script>
+</body></html>
