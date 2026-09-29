@@ -69,3 +69,72 @@
 #audio:not(.hidden) {
   width: 100%;
 }
+
+/* Global download toasts + hoisted error banner (see main.js).
+   Vanilla CSS on purpose: these elements are created/moved by JS and must
+   work even when the Tailwind CDN is unreachable. */
+#toast-stack {
+  position: fixed;
+  right: 1rem;
+  bottom: 7rem;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: min(22rem, calc(100vw - 2rem));
+}
+.tm-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  background: #1b1b1e;
+  color: #f0f0f2;
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  animation: tm-toast-in 0.18s ease-out;
+}
+.tm-toast .tm-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  margin-top: 0.3rem;
+  flex-shrink: 0;
+  background: #a1a1aa;
+}
+.tm-toast[data-kind="success"] .tm-dot {
+  background: #22c55e;
+}
+.tm-toast[data-kind="error"] .tm-dot {
+  background: #ef4444;
+}
+.tm-toast.tm-out {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.2s, transform 0.2s;
+}
+@keyframes tm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* #error ships inside the search view; main.js hoists it to <body> so
+   failures are visible from every view (Now Playing, queue, home…). */
+#error.tm-global {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 70;
+  max-width: min(40rem, calc(100vw - 2rem));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}

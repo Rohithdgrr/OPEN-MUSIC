@@ -131,6 +131,7 @@ Mirror JSON is navigated with `serde_json::Value` + helpers (`text()`, `number()
 |---|---|---|---|
 | `GET /stream` | `u` | relay upstream status + range headers + body | `400` bad scheme/host, `502` upstream error |
 | `GET /stream` | `id` | resolve (memoised) then relay | `400` missing params, `502` resolve failure |
+| `GET /file` | `id` | stream a saved song out of the offline vault, with byte ranges | `400` bad id, `404` not in the vault, `403` path outside it |
 
 Relayed response headers only: `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `Cache-Control`. Everything else is dropped deliberately (no upstream cookies, no correlation ids, no server fingerprinting).
 
@@ -152,6 +153,8 @@ Rules:
 2. A user string may never become a host, path, or header.
 3. The proxy fetches only `https://*.saavncdn.com`.
 4. No outbound `POST`, no cookies, no credentials anywhere.
+5. Outbound catalog/metadata hosts are fixed in code: `www.jiosaavn.com`, the `MIRRORS` list, and `lrclib.net` (lyrics only). Titles and artist names reach them as percent-encoded query values, never as host or path.
+6. The frontend never supplies a filesystem path. Downloads are addressed by song id, and vault reads/deletes/reveals only ever touch paths the app itself wrote into `<Downloads>/TRANCE MUSIC/index.json`, re-checked against the vault root first.
 
 ---
 
@@ -397,8 +400,8 @@ Any new panel talks only to the four IPC commands. No new coupling to HTTP.
 │ proxy.rs — https + host allow-list,  │
 │            fixed response header set │
 └──────────────────┬───────────────────┘
-                   │ only these two hosts
-        saavn.sumit.co   aac.saavncdn.com
+                   │ fixed hosts, all https
+      www.jiosaavn.com (+ MIRRORS)   lrclib.net   *.saavncdn.com
 ```
 
 - **No secrets exist**, so there is no key management, no token storage, no leak surface.

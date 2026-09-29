@@ -53,6 +53,23 @@ pub struct Track {
     /// Lifetime play count (sorting). 0 when the source omits it.
     #[serde(default)]
     pub plays: u64,
+    /// `None` when the source does not report the flag — never assume "no",
+    /// because the lyrics command only skips the first-party fetch on a
+    /// definite `false`.
+    #[serde(default)]
+    pub has_lyrics: Option<bool>,
+    #[serde(default)]
+    pub artist_ids: Vec<String>,
+    #[serde(default)]
+    pub album_id: String,
+    #[serde(default)]
+    pub year: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub explicit: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -139,11 +156,13 @@ pub fn check_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 32 {
         return Err(format!("invalid song id: {id}"));
     }
-    // Real JioSaavn ids contain hyphens (e.g. "i-4OQoee"). Dots and slashes
-    // stay banned: they are the only characters that enable path tricks.
+    // Real JioSaavn ids contain hyphens (e.g. "i-4OQoee") and their page
+    // tokens contain commas (e.g. ",gDuHtyl,iA_", the last segment of an
+    // artist's perma_url). Dots and slashes stay banned: they are the only
+    // characters that enable path tricks.
     if !id
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ',')
     {
         return Err(format!("invalid song id: {id}"));
     }
@@ -189,6 +208,20 @@ fn number(v: &Value, key: &str) -> Option<f64> {
 /// Numbers arrive as JSON numbers on some sources and as strings on others.
 pub(crate) fn num_any(v: &Value, key: &str) -> Option<f64> {
     number(v, key).or_else(|| text(v, key).and_then(|s| s.parse::<f64>().ok()))
+}
+
+/// Flags arrive as bools on mirrors and as `"true"`/`"1"` strings officially.
+pub(crate) fn flag(v: &Value, key: &str) -> Option<bool> {
+    match v.get(key)? {
+        Value::Bool(b) => Some(*b),
+        Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" => Some(true),
+            "false" | "0" | "no" => Some(false),
+            _ => None,
+        },
+        Value::Number(n) => n.as_i64().map(|n| n != 0),
+        _ => None,
+    }
 }
 
 /// Decode the handful of HTML entities JioSaavn ships inside titles.
@@ -268,6 +301,48 @@ pub(crate) fn best_image(images: &Value) -> String {
         .unwrap_or_default()
 }
 
+/// Rewrite the small CDN renditions (`-50x50`, `-150x150`, `-150x150x100`,
+/// dashed or underscored) to the 500px master and force the CDN onto https.
+/// The size token in the filename is the only signal the payload gives us
+/// about the dimensions of the file behind the URL.
+pub(crate) fn upgrade_image(url: &str) -> String {
+    // Longest tokens first: `-150x150x100` must match before `-150x150`.
+    // Dashed forms keep their dash; bare forms cover `..._150x150.jpg`.
+    const SMALL: [(&str, &str); 6] = [
+        ("-50x50x100", "-500x500"),
+        ("-150x150x100", "-500x500"),
+        ("-50x50", "-500x500"),
+        ("-150x150", "-500x500"),
+        ("50x50", "500x500"),
+        ("150x150", "500x500"),
+    ];
+    let mut out = url.to_string();
+    for (small, big) in SMALL {
+        out = out.replace(small, big);
+    }
+    if let Some(rest) = out.strip_prefix("http://") {
+        let authority = rest.split('/').next().unwrap_or("");
+        if authority.eq_ignore_ascii_case("saavncdn.com")
+            || authority
+                .to_ascii_lowercase()
+                .ends_with(".saavncdn.com")
+        {
+            out = format!("https://{rest}");
+        }
+    }
+    out
+}
+
+/// Largest artwork for an `image` field — a rendition array (`[{quality,url}]`)
+/// or a plain URL string — always upgraded to the 500px master.
+pub(crate) fn image_url(images: &Value) -> String {
+    let raw = match images {
+        Value::String(s) => s.clone(),
+        other => best_image(other),
+    };
+    upgrade_image(&raw)
+}
+
 fn artist_names(artists: &Value) -> String {
     let mut names: Vec<String> = Vec::new();
     for group in ["primary", "featured", "all"] {
@@ -314,6 +389,12 @@ fn parse_song(v: &Value) -> Track {
             a
         }
     };
+    let artist_ids = v["artists"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| text(a, "id"))
+        .collect();
 
     Track {
         id: text(v, "id").unwrap_or_default(),
@@ -322,7 +403,7 @@ fn parse_song(v: &Value) -> Track {
         album: html_unescape(&album),
         duration_secs,
         duration: fmt_duration(duration_secs),
-        image: best_image(&v["image"]),
+        image: image_url(&v["image"]),
         page_url: text(v, "url").or_else(|| text(v, "perma_url")).unwrap_or_default(),
         hq: match v.get("320kbps") {
             Some(Value::Bool(b)) => *b,
@@ -333,6 +414,13 @@ fn parse_song(v: &Value) -> Track {
             .or_else(|| num_any(v, "play_count"))
             .unwrap_or(0.0)
             .max(0.0) as u64,
+        has_lyrics: flag(v, "has_lyrics").or_else(|| flag(v, "hasLyrics")),
+        artist_ids,
+        album_id: text(&v["album"], "id").unwrap_or_default(),
+        year: text(v, "year").unwrap_or_default(),
+        label: text(v, "label").unwrap_or_default(),
+        language: text(v, "language").unwrap_or_default(),
+        explicit: flag(v, "explicit").unwrap_or(false),
     }
 }
 
@@ -418,24 +506,44 @@ async fn get_json(client: &reqwest::Client, path: &str) -> Result<Value, String>
 // Catalog operations
 // ---------------------------------------------------------------------------
 
+/// One page of search results after duplicate collapsing.
+///
+/// `page_full` reports whether upstream still had a *full* page to give,
+/// measured **before** dedup shrinks it — the UI decides "no more results"
+/// from this, never from `tracks.len()`.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct SearchPage {
+    pub tracks: Vec<Track>,
+    pub page_full: bool,
+}
+
 /// Search the catalog, page `page` (1-based).
 ///
 /// Official JioSaavn first (paginated, no mirror rate limit); the community
 /// mirrors are the fallback when the first-party call fails outright.
+/// Duplicate collapsing happens here, once, so the raw page length stays
+/// available for `page_full`.
 pub async fn search_songs(
     client: &reqwest::Client,
     query: &str,
     limit: u32,
     page: u32,
-) -> Result<Vec<Track>, String> {
-    match crate::official::search(client, query, limit, page).await {
-        Ok(tracks) => Ok(tracks),
-        Err(primary) => mirror_search_songs(client, query, limit)
+) -> Result<SearchPage, String> {
+    let raw = match crate::official::search(client, query, limit, page).await {
+        Ok(tracks) => tracks,
+        Err(primary) => mirror_search_songs(client, query, limit, page)
             .await
             .map_err(|fallback| {
                 format!("search failed — jiosaavn.com: {primary}; mirrors: {fallback}")
-            }),
-    }
+            })?,
+    };
+    // Both sources clamp to at most 40 results per page.
+    let page_full = raw.len() as u32 >= limit.clamp(1, 40);
+    Ok(SearchPage {
+        tracks: dedup_tracks(raw),
+        page_full,
+    })
 }
 
 /// Resolve a song id into metadata plus every rendition of the full file.
@@ -453,23 +561,26 @@ async fn mirror_search_songs(
     client: &reqwest::Client,
     query: &str,
     limit: u32,
+    page: u32,
 ) -> Result<Vec<Track>, String> {
     let query = query.trim();
     if query.is_empty() {
         return Err("empty query".into());
     }
     let limit = limit.clamp(1, 50);
+    let page = page.max(1);
     let encoded = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("query", query)
         .finish();
-    let path = format!("/api/search/songs?{encoded}&limit={limit}");
+    let path = format!("/api/search/songs?{encoded}&limit={limit}&page={page}");
     let json = get_json(client, &path).await?;
 
     let results = json
         .pointer("/data/results")
-        .and_then(|x| x.as_array())
+        .and_then(Value::as_array)
         .ok_or_else(|| format!("search response missing data.results"))?;
 
+    // Raw parse: `search_songs` collapses duplicates once, page length intact.
     Ok(results.iter().map(parse_song).collect())
 }
 
@@ -527,6 +638,226 @@ pub fn best_quality(qualities: &[QualityUrl], prefer: &str) -> Option<QualityUrl
                 .unwrap_or(0)
         })
         .cloned()
+}
+
+// ---------------------------------------------------------------------------
+// Duplicate collapsing
+// ---------------------------------------------------------------------------
+
+/// Collapsed copies may disagree on duration by this much (upstream rounds
+/// the same recording differently across albums).
+const DURATION_TOLERANCE_S: u64 = 3;
+
+/// Collapse duplicate catalog entries, keeping the best copy.
+///
+/// Upstream repeats songs two ways: byte-identical entries with the same id,
+/// and the same recording under different ids (original vs remaster vs
+/// compilation — different album/year, sometimes a "Remastered" title
+/// suffix, sometimes the same song credited with a different bill).
+///
+/// Pass 1 drops exact-id repeats. Pass 2 buckets candidates by normalized
+/// title; inside a bucket two copies merge when their artist credits agree
+/// (order-insensitive, extra credits tolerated — see [`credit_names`] /
+/// [`credits_overlap`]) and their durations are within
+/// [`DURATION_TOLERANCE_S`]. The surviving copy is the one with a 320 kbps
+/// rendition, then the highest play count, then the shortest title; ties
+/// keep first-seen order.
+///
+/// Entries without an id or without a duration carry no reliable
+/// fingerprint, so they only match themselves.
+pub fn dedup_tracks(tracks: Vec<Track>) -> Vec<Track> {
+    // Pass 1: exact ids (empty ids are not identity — keep those rows).
+    let mut seen_ids = std::collections::HashSet::new();
+    let mut unique: Vec<Track> = Vec::with_capacity(tracks.len());
+    for t in tracks {
+        if t.id.is_empty() || seen_ids.insert(t.id.clone()) {
+            unique.push(t);
+        }
+    }
+    // Pass 2: same recording under different ids.
+    let mut by_title: std::collections::HashMap<String, Vec<usize>> =
+        std::collections::HashMap::new();
+    let mut out: Vec<Track> = Vec::with_capacity(unique.len());
+    for t in unique {
+        let title_key = norm_text(&t.title);
+        let fingerprinted = !t.id.is_empty() && t.duration_secs > 0;
+        let mut matched: Option<usize> = None;
+        if fingerprinted {
+            let artists = credit_names(&t.artist);
+            if let Some(candidates) = by_title.get(&title_key) {
+                matched = candidates.iter().copied().find(|&i| {
+                    let kept = &out[i];
+                    kept.duration_secs.abs_diff(t.duration_secs) <= DURATION_TOLERANCE_S
+                        && credits_overlap(&credit_names(&kept.artist), &artists)
+                });
+            }
+        }
+        match matched {
+            Some(i) => {
+                if better_copy(&t, &out[i]) {
+                    out[i] = t;
+                }
+            }
+            None => {
+                if fingerprinted {
+                    by_title.entry(title_key).or_default().push(out.len());
+                }
+                out.push(t);
+            }
+        }
+    }
+    out
+}
+
+/// Split a credit string into comparable artist names: lowercase, internal
+/// whitespace collapsed, split on the separators JioSaavn bills with
+/// (`, ; & /` and the `feat`/`ft`/`featuring` markers). Hyphenated billing
+/// like "Shankar-Ehsaan-Loy" stays one name.
+fn credit_names(s: &str) -> std::collections::HashSet<String> {
+    const SEPS: [char; 4] = [',', ';', '&', '/'];
+    const MARKERS: [&str; 3] = ["feat", "ft", "featuring"];
+    let mut names = std::collections::HashSet::new();
+    let mut cur = String::new();
+    for segment in s.to_lowercase().split(SEPS) {
+        for word in segment.split_whitespace() {
+            // "feat." and "ft," count as markers too — trim the punctuation.
+            let word = word.trim_matches(|c: char| !c.is_alphanumeric());
+            if word.is_empty() {
+                continue;
+            }
+            if MARKERS.contains(&word) {
+                push_credit_name(&mut cur, &mut names);
+            } else if !cur.is_empty() {
+                cur.push(' ');
+                cur.push_str(word);
+            } else {
+                cur.push_str(word);
+            }
+        }
+        push_credit_name(&mut cur, &mut names);
+    }
+    names
+}
+
+fn push_credit_name(cur: &mut String, names: &mut std::collections::HashSet<String>) {
+    let name = cur.split_whitespace().collect::<Vec<_>>().join(" ");
+    cur.clear();
+    if !name.is_empty() {
+        names.insert(name);
+    }
+}
+
+/// True when two credit lists plausibly bill the same artist set: at least
+/// half of the smaller list matches (order never matters; an empty list is
+/// no evidence, so it never merges).
+fn credits_overlap(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> bool {
+    if a.is_empty() || b.is_empty() {
+        return false;
+    }
+    let common = a.intersection(b).count();
+    common * 2 >= a.len().min(b.len())
+}
+
+/// Lowercase alphanumeric fingerprint: bracketed version tags
+/// ("(Remastered 2024)") and bare remaster/year tokens are dropped so the
+/// original and its reissues share one key — but brackets marking a
+/// different recording ("(Live)", "[Remix]") are kept as key material, as
+/// are unbracketed remix/live/acoustic suffixes.
+fn norm_text(s: &str) -> String {
+    /// Bracket words that mark a different recording: keep the group.
+    const KEEP: &[&str] = &[
+        "live",
+        "remix",
+        "remixed",
+        "acoustic",
+        "unplugged",
+        "edit",
+        "mix",
+        "version",
+        "cover",
+        "karaoke",
+        "instrumental",
+        "demo",
+        "reimagined",
+        "rework",
+        "slowed",
+        "reverb",
+        "sped",
+        "nightcore",
+        "extended",
+        "club",
+        "radio",
+    ];
+    let lower = s.to_lowercase();
+    let mut kept = String::with_capacity(lower.len());
+    let mut depth = 0u32;
+    let mut inner = String::new();
+    for c in lower.chars() {
+        match c {
+            '(' | '[' => {
+                if depth == 0 {
+                    inner.clear();
+                }
+                depth += 1;
+                if depth > 1 {
+                    inner.push(c);
+                }
+            }
+            ')' | ']' => {
+                if depth == 0 {
+                    continue; // Unbalanced closer: ignore it.
+                }
+                depth -= 1;
+                if depth == 0 {
+                    let words: Vec<&str> =
+                        inner.split(|c: char| !c.is_alphanumeric()).collect();
+                    if words.iter().any(|w| KEEP.contains(w)) {
+                        kept.push(' ');
+                        kept.push_str(&inner);
+                    }
+                    inner.clear();
+                } else {
+                    inner.push(c);
+                }
+            }
+            _ => {
+                if depth == 0 {
+                    kept.push(c);
+                } else {
+                    inner.push(c);
+                }
+            }
+        }
+    }
+    if depth > 0 {
+        // Unclosed bracket: treat the remainder as plain text rather than
+        // dropping the rest of the title.
+        kept.push(' ');
+        kept.push_str(&inner);
+    }
+    kept.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| {
+            !w.is_empty()
+                && !matches!(*w, "remaster" | "remastered" | "remastering")
+                && !(w.len() == 4 && w.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Ordering for colliding copies: 320 kbps rendition, then play count, then
+/// the shortest title (fewest version suffixes); ties keep first-seen.
+fn better_copy(a: &Track, b: &Track) -> bool {
+    if a.hq != b.hq {
+        return a.hq;
+    }
+    if a.plays != b.plays {
+        return a.plays > b.plays;
+    }
+    if a.title.len() != b.title.len() {
+        return a.title.len() < b.title.len();
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +970,10 @@ mod tests {
     fn check_id_accepts_real_ids_and_rejects_injection() {
         assert!(check_id("aRZbUYD7").is_ok());
         assert!(check_id("i-4OQoee").is_ok(), "real ids contain hyphens");
+        assert!(
+            check_id(",gDuHtyl,iA_").is_ok(),
+            "artist page tokens contain commas"
+        );
         assert!(check_id("").is_err());
         assert!(check_id("../../etc/passwd").is_err());
         assert!(check_id("a.b.c").is_err());
@@ -665,6 +1000,209 @@ mod tests {
         assert_eq!(best_quality(&qs, "256kbps").unwrap().url, "u320");
         assert!(best_quality(&[], "320kbps").is_none());
     }
+
+    fn dup_track(id: &str, title: &str, artist: &str, secs: u64, hq: bool, plays: u64) -> Track {
+        Track {
+            id: id.into(),
+            title: title.into(),
+            artist: artist.into(),
+            album: "Album".into(),
+            duration_secs: secs,
+            duration: fmt_duration(secs),
+            image: String::new(),
+            page_url: String::new(),
+            hq,
+            plays,
+            has_lyrics: None,
+            artist_ids: Vec::new(),
+            album_id: String::new(),
+            year: String::new(),
+            label: String::new(),
+            language: String::new(),
+            explicit: false,
+        }
+    }
+
+    #[test]
+    fn dedup_removes_same_id_repeats() {
+        let tracks = vec![
+            dup_track("a", "Song", "Singer", 200, false, 5),
+            dup_track("b", "Other", "Singer", 200, false, 5),
+            dup_track("a", "Song", "Singer", 200, false, 5),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].id, "a");
+        assert_eq!(out[1].id, "b");
+    }
+
+    #[test]
+    fn dedup_collapses_remaster_under_a_different_id_and_keeps_hq() {
+        let tracks = vec![
+            dup_track("std1", "Midnight City Lights", "Solaris & Kaelen", 240, false, 900),
+            dup_track("rem9", "Midnight City Lights (Remastered 2024)", "Solaris & Kaelen", 241, true, 100),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 1, "same recording, one row");
+        assert_eq!(out[0].id, "rem9", "320 kbps copy wins over play count");
+    }
+
+    #[test]
+    fn dedup_prefers_more_plays_then_shorter_title() {
+        let tracks = vec![
+            dup_track("x", "Song - 2024 Remaster", "Singer", 200, false, 10),
+            dup_track("y", "Song", "Singer", 200, false, 50),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].id, "y");
+    }
+
+    #[test]
+    fn dedup_keeps_distinct_songs() {
+        let tracks = vec![
+            dup_track("a", "Song", "Singer One", 200, false, 5),
+            dup_track("b", "Song", "Singer Two", 200, false, 5),
+            dup_track("c", "Song (Live)", "Singer One", 200, false, 5),
+            dup_track("d", "Song Remix", "Singer One", 200, false, 5),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 4, "different artist and live/remix markers survive");
+    }
+
+    #[test]
+    fn dedup_only_matches_durationless_entries_by_id() {
+        let tracks = vec![
+            dup_track("a", "Song", "Singer", 0, false, 5),
+            dup_track("b", "Song", "Singer", 0, false, 5),
+            dup_track("a", "Song", "Singer", 0, false, 5),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 2, "no duration, no content merging");
+    }
+
+    #[test]
+    fn dedup_ignores_artist_credit_order() {
+        // Live JioSaavn shape: same song, bills swapped, ±1s rounding.
+        let tracks = vec![
+            dup_track("a", "Tum Hi Ho", "Mithoon, Arijit Singh", 262, false, 900),
+            dup_track("b", "Tum Hi Ho (From \"Aashiqui 2\")", "Arijit Singh, Mithoon", 261, false, 50),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 1, "credit order must not split one recording");
+        assert_eq!(out[0].id, "a", "more plays wins");
+    }
+
+    #[test]
+    fn dedup_tolerates_extra_lyricist_credits() {
+        let tracks = vec![
+            dup_track(
+                "a",
+                "Mast Magan",
+                "Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada",
+                280,
+                false,
+                10,
+            ),
+            dup_track(
+                "b",
+                "Mast Magan (From \"2 States\")",
+                "Amitabh Bhattacharya, Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada",
+                280,
+                false,
+                20,
+            ),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 1, "an extra composer credit is still one song");
+        assert_eq!(out[0].id, "b", "higher plays wins");
+    }
+
+    #[test]
+    fn dedup_merges_within_three_seconds_and_splits_beyond() {
+        let close = vec![
+            dup_track("a", "Song", "Singer", 261, false, 1),
+            dup_track("b", "Song", "Singer", 264, false, 1),
+        ];
+        assert_eq!(dedup_tracks(close).len(), 1, "±3s counts as the same cut");
+
+        let far = vec![
+            dup_track("a", "Song", "Singer", 261, false, 1),
+            dup_track("b", "Song", "Singer", 265, false, 1),
+        ];
+        assert_eq!(dedup_tracks(far).len(), 2, "beyond tolerance stays apart");
+    }
+
+    #[test]
+    fn dedup_keeps_same_title_by_unrelated_credits() {
+        let tracks = vec![
+            dup_track("a", "Intro", "One Artist", 60, false, 1),
+            dup_track("b", "Intro", "Totally Different Act", 61, false, 1),
+        ];
+        assert_eq!(dedup_tracks(tracks).len(), 2, "disjoint credits never merge");
+    }
+
+    /// Captured live from `search.getResults?q=arijit&n=20&p=1`: twenty rows,
+    /// nine unique songs. Bills reordered, lyricists added, ±1s rounding —
+    /// every way upstream re-bills one recording.
+    #[test]
+    fn dedup_collapses_a_real_twenty_row_page_to_nine_songs() {
+        let rows: &[(&str, &str, &str, u64)] = &[
+            ("g1", "Gehra Hua (From \"Dhurandhar\")", "Shashwat Sachdev, Arijit Singh, Irshad Kamil, Armaan Khan", 362),
+            ("g2", "Gehra Hua", "Irshad Kamil, Arijit Singh, Shashwat Sachdev, Armaan Khan", 362),
+            ("t1", "Tum Hi Ho", "Mithoon, Arijit Singh", 262),
+            ("t2", "Tum Hi Ho (From \"Aashiqui 2\")", "Arijit Singh, Mithoon", 261),
+            ("t3", "Tum Hi Ho (From \"Aashiqui 2\")", "Mithoon, Arijit Singh", 261),
+            ("m1", "Mast Magan (From \"2 States\")", "Amitabh Bhattacharya, Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada", 280),
+            ("m2", "Mast Magan", "Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada", 280),
+            ("s1", "Samjhawan", "Jawad Ahmad, Sharib Toshi, Arijit Singh, Shreya Ghoshal", 269),
+            ("o1", "O Maahi", "Pritam, Arijit Singh, Irshad Kamil", 233),
+            ("o2", "O Maahi (From \"Dunki\")", "Irshad Kamil, Pritam, Arijit Singh", 233),
+            ("h1", "Tere Hawaale (From \"Laal Singh Chaddha\")", "Amitabh Bhattacharya, Pritam, Arijit Singh, Shilpa Rao", 346),
+            ("h2", "Tere Hawaale", "Pritam, Arijit Singh, Shilpa Rao", 346),
+            ("r1", "Sanam Re (From \"Sanam Re\")", "Mithoon, Arijit Singh", 308),
+            ("r2", "Sanam Re", "Mithoon, Arijit Singh", 308),
+            ("k1", "Tum Kya Mile - Pritam' s Version (From \"Rocky Aur Rani Kii Prem Kahaani\")", "Amitabh Bhattacharya, Pritam, Arijit Singh, Shreya Ghoshal", 192),
+            ("a1", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
+            ("a2", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
+            ("a3", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
+            ("a4", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
+            ("a5", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
+        ];
+        let tracks = rows
+            .iter()
+            .map(|(id, title, artist, secs)| dup_track(id, title, artist, *secs, false, 5))
+            .collect();
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 9, "20 upstream rows are 9 unique songs");
+    }
+
+    #[test]
+    fn credit_names_split_bills_and_ignore_order() {
+        let a = credit_names("Mithoon, Arijit Singh");
+        let b = credit_names("Arijit Singh & Mithoon");
+        assert_eq!(a, b, "separators and order are cosmetic");
+
+        let feat = credit_names("Arijit Singh feat. Pritam");
+        assert!(feat.contains("arijit singh") && feat.contains("pritam"));
+
+        let hyphen = credit_names("Shankar-Ehsaan-Loy");
+        assert!(hyphen.contains("shankar-ehsaan-loy"), "billing stays whole");
+    }
+
+    #[test]
+    fn credits_overlap_requires_half_of_the_smaller_bill() {
+        let full = credit_names("A, B, C, D");
+        let half = credit_names("B, C, D");
+        assert!(credits_overlap(&full, &half), "3 of 4 matches");
+
+        let some = credit_names("A, X, Y");
+        assert!(!credits_overlap(&full, &some), "1 of 4 is not the same act");
+
+        let empty = std::collections::HashSet::new();
+        assert!(!credits_overlap(&empty, &full), "no credit is no evidence");
+    }
+
 
     #[test]
     fn media_host_allow_list_is_suffix_safe() {
@@ -707,6 +1245,56 @@ mod tests {
     }
 
     #[test]
+    fn upgrade_image_upscales_small_renditions_and_forces_https() {
+        // Launch-data album art: dashed size token, plain http.
+        assert_eq!(
+            upgrade_image("http://c.saavncdn.com/765/x-150x150.jpg"),
+            "https://c.saavncdn.com/765/x-500x500.jpg"
+        );
+        // Artist art uses an underscored token and keeps its cache-buster.
+        assert_eq!(
+            upgrade_image("http://c.saavncdn.com/artists/A_150x150.jpg?bch=1"),
+            "https://c.saavncdn.com/artists/A_500x500.jpg?bch=1"
+        );
+        // 50px variant and the x100 marker both land on the 500px master.
+        assert_eq!(
+            upgrade_image("https://c.saavncdn.com/x-50x50.jpg"),
+            "https://c.saavncdn.com/x-500x500.jpg"
+        );
+        assert_eq!(
+            upgrade_image("https://c.saavncdn.com/x-150x150x100.jpg"),
+            "https://c.saavncdn.com/x-500x500.jpg"
+        );
+        // Already-maximal and size-less URLs pass through untouched.
+        assert_eq!(
+            upgrade_image("https://c.saavncdn.com/x-500x500.jpg"),
+            "https://c.saavncdn.com/x-500x500.jpg"
+        );
+        assert_eq!(
+            upgrade_image("https://c.saavncdn.com/editorial/E.jpg?bch=9"),
+            "https://c.saavncdn.com/editorial/E.jpg?bch=9"
+        );
+    }
+
+    #[test]
+    fn image_url_handles_both_string_and_rendition_array_payloads() {
+        assert_eq!(
+            image_url(&serde_json::json!("http://c.saavncdn.com/a-150x150.jpg")),
+            "https://c.saavncdn.com/a-500x500.jpg"
+        );
+        let arr = serde_json::json!([
+            {"quality": "150x150", "url": "https://c.saavncdn.com/a-150x150.jpg"},
+            {"quality": "500x500", "url": "https://c.saavncdn.com/a-500x500.jpg"}
+        ]);
+        assert_eq!(
+            image_url(&arr),
+            "https://c.saavncdn.com/a-500x500.jpg",
+            "array payloads pick the largest entry, not the first"
+        );
+        assert_eq!(image_url(&serde_json::Value::Null), "");
+    }
+
+    #[test]
     fn html_entities_are_decoded_once() {
         assert_eq!(
             html_unescape("Gehra Hua (From &quot;Dhurandhar&quot;)"),
@@ -728,7 +1316,8 @@ mod tests {
         let client = api_client();
         let tracks = search_songs(&client, "tum hi ho", 5, 1)
             .await
-            .expect("live search must succeed");
+            .expect("live search must succeed")
+            .tracks;
         assert!(!tracks.is_empty(), "search returned no tracks");
         assert!(!tracks[0].id.is_empty());
         assert!(!tracks[0].title.is_empty());
@@ -742,7 +1331,8 @@ mod tests {
         let client = api_client();
         let tracks = search_songs(&client, "tum hi ho", 1, 1)
             .await
-            .expect("search");
+            .expect("search")
+            .tracks;
         let song = fetch_song(&client, &tracks[0].id).await.expect("resolve");
         assert!(song.qualities.len() >= 1);
         let chosen = best_quality(&song.qualities, "320kbps").unwrap();

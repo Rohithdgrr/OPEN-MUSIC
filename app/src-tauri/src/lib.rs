@@ -5,30 +5,74 @@
 //! (catalog) and `proxy.rs` (media relay) territory.
 
 mod jiosaavn;
+mod lyrics;
 mod official;
 mod proxy;
 
 use std::sync::Arc;
 
+use serde::Serialize;
 use tauri::Manager;
 use tauri::State;
 
-use jiosaavn::{best_quality, check_id, PlayableAudio, RangeStatus, Track};
-use proxy::{proxy_url_for, AppState};
+use jiosaavn::{best_quality, check_id, PlayableAudio, RangeStatus, SearchPage, Track};
+use proxy::{proxy_url_for, AppState, DownloadEntry, Vault};
+
+/// Payload of the `download-progress` event, emitted while a song is saved.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct DownloadProgress {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub image: String,
+    pub quality: String,
+    pub received: u64,
+    pub total: Option<u64>,
+    pub done: bool,
+}
 
 /// Search the catalog. `limit` is clamped to 1..=40 (default 20) upstream,
 /// `page` is 1-based so the UI can keep pulling results indefinitely.
 /// Results are memoised per query+limit+page to reduce upstream pressure.
+/// `page_full` says whether upstream had more to give *before* duplicates
+/// were collapsed — the UI hangs "Load more" off it, not off `tracks.len()`.
 #[tauri::command]
 async fn search_songs(
     query: String,
     limit: Option<u32>,
     page: Option<u32>,
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<Track>, String> {
+) -> Result<SearchPage, String> {
     state
         .cached_search(&query, limit.unwrap_or(20), page.unwrap_or(1))
         .await
+}
+
+/// One page of album / artist / playlist search results (the search screen's
+/// entity chips). `page_full` is measured from upstream's `total`/`start`, so
+/// the UI never loses "load more" to dedup shrinking a page.
+#[tauri::command]
+async fn search_entities(
+    query: String,
+    kind: String,
+    limit: Option<u32>,
+    page: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<official::EntityPage, String> {
+    official::search_entities(&state.client, &kind, &query, limit.unwrap_or(20), page.unwrap_or(1))
+        .await
+}
+
+/// Inline suggestions for the search box: the top match plus a few songs,
+/// albums, artists and playlists, all from one `autocomplete.get` round-trip.
+#[tauri::command]
+async fn search_suggestions(
+    query: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<official::Suggestions, String> {
+    official::suggestions(&state.client, &query).await
 }
 
 /// Resolve a song id to a playable, range-qualified stream.
@@ -42,6 +86,23 @@ async fn resolve_song(
 ) -> Result<PlayableAudio, String> {
     check_id(&id)?;
     let prefer = quality.unwrap_or_else(|| "320kbps".to_string());
+
+    // Already on disk? Play the saved copy — no CDN round trip, works offline.
+    // ponytail: a re-download of a newer master is deliberately not considered.
+    if let Some(entry) = state.vault().entries.into_iter().find(|e| e.id == id) {
+        return Ok(PlayableAudio {
+            title: entry.title,
+            artist: entry.artist,
+            direct_url: entry.path,
+            proxy_url: format!("http://127.0.0.1:{}/file?id={}", state.port, entry.id),
+            qualities: Vec::new(),
+            chosen_quality: entry.quality,
+            content_length: Some(entry.bytes),
+            host: "vault".into(),
+            range_status: RangeStatus::Unrestricted,
+            id,
+        });
+    }
 
     let song = state.cached_song(&id).await?;
     let chosen = best_quality(&song.qualities, &prefer)
@@ -105,13 +166,41 @@ async fn album_tracks(
     official::album_tracks(&state.client, &token).await
 }
 
-/// An artist's top tracks (artist token, same shape as the album token).
+/// One page of an artist's catalogue (artist token = last segment of its page
+/// url). Page 0 is the popular set; later pages walk the rest of the works.
 #[tauri::command]
 async fn artist_tracks(
     token: String,
+    page: Option<u32>,
     state: State<'_, Arc<AppState>>,
-) -> Result<Vec<Track>, String> {
-    official::artist_tracks(&state.client, &token).await
+) -> Result<official::ArtistSongPage, String> {
+    official::artist_tracks(&state.client, &token, page.unwrap_or(0)).await
+}
+
+/// Artist header + the complete discography the artist screen renders under
+/// the tracks (name, listeners, bio, every album/single/EP).
+#[tauri::command]
+async fn artist_overview(
+    token: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<official::ArtistOverview, String> {
+    official::artist_overview(&state.client, &token).await
+}
+
+/// Best lyrics for a track: LRCLIB time-coded, else JioSaavn text, else
+/// LRCLIB plain. Memoised per song id (content only).
+#[tauri::command]
+async fn get_lyrics(
+    id: String,
+    title: String,
+    artist: String,
+    album: String,
+    duration: u32,
+    state: State<'_, Arc<AppState>>,
+) -> Result<lyrics::Lyrics, String> {
+    state
+        .cached_lyrics(&id, &title, &artist, &album, duration)
+        .await
 }
 
 /// Strip characters that are illegal in file names on any desktop OS.
@@ -133,10 +222,11 @@ fn safe_file_name(s: &str) -> String {
     }
 }
 
-/// Save a complete song to the user's Downloads folder.
+/// Save a complete song to the user's offline vault.
 ///
-/// Returns the path of the finished file. The relay's byte-count discipline
-/// applies: a truncated body is deleted and reported, never handed back.
+/// Emits `download-progress` while the body streams and records the file in
+/// `<vault>/index.json` when the byte count matches what the CDN declared.
+/// Returns the path of the finished file.
 #[tauri::command]
 async fn download_song(
     app: tauri::AppHandle,
@@ -144,26 +234,94 @@ async fn download_song(
     quality: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
+    use tauri::Emitter;
+
     check_id(&id)?;
     let prefer = quality.unwrap_or_else(|| "320kbps".to_string());
     let song = state.cached_song(&id).await?;
     let chosen = best_quality(&song.qualities, &prefer)
         .ok_or_else(|| "no stream qualities".to_string())?;
 
-    let dir = match app.path().download_dir() {
-        Ok(dir) => dir,
-        Err(_) => std::env::temp_dir(),
-    };
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    // Stop the old copy resolving while its file is being rewritten.
+    state.forget(&id)?;
 
+    std::fs::create_dir_all(&state.vault)
+        .map_err(|e| format!("create {}: {e}", state.vault.display()))?;
     let file_name = format!(
         "{} - {}.m4a",
         safe_file_name(&song.track.artist),
         safe_file_name(&song.track.title)
     );
-    let (path, written) = state.download_to(&chosen.url, &dir.join(file_name)).await?;
+    let dest = state.vault.join(&file_name);
+
+    let progress = DownloadProgress {
+        id: id.clone(),
+        title: song.track.title.clone(),
+        artist: song.track.artist.clone(),
+        album: song.track.album.clone(),
+        image: song.track.image.clone(),
+        quality: chosen.quality.clone(),
+        received: 0,
+        total: None,
+        done: false,
+    };
+    let emitter = app.clone();
+    let (path, written) = state
+        .download_to(&chosen.url, &dest, |received, total| {
+            let mut event = progress.clone();
+            event.received = received;
+            event.total = total;
+            let _ = emitter.emit("download-progress", &event);
+        })
+        .await?;
+
+    state.record(DownloadEntry {
+        id,
+        title: song.track.title,
+        artist: song.track.artist,
+        album: song.track.album,
+        image: song.track.image,
+        duration_secs: song.track.duration_secs,
+        quality: chosen.quality,
+        path: path.display().to_string(),
+        bytes: written,
+        at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    })?;
+
+    let mut event = progress;
+    event.received = written;
+    event.done = true;
+    let _ = emitter.emit("download-progress", &event);
+
     eprintln!("[TRANCE MUSIC] saved {written} bytes to {}", path.display());
     Ok(path.display().to_string())
+}
+
+/// Everything currently in the offline vault, newest first.
+#[tauri::command]
+fn list_downloads(state: State<'_, Arc<AppState>>) -> Vault {
+    state.vault()
+}
+
+/// Delete one downloaded file (by the path we recorded for it).
+#[tauri::command]
+fn remove_download(path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.remove(&path)
+}
+
+/// Reveal one downloaded file in the system file manager.
+#[tauri::command]
+fn reveal_download(path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.reveal(&path)
+}
+
+/// Reveal the vault folder itself (no path is taken from the frontend).
+#[tauri::command]
+fn reveal_vault(state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.reveal_vault()
 }
 
 pub fn run() {
@@ -177,7 +335,15 @@ pub fn run() {
             std_listener.set_nonblocking(true)?;
             let port = std_listener.local_addr()?.port();
 
-            let state = Arc::new(AppState::new(port));
+            // Offline vault lives beside the user's other downloads.
+            let vault = app
+                .path()
+                .download_dir()
+                .unwrap_or_else(|_| std::env::temp_dir())
+                .join("TRANCE MUSIC");
+            let _ = std::fs::create_dir_all(&vault);
+
+            let state = Arc::new(AppState::new(port, vault));
             app.manage(state.clone());
 
             let router = proxy::router(state);
@@ -193,15 +359,23 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            search_songs,
+    search_songs,
+    search_entities,
+    search_suggestions,
             resolve_song,
             qualify_url,
             proxy_base,
-            download_song,
             home_feed,
             playlist_tracks,
             album_tracks,
-            artist_tracks
+            artist_tracks,
+            artist_overview,
+            get_lyrics,
+            download_song,
+            list_downloads,
+            remove_download,
+            reveal_download,
+            reveal_vault
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");
