@@ -39,7 +39,7 @@ function fmtTime(sec) {
   if (!Number.isFinite(sec) || sec < 0) return "0:00";
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function paintMode() {
@@ -145,7 +145,37 @@ async function applyPosition() {
   const saved = readPos();
   if (!saved) return placeDefault();
   try {
-    await invoke("widget_set_position", { x: Math.round(saved.x), y: Math.round(saved.y) });
+    const [mons, current, size] = await Promise.all([
+      win.availableMonitors?.() ?? [],
+      win.currentMonitor(),
+      win.outerSize(),
+    ]);
+    // The monitor the card was saved on may be gone (unplugged, resolution
+    // change): clamp into the monitor the saved point sits on — else the one
+    // the card is on now — instead of parking it off-screen.
+    const m =
+      mons.find(
+        (mon) =>
+          saved.x >= mon.position.x &&
+          saved.x < mon.position.x + mon.size.width &&
+          saved.y >= mon.position.y &&
+          saved.y < mon.position.y + mon.size.height,
+      ) ||
+      current ||
+      mons[0];
+    let x = Math.round(saved.x);
+    let y = Math.round(saved.y);
+    if (m) {
+      const w = size?.width || 460;
+      const h = size?.height || 470;
+      const minX = m.position.x;
+      const minY = m.position.y;
+      const maxX = minX + Math.max(0, m.size.width - w);
+      const maxY = minY + Math.max(0, m.size.height - h);
+      x = Math.min(Math.max(x, minX), maxX);
+      y = Math.min(Math.max(y, minY), maxY);
+    }
+    await invoke("widget_set_position", { x, y });
   } catch {}
 }
 

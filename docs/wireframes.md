@@ -46,7 +46,7 @@ Shared chrome on every screen (from the zips): fixed top nav (Home · Library ·
 
 - Filter chips = client-side filter over the playlist list.
 - Click card → detail section below (or its own view): featured banner + track rows.
-- Track row = existing `playQueueItem(track)` pipeline (already in `main.js`).
+- Track row = existing `playQueueItem(track)` pipeline (already in `app/src/playback.js`).
 
 ## 2. Album / Artist page — `data-view="album"` (zip 5)
 

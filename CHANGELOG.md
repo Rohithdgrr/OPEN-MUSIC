@@ -5,15 +5,54 @@ All notable changes to TRANCE MUSIC are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-There are no releases yet — the project has never been tagged and
-`bundle.active` is `false`, so nothing has been packaged or published. Work
-sits in `Unreleased` until a first version is cut.
+The first release, **v0.1.0**, was cut on 2026-09-30: signed MSI and NSIS
+installers are attached to the GitHub release. Work landing after that tag
+sits in `Unreleased`.
 
 ---
 
 ## [Unreleased]
 
+No unreleased changes — everything below shipped in 0.1.0.
+
+---
+
+## [0.1.0] - 2026-09-30
+
+First packaged release. `npm run tauri build` emits an MSI and an NSIS
+installer, both Authenticode-signed (self-signed `CN=TRANCE MUSIC`
+certificate, SHA-256, RFC 3161 timestamped).
+
 ### Added
+
+**Windows installers, code-signed**
+
+- `bundle.targets` is `["msi", "nsis"]`; the build produces
+  `TRANCE MUSIC_0.1.0_x64_en-US.msi` (2.98 MB) and
+  `TRANCE MUSIC_0.1.0_x64-setup.exe` (2.05 MB) under
+  `src-tauri/target/release/bundle/`.
+- `bundle.windows` in `tauri.conf.json` carries `certificateThumbprint`,
+  `digestAlgorithm: "sha256"` and a DigiCert RFC 3161 `timestampUrl`, so the
+  exe, the WiX/NSIS payload DLLs and both installers are signed during the
+  build itself.
+- The certificate is self-signed and lives in the local user's `My` store:
+  installs work, but other machines show an unknown-publisher / SmartScreen
+  prompt. Reputation arrives only with a CA-issued code-signing certificate.
+- Release profile was already fully optimised (`lto = true`,
+  `codegen-units = 1`, `opt-level = 3`, `strip = true`, `panic = "abort"`);
+  a cold release build takes about five minutes.
+
+**Settings — General tab**
+
+- Profile name: greets the Home heading by name (`#home-name`), persisted in
+  `localStorage` (`tm-name`).
+- Open at startup: `autostart_set` writes or deletes the HKCU `Run` value with
+  `reg` directly — no elevation, no scheduled task, no plugin.
+- Language + region: `content_prefs_set` pushes the choices to Rust once at
+  boot; `official.rs` appends `lang`/`country` to every catalog call.
+  `filterLang()` then filters search, load-more and Home rankings to that
+  language, falling back to the unfiltered list when the source has no hits —
+  so a Telugu preference cannot blank an English query.
 
 **Endless playback (radio) — backend only, not yet reachable from the UI**
 
@@ -90,6 +129,12 @@ sits in `Unreleased` until a first version is cut.
 
 ### Fixed
 
+- **Tab switches resumed at the previous view's scroll position.** WebView2
+  restores scroll on a session resume (`history.scrollRestoration`) and
+  swapping views changes the document height, so the first `scrollTo({top: 0})`
+  could be clamped away by the old layout. `scrollRestoration` is now
+  `"manual"` before first paint (set in `index.html`), and `toTop()` scrolls
+  again on the next animation frame, once layout has settled.
 - **Active nav tab rendered dark-on-dark.** Inactive tabs carry
   `text-on-surface-variant`, which Tailwind emits *after* `text-on-primary`, so
   the white text added by JS lost the cascade and every tab except Home

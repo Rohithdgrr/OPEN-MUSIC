@@ -5,8 +5,9 @@ Rust core and a no-build-step vanilla-JS front end. It streams from JioSaavn,
 keeps an offline vault on disk, and plays back through a local byte-range relay
 so the WebView never talks to a third-party CDN directly.
 
-> **Status: active development.** Not packaged or signed yet — `bundle.active`
-> is `false` in `tauri.conf.json`, so there is no installer. Run it from source.
+> **Status: v0.1.0 released.** Signed MSI and NSIS installers are attached to
+> the [GitHub release](https://github.com/Rohithdgrr/OPEN-MUSIC/releases), or
+> build them yourself from source (see [Running it](#running-it)).
 
 ---
 
@@ -41,7 +42,8 @@ tested there.
 cd app
 npm install
 npm run tauri dev      # hot-reloading dev window
-npm run tauri build    # release binary -> app/src-tauri/target/release/
+npm run tauri build    # release binary + signed installers
+                       # -> src-tauri/target/release/bundle/{msi,nsis}/
 ```
 
 There is no separate frontend build. `tauri.conf.json` points `frontendDist`
@@ -57,29 +59,31 @@ the HTML/JS/CSS and reload the window.
 
 ```bash
 cd app/src-tauri
-cargo test              # 62 unit tests, no network required
-cargo check             # fast type/borrow check
+cargo test                  # full suite (68 tests, incl. live network ones)
+OP_OFFLINE=1 cargo test     # offline subset only — what CI runs
+cargo check                 # fast type/borrow check
 ```
 
 The Rust suite is the only automated coverage in the repo — it covers JSON
 parsing, DES-ECB media-url decryption, quality selection, range qualification,
 the proxy's byte handling, and the lyrics source order.
 
-**The front end has no automated tests.** `main.js` is ~3,900 lines of
-imperative DOM wiring with no test runner in `package.json`; UI changes have
-been verified by running the app. See [Known limitations](#known-limitations).
+**The front end has no automated tests.** Behaviour lives in 18 ES modules
+under `app/src` (~200 KB, split from the old single `main.js`) with no test
+runner in `package.json`; UI changes have been verified by running the app. See
+[Known limitations](#known-limitations).
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ WebView (app/src)                                          │
+│ WebView (app/src)                                           │
 │   index.html  — 8 views, one <audio> element, Tailwind CDN  │
-│   main.js     — all state, DOM wiring, IPC calls            │
-│   styles.css  — vanilla fallback layer + dialog backdrop     │
-└────────────────────────────┬───────────────────────────────┘
+│   main.js     — ES-module entry: imports 17 feature modules │
+│   styles.css  — vanilla fallback layer + dialog backdrop    │
+└────────────────────────────┬────────────────────────────────┘
                              │ Tauri IPC (invoke)
-┌────────────────────────────▼───────────────────────────────┐
+┌────────────────────────────▼────────────────────────────────┐
 │ Rust core (app/src-tauri/src)                               │
 │                                                             │
 │  lib.rs      — command surface + window/proxy lifecycle     │
@@ -94,11 +98,13 @@ been verified by running the app. See [Known limitations](#known-limitations).
 about HTTP servers, and nothing but `official.rs`/`jiosaavn.rs` knows about
 catalog endpoints. Each file states this in its module doc comment.
 
-**19 Tauri commands** connect the two halves: `search_songs`,
+**24 Tauri commands** connect the two halves: `search_songs`,
 `search_entities`, `search_suggestions`, `recommend_songs`, `resolve_song`,
 `qualify_url`, `proxy_base`, `home_feed`, `playlist_tracks`, `album_tracks`,
 `artist_tracks`, `artist_overview`, `get_lyrics`, `download_song`,
-`list_downloads`, `remove_download`, `reveal_download`, `reveal_vault`.
+`list_downloads`, `remove_download`, `reveal_download`, `reveal_vault`,
+`widget_show`, `widget_embed`, `widget_set_position`, `widget_start_drag`,
+`autostart_set`, `content_prefs_set`.
 
 ### The eight views
 
@@ -110,7 +116,7 @@ catalog endpoints. Each file states this in its module doc comment.
 ```
 .
 ├── app/                    ← the application (this is the product)
-│   ├── src/                front end: index.html, main.js, styles.css
+│   ├── src/                front end: index.html, main.js + feature modules, styles.css
 │   └── src-tauri/          Rust core: src/*.rs, Cargo.toml, tauri.conf.json
 ├── docs/                   product + architecture documentation
 │   ├── architecture.md     ← read this first
@@ -165,7 +171,9 @@ This is the part that is not obvious, so it is worth stating plainly:
 
 - **No front-end tests.** See [Tests](#tests). This is the biggest gap.
 - **CDN dependency at runtime** for Tailwind and the Material icon font.
-- **No installer or code signing.** `bundle.active` is `false`.
+- **Installers are signed with a self-signed certificate.** Installing locally
+  is fine, but other machines show a SmartScreen / unknown-publisher prompt
+  until a CA-issued code-signing certificate replaces it.
 - **Not a "bit-perfect" claim in the strict audiophile sense.** The badge means
   the range probe passed; it is not a measurement of the output device.
 - **The radio / endless-playback backend (`recommend_songs`) is not wired to the

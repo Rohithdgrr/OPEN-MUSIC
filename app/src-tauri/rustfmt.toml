@@ -1,0 +1,2 @@
+# Enforced by CI (`cargo fmt --check`); keep the edition in sync with Cargo.toml.
+edition = "2021"

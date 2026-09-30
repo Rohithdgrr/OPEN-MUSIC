@@ -38,8 +38,8 @@ cd app/src-tauri && cargo test
 
 Anything touching parsing, decryption, quality selection, range qualification,
 the proxy, or lyrics source ordering needs a test. Pure-DOM changes cannot be
-covered yet — if you change `main.js`, say in the PR description exactly what
-you clicked to verify it.
+covered yet — if you change the front end (`app/src/*.js`), say in the PR
+description exactly what you clicked to verify it.
 
 The smallest thing that fails when the logic breaks is the bar. An `assert`-based
 check is fine; a framework is not.
@@ -50,7 +50,7 @@ check is fine; a framework is not.
   final newline.
 - Follow the surrounding code rather than importing a style from elsewhere. The
   codebase is consistent about `///` doc comments on anything non-obvious in
-  Rust, and flat `function` declarations in `main.js`.
+  Rust, and flat `function` declarations in the front-end modules.
 - Keep diffs small. If a change touches 40 files, it is probably two changes.
 
 ## Commit messages

@@ -124,7 +124,10 @@ pub fn api_client() -> reqwest::Client {
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, USER_AGENT};
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json, text/plain, */*"));
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("application/json, text/plain, */*"),
+    );
     headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
@@ -156,10 +159,11 @@ pub fn check_id(id: &str) -> Result<(), String> {
     if id.is_empty() || id.len() > 32 {
         return Err(format!("invalid song id: {id}"));
     }
-    // Real JioSaavn ids contain hyphens (e.g. "i-4OQoee") and their page
-    // tokens contain commas (e.g. ",gDuHtyl,iA_", the last segment of an
-    // artist's perma_url). Dots and slashes stay banned: they are the only
-    // characters that enable path tricks.
+    // One validator for two shapes: song ids (e.g. "i-4OQoee") and the
+    // webapi page tokens they share a URL with (e.g. ",gDuHtyl,iA_", the last
+    // segment of an artist's perma_url) — hence commas are allowed. Dots and
+    // slashes stay banned: they are the only characters that enable path
+    // tricks, and no real id or token contains them.
     if !id
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ',')
@@ -171,9 +175,9 @@ pub fn check_id(id: &str) -> Result<(), String> {
 
 pub fn is_media_host(host: &str) -> bool {
     let host = host.to_ascii_lowercase();
-    MEDIA_HOSTS.iter().any(|allowed| {
-        host == *allowed || host.ends_with(&format!(".{allowed}"))
-    })
+    MEDIA_HOSTS
+        .iter()
+        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")))
 }
 
 /// Validate a user-supplied stream URL: https + allow-listed media host only.
@@ -238,10 +242,7 @@ pub(crate) fn html_unescape(s: &str) -> String {
             i = next;
             continue;
         }
-        let end = s[i..]
-            .find(';')
-            .map(|o| i + o)
-            .filter(|&j| j - i <= 10);
+        let end = s[i..].find(';').map(|o| i + o).filter(|&j| j - i <= 10);
         match end {
             Some(j) => {
                 let entity = &s[i + 1..j];
@@ -252,6 +253,20 @@ pub(crate) fn html_unescape(s: &str) -> String {
                     "lt" => Some('<'),
                     "gt" => Some('>'),
                     "nbsp" => Some(' '),
+                    // Punctuation JioSaavn actually ships in titles and
+                    // artist credits; anything else falls through raw.
+                    "copy" => Some('©'),
+                    "reg" => Some('®'),
+                    "trade" => Some('™'),
+                    "hellip" => Some('…'),
+                    "mdash" => Some('—'),
+                    "ndash" => Some('–'),
+                    "middot" => Some('·'),
+                    "lsquo" => Some('\u{2018}'),
+                    "rsquo" => Some('\u{2019}'),
+                    "ldquo" => Some('\u{201C}'),
+                    "rdquo" => Some('\u{201D}'),
+                    "bull" => Some('•'),
                     _ if entity.starts_with('#') => {
                         let digits = &entity[1..];
                         let (radix, digits) = match digits.strip_prefix('x') {
@@ -323,9 +338,7 @@ pub(crate) fn upgrade_image(url: &str) -> String {
     if let Some(rest) = out.strip_prefix("http://") {
         let authority = rest.split('/').next().unwrap_or("");
         if authority.eq_ignore_ascii_case("saavncdn.com")
-            || authority
-                .to_ascii_lowercase()
-                .ends_with(".saavncdn.com")
+            || authority.to_ascii_lowercase().ends_with(".saavncdn.com")
         {
             out = format!("https://{rest}");
         }
@@ -380,11 +393,15 @@ fn parse_song(v: &Value) -> Track {
         .unwrap_or_default();
 
     let duration_secs = num_any(v, "duration").unwrap_or(0.0).max(0.0) as u64;
-    let title = text(v, "name").or_else(|| text(v, "title")).unwrap_or_default();
+    let title = text(v, "name")
+        .or_else(|| text(v, "title"))
+        .unwrap_or_default();
     let artist = {
         let a = artist_names(&v["artists"]);
         if a.is_empty() {
-            text(v, "artist").or_else(|| text(v, "primary_artists")).unwrap_or_default()
+            text(v, "artist")
+                .or_else(|| text(v, "primary_artists"))
+                .unwrap_or_default()
         } else {
             a
         }
@@ -404,7 +421,9 @@ fn parse_song(v: &Value) -> Track {
         duration_secs,
         duration: fmt_duration(duration_secs),
         image: image_url(&v["image"]),
-        page_url: text(v, "url").or_else(|| text(v, "perma_url")).unwrap_or_default(),
+        page_url: text(v, "url")
+            .or_else(|| text(v, "perma_url"))
+            .unwrap_or_default(),
         hq: match v.get("320kbps") {
             Some(Value::Bool(b)) => *b,
             Some(Value::String(s)) => s.eq_ignore_ascii_case("true"),
@@ -578,7 +597,7 @@ async fn mirror_search_songs(
     let results = json
         .pointer("/data/results")
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("search response missing data.results"))?;
+        .ok_or_else(|| "search response missing data.results".to_string())?;
 
     // Raw parse: `search_songs` collapses duplicates once, page length intact.
     Ok(results.iter().map(parse_song).collect())
@@ -589,7 +608,9 @@ async fn mirror_fetch_song(client: &reqwest::Client, id: &str) -> Result<Song, S
     let path = format!("/api/songs/{id}");
     let json = get_json(client, &path).await?;
 
-    let data = json.get("data").ok_or_else(|| "song not found".to_string())?;
+    let data = json
+        .get("data")
+        .ok_or_else(|| "song not found".to_string())?;
     let song_value = if let Some(arr) = data.as_array() {
         arr.first().ok_or_else(|| "song not found".to_string())?
     } else {
@@ -750,7 +771,10 @@ fn push_credit_name(cur: &mut String, names: &mut std::collections::HashSet<Stri
 /// True when two credit lists plausibly bill the same artist set: at least
 /// half of the smaller list matches (order never matters; an empty list is
 /// no evidence, so it never merges).
-fn credits_overlap(a: &std::collections::HashSet<String>, b: &std::collections::HashSet<String>) -> bool {
+fn credits_overlap(
+    a: &std::collections::HashSet<String>,
+    b: &std::collections::HashSet<String>,
+) -> bool {
     if a.is_empty() || b.is_empty() {
         return false;
     }
@@ -809,8 +833,7 @@ fn norm_text(s: &str) -> String {
                 }
                 depth -= 1;
                 if depth == 0 {
-                    let words: Vec<&str> =
-                        inner.split(|c: char| !c.is_alphanumeric()).collect();
+                    let words: Vec<&str> = inner.split(|c: char| !c.is_alphanumeric()).collect();
                     if words.iter().any(|w| KEEP.contains(w)) {
                         kept.push(' ');
                         kept.push_str(&inner);
@@ -991,9 +1014,18 @@ mod tests {
     #[test]
     fn best_quality_prefers_exact_then_highest_bitrate() {
         let qs = vec![
-            QualityUrl { quality: "12kbps".into(), url: "u12".into() },
-            QualityUrl { quality: "96kbps".into(), url: "u96".into() },
-            QualityUrl { quality: "320kbps".into(), url: "u320".into() },
+            QualityUrl {
+                quality: "12kbps".into(),
+                url: "u12".into(),
+            },
+            QualityUrl {
+                quality: "96kbps".into(),
+                url: "u96".into(),
+            },
+            QualityUrl {
+                quality: "320kbps".into(),
+                url: "u320".into(),
+            },
         ];
         assert_eq!(best_quality(&qs, "96kbps").unwrap().url, "u96");
         assert_eq!(best_quality(&qs, "320kbps").unwrap().url, "u320");
@@ -1039,8 +1071,22 @@ mod tests {
     #[test]
     fn dedup_collapses_remaster_under_a_different_id_and_keeps_hq() {
         let tracks = vec![
-            dup_track("std1", "Midnight City Lights", "Solaris & Kaelen", 240, false, 900),
-            dup_track("rem9", "Midnight City Lights (Remastered 2024)", "Solaris & Kaelen", 241, true, 100),
+            dup_track(
+                "std1",
+                "Midnight City Lights",
+                "Solaris & Kaelen",
+                240,
+                false,
+                900,
+            ),
+            dup_track(
+                "rem9",
+                "Midnight City Lights (Remastered 2024)",
+                "Solaris & Kaelen",
+                241,
+                true,
+                100,
+            ),
         ];
         let out = dedup_tracks(tracks);
         assert_eq!(out.len(), 1, "same recording, one row");
@@ -1067,7 +1113,11 @@ mod tests {
             dup_track("d", "Song Remix", "Singer One", 200, false, 5),
         ];
         let out = dedup_tracks(tracks);
-        assert_eq!(out.len(), 4, "different artist and live/remix markers survive");
+        assert_eq!(
+            out.len(),
+            4,
+            "different artist and live/remix markers survive"
+        );
     }
 
     #[test]
@@ -1086,7 +1136,14 @@ mod tests {
         // Live JioSaavn shape: same song, bills swapped, ±1s rounding.
         let tracks = vec![
             dup_track("a", "Tum Hi Ho", "Mithoon, Arijit Singh", 262, false, 900),
-            dup_track("b", "Tum Hi Ho (From \"Aashiqui 2\")", "Arijit Singh, Mithoon", 261, false, 50),
+            dup_track(
+                "b",
+                "Tum Hi Ho (From \"Aashiqui 2\")",
+                "Arijit Singh, Mithoon",
+                261,
+                false,
+                50,
+            ),
         ];
         let out = dedup_tracks(tracks);
         assert_eq!(out.len(), 1, "credit order must not split one recording");
@@ -1139,7 +1196,11 @@ mod tests {
             dup_track("a", "Intro", "One Artist", 60, false, 1),
             dup_track("b", "Intro", "Totally Different Act", 61, false, 1),
         ];
-        assert_eq!(dedup_tracks(tracks).len(), 2, "disjoint credits never merge");
+        assert_eq!(
+            dedup_tracks(tracks).len(),
+            2,
+            "disjoint credits never merge"
+        );
     }
 
     /// Captured live from `search.getResults?q=arijit&n=20&p=1`: twenty rows,
@@ -1148,26 +1209,111 @@ mod tests {
     #[test]
     fn dedup_collapses_a_real_twenty_row_page_to_nine_songs() {
         let rows: &[(&str, &str, &str, u64)] = &[
-            ("g1", "Gehra Hua (From \"Dhurandhar\")", "Shashwat Sachdev, Arijit Singh, Irshad Kamil, Armaan Khan", 362),
-            ("g2", "Gehra Hua", "Irshad Kamil, Arijit Singh, Shashwat Sachdev, Armaan Khan", 362),
+            (
+                "g1",
+                "Gehra Hua (From \"Dhurandhar\")",
+                "Shashwat Sachdev, Arijit Singh, Irshad Kamil, Armaan Khan",
+                362,
+            ),
+            (
+                "g2",
+                "Gehra Hua",
+                "Irshad Kamil, Arijit Singh, Shashwat Sachdev, Armaan Khan",
+                362,
+            ),
             ("t1", "Tum Hi Ho", "Mithoon, Arijit Singh", 262),
-            ("t2", "Tum Hi Ho (From \"Aashiqui 2\")", "Arijit Singh, Mithoon", 261),
-            ("t3", "Tum Hi Ho (From \"Aashiqui 2\")", "Mithoon, Arijit Singh", 261),
-            ("m1", "Mast Magan (From \"2 States\")", "Amitabh Bhattacharya, Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada", 280),
-            ("m2", "Mast Magan", "Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada", 280),
-            ("s1", "Samjhawan", "Jawad Ahmad, Sharib Toshi, Arijit Singh, Shreya Ghoshal", 269),
+            (
+                "t2",
+                "Tum Hi Ho (From \"Aashiqui 2\")",
+                "Arijit Singh, Mithoon",
+                261,
+            ),
+            (
+                "t3",
+                "Tum Hi Ho (From \"Aashiqui 2\")",
+                "Mithoon, Arijit Singh",
+                261,
+            ),
+            (
+                "m1",
+                "Mast Magan (From \"2 States\")",
+                "Amitabh Bhattacharya, Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada",
+                280,
+            ),
+            (
+                "m2",
+                "Mast Magan",
+                "Shankar-Ehsaan-Loy, Arijit Singh, Chinmayi Sripada",
+                280,
+            ),
+            (
+                "s1",
+                "Samjhawan",
+                "Jawad Ahmad, Sharib Toshi, Arijit Singh, Shreya Ghoshal",
+                269,
+            ),
             ("o1", "O Maahi", "Pritam, Arijit Singh, Irshad Kamil", 233),
-            ("o2", "O Maahi (From \"Dunki\")", "Irshad Kamil, Pritam, Arijit Singh", 233),
-            ("h1", "Tere Hawaale (From \"Laal Singh Chaddha\")", "Amitabh Bhattacharya, Pritam, Arijit Singh, Shilpa Rao", 346),
-            ("h2", "Tere Hawaale", "Pritam, Arijit Singh, Shilpa Rao", 346),
-            ("r1", "Sanam Re (From \"Sanam Re\")", "Mithoon, Arijit Singh", 308),
+            (
+                "o2",
+                "O Maahi (From \"Dunki\")",
+                "Irshad Kamil, Pritam, Arijit Singh",
+                233,
+            ),
+            (
+                "h1",
+                "Tere Hawaale (From \"Laal Singh Chaddha\")",
+                "Amitabh Bhattacharya, Pritam, Arijit Singh, Shilpa Rao",
+                346,
+            ),
+            (
+                "h2",
+                "Tere Hawaale",
+                "Pritam, Arijit Singh, Shilpa Rao",
+                346,
+            ),
+            (
+                "r1",
+                "Sanam Re (From \"Sanam Re\")",
+                "Mithoon, Arijit Singh",
+                308,
+            ),
             ("r2", "Sanam Re", "Mithoon, Arijit Singh", 308),
-            ("k1", "Tum Kya Mile - Pritam' s Version (From \"Rocky Aur Rani Kii Prem Kahaani\")", "Amitabh Bhattacharya, Pritam, Arijit Singh, Shreya Ghoshal", 192),
-            ("a1", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
-            ("a2", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
-            ("a3", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
-            ("a4", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
-            ("a5", "Apna Bana Le", "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh", 261),
+            (
+                "k1",
+                "Tum Kya Mile - Pritam' s Version (From \"Rocky Aur Rani Kii Prem Kahaani\")",
+                "Amitabh Bhattacharya, Pritam, Arijit Singh, Shreya Ghoshal",
+                192,
+            ),
+            (
+                "a1",
+                "Apna Bana Le",
+                "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh",
+                261,
+            ),
+            (
+                "a2",
+                "Apna Bana Le",
+                "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh",
+                261,
+            ),
+            (
+                "a3",
+                "Apna Bana Le",
+                "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh",
+                261,
+            ),
+            (
+                "a4",
+                "Apna Bana Le",
+                "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh",
+                261,
+            ),
+            (
+                "a5",
+                "Apna Bana Le",
+                "Amitabh Bhattacharya, Sachin-Jigar, Arijit Singh",
+                261,
+            ),
         ];
         let tracks = rows
             .iter()
@@ -1202,7 +1348,6 @@ mod tests {
         let empty = std::collections::HashSet::new();
         assert!(!credits_overlap(&empty, &full), "no credit is no evidence");
     }
-
 
     #[test]
     fn media_host_allow_list_is_suffix_safe() {
@@ -1334,7 +1479,7 @@ mod tests {
             .expect("search")
             .tracks;
         let song = fetch_song(&client, &tracks[0].id).await.expect("resolve");
-        assert!(song.qualities.len() >= 1);
+        assert!(!song.qualities.is_empty());
         let chosen = best_quality(&song.qualities, "320kbps").unwrap();
         assert!(validate_media_url(&chosen.url).is_ok());
         let probe = qualify_url(&client, &chosen.url).await.expect("probe");

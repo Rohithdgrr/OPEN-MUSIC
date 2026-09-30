@@ -42,14 +42,27 @@ impl Lyrics {
 }
 
 /// A raw LRCLIB record, before it is chosen between.
+#[derive(Clone)]
 struct Hit {
     plain: Option<String>,
     synced: Vec<(f64, String)>,
+    /// LRCLIB's own `duration` field, when the record carries one.
+    duration: Option<f64>,
 }
 
 impl Hit {
     fn is_empty(&self) -> bool {
         self.plain.is_none() && self.synced.is_empty()
+    }
+
+    /// Verify the record actually belongs to this track: LRCLIB matches on
+    /// duration, but its tolerance is a server-side detail we should not
+    /// trust blindly. A record without a duration cannot disagree.
+    fn duration_ok(&self, wanted: u32) -> bool {
+        match self.duration {
+            None => true,
+            Some(d) => (d - f64::from(wanted)).abs() <= 3.0,
+        }
     }
 }
 
@@ -77,7 +90,7 @@ pub async fn fetch(
         .await
         .unwrap_or(None);
     if let Some(h) = &hit {
-        if !h.synced.is_empty() {
+        if h.duration_ok(duration) && !h.synced.is_empty() {
             return Ok(from_hit(h));
         }
     }
@@ -93,8 +106,10 @@ pub async fn fetch(
     }
 
     // 3. LRCLIB plain from the record we already hold: no extra request.
+    //    Same duration gate as step 1 — a record for the wrong cut of the
+    //    song is worse than no record at all.
     if let Some(h) = &hit {
-        if !h.is_empty() {
+        if h.duration_ok(duration) && !h.is_empty() {
             return Ok(from_hit(h));
         }
     }
@@ -206,7 +221,11 @@ fn record(v: &Value) -> Hit {
         .and_then(Value::as_str)
         .map(parse_lrc)
         .unwrap_or_default();
-    Hit { plain, synced }
+    Hit {
+        plain,
+        synced,
+        duration: v.get("duration").and_then(Value::as_f64),
+    }
 }
 
 fn encode(pairs: &[(String, String)]) -> String {
@@ -269,12 +288,13 @@ pub fn parse_lrc(src: &str) -> Vec<(f64, String)> {
 }
 
 /// `1:02.50` -> `62.5`. Rejects anything that is not a clock, which is what
-/// makes `[ar:Artist]` fall out for free.
+/// makes `[ar:Artist]` fall out for free; a negative minute count is a
+/// broken stamp too — such a line would sort before zero and never highlight.
 fn parse_stamp(stamp: &str) -> Option<f64> {
     let (minutes, seconds) = stamp.trim().split_once(':')?;
     let minutes: f64 = minutes.trim().parse().ok()?;
     let seconds: f64 = seconds.trim().parse().ok()?;
-    if !(0.0..60.0).contains(&seconds) {
+    if minutes < 0.0 || !(0.0..60.0).contains(&seconds) {
         return None;
     }
     Some(minutes * 60.0 + seconds)
@@ -313,6 +333,33 @@ mod tests {
                 (30.0, "chorus".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn parse_lrc_drops_negative_and_malformed_stamps() {
+        let lines =
+            parse_lrc("[-01:30] before zero\n[00:00.00] start\n[-2:-5] broken\n[00:75] broken too");
+        assert_eq!(lines, vec![(0.0, "start".to_string())]);
+    }
+
+    #[test]
+    fn lrclib_records_are_gated_on_duration() {
+        let close = Hit {
+            plain: Some("x".into()),
+            synced: Vec::new(),
+            duration: Some(199.0),
+        };
+        let far = Hit {
+            duration: Some(240.0),
+            ..close.clone()
+        };
+        let unknown = Hit {
+            duration: None,
+            ..close.clone()
+        };
+        assert!(close.duration_ok(200));
+        assert!(!far.duration_ok(200));
+        assert!(unknown.duration_ok(200));
     }
 
     #[test]

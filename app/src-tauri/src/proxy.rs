@@ -38,6 +38,25 @@ const RELAYED_HEADERS: &[&str] = &[
 /// Bytes between two download-progress callbacks (~40 events for a song).
 const REPORT_EVERY: u64 = 256 * 1024;
 
+/// Session cache ceilings: every search query is a unique key, so a
+/// long-running session must not grow these maps without bound.
+const RESOLVED_CAP: usize = 400;
+const QUALIFIED_CAP: usize = 800;
+const SEARCH_CAP: usize = 500;
+const LYRICS_CAP: usize = 500;
+
+/// Insert into a session cache, dropping one arbitrary entry when full.
+/// ponytail: arbitrary eviction, no TTL — session-lived maps only need a
+/// ceiling, not an LRU; swap in `moka` if hit rate ever becomes measurable.
+fn put_capped<V>(map: &mut HashMap<String, V>, cap: usize, key: String, val: V) {
+    if map.len() >= cap && !map.contains_key(&key) {
+        if let Some(evictee) = map.keys().next().cloned() {
+            map.remove(&evictee);
+        }
+    }
+    map.insert(key, val);
+}
+
 /// One file in the offline vault, as recorded in `<vault>/index.json`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,10 +99,14 @@ pub struct AppState {
     pub search_cache: tokio::sync::Mutex<HashMap<String, SearchPage>>,
     /// song id -> lyrics (only non-empty answers are stored)
     pub lyrics_cache: tokio::sync::Mutex<HashMap<String, crate::lyrics::Lyrics>>,
+    /// Serializes manifest read-modify-write: two downloads finishing at the
+    /// same time must not overwrite each other's row (last-write-wins).
+    manifest_lock: std::sync::Mutex<()>,
 }
 
 impl AppState {
     pub fn new(port: u16, vault: std::path::PathBuf) -> Self {
+        sweep_partials(&vault);
         Self {
             client: crate::jiosaavn::api_client(),
             media: crate::jiosaavn::media_client(),
@@ -93,6 +116,7 @@ impl AppState {
             qualified: tokio::sync::Mutex::new(HashMap::new()),
             search_cache: tokio::sync::Mutex::new(HashMap::new()),
             lyrics_cache: tokio::sync::Mutex::new(HashMap::new()),
+            manifest_lock: std::sync::Mutex::new(()),
         }
     }
 
@@ -102,10 +126,12 @@ impl AppState {
             return Ok(song);
         }
         let song = fetch_song(&self.client, id).await?;
-        self.resolved
-            .lock()
-            .await
-            .insert(id.to_string(), song.clone());
+        put_capped(
+            &mut *self.resolved.lock().await,
+            RESOLVED_CAP,
+            id.to_string(),
+            song.clone(),
+        );
         Ok(song)
     }
 
@@ -123,10 +149,12 @@ impl AppState {
             return Ok(probe);
         }
         let probe = qualify_url(&self.client, url).await?;
-        self.qualified
-            .lock()
-            .await
-            .insert(url.to_string(), probe);
+        put_capped(
+            &mut *self.qualified.lock().await,
+            QUALIFIED_CAP,
+            url.to_string(),
+            probe,
+        );
         Ok(probe)
     }
 
@@ -142,10 +170,12 @@ impl AppState {
             return Ok(hit);
         }
         let result = search_songs(&self.client, query, limit, page).await?;
-        self.search_cache
-            .lock()
-            .await
-            .insert(key, result.clone());
+        put_capped(
+            &mut *self.search_cache.lock().await,
+            SEARCH_CAP,
+            key,
+            result.clone(),
+        );
         Ok(result)
     }
 
@@ -166,10 +196,12 @@ impl AppState {
         }
         let lyrics = crate::lyrics::fetch(&self.client, id, title, artist, album, duration).await?;
         if lyrics.has_content() {
-            self.lyrics_cache
-                .lock()
-                .await
-                .insert(id.to_string(), lyrics.clone());
+            put_capped(
+                &mut *self.lyrics_cache.lock().await,
+                LYRICS_CAP,
+                id.to_string(),
+                lyrics.clone(),
+            );
         }
         Ok(lyrics)
     }
@@ -178,7 +210,10 @@ impl AppState {
     ///
     /// Refuses anything outside the media allow-list and refuses to keep a
     /// file that does not match the declared `Content-Length`: a truncated
-    /// download must never masquerade as a complete song.
+    /// download must never masquerade as a complete song. Bytes land in a
+    /// `.part` sibling first and are renamed into place only once verified,
+    /// so a crash mid-download leaves garbage, never a half song under its
+    /// final name (stale `.part` files are swept at boot).
     ///
     /// `on_progress(received, total)` is called at the start, roughly every
     /// 256 KB, and once with the final byte count. Returns path + bytes.
@@ -204,20 +239,20 @@ impl AppState {
         let declared = resp.content_length();
         on_progress(0, declared);
 
-        let mut file = tokio::fs::File::create(dest)
+        let part = dest.with_extension("part");
+        let mut file = tokio::fs::File::create(&part)
             .await
-            .map_err(|e| format!("create {}: {e}", dest.display()))?;
+            .map_err(|e| format!("create {}: {e}", part.display()))?;
         let mut written: u64 = 0;
         let mut next_report: u64 = REPORT_EVERY;
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
-            let chunk = chunk.map_err(|e| {
-                format!("download interrupted after {written} bytes: {e}")
-            })?;
+            let chunk =
+                chunk.map_err(|e| format!("download interrupted after {written} bytes: {e}"))?;
             written += chunk.len() as u64;
             file.write_all(&chunk)
                 .await
-                .map_err(|e| format!("write {}: {e}", dest.display()))?;
+                .map_err(|e| format!("write {}: {e}", part.display()))?;
             if written >= next_report {
                 on_progress(written, declared);
                 next_report = written + REPORT_EVERY;
@@ -228,12 +263,13 @@ impl AppState {
 
         if let Some(declared) = declared {
             if written != declared {
-                let _ = tokio::fs::remove_file(dest).await;
-                return Err(format!(
-                    "truncated download: {written} of {declared} bytes"
-                ));
+                let _ = tokio::fs::remove_file(&part).await;
+                return Err(format!("truncated download: {written} of {declared} bytes"));
             }
         }
+        tokio::fs::rename(&part, dest)
+            .await
+            .map_err(|e| format!("commit {}: {e}", dest.display()))?;
         Ok((dest.to_path_buf(), written))
     }
 
@@ -262,6 +298,7 @@ impl AppState {
     /// Persist one download. Re-downloading the same song replaces its row
     /// instead of duplicating it.
     pub fn record(&self, entry: DownloadEntry) -> Result<(), String> {
+        let _guard = self.manifest_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = read_manifest(&self.manifest());
         entries.retain(|e| e.id != entry.id);
         entries.push(entry);
@@ -271,6 +308,7 @@ impl AppState {
     /// Drop the record for `id` before a re-download: that file is about to
     /// be rewritten, so it must stop resolving as a playable copy meanwhile.
     pub fn forget(&self, id: &str) -> Result<(), String> {
+        let _guard = self.manifest_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = read_manifest(&self.manifest());
         if !entries.iter().any(|e| e.id == id) {
             return Ok(());
@@ -282,6 +320,7 @@ impl AppState {
     /// Delete a file by the path we recorded for it — paths from the IPC
     /// boundary are never touched, only ones we wrote ourselves.
     pub fn remove(&self, path: &str) -> Result<(), String> {
+        let _guard = self.manifest_lock.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = read_manifest(&self.manifest());
         let index = entries
             .iter()
@@ -289,7 +328,8 @@ impl AppState {
             .ok_or_else(|| "that file is not in your vault".to_string())?;
         let victim = PathBuf::from(&entries[index].path);
         if victim.starts_with(&self.vault) && victim.is_file() {
-            std::fs::remove_file(&victim).map_err(|e| format!("delete {}: {e}", victim.display()))?;
+            std::fs::remove_file(&victim)
+                .map_err(|e| format!("delete {}: {e}", victim.display()))?;
         }
         entries.remove(index);
         write_manifest(&self.manifest(), &entries)
@@ -310,17 +350,135 @@ impl AppState {
     }
 }
 
+/// Remove `*.part` leftovers — downloads (or a manifest write) interrupted
+/// by a crash. They are unreachable by design, so they are pure garbage.
+fn sweep_partials(vault: &Path) {
+    let Ok(dir) = std::fs::read_dir(vault) else {
+        return;
+    };
+    for entry in dir.flatten() {
+        let path = entry.path();
+        if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("part"))
+        {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 fn read_manifest(path: &Path) -> Vec<DownloadEntry> {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new(); // first run: no manifest yet, nothing to recover
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(entries) => entries,
+        // An interrupted/external write left garbage behind, but the audio
+        // files themselves are intact — rebuild the rows from disk rather
+        // than pretending every download never happened.
+        Err(_) => rebuild_manifest(path),
+    }
+}
+
+/// Rebuild manifest rows from the files on disk. Metadata that lived only
+/// in `index.json` (real song id, album art, duration) is unrecoverable:
+/// the row keeps title/artist from the `<artist> - <title>` filename, size
+/// and mtime, and gets a stable synthetic id so play/reveal/delete keep
+/// working until the song is downloaded again.
+/// ponytail: does not parse audio tags for the lost fields; upgrade path:
+/// read the m4a `moov` atom if they ever matter.
+fn rebuild_manifest(path: &Path) -> Vec<DownloadEntry> {
+    let Some(dir) = path.parent() else {
+        return Vec::new();
+    };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let now = unix_now();
+    let mut out = Vec::new();
+    for entry in rd.flatten() {
+        let file = entry.path();
+        if !file.is_file() {
+            continue;
+        }
+        let Some(ext) = file.extension().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !(ext.eq_ignore_ascii_case("m4a")
+            || ext.eq_ignore_ascii_case("mp4")
+            || ext.eq_ignore_ascii_case("mp3"))
+        {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(&file) else {
+            continue;
+        };
+        let stem = file
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        let (artist, title) = match stem.split_once(" - ") {
+            Some((a, t)) => (a.to_string(), t.to_string()),
+            None => (String::new(), stem.clone()),
+        };
+        let at = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(now);
+        let path_str = file.to_string_lossy().into_owned();
+        out.push(DownloadEntry {
+            id: recovered_id(&path_str),
+            title,
+            artist,
+            album: String::new(),
+            image: String::new(),
+            duration_secs: 0,
+            quality: "unknown".into(),
+            bytes: meta.len(),
+            path: path_str,
+            at,
+        });
+    }
+    // Append order of the original manifest was chronological; keep it.
+    out.sort_by_key(|e| e.at);
+    // Heal the file so the scan runs once, not on every listing.
+    if !out.is_empty() {
+        let _ = write_manifest(path, &out);
+    }
+    out
+}
+
+/// Stable synthetic id for a recovered row: 16 hex chars pass `check_id`
+/// (≤32 chars, alnum only) and cannot collide with a real JioSaavn id in
+/// practice. FNV-1a — deterministic, four lines, no dependency.
+fn recovered_id(path: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in path.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn write_manifest(path: &Path, entries: &[DownloadEntry]) -> Result<(), String> {
-    let json = serde_json::to_vec_pretty(entries)
-        .map_err(|e| format!("encode vault manifest: {e}"))?;
-    std::fs::write(path, json).map_err(|e| format!("write {}: {e}", path.display()))
+    let json =
+        serde_json::to_vec_pretty(entries).map_err(|e| format!("encode vault manifest: {e}"))?;
+    // Write-then-rename: an interrupted write leaves a `.part` (swept at
+    // boot), never a truncated index.json that would orphan every file.
+    let tmp = path.with_extension("json.part");
+    std::fs::write(&tmp, json).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("commit {}: {e}", path.display()))
 }
 
 /// Reveal `path` (selecting it) in the platform file manager.
@@ -335,7 +493,11 @@ fn open_in_folder(path: &Path) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 fn open_in_folder(path: &Path) -> Result<(), String> {
-    let program = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     std::process::Command::new(program)
         .arg(path)
         .spawn()
@@ -375,17 +537,19 @@ async fn vault_file(
     if !path.starts_with(&state.vault) {
         return (StatusCode::FORBIDDEN, "outside the vault").into_response();
     }
-    let body = match tokio::fs::read(&path).await {
-        Ok(body) => body,
+    // Size comes from metadata: the range is answered without touching the
+    // payload, then only the requested span is read — a scrub must not pull
+    // a 10 MB song into memory (let alone copy it a second time).
+    let total = match tokio::fs::metadata(&path).await {
+        Ok(meta) => meta.len() as usize,
         Err(e) => {
             return (
                 StatusCode::NOT_FOUND,
-                format!("read {}: {e}", path.display()),
+                format!("stat {}: {e}", path.display()),
             )
                 .into_response()
         }
     };
-    let total = body.len();
     let is_mp3 = path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3"));
@@ -402,10 +566,42 @@ async fn vault_file(
             }
         };
 
-    let slice = if body.is_empty() { Vec::new() } else { body[start..=end].to_vec() };
+    let span = if total == 0 { 0 } else { end - start + 1 };
+    let mut slice = vec![0u8; span];
+    if span > 0 {
+        use tokio::io::{AsyncReadExt, AsyncSeekExt};
+        let mut file = match tokio::fs::File::open(&path).await {
+            Ok(f) => f,
+            Err(e) => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    format!("open {}: {e}", path.display()),
+                )
+                    .into_response()
+            }
+        };
+        if let Err(e) = file.seek(std::io::SeekFrom::Start(start as u64)).await {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("seek {}: {e}", path.display()),
+            )
+                .into_response();
+        }
+        if let Err(e) = file.read_exact(&mut slice).await {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("read {}: {e}", path.display()),
+            )
+                .into_response();
+        }
+    }
+
     let mut builder = Response::builder()
         .status(status)
-        .header("content-type", if is_mp3 { "audio/mpeg" } else { "audio/mp4" })
+        .header(
+            "content-type",
+            if is_mp3 { "audio/mpeg" } else { "audio/mp4" },
+        )
         .header("content-length", slice.len())
         .header("accept-ranges", "bytes");
     if status == 206 {
@@ -441,7 +637,11 @@ fn slice_range(header: Option<&str>, total: usize) -> Result<(u16, usize, usize)
     let end = if raw_end.trim().is_empty() {
         total - 1
     } else {
-        raw_end.trim().parse::<usize>().map_err(|_| ())?.min(total - 1)
+        raw_end
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| ())?
+            .min(total - 1)
     };
     if end < start {
         return Err(());
@@ -454,6 +654,9 @@ fn bad_request(msg: impl Into<String>) -> Response {
 }
 
 /// Resolve `?u=<cdn url>` or `?id=<song id>` into a validated CDN url.
+// Response carries full headers + body type, so it is large for an Err
+// variant; boxing every early-return would cost more than it saves here.
+#[allow(clippy::result_large_err)]
 async fn resolve_target(
     state: &AppState,
     params: &HashMap<String, String>,
@@ -462,13 +665,9 @@ async fn resolve_target(
         return validate_media_url(u).map_err(bad_request);
     }
     if let Some(id) = params.get("id") {
-        check_id(id).map_err(|e| bad_request(e))?;
+        check_id(id).map_err(bad_request)?;
         return state.cached_url(id).await.map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                format!("resolve failed: {e}"),
-            )
-                .into_response()
+            (StatusCode::BAD_GATEWAY, format!("resolve failed: {e}")).into_response()
         });
     }
     Err(bad_request("missing ?u= or ?id="))
@@ -485,10 +684,7 @@ async fn stream(
     };
 
     let mut req = state.media.get(&target);
-    if let Some(range) = headers
-        .get("range")
-        .and_then(|v| v.to_str().ok())
-    {
+    if let Some(range) = headers.get("range").and_then(|v| v.to_str().ok()) {
         // Forward the browser's Range header verbatim.
         req = req.header(reqwest::header::RANGE, range);
     }
@@ -496,11 +692,7 @@ async fn stream(
     let upstream = match req.send().await {
         Ok(resp) => resp,
         Err(e) => {
-            return (
-                StatusCode::BAD_GATEWAY,
-                format!("upstream failed: {e}"),
-            )
-                .into_response()
+            return (StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")).into_response()
         }
     };
 
@@ -521,29 +713,30 @@ async fn stream(
         }
     }
 
-    let body = Body::from_stream(futures::StreamExt::map(
-        upstream.bytes_stream(),
-        |chunk| match chunk {
-            Ok(bytes) => Ok::<_, std::io::Error>(bytes),
-            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
-        },
-    ));
+    let body =
+        Body::from_stream(futures::StreamExt::map(
+            upstream.bytes_stream(),
+            |chunk| match chunk {
+                Ok(bytes) => Ok::<_, std::io::Error>(bytes),
+                Err(e) => Err(std::io::Error::other(e)),
+            },
+        ));
 
     let mut builder = Response::builder().status(status);
     for (name, value) in out.iter() {
         builder = builder.header(name, value);
     }
 
-    builder.body(body)
+    builder
+        .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 /// Convenience used by the Tauri command layer to assemble the DTO.
 pub fn proxy_url_for(port: u16, direct_url: &str) -> String {
-    let encoded =
-        url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("u", direct_url)
-            .finish();
+    let encoded = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("u", direct_url)
+        .finish();
     format!("http://127.0.0.1:{port}/stream?{encoded}")
 }
 
@@ -559,9 +752,9 @@ mod tests {
         let port = listener.local_addr().unwrap().port();
         let listener = tokio::net::TcpListener::from_std(listener).unwrap();
         let state = Arc::new(AppState::new(
-        port,
-        std::env::temp_dir().join(format!("trance-vault-{port}")),
-    ));
+            port,
+            std::env::temp_dir().join(format!("trance-vault-{port}")),
+        ));
         let app = router(state.clone());
         tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
@@ -705,8 +898,15 @@ mod tests {
             .expect("download");
         let on_disk = std::fs::metadata(&path).expect("file must exist").len();
         assert_eq!(on_disk, written, "file size must match the byte counter");
-        assert!(written > 100_000, "even the smallest rendition is a real file");
+        assert!(
+            written > 100_000,
+            "even the smallest rendition is a real file"
+        );
         assert!(reports >= 2, "progress must fire at start and at end");
+        assert!(
+            !dest.with_extension("part").exists(),
+            "a verified download is committed, never left as .part"
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -811,6 +1011,115 @@ mod tests {
         state.remove(&file.display().to_string()).expect("remove");
         assert!(state.vault().entries.is_empty(), "the row is gone");
         assert!(!file.exists(), "and so is the file");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A full cache evicts instead of growing forever: every search query
+    /// is a unique key, so the maps need a hard ceiling.
+    #[test]
+    fn caches_evict_once_full() {
+        let mut map = HashMap::new();
+        for i in 0..5 {
+            put_capped(&mut map, 3, format!("k{i}"), i);
+        }
+        assert_eq!(map.len(), 3, "cache stays at its ceiling");
+        assert_eq!(map.get("k4"), Some(&4), "the newest key survives");
+    }
+
+    /// A corrupted index.json must not orphan the audio files: the rows are
+    /// rebuilt from disk, the manifest is healed atomically, and the
+    /// recovered id passes the same validator every id goes through.
+    #[test]
+    fn corrupt_manifest_is_rebuilt_from_disk() {
+        let dir = std::env::temp_dir().join(format!("trance-rebuild-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("vault dir");
+        let file = dir.join("Arctic Monkeys - Do I Wanna Know.m4a");
+        std::fs::write(&file, b"0123456789").expect("write file");
+        std::fs::write(dir.join("index.json"), b"{ this is not json").expect("corrupt manifest");
+
+        let manifest = dir.join("index.json");
+        let entries = read_manifest(&manifest);
+        assert_eq!(entries.len(), 1, "the file on disk keeps its row");
+        let entry = &entries[0];
+        assert_eq!(entry.artist, "Arctic Monkeys");
+        assert_eq!(entry.title, "Do I Wanna Know");
+        assert_eq!(entry.bytes, 10);
+        assert!(
+            check_id(&entry.id).is_ok(),
+            "recovered id must pass validation"
+        );
+
+        let healed = std::fs::read(&manifest).expect("healed manifest");
+        assert!(
+            serde_json::from_slice::<Vec<DownloadEntry>>(&healed).is_ok(),
+            "recovery persists a readable manifest"
+        );
+        assert!(
+            !manifest.with_extension("json.part").exists(),
+            "the atomic write leaves no .part behind"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Boot sweeps crash leftovers but keeps real files.
+    #[test]
+    fn boot_sweeps_partials_only() {
+        let dir = std::env::temp_dir().join(format!("trance-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("vault dir");
+        let stale = dir.join("Half Song.part");
+        let kept = dir.join("Full Song.m4a");
+        std::fs::write(&stale, b"garbage").expect("stale part");
+        std::fs::write(&kept, b"song").expect("song");
+
+        let _ = AppState::new(0, dir.clone());
+
+        assert!(!stale.exists(), "crash leftovers are swept");
+        assert!(kept.exists(), "real files are untouched");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Manifest writes are serialized: N downloads finishing at the same
+    /// moment must all keep their row (previously last-write-wins).
+    #[test]
+    fn concurrent_records_keep_every_row() {
+        let dir = std::env::temp_dir().join(format!("trance-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("vault dir");
+        let state = Arc::new(AppState::new(0, dir.clone()));
+
+        let handles: Vec<_> = (0..4u64)
+            .map(|i| {
+                let state = state.clone();
+                let file = dir.join(format!("Song {i}.m4a"));
+                std::fs::write(&file, b"x").expect("write file");
+                std::thread::spawn(move || {
+                    state
+                        .record(DownloadEntry {
+                            id: format!("raceid{i}"),
+                            title: format!("Song {i}"),
+                            artist: "A".into(),
+                            album: String::new(),
+                            image: String::new(),
+                            duration_secs: 1,
+                            quality: "unknown".into(),
+                            path: file.display().to_string(),
+                            bytes: 1,
+                            at: i,
+                        })
+                        .expect("record");
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().expect("thread");
+        }
+        assert_eq!(
+            read_manifest(&state.manifest()).len(),
+            4,
+            "every concurrent download keeps its row"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

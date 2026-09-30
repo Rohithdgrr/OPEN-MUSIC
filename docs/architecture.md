@@ -11,7 +11,7 @@ A **three-layer client architecture** with an **in-process reverse proxy** in fr
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  PRESENTATION   app/src  (HTML / CSS / vanilla ES modules)          │
-│                 index.html · main.js · styles.css                   │
+│                 index.html · styles.css · main.js + 17 modules     │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │  Tauri IPC  (window.__TAURI__.core.invoke)
 ┌───────────────────────────────▼─────────────────────────────────────┐
@@ -40,7 +40,7 @@ Chosen for: **small surface, no build step, one process, one state object, testa
 | Component | File | Responsibility | Must NOT do |
 |---|---|---|---|
 | **Window shell** | `index.html` | DOM structure, load order | contain logic |
-| **Controller** | `main.js` | render, queue, history, telemetry, IPC calls | know wire formats |
+| **Controller** | `app/src/*.js` (main.js entry + 17 feature modules) | render, queue, history, telemetry, IPC calls | know wire formats |
 | **Theme** | `styles.css` | tokens, layout, states | hard-code content |
 | **Command surface** | `lib.rs` | register commands, assemble DTOs, own app lifecycle | talk HTTP directly |
 | **First-party source** | `official.rs` | `www.jiosaavn.com` search/details, DES media-url decryption, rendition synthesis | know about HTTP servers |
@@ -163,7 +163,7 @@ Rules:
 ### 5.1 Search
 
 ```
-user ─input─► main.js
+user ─input─► app/src (main.js entry)
               │ invoke("search_songs", {query, limit, page})
               ▼
          lib.rs ──► jiosaavn::search_songs(client, query, limit, page)

@@ -1,6 +1,7 @@
 # UI / UX Specification — Open Player
 
-Companion to `PRD.md` and `architecture.md`. Governs `app/src/index.html`, `app/src/main.js`, `app/src/styles.css`.
+Companion to `PRD.md` and `architecture.md`. Governs `app/src/`:
+`index.html`, `main.js` (entry) and its feature modules, `styles.css`.
 
 ---
 
@@ -316,7 +317,7 @@ If motion is added later: only opacity/transform, ≤ 200 ms, gated by `prefers-
 
 | Budget | Limit | Current |
 |---|---|---|
-| Total JS | < 40 KB | ~9 KB (`main.js`) |
+| Total JS | < 40 KB | ~200 KB across 18 modules (budget pre-dates the split) |
 | Total CSS | < 20 KB | ~5 KB |
 | DOM nodes (initial) | < 150 | ~40 |
 | DOM nodes (20 results + queue) | < 500 | ~100 |
@@ -344,10 +345,10 @@ If motion is added later: only opacity/transform, ≤ 200 ms, gated by `prefers-
 | File | Owns | Must not |
 |---|---|---|
 | `index.html` | structure, ids, script load order | contain inline JS/CSS/logic |
-| `main.js` | all behaviour, IPC calls, DOM writes | hard-code wire formats beyond the documented DTOs |
+| `main.js` + feature modules | all behaviour, IPC calls, DOM writes | hard-code wire formats beyond the documented DTOs |
 | `styles.css` | tokens, layout, component states | hard-code content or measurements of data |
 
-**Element id contract** (referenced by `main.js`):
+**Element id contract** (referenced by the feature modules):
 
 ```
 search-form  search-input  results  error  player  now-playing  now-artist
@@ -355,7 +356,8 @@ badge  cover  audio  telemetry  history  queue  play-all  clear-queue
 diag  diag-wrap  source
 ```
 
-Renaming any of these requires updating `main.js` in the same change.
+Renaming any of these requires grepping `app/src/*.js` and updating every
+module that uses the id in the same change.
 
 ---
 

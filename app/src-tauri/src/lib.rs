@@ -61,8 +61,14 @@ async fn search_entities(
     page: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<official::EntityPage, String> {
-    official::search_entities(&state.client, &kind, &query, limit.unwrap_or(20), page.unwrap_or(1))
-        .await
+    official::search_entities(
+        &state.client,
+        &kind,
+        &query,
+        limit.unwrap_or(20),
+        page.unwrap_or(1),
+    )
+    .await
 }
 
 /// Inline suggestions for the search box: the top match plus a few songs,
@@ -117,8 +123,8 @@ async fn resolve_song(
     }
 
     let song = state.cached_song(&id).await?;
-    let chosen = best_quality(&song.qualities, &prefer)
-        .ok_or_else(|| "no stream qualities".to_string())?;
+    let chosen =
+        best_quality(&song.qualities, &prefer).ok_or_else(|| "no stream qualities".to_string())?;
 
     let probe = state.cached_qualify(&chosen.url).await?;
 
@@ -152,6 +158,14 @@ async fn qualify_url(url: String, state: State<'_, Arc<AppState>>) -> Result<Ran
 #[tauri::command]
 fn proxy_base(state: State<'_, Arc<AppState>>) -> String {
     format!("http://127.0.0.1:{}", state.port)
+}
+
+/// IPC contract version. The frontend checks it once at boot, so a renamed
+/// or missing command shows up as a loud mismatch instead of a silent
+/// `invoke` failure. Bump on any breaking command/parameter change.
+#[tauri::command]
+fn api_version() -> u32 {
+    1
 }
 
 /// Home screen feed: hero playlist, curated playlists, charts, top-5 tracks.
@@ -226,7 +240,12 @@ fn safe_file_name(s: &str) -> String {
         })
         .collect();
     let trimmed = cleaned.trim().trim_matches('.').trim().to_string();
-    let trimmed = trimmed.chars().take(120).collect::<String>().trim().to_string();
+    let trimmed = trimmed
+        .chars()
+        .take(120)
+        .collect::<String>()
+        .trim()
+        .to_string();
     if trimmed.is_empty() {
         "track".to_string()
     } else {
@@ -251,8 +270,8 @@ async fn download_song(
     check_id(&id)?;
     let prefer = quality.unwrap_or_else(|| "320kbps".to_string());
     let song = state.cached_song(&id).await?;
-    let chosen = best_quality(&song.qualities, &prefer)
-        .ok_or_else(|| "no stream qualities".to_string())?;
+    let chosen =
+        best_quality(&song.qualities, &prefer).ok_or_else(|| "no stream qualities".to_string())?;
 
     // Stop the old copy resolving while its file is being rewritten.
     state.forget(&id)?;
@@ -390,7 +409,7 @@ fn reparent(win: &tauri::WebviewWindow, embed: bool) -> Result<(), String> {
         let slot = &mut *(lparam as *mut HWND);
         let mut class = [0u8; 64];
         let len = GetClassNameA(hwnd, class.as_mut_ptr(), class.len() as i32);
-        let is_worker = len as usize == WORKERW.len() - 1 && &class[..len as usize] == &WORKERW[..7];
+        let is_worker = len as usize == WORKERW.len() - 1 && class[..len as usize] == WORKERW[..7];
         let owns_icons = !FindWindowExA(
             hwnd,
             std::ptr::null_mut(),
@@ -478,6 +497,20 @@ fn widget_start_drag(win: tauri::WebviewWindow) -> Result<(), String> {
     win.start_dragging().map_err(|e| e.to_string())
 }
 
+/// `CREATE_NO_WINDOW` on a console child (`reg`, ...). The release build is a
+/// GUI process, so without this every helper it spawns would pop its own
+/// terminal — `autostart_set` runs on each boot, which is one flash per launch.
+#[cfg(windows)]
+fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(0x0800_0000)
+}
+
+#[cfg(not(windows))]
+fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    cmd
+}
+
 /// Open at startup: the HKCU Run key is Windows' own autostart list - no
 /// elevation, no scheduled task, no plugin. `reg delete` exits non-zero when
 /// the value is already gone, which is the state we just asked for.
@@ -487,16 +520,15 @@ fn autostart_set(on: bool) -> Result<(), String> {
     const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
     const NAME: &str = "TRANCE MUSIC";
     let value = format!("\"{}\"", exe.display());
-    let out = if on {
-        std::process::Command::new("reg")
-            .args(["add", KEY, "/v", NAME, "/d", value.as_str(), "/f"])
-            .output()
+    let mut cmd = std::process::Command::new("reg");
+    if on {
+        cmd.args(["add", KEY, "/v", NAME, "/d", value.as_str(), "/f"]);
     } else {
-        std::process::Command::new("reg")
-            .args(["delete", KEY, "/v", NAME, "/f"])
-            .output()
+        cmd.args(["delete", KEY, "/v", NAME, "/f"]);
     }
-    .map_err(|e| format!("reg: {e}"))?;
+    let out = hide_console(&mut cmd)
+        .output()
+        .map_err(|e| format!("reg: {e}"))?;
     if on && !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -545,13 +577,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-    search_songs,
-    search_entities,
-    search_suggestions,
-    recommend_songs,
+            search_songs,
+            search_entities,
+            search_suggestions,
+            recommend_songs,
             resolve_song,
             qualify_url,
             proxy_base,
+            api_version,
             home_feed,
             playlist_tracks,
             album_tracks,
@@ -565,10 +598,10 @@ pub fn run() {
             reveal_vault,
             widget_show,
             widget_embed,
-    widget_set_position,
-    widget_start_drag,
-    autostart_set,
-    content_prefs_set
+            widget_set_position,
+            widget_start_drag,
+            autostart_set,
+            content_prefs_set
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");

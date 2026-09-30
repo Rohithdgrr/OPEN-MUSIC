@@ -564,7 +564,7 @@ This project integrates a **third-party community API** with a service the API d
 | Target | Mechanism | Status |
 |---|---|---|
 | Dev | `npm run tauri dev` | ✅ |
-| Windows installer | `npm run tauri build` → NSIS `.exe` / MSI | config present, not yet cut |
+| Windows installer | `npm run tauri build` → NSIS `.exe` / MSI | ✅ cut, signed, attached to the v0.1.0 release |
 | Portable | single `app.exe` from `target/release` | build profile configured |
 | CI | `cargo build && cargo test` (network required) | to be added |
 | Self-hosted catalog | deploy `sumitkolhe/jiosaavn-api` to Vercel/Cloudflare Workers, add its URL to `MIRRORS` | documented, one line |

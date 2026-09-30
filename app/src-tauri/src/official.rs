@@ -1,4 +1,4 @@
-﻿//! First-party JioSaavn adapter â€” `www.jiosaavn.com/api.php`.
+//! First-party JioSaavn adapter â€” `www.jiosaavn.com/api.php`.
 //!
 //! This is the API JioSaavn's own web player calls, so it is the primary
 //! catalog source: no community-mirror rate limit, real pagination (`n`/`p`)
@@ -18,8 +18,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::jiosaavn::{
-    check_id, dedup_tracks, flag, fmt_duration, html_unescape, image_url, num_any, text, QualityUrl,
-    Song, Track,
+    check_id, dedup_tracks, flag, fmt_duration, html_unescape, image_url, num_any, text,
+    QualityUrl, Song, Track,
 };
 
 /// JioSaavn's web API entry point.
@@ -67,7 +67,9 @@ pub fn set_prefs(lang: &str, country: &str) {
 }
 
 fn pref(m: &Mutex<String>) -> String {
-    m.lock().map(|g| (*g).clone()).unwrap_or_default()
+    // A poisoned guard still carries the value the panicking thread held, so
+    // recover it instead of silently dropping the user's language choice.
+    m.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +105,7 @@ async fn call(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<Value
         return Err(format!("{url} -> HTTP {status}"));
     }
     let body = resp.text().await.map_err(|e| format!("read {url}: {e}"))?;
-    let value: Value =
-        serde_json::from_str(&body).map_err(|e| format!("decode {url}: {e}"))?;
+    let value: Value = serde_json::from_str(&body).map_err(|e| format!("decode {url}: {e}"))?;
     if let Some(err) = value.get("error") {
         // Usually `{"error":{"msg":...}}`; a few endpoints answer with a bare
         // string ("No new song found for current radio.").
@@ -141,8 +142,7 @@ pub fn decrypt_media_url(encoded: &str) -> Result<String, String> {
     }
 
     use des::cipher::{BlockDecrypt, KeyInit};
-    let cipher =
-        des::Des::new_from_slice(MEDIA_KEY).map_err(|e| format!("des key: {e}"))?;
+    let cipher = des::Des::new_from_slice(MEDIA_KEY).map_err(|e| format!("des key: {e}"))?;
 
     let mut out = Vec::with_capacity(raw.len());
     for block in raw.chunks_exact(8) {
@@ -153,7 +153,11 @@ pub fn decrypt_media_url(encoded: &str) -> Result<String, String> {
 
     // PKCS#7 unpad (DES block size is 8).
     let pad = *out.last().unwrap_or(&0) as usize;
-    if pad == 0 || pad > 8 || out.len() < pad || !out[out.len() - pad..].iter().all(|&b| b == pad as u8) {
+    if pad == 0
+        || pad > 8
+        || out.len() < pad
+        || !out[out.len() - pad..].iter().all(|&b| b == pad as u8)
+    {
         return Err("media url padding is invalid".into());
     }
     out.truncate(out.len() - pad);
@@ -247,7 +251,9 @@ fn parse_song(v: &Value) -> Track {
         duration_secs,
         duration: fmt_duration(duration_secs),
         image,
-        page_url: text(v, "perma_url").or_else(|| text(v, "url")).unwrap_or_default(),
+        page_url: text(v, "perma_url")
+            .or_else(|| text(v, "url"))
+            .unwrap_or_default(),
         hq: hq_available(v) || hq_available(info),
         plays: num_any(v, "play_count")
             .or_else(|| num_any(v, "playCount"))
@@ -405,9 +411,7 @@ pub async fn search_entities(
         .ok_or_else(|| format!("{op} response missing results"))?;
     // `start` is 1-based, so this is how many rows upstream had served in
     // total; a short page (or none) means there is nothing left to load.
-    let served = value.get("start").and_then(Value::as_u64).unwrap_or(1)
-        + results.len() as u64
-        - 1;
+    let served = value.get("start").and_then(Value::as_u64).unwrap_or(1) + results.len() as u64 - 1;
     let total = value.get("total").and_then(Value::as_u64).unwrap_or(served);
     let items = dedup_feed(
         results
@@ -473,7 +477,11 @@ fn sug_rows(value: &Value, key: &str, subtitle: impl Fn(&Value) -> String) -> Ve
         .get(key)
         .and_then(|v| v.get("data"))
         .and_then(Value::as_array)
-        .map(|rows| rows.iter().filter_map(|v| sug_item(v, subtitle(v))).collect())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|v| sug_item(v, subtitle(v)))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -510,7 +518,7 @@ fn suggestions_from_value(value: &Value) -> Result<Suggestions, String> {
     Ok(Suggestions {
         top: top.as_ref().map(|(_, item)| item.clone()),
         top_kind: top.as_ref().map(|(kind, _)| kind.clone()),
-        songs: sug_rows(&value, "songs", |v| {
+        songs: sug_rows(value, "songs", |v| {
             let mi = v.get("more_info");
             mi.and_then(|m| text(m, "primary_artists"))
                 .or_else(|| mi.and_then(|m| text(m, "singers")))
@@ -519,15 +527,17 @@ fn suggestions_from_value(value: &Value) -> Result<Suggestions, String> {
         .into_iter()
         .take(5)
         .collect(),
-        albums: sug_rows(&value, "albums", |v| text(v, "music").unwrap_or_default())
+        albums: sug_rows(value, "albums", |v| text(v, "music").unwrap_or_default())
             .into_iter()
             .take(3)
             .collect(),
-        artists: sug_rows(&value, "artists", |v| text(v, "description").unwrap_or_default())
-            .into_iter()
-            .take(3)
-            .collect(),
-        playlists: sug_rows(&value, "playlists", |v| text(v, "extra").unwrap_or_default())
+        artists: sug_rows(value, "artists", |v| {
+            text(v, "description").unwrap_or_default()
+        })
+        .into_iter()
+        .take(3)
+        .collect(),
+        playlists: sug_rows(value, "playlists", |v| text(v, "extra").unwrap_or_default())
             .into_iter()
             .take(3)
             .collect(),
@@ -890,10 +900,7 @@ fn artist_bio(v: &Value) -> String {
 }
 
 /// Every song of a playlist / chart, in order.
-pub async fn playlist_tracks(
-    client: &reqwest::Client,
-    id: &str,
-) -> Result<Vec<Track>, String> {
+pub async fn playlist_tracks(client: &reqwest::Client, id: &str) -> Result<Vec<Track>, String> {
     check_id(id)?;
     let value = call(
         client,
@@ -1130,7 +1137,9 @@ mod tests {
         let labels: Vec<&str> = qs.iter().map(|q| q.quality.as_str()).collect();
         assert_eq!(labels, ["12kbps", "48kbps", "96kbps", "160kbps", "320kbps"]);
         assert!(qs.iter().all(|q| q.url.ends_with(".mp4")));
-        assert!(qs.iter().all(|q| q.url.starts_with("https://aac.saavncdn.com/450/")));
+        assert!(qs
+            .iter()
+            .all(|q| q.url.starts_with("https://aac.saavncdn.com/450/")));
         assert_eq!(
             qs.last().unwrap().url,
             "https://aac.saavncdn.com/450/f467e05e2825cec2203546333e0d0550_320.mp4"
@@ -1279,7 +1288,9 @@ mod tests {
         assert!(!page.station.is_empty(), "a station id comes back");
         assert!(!page.tracks.is_empty(), "the first batch carries songs");
         assert!(
-            page.tracks.iter().all(|t| !t.id.is_empty() && !t.title.is_empty()),
+            page.tracks
+                .iter()
+                .all(|t| !t.id.is_empty() && !t.title.is_empty()),
             "every radio row is a playable song"
         );
     }
@@ -1308,7 +1319,10 @@ mod tests {
         let playlists = feed_list(&v["top_playlists"], "playlist");
         assert_eq!(playlists.len(), 1, "song entries must be filtered out");
         assert_eq!(playlists[0].id, "1302033575");
-        assert_eq!(playlists[0].count, 20, "count comes from more_info.song_count");
+        assert_eq!(
+            playlists[0].count, 20,
+            "count comes from more_info.song_count"
+        );
 
         let charts = feed_list(&v["charts"], "playlist");
         assert_eq!(charts[0].count, 50, "charts declare count at the top level");
@@ -1395,7 +1409,10 @@ mod tests {
         assert_eq!(a.title, "Aashiqui 2");
         assert_eq!(a.subtitle, "Jeet Gannguli, Mithoon");
         assert_eq!(a.token, "-iNdCmFNV9o_", "token is the perma_url tail");
-        assert_eq!(a.image, "https://c.saavncdn.com/430/Aashiqui-2-Hindi-2013-500x500.jpg");
+        assert_eq!(
+            a.image,
+            "https://c.saavncdn.com/430/Aashiqui-2-Hindi-2013-500x500.jpg"
+        );
         assert_eq!(a.count, 0, "albums report no count here");
 
         let artist: Value = serde_json::from_str(
@@ -1434,7 +1451,10 @@ mod tests {
         let v: Value = serde_json::from_str(r#"{"text": "Orphan"}"#).unwrap();
         assert!(entity_item("album", &v).is_none());
         let v: Value = serde_json::from_str(r#"{"id": "459320"}"#).unwrap();
-        assert!(entity_item("artist", &v).is_none(), "a name is required too");
+        assert!(
+            entity_item("artist", &v).is_none(),
+            "a name is required too"
+        );
     }
 
     /// The frontend reads `payload.items` / `payload.page_full` and each card's
@@ -1553,7 +1573,10 @@ mod tests {
         assert_eq!(v["top"]["id"], "459320");
         assert_eq!(v["top_kind"], "artist");
         for key in ["songs", "albums", "artists", "playlists"] {
-            assert!(v.get(key).and_then(Value::as_array).is_some(), "missing {key}");
+            assert!(
+                v.get(key).and_then(Value::as_array).is_some(),
+                "missing {key}"
+            );
         }
     }
 
@@ -1579,7 +1602,10 @@ mod tests {
         assert_eq!(v["year"], "2025");
         assert_eq!(v["token"], "tok");
         assert_eq!(v["kind"], "single");
-        assert!(v.get("item").is_none(), "card fields must not nest under item");
+        assert!(
+            v.get("item").is_none(),
+            "card fields must not nest under item"
+        );
     }
 
     // ---- Live contract tests (require network) ----
@@ -1599,8 +1625,14 @@ mod tests {
             second.iter().all(|t| !seen.contains(t.id.as_str())),
             "page 2 must advance, not repeat page 1"
         );
-        assert!(first.iter().any(|t| t.hq), "official results carry 320 kbps flags");
-        assert!(first.iter().any(|t| t.plays > 0), "official results carry play counts");
+        assert!(
+            first.iter().any(|t| t.hq),
+            "official results carry 320 kbps flags"
+        );
+        assert!(
+            first.iter().any(|t| t.plays > 0),
+            "official results carry play counts"
+        );
     }
 
     /// The three entity searches must page independently and hand the UI a
@@ -1649,14 +1681,14 @@ mod tests {
         let client = crate::jiosaavn::api_client();
         let feed = home(&client).await.expect("home feed");
         assert!(feed.playlists.len() >= 5, "enough for one carousel page");
-        assert!(feed.charts.len() >= 1);
+        assert!(!feed.charts.is_empty());
         assert!(
             feed.albums.len() >= 4 && feed.albums.iter().all(|a| !a.token.is_empty()),
             "albums carry resolve tokens"
         );
         assert!(feed.artists.len() >= 3, "artist row for Home");
         assert_eq!(feed.top_tracks.len(), 5, "countdown needs five rows");
-        assert!(feed.top_tracks[0].title.is_empty() == false);
+        assert!(!feed.top_tracks[0].title.is_empty());
         // Nothing the Home screen renders may still point at a 150px thumb.
         let tiny = |s: &str| s.contains("150x150") || s.contains("50x50");
         let https = |s: &str| s.starts_with("https://");
@@ -1674,7 +1706,9 @@ mod tests {
             assert!(!tiny(&t.image), "stale thumb: {}", t.image);
             assert!(https(&t.image), "insecure artwork: {}", t.image);
         }
-        let tracks = playlist_tracks(&client, &feed.chart_id).await.expect("chart");
+        let tracks = playlist_tracks(&client, &feed.chart_id)
+            .await
+            .expect("chart");
         assert!(tracks.len() >= 5);
     }
 
@@ -1721,7 +1755,10 @@ mod tests {
             "every release resolves through its token"
         );
         assert!(
-            overview.releases.iter().all(|r| r.kind == "album" || r.kind == "single"),
+            overview
+                .releases
+                .iter()
+                .all(|r| r.kind == "album" || r.kind == "single"),
             "every release sits on a shelf the chips can filter"
         );
     }
@@ -1734,13 +1771,20 @@ mod tests {
         let client = crate::jiosaavn::api_client();
         let tracks = search(&client, "tum hi ho", 1, 1).await.expect("search");
         let song = fetch_song(&client, &tracks[0].id).await.expect("resolve");
-        assert_eq!(song.qualities.len(), 5, "every rendition must be synthesised");
+        assert_eq!(
+            song.qualities.len(),
+            5,
+            "every rendition must be synthesised"
+        );
         let chosen = crate::jiosaavn::best_quality(&song.qualities, "320kbps").unwrap();
         assert!(chosen.url.ends_with("_320.mp4"), "full file, not a preview");
         let probe = crate::jiosaavn::qualify_url(&client, &chosen.url)
             .await
             .expect("probe");
-        assert_eq!(probe.range_status, crate::jiosaavn::RangeStatus::Unrestricted);
+        assert_eq!(
+            probe.range_status,
+            crate::jiosaavn::RangeStatus::Unrestricted
+        );
         assert!(
             probe.content_length.unwrap_or(0) > 1_000_000,
             "a whole song is megabytes, not kilobytes"
@@ -1759,7 +1803,9 @@ mod tests {
         assert!(s.top.is_some(), "top query is the dropdown's headline");
         assert!(!s.songs.is_empty(), "song suggestions must be offered");
         assert!(
-            s.songs.iter().all(|it| !it.id.is_empty() && !it.title.is_empty()),
+            s.songs
+                .iter()
+                .all(|it| !it.id.is_empty() && !it.title.is_empty()),
             "every suggestion carries an id and a title"
         );
     }
