@@ -478,6 +478,38 @@ fn widget_start_drag(win: tauri::WebviewWindow) -> Result<(), String> {
     win.start_dragging().map_err(|e| e.to_string())
 }
 
+/// Open at startup: the HKCU Run key is Windows' own autostart list - no
+/// elevation, no scheduled task, no plugin. `reg delete` exits non-zero when
+/// the value is already gone, which is the state we just asked for.
+#[tauri::command]
+fn autostart_set(on: bool) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("locate exe: {e}"))?;
+    const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+    const NAME: &str = "TRANCE MUSIC";
+    let value = format!("\"{}\"", exe.display());
+    let out = if on {
+        std::process::Command::new("reg")
+            .args(["add", KEY, "/v", NAME, "/d", value.as_str(), "/f"])
+            .output()
+    } else {
+        std::process::Command::new("reg")
+            .args(["delete", KEY, "/v", NAME, "/f"])
+            .output()
+    }
+    .map_err(|e| format!("reg: {e}"))?;
+    if on && !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    Ok(())
+}
+
+/// Language + region every catalog request is built with (Settings -> prefs).
+#[tauri::command]
+fn content_prefs_set(lang: String, country: String) -> Result<(), String> {
+    crate::official::set_prefs(&lang, &country);
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -533,8 +565,10 @@ pub fn run() {
             reveal_vault,
             widget_show,
             widget_embed,
-            widget_set_position,
-            widget_start_drag
+    widget_set_position,
+    widget_start_drag,
+    autostart_set,
+    content_prefs_set
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");

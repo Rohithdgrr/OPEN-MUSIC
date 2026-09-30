@@ -6,6 +6,9 @@
    into a cache miss. The link is re-stamped synchronously so CSS still applies
    before first paint; main.js is injected on DOMContentLoaded to keep the
    `defer` timing its top-level document queries depend on. */
+/* WebView2 restores the previous scroll position when a session resumes; set
+   it before the body exists so every launch and tab lands at the top. */
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 document.querySelector('link[href="styles.css"]').href = "styles.css?v=" + Date.now();
 addEventListener("DOMContentLoaded", () => {
   const s = document.createElement("script");
@@ -21,7 +24,7 @@ addEventListener("DOMContentLoaded", () => {
 <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
 <span class="font-label-mono text-label-mono tracking-widest uppercase">VAULT AUDIOPHILE FEED • LOSSLESS BITSTREAM DISCOVERY</span>
 </div>
-<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Good evening, Listener</h1>
+<h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Good evening, <span id="home-name">Listener</span></h1>
 </div>
 <!-- Quick Vibe Pills -->
 <div class="flex items-center gap-space-xs overflow-x-auto pb-1">

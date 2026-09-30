@@ -11,6 +11,8 @@
 //!
 //! Must NOT know anything about HTTP servers (that is `proxy.rs`'s job).
 
+use std::sync::Mutex;
+
 use base64::Engine;
 use serde::Serialize;
 use serde_json::Value;
@@ -46,6 +48,29 @@ const ARTIST_PAGE_SIZE: u32 = 50;
 const ARTIST_RELEASES: u32 = 50;
 
 // ---------------------------------------------------------------------------
+// Content preferences (Settings -> General)
+// ---------------------------------------------------------------------------
+
+/// Language / region every `api.php` call is biased to. Empty means "source
+/// default", "all" means "language filter off" and is never sent.
+static PREF_LANG: Mutex<String> = Mutex::new(String::new());
+static PREF_COUNTRY: Mutex<String> = Mutex::new(String::new());
+
+/// Set once at boot and whenever the user changes the selects in Settings.
+pub fn set_prefs(lang: &str, country: &str) {
+    if let Ok(mut g) = PREF_LANG.lock() {
+        *g = lang.to_string();
+    }
+    if let Ok(mut g) = PREF_COUNTRY.lock() {
+        *g = country.to_string();
+    }
+}
+
+fn pref(m: &Mutex<String>) -> String {
+    m.lock().map(|g| (*g).clone()).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------
 
@@ -56,6 +81,14 @@ async fn call(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<Value
         let mut ser = url::form_urlencoded::Serializer::new(String::new());
         for (k, v) in params {
             ser.append_pair(k, v);
+        }
+        let lang = pref(&PREF_LANG);
+        if !lang.is_empty() && lang != "all" {
+            ser.append_pair("lang", &lang);
+        }
+        let country = pref(&PREF_COUNTRY);
+        if !country.is_empty() {
+            ser.append_pair("country", &country);
         }
         ser.finish()
     };

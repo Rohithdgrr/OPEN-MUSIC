@@ -43,6 +43,9 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 let stateEmitAt = 0;
 
 // ---------------------------------------------------------------- views ---
+// WebView2 restores the old scroll position after a repaint; a tab switch has
+// to land at the top of the page instead of resuming the last view's place.
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 const views = $$("[data-view]");
 const navLinks = $$("header nav a[data-path]");
 // Tailwind emits text-on-surface-variant after text-on-primary, so the active
@@ -50,10 +53,15 @@ const navLinks = $$("header nav a[data-path]");
 const ACTIVE = ["bg-primary", "text-on-primary"];
 const INACTIVE = ["text-on-surface-variant", "hover:text-on-surface"];
 
-function showView(name) {
-  // Every view is its own long page, so a tab switch has to put the reader at
-  // the top. Without this you land wherever the *previous* view was scrolled to.
+/// Every tab opens at the top of its own long page: the swap below changes the
+/// document height, so the first scroll can be clamped away - scroll again on
+/// the next frame, once the layout has settled.
+function toTop() {
   window.scrollTo({ top: 0 });
+  requestAnimationFrame(() => window.scrollTo({ top: 0 }));
+}
+
+function showView(name) {
   for (const v of views) v.classList.toggle("hidden", v.dataset.view !== name);
   for (const a of navLinks) {
     const on = a.dataset.path === name;
@@ -63,6 +71,7 @@ function showView(name) {
     else a.removeAttribute("aria-current");
   }
   diag("view", null, name);
+  toTop();
   if (name === "downloads") refreshVault();
   if (name === "library") {
     renderLibrary();
@@ -251,7 +260,161 @@ async function applyWidget({ show = widgetPref(), embed = widgetMode() === "desk
   }
 }
 
+// -------------------------------------------------------------- preferences -
+// Profile + catalog preferences live in localStorage (shared with the card
+// window); the pieces the backend needs are pushed over once at boot.
+const NAME_KEY = "tm-name";
+const AUTOSTART_KEY = "tm-autostart"; // missing = on, so first run starts with Windows
+const LANG_KEY = "tm-lang"; // "all" or a JioSaavn language slug
+const COUNTRY_KEY = "tm-country"; // ISO code, "" = source default
+
+function prefStr(key, dflt) {
+  try {
+    return localStorage.getItem(key) || dflt;
+  } catch {
+    return dflt;
+  }
+}
+function savePref(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
+const prefName = () => prefStr(NAME_KEY, "Listener");
+const prefLang = () => prefStr(LANG_KEY, "all");
+const prefCountry = () => prefStr(COUNTRY_KEY, "");
+const autostartPref = () => prefStr(AUTOSTART_KEY, "1") !== "0";
+
+function paintGreeting() {
+  const el = $("#home-name");
+  if (el) el.textContent = prefName();
+}
+
+/// Registry Run entry (startup) + the language/country every catalog request
+/// is built with.
+function applySysPrefs() {
+  invoke("autostart_set", { on: autostartPref() }).catch((e) => diag("autostart", false, String(e)));
+  invoke("content_prefs_set", { lang: prefLang(), country: prefCountry() }).catch((e) =>
+    diag("prefs", false, String(e)),
+  );
+}
+
+/// Search results, load-more pages and Home's rankings all flow through here:
+/// keep the selected language, but only when the source actually speaks it -
+/// an all-English query under a Telugu preference would otherwise paint an
+/// empty page instead of the results the user asked for.
+function filterLang(list) {
+  const lang = prefLang();
+  if (lang === "all" || !Array.isArray(list)) return list;
+  const hit = list.filter((t) =>
+    String(t.language || "")
+      .toLowerCase()
+      .split(",")
+      .some((s) => s.trim() === lang),
+  );
+  return hit.length ? hit : list;
+}
+
 const SETTINGS_VIEWS = {
+  general: {
+    eyebrow: "Settings / General",
+    body: () => {
+      const name = prefName();
+      const startOn = autostartPref();
+      const lang = prefLang();
+      const country = prefCountry();
+      const LANGS = [
+        ["all", "All languages"],
+        ["telugu", "Telugu"],
+        ["hindi", "Hindi"],
+        ["tamil", "Tamil"],
+        ["bengali", "Bengali"],
+        ["kannada", "Kannada"],
+        ["malayalam", "Malayalam"],
+        ["english", "English"],
+        ["chinese", "Chinese"],
+        ["german", "German"],
+        ["marathi", "Marathi"],
+        ["punjabi", "Punjabi"],
+        ["gujarati", "Gujarati"],
+        ["odia", "Odia"],
+        ["urdu", "Urdu"],
+        ["spanish", "Spanish"],
+        ["french", "French"],
+        ["japanese", "Japanese"],
+        ["korean", "Korean"],
+      ];
+      const COUNTRIES = [
+        ["", "Automatic"],
+        ["IN", "India"],
+        ["BD", "Bangladesh"],
+        ["NP", "Nepal"],
+        ["LK", "Sri Lanka"],
+        ["PK", "Pakistan"],
+        ["AE", "United Arab Emirates"],
+        ["SA", "Saudi Arabia"],
+        ["QA", "Qatar"],
+        ["US", "United States"],
+        ["CA", "Canada"],
+        ["GB", "United Kingdom"],
+        ["AU", "Australia"],
+        ["SG", "Singapore"],
+        ["MY", "Malaysia"],
+        ["DE", "Germany"],
+        ["FR", "France"],
+        ["JP", "Japan"],
+        ["ZA", "South Africa"],
+        ["BR", "Brazil"],
+      ];
+      const options = (rows, value) =>
+        rows
+          .map(([v, l]) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`)
+          .join("");
+      const row = (icon, label, sub, control) => `
+      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-container transition-colors">
+        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">${icon}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-on-surface">${label}</span>
+          <span class="block text-xs text-on-surface-variant">${sub}</span>
+        </span>
+        ${control}
+      </div>`;
+      const selectCls =
+        "max-w-[9.5rem] shrink-0 bg-surface-container-lowest border border-surface-container-highest/60 rounded-lg px-2 py-1.5 text-sm text-on-surface";
+      return `
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-container transition-colors">
+        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">person</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-on-surface">Display name</span>
+          <span class="block text-xs text-on-surface-variant">Shown in the greeting on Home.</span>
+        </span>
+        <input id="set-name" type="text" maxlength="32" value="${esc(name)}" placeholder="Listener"
+          class="w-40 shrink-0 bg-surface-container-lowest border border-surface-container-highest/60 rounded-lg px-2 py-1.5 text-sm text-on-surface" />
+      </div>
+      ${row(
+        "power_settings_new",
+        "Open at startup",
+        startOn ? "Starts with Windows" : "Off - start it yourself",
+        `<button type="button" role="switch" aria-checked="${startOn}" data-autostart class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${startOn ? "bg-primary" : "bg-surface-container-highest"}"><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${startOn ? "translate-x-4" : "translate-x-0.5"}"></span></button>`,
+      )}
+      ${row(
+        "translate",
+        "Music language",
+        "Songs are filtered to the language you pick",
+        `<select id="set-lang" class="${selectCls}">${options(LANGS, lang)}</select>`,
+      )}
+      ${row(
+        "public",
+        "Country",
+        "Sets the region the catalog is read from",
+        `<select id="set-country" class="${selectCls}">${options(COUNTRIES, country)}</select>`,
+      )}
+      <p class="text-xs leading-relaxed text-on-surface-variant">Language and country apply to new searches and refresh Home straight away; favourites and downloads you already saved are never filtered.</p>
+    </div>`;
+    },
+  },
+
   licenses: {
     eyebrow: "Settings / Licences",
     body: () => `
@@ -379,6 +542,7 @@ const SETTINGS_VIEWS = {
 };
 
 const SETTINGS_MENU = [
+  ["tune", "General", "Name, startup, language &amp; country", "general"],
   ["widgets", "Desktop Widget", "Now-playing card on your desktop", "widget"],
   ["policy", "Open-Source Licences", "MIT &amp; Apache-2.0", "licenses"],
   ["info", "About the Project", `v${APP.version} &middot; Windows desktop`, "about"],
@@ -436,6 +600,34 @@ function openSettings(view = "menu") {
         if (reset && typeof reset.catch === "function") reset.catch(() => {});
         toast("Desktop widget moved back to the default spot.", "info");
         return;
+      }
+      const start = e.target.closest("[data-autostart]");
+      if (start) {
+        savePref(AUTOSTART_KEY, autostartPref() ? "0" : "1");
+        applySysPrefs();
+        return openSettings("general");
+      }
+    });
+    // Text and selects commit on change so typing a name never re-renders the
+    // panel under the cursor; only a finished edit repaints anything.
+    dlg.addEventListener("input", (e) => {
+      if (e.target.id !== "set-name") return;
+      savePref(NAME_KEY, e.target.value);
+      paintGreeting();
+    });
+    dlg.addEventListener("change", (e) => {
+      if (e.target.id === "set-lang") {
+        savePref(LANG_KEY, e.target.value);
+        applySysPrefs();
+        loadHome();
+        if ($("#search-input")?.value.trim()) doSearch({ silent: true });
+        toast(`Songs filtered to ${e.target.selectedOptions[0]?.textContent}.`, "info");
+      } else if (e.target.id === "set-country") {
+        savePref(COUNTRY_KEY, e.target.value);
+        applySysPrefs();
+        loadHome();
+        if ($("#search-input")?.value.trim()) doSearch({ silent: true });
+        toast(`Reading charts for ${e.target.selectedOptions[0]?.textContent}.`, "info");
       }
     });
     document.body.appendChild(dlg);
@@ -2359,7 +2551,7 @@ async function doSearch(opts = {}) {
     // Backend collapses upstream repeats, but a stale page can still hand
     // us dupes â€” dedupe defensively before first paint.
     const clean = dedupeTracks(tracks);
-    lastResults = clean.list;
+    lastResults = filterLang(clean.list);
     searchExhausted = !pageFull;
     if (!lastResults.length) {
       resultsEl.innerHTML = "";
@@ -2417,7 +2609,7 @@ async function doSearch(opts = {}) {
     resultsSub.textContent = `End of results â€” ${lastResults.length} tracks for "${q}".`;
     return;
   }
-  lastResults = lastResults.concat(fresh);
+  lastResults = lastResults.concat(filterLang(fresh));
   diag(`search "${q}" page ${searchPage}`, true, `+${fresh.length} tracks`);
   refreshResults();
 }
@@ -2845,7 +3037,7 @@ async function loadHome() {
   homeFeed.charts = uniqById(homeFeed.charts);
   homeFeed.albums = uniqById(homeFeed.albums);
   homeFeed.artists = uniqById(homeFeed.artists);
-  homeFeed.top_tracks = dedupeTracks(homeFeed.top_tracks || []).list;
+  homeFeed.top_tracks = filterLang(dedupeTracks(homeFeed.top_tracks || []).list);
   diag(
     "home",
     true,
@@ -4332,6 +4524,9 @@ if (lastPlayed) {
 }
 // The desktop card is a separate window: show it if it was left switched on,
 // then push the current snapshot so it paints before the user touches it.
+paintGreeting();
+applySysPrefs();
+toTop();
 applyWidget();
 wireDesktopCard();
 renderFavs();
