@@ -1,8 +1,8 @@
-/* TRANCE MUSIC — frontend controller (vanilla ES module, no build step).
+/* TRANCE MUSIC â€” frontend controller (vanilla ES module, no build step).
  *
  * Wires the three Stitch views (home / search / now-playing) to the Rust
  * backend: search_songs -> results, resolve_song -> badge -> <audio>,
- * plus queue, history, lyrics sync, telemetry and diagnostics.
+ * plus queue, history, lyrics sync and diagnostics.
  */
 
 // Surface any uncaught error in the UI instead of dying silently.
@@ -38,6 +38,10 @@ if (!invoke) {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Stamp of the last state pushed to the desktop card (see emitState below).
+// Declared up here because paintVolume() runs during module evaluation.
+let stateEmitAt = 0;
+
 // ---------------------------------------------------------------- views ---
 const views = $$("[data-view]");
 const navLinks = $$("header nav a[data-path]");
@@ -47,6 +51,9 @@ const ACTIVE = ["bg-primary", "text-on-primary"];
 const INACTIVE = ["text-on-surface-variant", "hover:text-on-surface"];
 
 function showView(name) {
+  // Every view is its own long page, so a tab switch has to put the reader at
+  // the top. Without this you land wherever the *previous* view was scrolled to.
+  window.scrollTo({ top: 0 });
   for (const v of views) v.classList.toggle("hidden", v.dataset.view !== name);
   for (const a of navLinks) {
     const on = a.dataset.path === name;
@@ -83,7 +90,7 @@ function diag(step, ok, detail) {
     "font-mono text-[11px] " +
     (ok === true ? "text-emerald-600" : ok === false ? "text-red-600" : "text-on-surface-variant");
   const t = new Date().toLocaleTimeString();
-  li.textContent = detail ? `${t} ${step} — ${detail}` : `${t} ${step}`;
+  li.textContent = detail ? `${t} ${step} â€” ${detail}` : `${t} ${step}`;
   diagEl.prepend(li);
   while (diagEl.children.length > 40) diagEl.lastChild.remove();
 }
@@ -131,6 +138,337 @@ function toast(msg, kind = "info", ms = 4500) {
   }, ms);
   return dismiss;
 }
+
+/// Track credits in a native <dialog> so the focus trap, Esc and the backdrop
+/// come from the platform instead of hand-rolled key handling. Created lazily
+/// like #toast-stack; the box reuses the app's own design tokens.
+function openCredits(t, quality) {
+  let dlg = $("#tm-dialog");
+  if (!dlg) {
+    dlg = document.createElement("dialog");
+    dlg.id = "tm-dialog";
+    dlg.innerHTML = `
+    <form method="dialog" class="w-[min(30rem,calc(100vw-2rem))] rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-xl overflow-hidden text-left">
+      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-surface-container-high">
+        <span class="material-symbols-outlined text-[18px] text-on-surface">info</span>
+        <span class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Track Credits &amp; Lineage</span>
+      </div>
+      <dl id="tm-dialog-body" class="px-5 py-4 flex flex-col gap-3"></dl>
+      <div class="flex justify-end px-5 pb-4">
+        <button type="submit" class="px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-inverse-surface transition-colors shadow-sm">Close</button>
+      </div>
+    </form>`;
+    dlg.addEventListener("click", (e) => {
+      if (e.target === dlg) dlg.close();
+    });
+    document.body.appendChild(dlg);
+  }
+  const rows = [
+    ["Title", t.title],
+    ["Artist", t.artist || "Unknown"],
+    ["Album", t.album || "Unknown"],
+    ["Duration", fmtTime(t.duration || 0)],
+    ["Quality", quality],
+    ["ID", t.id],
+  ];
+  $("#tm-dialog-body", dlg).innerHTML = rows
+    .map(
+      ([k, v]) => `
+      <div class="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4">
+        <dt class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant sm:w-24 shrink-0">${esc(k)}</dt>
+        <dd class="text-sm text-on-surface break-words min-w-0">${esc(v)}</dd>
+      </div>`,
+    )
+    .join("");
+  if (dlg.open) return; // showModal() throws on an already-open dialog
+  dlg.showModal();
+}
+
+// ---------------------------------------------------------------- settings -
+// One native <dialog>, three entries and nothing else. The body swaps between
+// the menu and a single section, so a nested dialog is never needed.
+const APP = { name: "TRANCE MUSIC", version: "0.1.0", id: "com.openmusic.trancemusic" };
+
+/// Direct Rust dependencies, read off Cargo.lock â€” the list an attribution
+/// page is expected to carry. The full transitive tree is 469 crates and is not
+/// useful on screen; the lock file is the authoritative copy.
+const LICENSES = [
+  ["tauri", "2.12.0", "MIT OR Apache-2.0"],
+  ["serde", "1.0.229", "MIT"],
+  ["serde_json", "1.0.151", "MIT OR Apache-2.0"],
+  ["tokio", "1.53.1", "MIT"],
+  ["axum", "0.8.9", "MIT"],
+  ["reqwest", "0.12.28", "MIT OR Apache-2.0"],
+  ["url", "2.5.8", "MIT OR Apache-2.0"],
+  ["futures", "0.3.34", "MIT OR Apache-2.0"],
+  ["des", "0.8.1", "MIT OR Apache-2.0"],
+  ["base64", "0.22.1", "MIT OR Apache-2.0"],
+];
+
+const kv = (k, v) => `
+  <div class="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3">
+    <dt class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant sm:w-28 shrink-0">${esc(k)}</dt>
+    <dd class="text-sm text-on-surface min-w-0">${esc(v)}</dd>
+  </div>`;
+
+const clause = (n, h, body) => `
+  <li class="flex flex-col gap-1">
+    <h3 class="text-sm font-semibold text-on-surface">${esc(n)}. ${esc(h)}</h3>
+    <p class="text-[13px] leading-relaxed text-on-surface-variant">${body}</p>
+  </li>`;
+
+// ----------------------------------------------------------- desktop widget -
+// The card is its own Tauri window (label "widget", declared in
+// tauri.conf.json and hidden at boot). All window work happens in Rust so the
+// main window needs no extra `core:window` permissions - only events, which
+// `core:event:default` already allows.
+const DESKTOP_WIDGET_KEY = "tm-desk-widget";
+const DESKTOP_WIDGET_MODE = "tm-desk-widget-mode";
+/// Where the card was dragged to; shared through localStorage so the card can
+/// restore itself before the main window ever talks to it.
+const DESKTOP_WIDGET_POS = "tm-desk-widget-pos";
+
+function widgetPref() {
+  try {
+    return localStorage.getItem(DESKTOP_WIDGET_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+/// "top" floats above everything; "desktop" parks it on the wallpaper.
+function widgetMode() {
+  try {
+    return localStorage.getItem(DESKTOP_WIDGET_MODE) === "desktop" ? "desktop" : "top";
+  } catch {
+    return "top";
+  }
+}
+async function applyWidget({ show = widgetPref(), embed = widgetMode() === "desktop" } = {}) {
+  try {
+    await invoke("widget_show", { show, embed });
+  } catch (err) {
+    diag("widget", false, String(err));
+  }
+}
+
+const SETTINGS_VIEWS = {
+  licenses: {
+    eyebrow: "Settings / Licences",
+    body: () => `
+    <div class="flex flex-col gap-3">
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">TRANCE MUSIC itself is MIT licensed &mdash; see <span class="font-label-mono">LICENSE</span> in the repository. The Rust core links the direct dependencies below; every one is MIT or dual MIT&nbsp;/&nbsp;Apache-2.0.</p>
+      <table class="w-full font-label-mono text-[11px] border-collapse">
+        <thead>
+          <tr class="text-on-surface-variant">
+            <th class="text-left font-normal py-1.5">Crate</th>
+            <th class="text-left font-normal py-1.5 w-20">Version</th>
+            <th class="text-left font-normal py-1.5">Licence</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${LICENSES.map(
+            ([n, v, l]) => `
+          <tr class="border-t border-surface-container-high">
+            <td class="py-1.5 pr-2 text-on-surface">${esc(n)}</td>
+            <td class="py-1.5 pr-2 text-on-surface-variant">${esc(v)}</td>
+            <td class="py-1.5 text-on-surface-variant">${esc(l)}</td>
+          </tr>`,
+          ).join("")}
+          <tr class="border-t border-surface-container-high">
+            <td class="py-1.5 pr-2 text-on-surface">@tauri-apps/cli</td>
+            <td class="py-1.5 pr-2 text-on-surface-variant">^2 (dev)</td>
+            <td class="py-1.5 text-on-surface-variant">MIT OR Apache-2.0</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="text-xs leading-relaxed text-on-surface-variant">The complete dependency tree is 469 crates and lives in <span class="font-label-mono">app/src-tauri/Cargo.lock</span>. Full licence texts: <span class="font-label-mono">LICENSE</span> for this project, and each upstream repository for its crate. No copyleft licences are linked.</p>
+    </div>`,
+  },
+
+  about: {
+    eyebrow: "Settings / About",
+    body: () => `
+    <div class="flex flex-col gap-3">
+      <div>
+        <p class="text-base font-semibold text-on-surface">${esc(APP.name)}</p>
+        <p class="font-label-mono text-[11px] text-on-surface-variant mt-0.5">v${esc(APP.version)} &middot; ${esc(APP.id)} &middot; Windows</p>
+      </div>
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">A desktop music player that streams from JioSaavn through a local range relay, keeps an offline vault on your disk, and never lets the webview talk to a third-party CDN directly.</p>
+      <dl class="flex flex-col gap-2">
+        ${kv("Shell", "Tauri 2, Rust 1.77+")}
+        ${kv("Front end", "Vanilla ES modules, no build step, Tailwind via CDN")}
+        ${kv("Catalog", "JioSaavn first-party, 5 community mirrors as fallback")}
+        ${kv("Playback", "Local axum relay on 127.0.0.1, Range forwarded verbatim")}
+        ${kv("Lyrics", "LRCLIB, then JioSaavn, then LRCLIB search")}
+        ${kv("Vault", "~/Downloads/TRANCE MUSIC")}
+        ${kv("Licence", "MIT")}
+      </dl>
+      <p class="text-xs text-on-surface-variant">No installer and no code signing yet &mdash; this build runs from source. Development status is in <span class="font-label-mono">CHANGELOG.md</span>.</p>
+    </div>`,
+  },
+
+  terms: {
+    eyebrow: "Settings / Terms",
+    body: () => `
+    <div class="flex flex-col gap-3">
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">Last updated 30 September 2026. By using ${esc(APP.name)} you accept these terms.</p>
+      <ol class="flex flex-col gap-3 list-none">
+        ${clause(1, "Personal, non-commercial use", "You may use TRANCE MUSIC for your own personal, non-commercial listening. Reselling access, redistributing the application, or operating a public service built on it requires written permission.")}
+        ${clause(2, "No content is bundled", "TRANCE MUSIC ships no audio. It is a player: tracks, artwork and lyrics are fetched at request time from third-party services. Rights to that content stay with their owners, and those services' own terms also apply to you.")}
+        ${clause(3, "Your downloads are yours", "Anything you save lands in your own Downloads folder and is your responsibility to keep, back up and delete. TRANCE MUSIC is not liable for lost or damaged files.")}
+        ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by JioSaavn, LRCLIB, or any mirror listed in the source.`)}
+        ${clause(5, "Limitation of liability", "To the fullest extent permitted by law, the authors and contributors are not liable for any indirect, incidental or consequential damages arising from use of the software, including lost data, lost profits, or unavailable services.")}
+        ${clause(6, "Copyright complaints", "Copyright holders may ask for stored media to be removed. Contact the maintainers through the repository and the relevant item will be deleted from the vault promptly.")}
+        ${clause(7, "Changes", "These terms may change as the project matures. The date above and the copy in the repository are authoritative; material changes will be noted in the changelog.")}
+      </ol>
+      <p class="text-xs text-on-surface-variant">This summary is provided for convenience and is not legal advice.</p>
+    </div>`,
+  },
+
+  widget: {
+    eyebrow: "Settings / Desktop Widget",
+    body: () => {
+      const on = widgetPref();
+      const mode = widgetMode();
+      const modes = [
+        ["top", "open_in_full", "Always on top", "Floats above every window, wherever you drag it."],
+        ["desktop", "desktop_windows", "On the wallpaper", "Sits behind every window - visible only on your desktop."],
+      ];
+      return `
+    <div class="flex flex-col gap-3">
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">A now-playing card for your Windows desktop: cover art, title, artist, progress and transport controls, fed live from the player. It is a separate window, so it stays where you leave it.</p>
+      <button type="button" role="switch" aria-checked="${on}" data-widget-toggle class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors">
+        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">widgets</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-on-surface">Show desktop widget</span>
+          <span class="block text-xs text-on-surface-variant truncate">${
+            on ? "Added to your desktop" : "Not on the desktop yet"
+          }</span>
+        </span>
+        <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${on ? "bg-primary" : "bg-surface-container-highest"}">
+          <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}"></span>
+        </span>
+      </button>
+      <div class="flex flex-col gap-1 ${on ? "" : "opacity-50 pointer-events-none"}">
+        <span class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Placement</span>
+        ${modes
+          .map(
+            ([id, icon, label, sub]) => `
+        <button type="button" role="radio" aria-checked="${mode === id}" data-widget-mode="${id}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors">
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">${icon}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium text-on-surface">${label}</span>
+            <span class="block text-xs text-on-surface-variant truncate">${sub}</span>
+          </span>
+          <span class="material-symbols-outlined text-[18px] ${mode === id ? "text-on-surface" : "opacity-0"}">check</span>
+        </button>`,
+          )
+          .join("")}
+        <button type="button" data-widget-reset class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors">
+          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">my_location</span>
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium text-on-surface">Reset position</span>
+            <span class="block text-xs text-on-surface-variant truncate">Put the card back above the miniplayer</span>
+          </span>
+        </button>
+      </div>
+      <p class="text-xs leading-relaxed text-on-surface-variant">Drag the card by its header; the X hides it here. The card follows playback only while this app is running.</p>
+    </div>`;
+    },
+  },
+};
+
+const SETTINGS_MENU = [
+  ["widgets", "Desktop Widget", "Now-playing card on your desktop", "widget"],
+  ["policy", "Open-Source Licences", "MIT &amp; Apache-2.0", "licenses"],
+  ["info", "About the Project", `v${APP.version} &middot; Windows desktop`, "about"],
+  ["gavel", "Terms &amp; Conditions", "Personal use, no warranty", "terms"],
+];
+
+function openSettings(view = "menu") {
+  let dlg = $("#tm-settings");
+  if (!dlg) {
+    dlg = document.createElement("dialog");
+    dlg.id = "tm-settings";
+    dlg.innerHTML = `
+    <div class="w-[min(34rem,calc(100vw-2rem))] max-h-[calc(100vh-3rem)] rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-xl overflow-hidden flex flex-col">
+      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-surface-container-high shrink-0">
+        <button type="button" id="tm-settings-back" title="Back" class="hidden">
+          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+        </button>
+        <span id="tm-settings-eyebrow" class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Settings</span>
+      </div>
+      <div id="tm-settings-body" class="px-5 py-4 overflow-y-auto"></div>
+    </div>`;
+    dlg.addEventListener("click", (e) => {
+      if (e.target === dlg) dlg.close();
+    });
+    dlg.addEventListener("click", (e) => {
+      const row = e.target.closest("[data-settings-view]");
+      if (row) return openSettings(row.dataset.settingsView);
+      if (e.target.closest("#tm-settings-back")) return openSettings("menu");
+      // Each of these flips one stored value, applies it through Rust, then
+      // re-renders so the switch/radios and their labels read one source.
+      const toggle = e.target.closest("[data-widget-toggle]");
+      if (toggle) {
+        const on = !widgetPref();
+        try {
+          localStorage.setItem(DESKTOP_WIDGET_KEY, on ? "1" : "0");
+        } catch {}
+        applyWidget({ show: on });
+        return openSettings("widget");
+      }
+      const mode = e.target.closest("[data-widget-mode]");
+      if (mode) {
+        try {
+          localStorage.setItem(DESKTOP_WIDGET_MODE, mode.dataset.widgetMode);
+        } catch {}
+        invoke("widget_embed", { embed: mode.dataset.widgetMode === "desktop" }).catch((err) =>
+          diag("widget", false, String(err)),
+        );
+        return openSettings("widget");
+      }
+      if (e.target.closest("[data-widget-reset]")) {
+        try {
+          localStorage.removeItem(DESKTOP_WIDGET_POS);
+        } catch {}
+        const reset = window.__TAURI__?.event?.emit("widget:reset", null);
+        if (reset && typeof reset.catch === "function") reset.catch(() => {});
+        toast("Desktop widget moved back to the default spot.", "info");
+        return;
+      }
+    });
+    document.body.appendChild(dlg);
+  }
+  const back = $("#tm-settings-back", dlg);
+  const section = view === "menu" ? null : SETTINGS_VIEWS[view];
+  if (section) {
+    npText("tm-settings-eyebrow", section.eyebrow);
+    $("#tm-settings-body", dlg).innerHTML = section.body();
+    // Swap the whole class string, never add/remove `flex` on top of `hidden`:
+    // Tailwind emits `.hidden` after `.flex`, so the two cannot coexist.
+    if (back) back.className = "flex items-center text-on-surface-variant hover:text-on-surface transition-colors";
+  } else {
+    npText("tm-settings-eyebrow", "Settings");
+    $("#tm-settings-body", dlg).innerHTML = `
+    <div class="flex flex-col gap-1">
+      ${SETTINGS_MENU.map(
+        ([icon, label, sub, view]) => `
+      <button type="button" data-settings-view="${view}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors group">
+        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">${icon}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-on-surface">${label}</span>
+          <span class="block text-xs text-on-surface-variant truncate">${sub}</span>
+        </span>
+        <span class="material-symbols-outlined text-[18px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
+      </button>`,
+      ).join("")}
+    </div>`;
+    if (back) back.className = "hidden";
+  }
+  if (!dlg.open) dlg.showModal(); // showModal() throws if already open
+}
+$("#settings-btn")?.addEventListener("click", () => openSettings());
 
 // The #error banner ships inside the search view, which hid failures for
 // downloads triggered from Now Playing / queue / home. Hoist it to <body>
@@ -182,6 +520,9 @@ let lastResults = [];
 /// Entity cards for the active search chip (artists / albums / playlists).
 let lastCards = [];
 let current = null; // PlayableAudio
+/// What the bar restored at boot, so the desktop card can show it before
+/// anything plays. A live queue entry always wins over it.
+let restoredTrack = null;
 let shuffleMode = false;
 let repeatMode = "off"; // off | all | one
 let dspPreset = 0;
@@ -198,9 +539,9 @@ function esc(s) {
 }
 
 // --------------------------------------------------------------- artwork ---
-// The API only ships 150px thumbs (`…-150x150.jpg`, often over plain http),
+// The API only ships 150px thumbs (`â€¦-150x150.jpg`, often over plain http),
 // which smear as soon as a card renders them at 300px+. Ask the same CDN for
-// the 500px master instead — the size token lives in the filename.
+// the 500px master instead â€” the size token lives in the filename.
 const ART_RENDS = [
   ["-50x50x100", "-500x500"],
   ["-150x150x100", "-500x500"],
@@ -276,9 +617,9 @@ function renderQueue() {
         </div>
         <div class="flex flex-col min-w-0">
           <span class="text-[13px] text-on-surface font-semibold truncate">${esc(t.title)}</span>
-          <span class="text-xs text-on-surface-variant truncate">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</span>
+          <span class="text-xs text-on-surface-variant truncate">${metaLinks(t)}</span>
           <div class="flex items-center gap-2 mt-0.5">
-            <span class="font-mono text-[10px] text-on-surface-variant">${i === queueIndex ? (item.state === "done" ? "played" : item.state === "failed" ? "failed" : "playing…") : item.state === "done" ? "played" : item.state === "failed" ? "failed" : ""}</span>
+            <span class="font-mono text-[10px] text-on-surface-variant">${i === queueIndex ? (item.state === "done" ? "played" : item.state === "failed" ? "failed" : "playingâ€¦") : item.state === "done" ? "played" : item.state === "failed" ? "failed" : item.reco ? "recommended" : ""}</span>
           </div>
         </div>
       </div>
@@ -296,10 +637,11 @@ function renderQueue() {
     queueListEl.appendChild(div);
   }
   if (queueCountEl) queueCountEl.textContent = String(queue.length);
-  const barCount = $("#queue-count-badge-bar");
-  if (barCount) barCount.textContent = String(queue.length);
-  paintQueueTabs();
-}
+    const barCount = $("#queue-count-badge-bar");
+    if (barCount) barCount.textContent = String(queue.length);
+    paintQueueTabs();
+    emitState();
+  }
 
 function paintQueueTabs() {
   const next = $("#queue-tab-next");
@@ -363,15 +705,115 @@ function pickNextIndex() {
   return -1;
 }
 
-function advanceQueue() {
+async function advanceQueue() {
   if (advancing) return;
-  const next = pickNextIndex();
+  let next = pickNextIndex();
+  // Out of queue with repeat off: never dead air â€” let the radio feed it.
+  if (next < 0 && repeatMode === "off" && queue.length) {
+    await ensureReco();
+    next = pickNextIndex();
+    if (next < 0) {
+      toast("No more recommendations.", "info");
+      return;
+    }
+  }
   if (next < 0) return;
   advancing = true;
   setTimeout(() => {
     advancing = false;
     playQueueItem(next);
   }, 600);
+}
+
+// ---------------------------------------------------------- endless radio -
+// When the queue runs out (repeat off) playback never just stops: a JioSaavn
+// radio station seeded from the current song keeps feeding the queue, and the
+// batch is re-ranked against local taste before it lands.
+let radioStation = "";
+let radioBusy = false;
+
+/// Rank one radio batch: favorites first, then artists the user actually
+/// plays, never anything already queued or heard in the last 15 plays.
+function scoreReco(cands) {
+  const queued = new Set(queue.map((q) => q.track.id));
+  const heard = new Set(loadPlays().slice(0, 15).map((p) => p.id));
+  const weight = new Map();
+  for (const f of loadLibrary()) if (f.artist) weight.set(f.artist, (weight.get(f.artist) || 0) + 3);
+  for (const p of loadPlays()) if (p.artist) weight.set(p.artist, (weight.get(p.artist) || 0) + 1);
+  const album = queue[queueIndex]?.track.album;
+  const scored = [];
+  const taken = new Set();
+  for (const t of cands) {
+    if (!t?.id || queued.has(t.id) || heard.has(t.id) || taken.has(t.id)) continue;
+    taken.add(t.id);
+    let s = weight.get(t.artist) || 0;
+    if (album && t.album === album) s += 1;
+    scored.push({ t, s });
+  }
+  if (!scored.length) {
+    // The batch was all repeats â€” endless mode prefers a rerun over silence,
+    // so fall back to whatever at least is not sitting in the queue right now.
+    for (const t of cands) {
+      if (!t?.id || queued.has(t.id) || taken.has(t.id)) continue;
+      taken.add(t.id);
+      scored.push({ t, s: -1 });
+    }
+  }
+  scored.sort((a, b) => b.s - a.s);
+  return scored.slice(0, 12).map((x) => x.t);
+}
+
+/// Last resort when the radio answers with nothing: everything else by this
+/// artist, then whatever the home charts hold.
+async function recoFallback(track) {
+  const taken = new Set(queue.map((q) => q.track.id));
+  const fresh = (list) => list.filter((t) => t?.id && !taken.has(t.id));
+  try {
+    if (track?.artist) {
+      const page = await invoke("search_songs", { query: track.artist, limit: 20, page: 1 });
+      const hits = fresh((page && page.tracks) || []);
+      if (hits.length) return hits;
+    }
+  } catch (err) {
+    diag("radio-fallback", false, String(err));
+  }
+  return fresh(homeFeed?.top_tracks || []);
+}
+
+/// Top the queue up before it runs dry (or when the end is already here).
+/// One flight at a time; radio first, artist/chart fallback behind it.
+async function ensureReco() {
+  if (radioBusy) return;
+  const seed = queue[queueIndex]?.track;
+  if (!seed && !radioStation) return;
+  radioBusy = true;
+  try {
+    let fresh = [];
+    try {
+      const page = await invoke("recommend_songs", {
+        song: seed ? seed.id : null,
+        station: radioStation || null,
+      });
+      if (page && page.station) {
+        radioStation = page.station;
+        fresh = page.tracks || [];
+      }
+      diag("radio", !!fresh.length, fresh.length ? `${fresh.length} songs Â· station kept` : "empty batch");
+    } catch (err) {
+      diag("radio", false, String(err));
+    }
+    if (!fresh.length) fresh = await recoFallback(seed);
+    const added = scoreReco(fresh);
+    for (const t of added) queue.push({ track: t, state: null, reco: true });
+    if (added.length) {
+      renderQueue();
+      diag("radio-queue", true, `+${added.length} recommended`);
+    }
+  } catch (err) {
+    diag("radio", false, String(err));
+  } finally {
+    radioBusy = false;
+  }
 }
 
 // ------------------------------------------------------------------ player -
@@ -397,7 +839,6 @@ const bar = {
   volTrack: $("#bar-vol-track"),
   volFill: $("#bar-vol-fill"),
   queue: $("#bar-queue"),
-  telemetry: $("#bar-telemetry"),
 };
 const np = {
   badge: $("#np-badge"),
@@ -432,6 +873,54 @@ function npText(id, value) {
   if (el) el.textContent = value;
 }
 
+/// Remember which entity a plain text element stands for, so the shared
+/// capture-phase click handler can open its screen later.
+function stampEntity(el, kind, name) {
+  if (!el) return;
+  if (name) {
+    el.dataset.entityKind = kind;
+    el.dataset.entityName = name;
+  } else {
+    delete el.dataset.entityKind;
+    delete el.dataset.entityName;
+  }
+}
+
+/// "Artist Â· Album" where each half is a link to its own page.
+function metaLinks(t) {
+  const one = (kind, value) =>
+    `<span class="hover:underline cursor-pointer" data-entity-kind="${kind}" data-entity-name="${esc(value)}">${esc(value)}</span>`;
+  const parts = [];
+  if (t.artist) parts.push(one("artist", t.artist));
+  if (t.album) parts.push(one("album", t.album));
+  return parts.join('<span class="opacity-60"> Â· </span>');
+}
+
+/// Rows only carry plain names â€” one search turns the name into a token,
+/// then the same artist/album screen the home cards open.
+async function openEntityByName(kind, name) {
+  const raw = String(name || "").trim();
+  if (!raw) return;
+  // JioSaavn sometimes ships "Artist - Title" inside the artist field.
+  const query = kind === "artist" ? raw.split(/\s+-\s+/)[0].trim() : raw;
+  if (!query) return;
+  diag("entity", null, `${kind}: ${query}`);
+  let page;
+  try {
+    page = await invoke("search_entities", { query, kind, limit: 8, page: 1 });
+  } catch (err) {
+    diag("entity", false, String(err));
+    showError(`Could not look up that ${kind}: ${err}`);
+    return;
+  }
+  const hit = (page?.items || [])[0];
+  if (!hit) {
+    showError(`No ${kind} found for "${query}".`);
+    return;
+  }
+  openDetail(kind, hit);
+}
+
 function fmtBytes(n) {
   if (!n) return "?";
   if (n < 1024 * 1024) return (n / 1024).toFixed(0) + " KB";
@@ -454,31 +943,21 @@ function setBadge(status, info) {
   const full = status === "unrestricted";
   const preview = status === "restricted_first_mb";
   const badgeText = full
-    ? `FULL SONG · ${info.chosen_quality} · ${fmtBytes(info.content_length)}`
+    ? `FULL SONG Â· ${info.chosen_quality} Â· ${fmtBytes(info.content_length)}`
     : preview
-      ? "PREVIEW ONLY — stream capped near ~1 MB"
-      : "UNREACHABLE — stream failed range checks";
+      ? "PREVIEW ONLY â€” stream capped near ~1 MB"
+      : "UNREACHABLE â€” stream failed range checks";
   bar.badge.textContent = full ? `${info.chosen_quality}` : preview ? "PREVIEW" : "UNREACHABLE";
   bar.badge.classList.remove("hidden");
   if (np.badge) np.badge.textContent = badgeText;
   if (np.format) np.format.textContent = info.chosen_quality;
   npText("np-quality", info.chosen_quality);
+  emitState(true);
   document.title = full
-    ? "▶ " + bar.title.textContent
+    ? "â–¶ " + bar.title.textContent
     : preview
-      ? "◐ preview — " + bar.title.textContent
-      : "✖ unreachable";
-}
-
-function telemetry(snapshot) {
-  const err = audio.error ? ` error=${audio.error.code}` : "";
-  const extra = current ? ` · ${current.chosen_quality} · ${current.host}` : "";
-  const line =
-    `${snapshot} readyState=${audio.readyState} ` +
-    `t=${audio.currentTime.toFixed(1)}s / ${
-      Number.isFinite(audio.duration) ? audio.duration.toFixed(1) : "?"
-    }s${extra}${err}`;
-  if (bar.telemetry) bar.telemetry.textContent = line;
+      ? "â— preview â€” " + bar.title.textContent
+      : "âœ– unreachable";
 }
 
 for (const [ev, label] of [
@@ -488,13 +967,12 @@ for (const [ev, label] of [
   ["ended", "ended"],
 ]) {
   audio.addEventListener(ev, () => {
-    telemetry(label);
     if (ev === "playing" || ev === "pause") setPlayIcon(ev === "playing");
+    emitState(true);
   });
 }
 
 audio.addEventListener("timeupdate", () => {
-  telemetry(audio.paused ? "paused" : "playing");
   const d = audio.duration;
   const ratio = Number.isFinite(d) && d > 0 ? audio.currentTime / d : 0;
   bar.fill.style.width = `${(ratio * 100).toFixed(1)}%`;
@@ -504,6 +982,7 @@ audio.addEventListener("timeupdate", () => {
   if (np.thumb) np.thumb.style.left = `${(ratio * 100).toFixed(1)}%`;
   if (np.cur) np.cur.textContent = fmtTime(audio.currentTime);
   if (np.total) np.total.textContent = fmtTime(d);
+  emitState();
   npText("lyric-live-time", fmtTime(audio.currentTime));
   syncLyrics();
 });
@@ -523,7 +1002,7 @@ let autoScrollLyrics = true;
 /// Bumped on every track change so a slow fetch never paints over a newer one.
 let lyricToken = 0;
 
-/// Class strings the static demo markup uses — rendered lines must match them
+/// Class strings the static demo markup uses â€” rendered lines must match them
 /// so the sync highlight, hover and cursor styles keep working.
 const LYRIC_LINE_CLASS =
   "lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none";
@@ -583,7 +1062,7 @@ function renderLyrics(data) {
 
 async function loadLyrics(track) {
   const token = ++lyricToken;
-  setLyricsPlaceholder("Fetching lyrics…");
+  setLyricsPlaceholder("Fetching lyricsâ€¦");
   let data = null;
   try {
     data = await invoke("get_lyrics", {
@@ -624,7 +1103,7 @@ function syncLyrics() {
   }
 }
 
-/// Click any line to seek there — the footer promises it.
+/// Click any line to seek there â€” the footer promises it.
 $("#lyrics-scroll-box")?.addEventListener("click", (e) => {
   const line = e.target.closest(".lyric-line");
   const seconds = line?.dataset.seconds;
@@ -651,7 +1130,7 @@ $("#btn-fullscreen-lyrics")?.addEventListener("click", () => {
 np.fav?.addEventListener("click", () => {
   const t = queue[queueIndex]?.track;
   if (!t) {
-    toast("Nothing is playing yet — start a track first.", "info");
+    toast("Nothing is playing yet â€” start a track first.", "info");
     return;
   }
   toggleFavTrack(t);
@@ -660,7 +1139,7 @@ np.fav?.addEventListener("click", () => {
 $("#np-download-btn")?.addEventListener("click", (e) => {
   const t = queue[queueIndex]?.track;
   if (!t) {
-    toast("Nothing is playing yet — start a track first.", "info");
+    toast("Nothing is playing yet â€” start a track first.", "info");
     return;
   }
   downloadTrack(t, e.currentTarget);
@@ -718,11 +1197,13 @@ function toggleShuffle() {
   shuffleMode = !shuffleMode;
   paintModes();
   diag("shuffle", null, shuffleMode ? "on" : "off");
+  emitState(true);
 }
 function toggleRepeat() {
   repeatMode = repeatMode === "off" ? "all" : repeatMode === "all" ? "one" : "off";
   paintModes();
   diag("repeat", null, repeatMode);
+  emitState(true);
 }
 bar.shuffle.addEventListener("click", toggleShuffle);
 np.shuffle?.addEventListener("click", toggleShuffle);
@@ -743,6 +1224,7 @@ function paintVolume() {
   if (np.volFill) np.volFill.style.width = `${(audio.volume * 100).toFixed(0)}%`;
   const tip = $("#vol-val-tooltip");
   if (tip) tip.textContent = `${Math.round(audio.volume * 100)}%`;
+  emitState();
 }
 function volFromEvent(track, e) {
   const r = track.getBoundingClientRect();
@@ -750,11 +1232,13 @@ function volFromEvent(track, e) {
   audio.muted = false;
   paintVolume();
 }
+
 bar.volTrack.addEventListener("click", (e) => volFromEvent(bar.volTrack, e));
 np.volTrack?.addEventListener("click", (e) => volFromEvent(np.volTrack, e));
 np.volMute?.addEventListener("click", () => {
   audio.muted = !audio.muted;
   if (np.volIcon) np.volIcon.textContent = audio.muted ? "volume_off" : "volume_up";
+  emitState(true);
 });
 paintVolume();
 
@@ -790,7 +1274,7 @@ $("#queue-tab-history")?.addEventListener("click", () => {
   renderQueue();
 });
 $("#btn-save-as-playlist")?.addEventListener("click", () => {
-  diag("playlist", null, `${queue.length} tracks — saved to session only`);
+  diag("playlist", null, `${queue.length} tracks â€” saved to session only`);
 });
 $("#dac-menu-toggle")?.addEventListener("click", () => {
   $("#dac-dropdown")?.classList.toggle("hidden");
@@ -838,16 +1322,9 @@ creditsBtn?.addEventListener("click", () => {
     diag("credits", false, "no track loaded");
     return;
   }
-  const meta = [
-    `Title: ${t.title}`,
-    `Artist: ${t.artist || "Unknown"}`,
-    `Album: ${t.album || "Unknown"}`,
-    `Duration: ${fmtTime(t.duration || 0)}`,
-    `Quality: ${current?.chosen_quality || "unknown"}`,
-    `ID: ${t.id}`,
-  ].join("\n");
-  diag("credits", true, t.title);
-  alert(meta);
+  const quality = current?.chosen_quality || "unknown";
+  diag("credits", true, `${t.title} Â· ${quality}`);
+  openCredits(t, quality);
 });
 
 // ---------------------------------------------------------------- playback -
@@ -862,7 +1339,6 @@ audio.addEventListener("ended", () => {
 });
 
 audio.addEventListener("error", () => {
-  telemetry("error");
   if (audio.error) {
     showError(
       `Playback failed (media error ${audio.error.code}). ` +
@@ -878,19 +1354,27 @@ async function playQueueItem(index) {
   if (!item) return;
   queueIndex = index;
   renderQueue();
+  // Keep the endless radio one step ahead once the queue runs low.
+  // Repeat all/one never needs it â€” those modes never run out.
+  if (repeatMode === "off" && queue.length - index <= 3) ensureReco();
   const track = item.track;
   clearError();
   current = null;
   bar.title.textContent = track.title;
-  bar.artist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
+  bar.artist.textContent = [track.artist, track.album].filter(Boolean).join(" Â· ");
+  stampEntity(bar.artist, "artist", track.artist);
   if (np.title) np.title.textContent = track.title;
-  if (np.artist) np.artist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
-  npText("np-album", track.album || "—");
-  npText("np-artist-tile", track.artist || "—");
-  npText("np-length", track.duration || "—");
-  npText("np-trackline", `TRACK ${String(index + 1).padStart(2, "0")} • STEREO DIRECT`);
+  if (np.artist) np.artist.textContent = [track.artist, track.album].filter(Boolean).join(" Â· ");
+  stampEntity(np.artist, "artist", track.artist);
+  npText("np-album", track.album || "â€”");
+  stampEntity(document.getElementById("np-album"), "album", track.album);
+  npText("np-artist-tile", track.artist || "â€”");
+  stampEntity(document.getElementById("np-artist-tile"), "artist", track.artist);
+  npText("np-length", track.duration || "â€”");
+  npText("np-trackline", `TRACK ${String(index + 1).padStart(2, "0")} â€¢ STEREO DIRECT`);
   if (np.favIcon) np.favIcon.dataset.favIcon = track.id;
   paintFavHearts();
+  emitState(true);
   loadLyrics(track);
   const setCover = (img, fallback) => {
     if (!img) return;
@@ -916,7 +1400,7 @@ async function playQueueItem(index) {
   setCover(bar.cover, bar.coverFallback);
   setCover(np.cover, null);
   bar.badge.textContent = "RESOLVING";
-  if (np.badge) np.badge.textContent = "RESOLVING…";
+  if (np.badge) np.badge.textContent = "RESOLVINGâ€¦";
 
   let info;
   try {
@@ -925,7 +1409,7 @@ async function playQueueItem(index) {
     diag(
       `resolve ${track.id}`,
       info.range_status === "unrestricted",
-      `${info.chosen_quality} · ${info.host} · ${info.range_status}`,
+      `${info.chosen_quality} Â· ${info.host} Â· ${info.range_status}`,
     );
   } catch (err) {
     diag(`resolve ${track.id}`, false, String(err));
@@ -941,7 +1425,7 @@ async function playQueueItem(index) {
   pushPlay(track);
   setBadge(info.range_status, info);
   renderQueue();
-  diag(`play ${track.id}`, true, info.proxy_url.slice(0, 70) + "…");
+  diag(`play ${track.id}`, true, info.proxy_url.slice(0, 70) + "â€¦");
   audio.src = info.proxy_url;
   try {
     await audio.play();
@@ -968,12 +1452,12 @@ function addBtn(t) {
 function trackRow(t, i, isCurrent, variant = "search") {
   const list = variant === "list";
   const cells = list
-    ? `<div class="col-span-3 min-w-0"><span class="text-[13px] text-on-surface-variant truncate block">${esc(t.album || "—")}</span></div>
+    ? `<div class="col-span-3 min-w-0"><span class="text-[13px] text-on-surface-variant truncate block hover:underline cursor-pointer" data-entity-kind="album" data-entity-name="${esc(t.album || "")}">${esc(t.album || "â€”")}</span></div>
     <div class="col-span-1 text-right text-[12px] font-mono text-on-surface">${esc(t.duration)}</div>`
     : `<div class="col-span-2 flex items-center gap-2">
       <span class="px-2 py-0.5 rounded bg-surface-container text-[11px] font-mono text-on-surface font-medium">${t.hq ? "320 kbps" : "Standard"}</span>
     </div>
-    <div class="col-span-1 text-right text-[11px] font-mono text-on-surface-variant">—</div>
+    <div class="col-span-1 text-right text-[11px] font-mono text-on-surface-variant">â€”</div>
     <div class="col-span-1 text-right text-[12px] font-mono text-on-surface">${esc(t.duration)}</div>`;
   return `
   <div class="group grid grid-cols-12 gap-4 items-center px-4 py-4 rounded-xl bg-surface-container-lowest shadow-sm hover:shadow-md transition-all cursor-pointer border border-surface-container-high" data-track-id="${esc(t.id)}" role="button" tabindex="0" aria-label="Play ${esc(t.title)}">
@@ -995,7 +1479,7 @@ function trackRow(t, i, isCurrent, variant = "search") {
       </div>
       <div class="flex flex-col min-w-0">
         <span class="text-[15px] font-medium text-on-surface truncate">${esc(t.title)}</span>
-        <span class="text-[13px] text-on-surface-variant truncate">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</span>
+        <span class="text-[13px] text-on-surface-variant truncate">${metaLinks(t)}</span>
       </div>
     </div>
     ${cells}
@@ -1058,7 +1542,7 @@ const SORTS = [
   { key: "bitrate", label: "Bitrate: Descending" },
   { key: "popular", label: "Popularity: Descending" },
   { key: "longest", label: "Duration: Longest" },
-  { key: "title", label: "Title: A–Z" },
+  { key: "title", label: "Title: Aâ€“Z" },
 ];
 /// Which chip is active: "tracks" (the table) or a key of KIND_SPEC.
 let activeFilter = "tracks";
@@ -1070,7 +1554,7 @@ let searchExhausted = false;
 let featuredPage = 0;
 
 const isTracks = () => activeFilter === "tracks";
-/// Rows behind the active chip — the table and the card grid both page these.
+/// Rows behind the active chip â€” the table and the card grid both page these.
 const currentItems = () => (isTracks() ? lastResults : lastCards);
 
 /// The tracks the table and the featured cards show right now.
@@ -1130,6 +1614,26 @@ function cardHtml(item) {
   return activeFilter === "playlists" ? plCard(item) : ddCard(KIND_SPEC[activeFilter].kind, item);
 }
 
+/// "View all" from Home: the home rows are only a taste of the feed, so hand
+/// the whole list to the search grid, which already renders any card type.
+function browseCards(chip, items, label) {
+  const list = uniqById(items || []);
+  if (!list.length) return toast(`${label} unavailable right now.`, "info");
+  activeFilter = chip;
+  lastCards = list;
+  searchQuery = "";
+  searchPage = 1;
+  searchExhausted = true; // the whole feed, so no "load more" behind it
+  loadingMore = false;
+  const input = $("#search-input");
+  if (input) input.value = "";
+  showView("search");
+  renderCards(); // after the switch, so the grid is painted on arrival
+  paintChips();
+  resultsSub.textContent = `All ${list.length} ${label.toLowerCase()}.`;
+  resultsEl.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function paintChips() {
   for (const chip of $$(".filter-chip")) {
     const on = (chip.dataset.chip || "tracks") === activeFilter;
@@ -1150,13 +1654,13 @@ function paintSort() {
 function updateLoadMore() {
   const btn = $("#load-more");
   if (!btn) return;
-  // `searchExhausted` is set from the backend's page_full flag — the deduped
+  // `searchExhausted` is set from the backend's page_full flag â€” the deduped
   // list can be shorter than PAGE_SIZE while more pages still exist.
   const have = currentItems().length;
   btn.classList.toggle("hidden", !(have > 0 && !searchExhausted));
   const label = $("#load-more-label");
   if (label) {
-    label.textContent = loadingMore ? "Loading…" : `Load more results (${have} so far)`;
+    label.textContent = loadingMore ? "Loadingâ€¦" : `Load more results (${have} so far)`;
   }
 }
 
@@ -1179,7 +1683,7 @@ function featuredCard(t, index) {
           <h3 class="font-headline-md text-headline-md text-on-surface truncate">${esc(t.title)}</h3>
           <span class="font-label-mono text-label-mono text-on-surface-variant shrink-0">${esc(t.duration)}</span>
         </div>
-        <p class="font-body-md text-body-md text-on-surface-variant truncate">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</p>
+        <p class="font-body-md text-body-md text-on-surface-variant truncate">${esc([t.artist, t.album].filter(Boolean).join(" Â· "))}</p>
       </div>
     </div>
     <div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
@@ -1215,7 +1719,9 @@ function renderFeatured() {
 }
 
 // ---------------------------------------------------------------- download -
-async function downloadTrack(track, btn) {
+/// `quiet` batches: no per-track toast/icon dance â€” the caller owns the button
+/// and reports the summary; failures are rethrown so the batch can count them.
+async function downloadTrack(track, btn, quiet = false) {
   if (!track) return;
   if (activeDownloads.has(track.id)) {
     toast(`"${track.title}" is already downloading.`, "info");
@@ -1244,6 +1750,7 @@ async function downloadTrack(track, btn) {
     activeDownloads.delete(track.id);
     renderActive();
     refreshVault();
+    if (quiet) return path;
     if (icon) icon.textContent = "check";
     toast(`Saved "${track.title}" to the offline vault.`, "success");
     const previous = resultsSub.textContent;
@@ -1259,9 +1766,72 @@ async function downloadTrack(track, btn) {
     if (icon) icon.textContent = original;
     if (btn) btn.disabled = false;
     diag(`download ${track.id}`, false, String(err));
+    if (quiet) throw err;
     showError(`Download failed: ${err}`);
     toast(`Download failed: ${String(err).slice(0, 140)}`, "error", 6000);
   }
+}
+
+/// One click saves the whole album/movie/playlist: walks the list sequentially
+/// with n/total on the button, skipping whatever is already in the vault or
+/// currently downloading, and survives individual track failures.
+let dlBatch = false;
+async function downloadAll(items, what, btn) {
+  const list = (items || []).filter((t) => t && t.id);
+  if (!list.length) {
+    toast("Nothing to download yet.", "info");
+    return;
+  }
+  if (dlBatch) {
+    toast("A batch download is already running.", "info");
+    return;
+  }
+  dlBatch = true;
+  const icon = btn?.querySelector(".material-symbols-outlined");
+  const labelEl = btn && btn.lastElementChild !== icon ? btn.lastElementChild : null;
+  const originalIcon = icon ? icon.textContent : "";
+  const originalLabel = labelEl ? labelEl.textContent : "";
+  const restore = (mark) => {
+    if (icon) {
+      icon.textContent = mark;
+      setTimeout(() => {
+        icon.textContent = originalIcon;
+      }, 4000);
+    }
+    if (labelEl)
+      setTimeout(() => {
+        labelEl.textContent = originalLabel;
+      }, 4000);
+    if (btn) btn.disabled = false;
+    dlBatch = false;
+  };
+  if (btn) btn.disabled = true;
+  if (icon) icon.textContent = "progress_activity";
+  // Fresh vault list: a restart must not re-download what is already saved.
+  await refreshVault();
+  const saved = new Set(vaultEntries.map((e) => e.id));
+  const todo = list.filter((t) => !saved.has(t.id) && !activeDownloads.has(t.id));
+  if (!todo.length) {
+    restore("check");
+    toast(`All ${list.length} ${what} are already in the offline vault.`, "info");
+    return;
+  }
+  let ok = 0;
+  let fail = 0;
+  for (let i = 0; i < todo.length; i++) {
+    if (labelEl) labelEl.textContent = `${i + 1}/${todo.length}`;
+    if (icon) icon.textContent = "progress_activity";
+    try {
+      await downloadTrack(todo[i], null, true);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  restore(fail ? "error" : "check");
+  diag("download-all", !fail, `${ok}/${todo.length} ${what}`);
+  if (fail) toast(`Saved ${ok} of ${todo.length} ${what} (${fail} failed).`, "error", 6000);
+  else toast(`Saved all ${ok} ${what} to the offline vault.`, "success");
 }
 
 // --------------------------------------------------------------- downloads -
@@ -1305,7 +1875,7 @@ function activeCard(p) {
         <div class="flex items-start justify-between gap-2">
           <div class="truncate">
             <h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate">${esc(p.title)}</h3>
-            <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([p.artist, p.album].filter(Boolean).join(" • "))}</p>
+            <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([p.artist, p.album].filter(Boolean).join(" â€¢ "))}</p>
           </div>
           <span class="font-label-mono text-label-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface shrink-0">${Math.round(pct)}%</span>
         </div>
@@ -1374,7 +1944,7 @@ function vaultRow(e) {
           <span class="font-headline-md text-body-lg font-medium text-on-surface truncate">${esc(e.title)}</span>
           <span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface shrink-0">${esc(e.quality)}</span>
         </div>
-        <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([e.artist, e.album].filter(Boolean).join(" • "))}</p>
+        <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([e.artist, e.album].filter(Boolean).join(" â€¢ "))}</p>
       </div>
     </div>
     <div class="flex items-center gap-4 shrink-0">
@@ -1419,7 +1989,7 @@ function renderVault() {
   const summary = $("#dl-summary");
   if (summary) {
     summary.textContent = !vaultEntries.length
-      ? "Nothing saved yet — hit the download icon on any track."
+      ? "Nothing saved yet â€” hit the download icon on any track."
       : shown.length === vaultEntries.length
         ? `${vaultEntries.length} song${vaultEntries.length === 1 ? "" : "s"} on disk, ready to play offline.`
         : `${shown.length} of ${vaultEntries.length} songs match.`;
@@ -1436,7 +2006,7 @@ async function refreshVault() {
     // Id collision = same song recorded twice (legacy manifests); show one.
     vaultEntries = uniqById((vault && vault.entries) || []);
     const dir = $("#dl-dir");
-    if (dir) dir.textContent = (vault && vault.dir) || "—";
+    if (dir) dir.textContent = (vault && vault.dir) || "â€”";
     renderVault();
     diag("vault", true, `${vaultEntries.length} saved`);
   } catch (err) {
@@ -1553,7 +2123,7 @@ function showErrorRetry(msg, retry) {
 // Mirrors the backend `dedup_tracks` collapse (original vs remaster vs
 // re-billed copies under different ids): candidates bucket by normalized
 // title, then merge when the artist bills agree (order-insensitive, extra
-// credits tolerated) and durations are within ±3s — keeping the 320 kbps
+// credits tolerated) and durations are within Â±3s â€” keeping the 320 kbps
 // copy, then most plays.
 const DEDUP_DURATION_TOL = 3;
 const DEDUP_KEEP_WORDS = new Set([
@@ -1566,7 +2136,7 @@ const DEDUP_KEEP_WORDS = new Set([
 function normKeyText(s) {
   const lower = String(s || "").toLowerCase();
   // Bracketed groups are version tags ("(Remastered 2024)") and are
-  // dropped — unless they mark a different recording ("(Live)").
+  // dropped â€” unless they mark a different recording ("(Live)").
   let kept = "";
   let depth = 0;
   let inner = "";
@@ -1632,7 +2202,7 @@ function creditsOverlap(a, b) {
 }
 
 /// title -> [{ i, dur, artists }] so duplicate lookups over a list are a
-/// map hit instead of an O(n²) scan.
+/// map hit instead of an O(nÂ²) scan.
 function contentIndex(list) {
   const idx = new Map();
   list.forEach((t, i) => {
@@ -1715,7 +2285,7 @@ function dedupeTracks(tracks) {
   return { list: out, removed };
 }
 
-/// First copy of each id wins — card/row level insurance, mirrors the
+/// First copy of each id wins â€” card/row level insurance, mirrors the
 /// backend `dedup_feed`. Id-less entries pass through (nothing to collide).
 function uniqById(list) {
   const seen = new Set();
@@ -1754,8 +2324,8 @@ async function doSearch(opts = {}) {
     showView("search");
   }
   resultsSub.textContent = append
-    ? `Loading page ${searchPage + 1} for "${q}"…`
-    : `Searching for "${q}"…`;
+    ? `Loading page ${searchPage + 1} for "${q}"â€¦`
+    : `Searching for "${q}"â€¦`;
 
   // Capture the scope before awaiting: a chip click mid-flight must not
   // route entity rows into the track table (or vice versa).
@@ -1778,7 +2348,7 @@ async function doSearch(opts = {}) {
   }
   loadingMore = false;
   // Both commands answer with `page_full`, measured BEFORE dedup shrank the
-  // page, so it — never the list length — decides whether more exist upstream.
+  // page, so it â€” never the list length â€” decides whether more exist upstream.
   const pageFull = !!(payload && payload.page_full);
   if (cards) return applyEntityPage(payload, append, q, pageFull, KIND_SPEC[activeFilter]);
 
@@ -1787,7 +2357,7 @@ async function doSearch(opts = {}) {
   if (!append) {
     searchPage = 1;
     // Backend collapses upstream repeats, but a stale page can still hand
-    // us dupes — dedupe defensively before first paint.
+    // us dupes â€” dedupe defensively before first paint.
     const clean = dedupeTracks(tracks);
     lastResults = clean.list;
     searchExhausted = !pageFull;
@@ -1844,7 +2414,7 @@ async function doSearch(opts = {}) {
   if (!fresh.length) {
     diag(`search "${q}"`, true, "no further pages");
     updateLoadMore();
-    resultsSub.textContent = `End of results — ${lastResults.length} tracks for "${q}".`;
+    resultsSub.textContent = `End of results â€” ${lastResults.length} tracks for "${q}".`;
     return;
   }
   lastResults = lastResults.concat(fresh);
@@ -1876,7 +2446,7 @@ function applyEntityPage(payload, append, q, pageFull, spec) {
   if (!fresh.length) {
     diag(`search "${q}" ${activeFilter}`, true, "no further pages");
     updateLoadMore();
-    resultsSub.textContent = `End of results — ${lastCards.length} ${spec.many} for "${q}".`;
+    resultsSub.textContent = `End of results â€” ${lastCards.length} ${spec.many} for "${q}".`;
     return;
   }
   lastCards = lastCards.concat(fresh);
@@ -1896,7 +2466,7 @@ function hideSuggest() {
 const sugLabel = (label) =>
   `<div class="px-4 pt-2.5 pb-1 font-label-mono text-label-mono text-on-surface-variant">${esc(label)}</div>`;
 
-/// One dropdown row: thumb, title, credit — carrying everything the click
+/// One dropdown row: thumb, title, credit â€” carrying everything the click
 /// handler needs to act without a lookup.
 function suggestRow(it, kind) {
   const icon =
@@ -1934,7 +2504,7 @@ function suggestHtml(s) {
     : `<div class="px-4 py-3 font-body-sm text-body-sm text-on-surface-variant">No suggestions.</div>`;
 }
 
-/// Empty box → the last searched queries, one tap from re-running them.
+/// Empty box â†’ the last searched queries, one tap from re-running them.
 function renderRecentSuggest() {
   if (!suggestEl) return;
   const recent = [...new Set(loadHistory())].slice(0, 6);
@@ -2120,7 +2690,7 @@ $("#search-clear").addEventListener("click", () => {
 $("#play-all").addEventListener("click", () => {
   const list = currentView();
   if (!list.length) {
-    showError("Nothing to play — run a search first.");
+    showError("Nothing to play â€” run a search first.");
     return;
   }
   queue.length = 0;
@@ -2174,7 +2744,7 @@ function renderHero() {
   const img = $("#hero-image");
   if (img && spot.image) paintArt(img, spot.image);
   npText("hero-title", spot.title);
-  npText("hero-artist", spot.subtitle || "JioSaavn editorial");
+  npText("hero-artist", spot.subtitle || "Curated collection");
   npText("hero-meta", spot.count ? `${spot.count} Tracks` : "Curated playlist");
 }
 
@@ -2194,7 +2764,7 @@ function renderHomePlaylists() {
         <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
           <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(p.image)} />
           <div class="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/30 flex flex-col justify-end p-3">
-            <span class="font-label-mono text-[9px] uppercase tracking-wider text-on-primary/80">${p.count || "—"} tracks</span>
+            <span class="font-label-mono text-[9px] uppercase tracking-wider text-on-primary/80">${p.count || "â€”"} tracks</span>
             <span class="font-headline-md text-on-primary font-semibold text-[16px] leading-tight">${esc(p.title)}</span>
           </div>
           <button type="button" data-playlist-id="${esc(p.id)}" title="Play this playlist" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
@@ -2205,7 +2775,6 @@ function renderHomePlaylists() {
       </div>
       <div class="mt-3 pt-2 border-t border-surface-container-high flex items-center justify-between text-on-surface-variant font-label-mono text-[10px]">
         <span>${p.count || 0} Tracks</span>
-        <span>JioSaavn</span>
       </div>
     </div>`,
     )
@@ -2215,7 +2784,7 @@ function renderHomePlaylists() {
 function renderHomeTop() {
   const list = $("#home-top-list");
   if (!list || !homeFeed) return;
-  // Already deduped in loadHome — render the same array the click handlers
+  // Already deduped in loadHome â€” render the same array the click handlers
   // index into, or a removed dupe would shift every row's data-top-* id.
   const tracks = homeFeed.top_tracks;
   if (!tracks.length) {
@@ -2234,12 +2803,12 @@ function renderHomeTop() {
         </div>
         <div class="truncate">
           <span class="font-body-md font-semibold text-on-surface block truncate">${esc(t.title)}</span>
-          <span class="font-body-sm text-secondary truncate">${esc(t.artist)}</span>
+          <span class="font-body-sm text-secondary truncate"><span class="hover:underline cursor-pointer" data-entity-kind="artist" data-entity-name="${esc(t.artist)}">${esc(t.artist)}</span></span>
         </div>
       </div>
       <div class="flex items-center gap-6 shrink-0 font-label-mono text-label-mono text-secondary">
         <span class="px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium text-[10px]">${t.hq ? "320 kbps" : "Standard"}</span>
-        <span class="hidden sm:inline">${t.plays ? `${t.plays.toLocaleString()} plays` : "—"}</span>
+        <span class="hidden sm:inline">${t.plays ? `${t.plays.toLocaleString()} plays` : "â€”"}</span>
         <span>${esc(t.duration)}</span>
         <button type="button" data-top-fav="${i}" title="Favorite this track" class="w-8 h-8 rounded-full bg-surface-container-high hover:bg-primary hover:text-on-primary flex items-center justify-center transition-colors">
           <span class="material-symbols-outlined text-[16px]" data-fav-icon="${esc(t.id)}"${favFill(t.id)}>favorite</span>
@@ -2280,7 +2849,7 @@ async function loadHome() {
   diag(
     "home",
     true,
-    `${homeFeed.playlists.length} playlists · ${homeFeed.charts.length} charts · ${homeFeed.top_tracks.length} top tracks`,
+    `${homeFeed.playlists.length} playlists Â· ${homeFeed.charts.length} charts Â· ${homeFeed.top_tracks.length} top tracks`,
   );
   renderHero();
   renderHomePlaylists();
@@ -2322,11 +2891,27 @@ $("#home-top-list")?.addEventListener("click", (e) => {
   const track = hit && homeFeed ? homeFeed.top_tracks[Number(hit.dataset.topIndex)] : null;
   if (track) playTrack(track);
 });
+// Every chart in the feed, not just the countdown's playlist.
 $("#home-charts-link")?.addEventListener("click", () => {
-  if (homeFeed && homeFeed.chart_id) playList(homeFeed.chart_id);
+  plFilter = "charts";
+  plQuery = "";
+  const input = $("#pl-search");
+  if (input) input.value = "";
+  showView("playlists"); // re-renders with the charts chip already selected
 });
 $("#hero-play")?.addEventListener("click", () => {
   if (homeFeed && homeFeed.spotlight) playList(homeFeed.spotlight.id);
+});
+// The banner itself opens its playlist; its own buttons keep their own jobs.
+$("#hero")?.addEventListener("click", (e) => {
+  if (e.target.closest("button, a")) return;
+  const spot = homeFeed && homeFeed.spotlight;
+  if (spot) openPlaylistElsewhere(spot);
+});
+$("#hero-art")?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  e.currentTarget.click();
 });
 $("#hero-shuffle")?.addEventListener("click", () => {
   if (homeFeed && homeFeed.spotlight) playList(homeFeed.spotlight.id, { shuffle: true });
@@ -2346,14 +2931,20 @@ $("#hero-save")?.addEventListener("click", () => {
     diag("library", null, `removed ${spot.title}`);
   } else {
     lib.push({ id: spot.id, title: spot.title });
-    if (label) label.textContent = "Saved ✓";
+    if (label) label.textContent = "Saved âœ“";
     diag("library", true, spot.title);
   }
   try {
     localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib.slice(0, 50)));
   } catch {}
 });
-// Genre pills anywhere on Home run a real track search — never inherit
+$("#home-releases-all")?.addEventListener("click", () => {
+  browseCards("albums", homeFeed && homeFeed.albums, "Releases");
+});
+$("#home-artists-all")?.addEventListener("click", () => {
+  browseCards("artists", homeFeed && homeFeed.artists, "Artists");
+});
+// Genre pills anywhere on Home run a real track search â€” never inherit
 // whatever entity chip was left active on the Search screen.
 $('[data-view="home"]')?.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-query]");
@@ -2420,7 +3011,7 @@ function removeLocalPl(id) {
 }
 
 // The picker: one modal, one capture-phase listener, so no row builder needs
-// its own handler — clicking Add anywhere stops the row's play click first.
+// its own handler â€” clicking Add anywhere stops the row's play click first.
 let pickTrack = null;
 
 function renderPickerList() {
@@ -2436,11 +3027,11 @@ function renderPickerList() {
     </button>`,
         )
         .join("")
-    : '<p class="font-body-sm text-body-sm text-on-surface-variant px-1 py-2">No local playlists yet — name one below.</p>';
+    : '<p class="font-body-sm text-body-sm text-on-surface-variant px-1 py-2">No local playlists yet â€” name one below.</p>';
 }
 function openPicker(t) {
   pickTrack = t;
-  npText("pl-picker-track", [t.artist, t.title].filter(Boolean).join(" — "));
+  npText("pl-picker-track", [t.artist, t.title].filter(Boolean).join(" â€” "));
   renderPickerList();
   $("#pl-picker")?.classList.remove("hidden");
   $("#pl-picker-name")?.focus();
@@ -2488,6 +3079,18 @@ document.addEventListener(
       duration: btn.dataset.addDur,
       duration_secs: 0,
     });
+  },
+  true,
+);
+/// Capture phase: an artist/album name resolves to its own screen instead of
+/// firing the row's play handler (or the bar) underneath the click.
+document.addEventListener(
+  "click",
+  (e) => {
+    const hit = e.target.closest?.("[data-entity-name]");
+    if (!hit || !hit.dataset.entityName) return;
+    e.stopPropagation();
+    openEntityByName(hit.dataset.entityKind || "artist", hit.dataset.entityName);
   },
   true,
 );
@@ -2580,6 +3183,7 @@ function toggleFavTrack(track) {
     on ? "success" : "info",
   );
   diag("favorite", on, track.title);
+  emitState(true);
   return on;
 }
 
@@ -2592,7 +3196,7 @@ function renderFavs() {
   if (count) count.textContent = `${favs.length} track${favs.length === 1 ? "" : "s"}`;
   if (!favs.length) {
     box.innerHTML =
-      '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Nothing favorited yet — tap the heart on any track.</p>';
+      '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Nothing favorited yet â€” tap the heart on any track.</p>';
     return;
   }
   box.innerHTML = "";
@@ -2607,7 +3211,7 @@ function renderFavs() {
         </div>
         <div class="min-w-0">
           <div class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(t.title || "")}</div>
-          <div class="font-body-sm text-body-sm text-secondary truncate">${esc([t.artist, t.album].filter(Boolean).join(" · "))}</div>
+          <div class="font-body-sm text-body-sm text-secondary truncate">${metaLinks(t)}</div>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0 font-label-mono text-label-mono text-secondary">
@@ -2644,6 +3248,9 @@ function playTracksAt(list, index) {
   const tracks = dedupeTracks(list).list;
   const at = tracks.indexOf(list[index]);
   queue.length = 0;
+  // A fresh context re-seeds the radio: recommendations follow what the
+  // user just started, not whatever they played an hour ago.
+  radioStation = "";
   for (const t of tracks) queue.push({ track: t, state: null });
   queueTab = "next";
   queueIndex = -1;
@@ -2683,7 +3290,7 @@ function trackRows(list, box, emptyMsg, limit) {
         </div>
         <div class="min-w-0">
           <div class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(t.title || "")}</div>
-          <div class="font-body-sm text-body-sm text-secondary truncate">${esc(t.artist || "")}</div>
+          <div class="font-body-sm text-body-sm text-secondary truncate"><span class="hover:underline cursor-pointer" data-entity-kind="artist" data-entity-name="${esc(t.artist || "")}">${esc(t.artist || "")}</span></div>
         </div>
       </div>
       <div class="flex items-center gap-3 shrink-0 font-label-mono text-label-mono text-secondary">
@@ -2726,7 +3333,7 @@ let pdCurrentId = "";
 let pdSeq = 0;
 const PD_FIRST = 30;
 let plFeatured = null;
-/// Entries rendered by the last `renderPlaylists()` — card, tag and label.
+/// Entries rendered by the last `renderPlaylists()` â€” card, tag and label.
 let plItems = [];
 let plFilter = "all";
 let plQuery = "";
@@ -2748,10 +3355,10 @@ const FILTER_ON =
 const FILTER_OFF =
   "px-3 py-1 rounded-full text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors";
 const DD_FIRST = 50; // rows painted the moment the screen opens
-/// Detail screens opened from inside another one — Back walks out of them.
+/// Detail screens opened from inside another one â€” Back walks out of them.
 const ddStack = [];
 let ddCurrent = null;
-/// The view Back lands on when the stack is empty (Home, Search, …).
+/// The view Back lands on when the stack is empty (Home, Search, â€¦).
 let ddReturnView = "home";
 /// Bumped by every open so a stale response never paints over a newer screen.
 let ddSeq = 0;
@@ -2773,7 +3380,7 @@ function plEntryById(id) {
   if (hit) return hit;
   const item = plItemById(id);
   const saved = loadLibrary().some((x) => x.id === id);
-  return { p: item, tag: saved ? "SAVED" : "CURATED", label: saved ? "In Library" : "JioSaavn" };
+  return { p: item, tag: saved ? "SAVED" : "CURATED", label: saved ? "In Library" : "" };
 }
 
 /// Playlists screen: the hero, the meta line and the track table always show
@@ -2791,8 +3398,8 @@ async function openPlaylist(item, { scroll = true } = {}) {
   const detail = $("#playlist-detail");
   detail?.classList.remove("hidden");
   npText("pd-title", item.title || "Playlist");
-  npText("pd-title-copy", item.title ? `• ${item.title}` : "");
-  npText("pd-subtitle", item.subtitle || (pdLocal ? "Local playlist" : "Loading tracks…"));
+  npText("pd-title-copy", item.title ? `â€¢ ${item.title}` : "");
+  npText("pd-subtitle", item.subtitle || (pdLocal ? "Local playlist" : "Loading tracksâ€¦"));
   $("#pd-delete")?.classList.toggle("hidden", !item.local);
   const img = $("#pd-image");
   if (img) {
@@ -2805,7 +3412,7 @@ async function openPlaylist(item, { scroll = true } = {}) {
   }
   const box = $("#pd-tracks");
   if (box && !pdLocal) {
-    box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracks…</p>';
+    box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracksâ€¦</p>';
   }
   if (scroll) detail?.scrollIntoView({ behavior: "smooth", block: "start" });
   paintPd();
@@ -2836,7 +3443,7 @@ function paintPd() {
   const n = pdTracks.length;
   const item = plFeatured?.p || {};
   npText("pd-total", n ? `${n} TRACKS TOTAL` : "");
-  npText("pd-subtitle", [item.subtitle, `${n} tracks`].filter(Boolean).join(" · "));
+  npText("pd-subtitle", [item.subtitle, `${n} tracks`].filter(Boolean).join(" Â· "));
   paintPdRows();
   paintFeaturedMeta();
 }
@@ -2847,7 +3454,7 @@ function paintPdRows() {
   box.innerHTML = "";
   if (!pdTracks.length) {
     box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">${
-      pdLocal ? "No tracks yet — open any track elsewhere and hit the add button." : "That playlist has no tracks."
+      pdLocal ? "No tracks yet â€” open any track elsewhere and hit the add button." : "That playlist has no tracks."
     }</p>`;
     $("#pd-foot")?.classList.add("hidden");
     return;
@@ -2883,7 +3490,7 @@ function paintPdRows() {
 /// Subtitle = whatever the card said + how much of the work is loaded.
 function paintDdSubtitle() {
   const loaded = ddTracks.length ? `${ddTracks.length} ${ddUnit}` : "";
-  npText("dd-subtitle", [ddSubExtra, loaded].filter(Boolean).join(" · "));
+  npText("dd-subtitle", [ddSubExtra, loaded].filter(Boolean).join(" Â· "));
 }
 
 /// The track list plus its "show/load more" bar, kept in step with each other.
@@ -2952,12 +3559,12 @@ function renderReleases() {
   }
 }
 
-/// One discography card — same tokens the album cards take, so a click opens
+/// One discography card â€” same tokens the album cards take, so a click opens
 /// the release itself.
 function releaseCard(a) {
   const meta = [a.year, a.count ? `${a.count} track${a.count === 1 ? "" : "s"}` : ""]
     .filter(Boolean)
-    .join(" · ");
+    .join(" Â· ");
   return `
     <div data-dd-kind="album" data-dd-token="${esc(a.token || "")}" data-dd-title="${esc(a.title || "")}" data-dd-sub="${esc(a.subtitle || "")}" data-dd-img="${esc(a.image || "")}" class="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col cursor-pointer">
       <div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high mb-2.5">
@@ -3005,7 +3612,7 @@ async function loadAllArtistSongs() {
   return true;
 }
 
-/// Album / artist screen (the `detail` view) — token comes from the card.
+/// Album / artist screen (the `detail` view) â€” token comes from the card.
 /// Artists load in two streams: the songs (paged, so the whole catalogue is
 /// walkable) and the header/discography (one call).
 async function openDetail(kind, item, opts = {}) {
@@ -3020,8 +3627,8 @@ async function openDetail(kind, item, opts = {}) {
   const seq = ++ddSeq;
   showView("detail");
   npText("dd-kind", kind.toUpperCase());
-  npText("dd-title", item.title || "—");
-  npText("dd-subtitle", "Loading tracks…");
+  npText("dd-title", item.title || "â€”");
+  npText("dd-subtitle", "Loading tracksâ€¦");
   for (const sel of ["#dd-verified", "#dd-listeners", "#dd-bio", "#dd-discography", "#dd-more-wrap", "#dd-list-head"])
     $(sel)?.classList.add("hidden");
   ddTracks = [];
@@ -3045,7 +3652,7 @@ async function openDetail(kind, item, opts = {}) {
     }
   }
   const box = $("#dd-tracks");
-  if (box) box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracks…</p>';
+  if (box) box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracksâ€¦</p>';
 
   if (!isArtist) {
     try {
@@ -3090,15 +3697,15 @@ async function openDetail(kind, item, opts = {}) {
   ddSubExtra = ddReleases ? `${ddReleases} releases` : ddSubExtra;
   paintDdSubtitle();
   renderDd("No songs found for this artist.");
-  diag("artist", true, `${ddTracks.length} songs · ${ddReleases} releases`);
+  diag("artist", true, `${ddTracks.length} songs Â· ${ddReleases} releases`);
 }
 
-/// One playlist card: corner tag, cover, blurb, tracks + source label.
-/// `tag`/`label` are passed by the caller so the same card renders in the
+/// One playlist card: corner tag, cover, blurb, track count + optional source
+/// label. `tag`/`label` are passed by the caller so the same card renders in the
 /// Playlists grid and in Library without sniffing where it came from.
-function plCard(p, tag = "CURATED", label = "JioSaavn") {
+function plCard(p, tag = "CURATED", label = "") {
   const n = p.count || (p.tracks || []).length || 0;
-  const blurb = p.blurb || p.subtitle || (p.local ? "Your own playlist." : "Curated on JioSaavn.");
+  const blurb = p.blurb || p.subtitle || (p.local ? "Your own playlist." : "Curated collection.");
   const cover = p.image
     ? `<img alt="" loading="lazy" class="w-full h-full object-cover" ${art(p.image)} />`
     : `<div class="w-full h-full bg-surface flex flex-col items-center justify-center gap-1.5 text-on-surface-variant">
@@ -3119,7 +3726,7 @@ function plCard(p, tag = "CURATED", label = "JioSaavn") {
         <p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">${esc(blurb)}</p>
         <div class="flex items-center justify-between gap-2 pt-0.5">
           <span class="font-label-mono text-label-mono text-secondary truncate">${n ? `${n} Tracks` : ""}</span>
-          <span class="font-label-mono text-label-mono text-secondary shrink-0">${esc(label)}</span>
+          ${label ? `<span class="font-label-mono text-label-mono text-secondary shrink-0">${esc(label)}</span>` : ""}
         </div>
       </div>
     </div>`;
@@ -3153,7 +3760,7 @@ function stationCard(c, i) {
         <p class="font-body-sm text-body-sm text-on-surface-variant mt-1">${c.count ? `${c.count} tracks` : esc(c.subtitle || "")}</p>
       </div>
       <div class="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between">
-        <span class="font-label-mono text-[10px] text-secondary">JioSaavn chart</span>
+        <span class="font-label-mono text-[10px] text-secondary">Chart</span>
         <span class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[18px]">radio</span></span>
       </div>
     </div>`;
@@ -3208,7 +3815,7 @@ function plBuckets() {
   const feed = homeFeed || { playlists: [], charts: [] };
   return {
     synthetic: plSyntheticEntries(),
-    curated: (feed.playlists || []).map((p) => ({ p, tag: "Curated", label: "JioSaavn" })),
+    curated: (feed.playlists || []).map((p) => ({ p, tag: "Curated", label: "" })),
     charts: (feed.charts || []).map((p) => ({ p, tag: "Chart", label: "Chart" })),
     saved: loadLibrary().map((p) => ({ p, tag: p.local ? "Local" : "Saved", label: p.local ? "Local" : "In Library" })),
   };
@@ -3219,7 +3826,7 @@ function plDedupe(entries) {
   return entries.filter((e) => (seen.has(e.p.id) ? false : (seen.add(e.p.id), true)));
 }
 
-/// Chips, cards and the featured hero — one pass over the real sources.
+/// Chips, cards and the featured hero â€” one pass over the real sources.
 function renderPlaylists() {
   const box = $("#playlists-grid");
   if (!box) return;
@@ -3247,7 +3854,7 @@ function renderPlaylists() {
     btn.textContent = `${btn.dataset.plLabel} (${counts[btn.dataset.plFilter] || 0})`;
   }
   // The hero shows a real playlist (like the design's featured card); the
-  // auto-generated ones stay in the grid. Nothing open yet → first in view.
+  // auto-generated ones stay in the grid. Nothing open yet â†’ first in view.
   if (!pdCurrentId && shown.length) {
     plFeatured = shown.find((e) => !e.p.synthetic) || shown[0];
     paintFeatured();
@@ -3260,7 +3867,7 @@ function featuredMetaText() {
   const n = open ? pdTracks.length : p.count || (p.tracks || []).length || 0;
   const total = open ? fmtSpan(pdTracks.reduce((s, t) => s + (t.duration_secs || 0), 0)) : "";
   // Followers already sit in the blurb, so keep this to tracks + running time.
-  return [n ? `${n} tracks` : "", total].filter(Boolean).join(" · ");
+  return [n ? `${n} tracks` : "", total].filter(Boolean).join(" Â· ");
 }
 
 function paintFeaturedMeta() {
@@ -3279,7 +3886,7 @@ function paintFeatured() {
   if (img && p.image) paintArt(img, p.image);
   npText("plf-title", p.title || "Playlist");
   npText("plf-eyebrow", plFeatured.label || "Playlist");
-  npText("plf-desc", p.blurb || p.subtitle || (p.local ? "Your own playlist." : "Curated on JioSaavn."));
+  npText("plf-desc", p.blurb || p.subtitle || (p.local ? "Your own playlist." : "Curated collection."));
   npText("plf-meta", featuredMetaText());
   // Synthetic cards are not storable, so there is nothing to toggle.
   $("#plf-save")?.classList.toggle("hidden", !!p.synthetic);
@@ -3310,7 +3917,7 @@ function renderLibrary() {
     ? lib
         .map((p) => plCard(p, p.local ? "Local" : "Saved", p.local ? "Local" : "In Library"))
         .join("")
-    : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — hit “Save to Library” on Home.</p>';
+    : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet â€” hit â€œSave to Libraryâ€ on Home.</p>';
 }
 function renderPlays() {
   const plays = uniqById(loadPlays());
@@ -3320,8 +3927,18 @@ function renderPlays() {
   trackRows(plays.slice(0, 5), $("#library-recent"), "No plays yet.");
 }
 
-// Click wiring — one delegated listener per grid.
-function wirePlGrid(sel) {
+// Click wiring â€” one delegated listener per grid.
+// `inline` keeps the Playlists tab's own behaviour (open the panel in place);
+// everywhere else the playlist opens on the shared detail screen so the click
+// never yanks the user onto the Playlists tab.
+function openPlaylistElsewhere(item) {
+  // Local + in-memory playlists have no server id, so the detail view (which
+  // loads by id) cannot open them; they keep the inline panel.
+  if (item.local || Array.isArray(item.tracks)) return openPlaylist(item);
+  openDetail("playlist", item);
+}
+
+function wirePlGrid(sel, { inline = false } = {}) {
   $(sel)?.addEventListener("click", (e) => {
     const card = e.target.closest("[data-pl-id]");
     if (!card) return;
@@ -3333,10 +3950,12 @@ function wirePlGrid(sel) {
       if (hit) openPlaylist(hit.p);
       return;
     }
-    openPlaylist(plItemById(card.dataset.plId));
+    const item = plItemById(card.dataset.plId);
+    if (inline) openPlaylist(item);
+    else openPlaylistElsewhere(item);
   });
 }
-wirePlGrid("#playlists-grid");
+wirePlGrid("#playlists-grid", { inline: true });
 wirePlGrid("#home-stations");
 wirePlGrid("#library-saved");
 
@@ -3350,7 +3969,7 @@ function wireDdGrid(sel) {
       subtitle: card.dataset.ddSub,
       image: card.dataset.ddImg,
     };
-    // No token (payload oddity) → fall back to a real search instead of dead click.
+    // No token (payload oddity) â†’ fall back to a real search instead of dead click.
     if (!item.token) {
       doSearch({ query: item.title || "" });
       return;
@@ -3376,6 +3995,10 @@ $("#pd-shuffle")?.addEventListener("click", () => {
   playTracksAt(pdTracks, 0);
 });
 $("#pd-back")?.addEventListener("click", () => $("#playlist-detail")?.classList.add("hidden"));
+$("#pd-download")?.addEventListener("click", () => {
+  if (!pdTracks.length) return;
+  downloadAll(pdTracks, "playlist tracks", $("#pd-download"));
+});
 $("#pd-more")?.addEventListener("click", () => {
   pdVisible = pdTracks.length;
   paintPdRows();
@@ -3384,7 +4007,7 @@ $("#pd-delete")?.addEventListener("click", (e) => {
   const btn = e.currentTarget;
   const name = plFeatured?.p.title;
   if (!pdCurrentId || !name) return;
-  // Two clicks instead of a native confirm() — webviews do not all have one.
+  // Two clicks instead of a native confirm() â€” webviews do not all have one.
   if (btn.dataset.armed !== "1") {
     btn.dataset.armed = "1";
     btn.title = "Click again to delete";
@@ -3512,6 +4135,12 @@ $("#dd-play")?.addEventListener("click", async () => {
   if (ddMore && !(await loadAllArtistSongs())) return;
   playTracksAt(ddTracks, 0);
 });
+$("#dd-download")?.addEventListener("click", async () => {
+  if (!ddTracks.length) return;
+  if (ddMore && !(await loadAllArtistSongs())) return;
+  const kind = ddCurrent?.kind || "album";
+  downloadAll(ddTracks, kind === "artist" ? "artist songs" : `${kind} tracks`, $("#dd-download"));
+});
 $("#dd-shuffle")?.addEventListener("click", async () => {
   if (!ddTracks.length) return;
   if (ddMore && !(await loadAllArtistSongs())) return;
@@ -3533,7 +4162,7 @@ $("#dd-more")?.addEventListener("click", async () => {
   const seq = ddSeq;
   const btn = $("#dd-more");
   if (btn) btn.disabled = true;
-  npText("dd-more-label", "Loading…");
+  npText("dd-more-label", "Loadingâ€¦");
   try {
     const next = await invoke("artist_tracks", { token: ddToken, page: ddPage + 1 });
     if (seq !== ddSeq) return;
@@ -3564,6 +4193,106 @@ document.addEventListener("click", (e) => {
   if (jump) showView(jump.dataset.pathJump);
 });
 
+// -------------------------------------------------- desktop card bridge ----
+// The desktop card is a second webview: no <audio>, no queue, no history - it
+// is a pure view. This window owns the truth, pushes a snapshot on every
+// meaningful change, and answers the transport commands the card sends back.
+// Everything rides Tauri events, so no extra capability entry is required.
+function playerSnapshot() {
+  const entry = queue[queueIndex];
+  const live = entry ? entry.track : null;
+  const t = live || restoredTrack;
+  const nxt = queue[queueIndex + 1] || queue.find((q) => q.state === null);
+  return {
+    hasTrack: !!t,
+    live: !!live,
+    id: t ? t.id : "",
+    title: t ? t.title : "",
+    artist: t ? t.artist : "",
+    album: t ? t.album : "",
+    image: t ? t.image : "",
+    hq: !!(t && t.hq),
+    quality: live && current ? current.chosen_quality || "" : "",
+    paused: audio.paused,
+    position: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+    duration: Number.isFinite(audio.duration) ? audio.duration : 0,
+    queueLen: queue.length,
+    shuffle: shuffleMode,
+    repeat: repeatMode,
+    volume: audio.volume,
+    muted: audio.muted,
+    fav: t ? isFav(t.id) : false,
+    next: nxt
+      ? {
+          title: nxt.track.title,
+          sub: [nxt.track.artist, nxt.track.duration].filter(Boolean).join(" - "),
+          image: nxt.track.image || "",
+        }
+      : null,
+  };
+}
+
+/// Throttled by default so `timeupdate` (several times a second) cannot spam
+/// the card's webview; pass `true` for changes that must land right now - a
+/// play/pause, a track change, a seek, or a control the card itself pressed.
+function emitState(force = false) {
+  const now = Date.now();
+  if (!force && now - stateEmitAt < 900) return;
+  stateEmitAt = now;
+  try {
+    window.__TAURI__?.event?.emit("player:state", playerSnapshot());
+  } catch {
+    /* nothing listening yet - the next change pushes again */
+  }
+}
+
+function wireDesktopCard() {
+  // Sent once by the card as it finishes painting its first frame.
+  window.__TAURI__?.event?.listen("widget:ready", () => emitState(true));
+  window.__TAURI__?.event?.listen("player:cmd", ({ payload }) => {
+    const cmd = payload || {};
+    switch (cmd.type) {
+      case "play":
+        togglePlay();
+        break;
+      case "prev":
+        step(-1);
+        break;
+      case "next":
+        step(1);
+        break;
+      case "shuffle":
+        toggleShuffle();
+        break;
+      case "repeat":
+        toggleRepeat();
+        break;
+      case "mute":
+        audio.muted = !audio.muted;
+        if (np.volIcon) np.volIcon.textContent = audio.muted ? "volume_off" : "volume_up";
+        paintVolume();
+        break;
+      case "fav":
+        toggleFavTrack(queue[queueIndex] ? queue[queueIndex].track : restoredTrack);
+        break;
+      case "seek":
+        if (Number.isFinite(cmd.value) && Number.isFinite(audio.duration) && audio.duration > 0) {
+          audio.currentTime = Math.min(1, Math.max(0, cmd.value)) * audio.duration;
+        }
+        break;
+      case "volume":
+        if (Number.isFinite(cmd.value)) {
+          audio.volume = Math.min(1, Math.max(0, cmd.value));
+          audio.muted = false;
+          if (np.volIcon) np.volIcon.textContent = "volume_up";
+          paintVolume();
+        }
+        break;
+    }
+    emitState(true);
+  });
+}
+
 // ------------------------------------------------------------------- boot -
 try {
   const base = await invoke("proxy_base");
@@ -3571,7 +4300,6 @@ try {
 } catch (err) {
   diag("proxy base", false, String(err));
 }
-telemetry("idle");
 diag("boot", true, "TRANCE MUSIC ready");
 
 // Seed the catalog so every control has real data on first paint:
@@ -3582,21 +4310,30 @@ if (seedInput && !seedInput.value.trim()) {
 }
 // The bar (and Now Playing) open on the last track that actually played.
 const lastPlayed = loadPlays()[0];
+restoredTrack = lastPlayed || null;
 if (lastPlayed) {
   bar.title.textContent = lastPlayed.title;
-  bar.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" · ");
+  bar.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" Â· ");
+  stampEntity(bar.artist, "artist", lastPlayed.artist);
   if (lastPlayed.image) {
     paintArt(bar.cover, lastPlayed.image);
     bar.coverFallback?.classList.add("hidden");
     paintArt(np.cover, lastPlayed.image);
   }
   if (np.title) np.title.textContent = lastPlayed.title;
-  if (np.artist) np.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" · ");
-  npText("np-album", lastPlayed.album || "—");
-  npText("np-artist-tile", lastPlayed.artist || "—");
-  npText("np-length", lastPlayed.duration || "—");
+  if (np.artist) np.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" Â· ");
+  stampEntity(np.artist, "artist", lastPlayed.artist);
+  npText("np-album", lastPlayed.album || "â€”");
+  stampEntity(document.getElementById("np-album"), "album", lastPlayed.album);
+  npText("np-artist-tile", lastPlayed.artist || "â€”");
+  stampEntity(document.getElementById("np-artist-tile"), "artist", lastPlayed.artist);
+  npText("np-length", lastPlayed.duration || "â€”");
   diag("restore", true, `last played: ${lastPlayed.title}`);
 }
+// The desktop card is a separate window: show it if it was left switched on,
+// then push the current snapshot so it paints before the user touches it.
+applyWidget();
+wireDesktopCard();
 renderFavs();
 doSearch({ silent: true });
 loadHome();

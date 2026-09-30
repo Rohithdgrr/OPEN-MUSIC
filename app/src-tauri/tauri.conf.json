@@ -17,6 +17,22 @@
         "minHeight": 600,
         "resizable": true,
         "center": true
+      },
+      {
+        "label": "widget",
+        "url": "widget.html",
+        "title": "TRANCE MUSIC - desktop widget",
+        "width": 460,
+        "height": 470,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "visible": false,
+        "center": true
       }
     ],
     "security": {
@@ -24,8 +40,11 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
   }
 }

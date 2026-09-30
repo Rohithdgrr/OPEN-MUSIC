@@ -138,3 +138,578 @@
   max-width: min(40rem, calc(100vw - 2rem));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
 }
+
+/* Credits dialog (see openCredits in main.js). `::backdrop` has no utility
+   class, so the scrim and the centring live here. */
+#tm-dialog {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tm-text);
+}
+#tm-dialog::backdrop {
+  background: rgba(20, 20, 22, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* Settings dialog (see openSettings in main.js) — same scrim as the credits
+   box; the panel itself is all utility classes. */
+#tm-settings {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--tm-text);
+  max-width: 100vw;
+  max-height: 100vh;
+}
+#tm-settings::backdrop {
+  background: rgba(20, 20, 22, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* ==========================================================================
+   Desktop widget + notifications.
+
+   Both follow design/screens/widget design, which is deliberately the inverse
+   of the app chrome: an obsidian glass card that floats over the light UI, so
+   it still reads as a separate surface. The palette lives here rather than as
+   utility classes because the app's Tailwind config has no `zinc` scale and
+   index.html's config is a single minified line.
+
+   Visibility belongs to the window itself now: Rust shows/hides the widget
+   window, so nothing here toggles a class to reveal the card.
+   ========================================================================== */
+
+.tm-glass {
+  background: rgba(9, 9, 11, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 0 50px -10px rgba(255, 255, 255, 0.05),
+    0 25px 50px -12px rgba(0, 0, 0, 0.85),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(28px) saturate(140%);
+  -webkit-backdrop-filter: blur(28px) saturate(140%);
+}
+
+/* Tabular figures so the timer does not jitter the layout every second. */
+.tm-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ------------------------------------------------------------------ widget
+ * The card lives in its own transparent Tauri window (src/widget.html), so it
+ * fills that window edge to edge instead of floating inside the app shell:
+ * no fixed position, no z-index, no open/closed state to toggle.
+ * ------------------------------------------------------------------------- */
+.tm-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  border-radius: 32px;
+  overflow: hidden;
+  color: #f4f4f5;
+  background: #09090b;
+  justify-content: center;
+  animation: tm-widget-in 0.22s ease-out;
+}
+@keyframes tm-widget-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Blurred cover art bleeding out behind the panel, as in the design. */
+.tm-widget__art {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.2;
+  filter: blur(32px) saturate(140%);
+  transform: scale(1.15);
+  pointer-events: none;
+}
+.tm-widget__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), rgba(9, 9, 11, 0.82), rgba(0, 0, 0, 0.9));
+  pointer-events: none;
+}
+.tm-widget__inner {
+  position: relative;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.tm-widget__head {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.tm-widget__logo {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tm-widget__logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Same mark as the app header: a graphic_eq glyph on a black tile. */
+.tm-widget__logo .material-symbols-outlined {
+  font-size: 16px;
+  color: #fafafa;
+  line-height: 1;
+}
+.tm-widget__brand {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+.tm-widget__tag {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 0.1rem 0.375rem;
+  border-radius: 0.25rem;
+  background: #202024;
+  color: #d4d4d8;
+}
+/* Format pill: the design's version wraps to two lines, so it is nowrap here
+   and the text is truncated instead. */
+.tm-widget__fmt {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 45%;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: rgba(17, 17, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: #d4d4d8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-widget__dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex: 0 0 auto;
+  border-radius: 9999px;
+  background: #10b981;
+  animation: tm-pulse 2s ease-in-out infinite;
+}
+@keyframes tm-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.tm-widget__np {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+.tm-widget__cover {
+  position: relative;
+  width: 4.75rem;
+  height: 4.75rem;
+  flex: 0 0 auto;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: #202024;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.tm-widget__cover img {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Shown until cover art arrives, then hidden behind the image. */
+.tm-widget__covericon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: #52525b;
+}
+.tm-widget__coverbadge {
+  position: absolute;
+  left: 0.375rem;
+  bottom: 0.375rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: #d4d4d8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+.tm-widget__meta {
+  min-width: 0;
+  flex: 1;
+  padding-top: 0.125rem;
+}
+.tm-widget__title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-widget__artist {
+  margin-top: 0.1875rem;
+  font-size: 0.8125rem;
+  color: #a1a1aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Spectrum row. Bars are pure CSS, so nothing to drive while paused. */
+.tm-widget__viz {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2.5rem;
+  padding: 0 0.875rem;
+  border-radius: 0.5rem;
+  background: rgba(17, 17, 20, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.tm-widget__vizlabel {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #a1a1aa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tm-widget__bars {
+  margin-left: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 1.25rem;
+}
+.tm-widget__bars i {
+  display: block;
+  width: 2px;
+  height: 30%;
+  border-radius: 9999px;
+  background: #f4f4f5;
+  opacity: 0.75;
+}
+.tm-widget.is-playing .tm-widget__bars i {
+  animation: tm-spectrum 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.tm-widget.is-playing .tm-widget__bars i:nth-child(2) {
+  animation-duration: 0.85s;
+  animation-delay: 0.15s;
+}
+.tm-widget.is-playing .tm-widget__bars i:nth-child(3) {
+  animation-duration: 1.4s;
+  animation-delay: 0.3s;
+}
+.tm-widget.is-playing .tm-widget__bars i:nth-child(4) {
+  animation-duration: 0.95s;
+  animation-delay: 0.45s;
+}
+.tm-widget.is-playing .tm-widget__bars i:nth-child(5) {
+  animation-duration: 1.25s;
+  animation-delay: 0.2s;
+}
+.tm-widget.is-playing .tm-widget__bars i:nth-child(6) {
+  animation-duration: 0.7s;
+  animation-delay: 0.5s;
+}
+.tm-widget.is-playing .tm-widget__bars i:nth-child(7) {
+  animation-duration: 1.05s;
+  animation-delay: 0.1s;
+}
+@keyframes tm-spectrum {
+  0%,
+  100% {
+    height: 28%;
+    opacity: 0.7;
+  }
+  50% {
+    height: 95%;
+    opacity: 1;
+  }
+}
+
+.tm-widget__seek {
+  position: relative;
+  height: 0.25rem;
+  margin-top: 0.125rem;
+  border-radius: 9999px;
+  background: #27272a;
+  cursor: pointer;
+}
+/* A taller transparent pad: the visible bar is 4px, far too thin to hit. */
+.tm-widget__seek::before {
+  content: "";
+  position: absolute;
+  inset: -0.5rem 0;
+}
+.tm-widget__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 9999px;
+  background: #fafafa;
+  pointer-events: none;
+}
+.tm-widget__times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -0.5rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: #71717a;
+}
+
+/* Three columns keep the play button dead centre: the right side also carries
+   the volume slider, so a plain flex row would pull it off centre. */
+.tm-widget__transport {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.375rem;
+  padding-top: 0.25rem;
+}
+.tm-widget__side {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.tm-widget__side--end {
+  justify-content: flex-end;
+}
+.tm-widget__btn {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  border-radius: 9999px;
+  background: transparent;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+}
+.tm-widget__btn:hover {
+  color: #fafafa;
+  background: rgba(255, 255, 255, 0.06);
+}
+.tm-widget__btn.is-on {
+  color: #fafafa;
+}
+.tm-widget__btn .material-symbols-outlined {
+  font-size: 18px;
+}
+.tm-widget__play {
+  width: 3rem;
+  height: 3rem;
+  margin: 0;
+  border-radius: 9999px;
+  background: #fafafa;
+  color: #09090b;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.tm-widget__play:hover {
+  background: #ffffff;
+  color: #09090b;
+}
+.tm-widget__play .material-symbols-outlined {
+  font-size: 26px;
+}
+.tm-widget__vol {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.tm-widget__voltrack {
+  position: relative;
+  width: 3.5rem;
+  height: 0.5rem;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.tm-widget__voltrack::before {
+  content: "";
+  position: absolute;
+  inset: -0.5rem 0;
+}
+.tm-widget__volrail {
+  width: 100%;
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: #27272a;
+  overflow: hidden;
+}
+.tm-widget__volfill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 9999px;
+  background: #fafafa;
+  pointer-events: none;
+}
+
+.tm-widget__next {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem;
+  border-radius: 0.75rem;
+  background: rgba(17, 17, 20, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.tm-widget__next:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+.tm-widget__nextcover {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: #202024;
+}
+.tm-widget__nextcover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tm-widget__nextmeta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+/* The NEXT tag and the play button are siblings in a flex row; without this
+   they butt against each other and the glyph overlaps the label. */
+.tm-widget__next > .tm-widget__tag {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.tm-widget__nexttitle {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-widget__nextsub {
+  font-size: 0.6875rem;
+  color: #71717a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tm-widget__foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  color: #71717a;
+}
+.tm-widget__foot span:nth-child(even) {
+  color: #3f3f46;
+}
+
+/* ------------------------------------------------------------- notifications
+ * Toasts are the widget's card language in miniature: same obsidian glass, same
+ * hairline, same radius and glow, so a notification and the widget read as one
+ * system rather than two.
+ * ------------------------------------------------------------------------- */
+#toast-stack {
+  right: 1rem;
+  bottom: 6.75rem;
+  z-index: 70;
+  gap: 0.5rem;
+  max-width: min(22rem, calc(100vw - 2rem));
+  transition: bottom 0.22s ease-out;
+}
+.tm-toast {
+  gap: 0.625rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #f4f4f5;
+  background: rgba(9, 9, 11, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 0 30px -8px rgba(255, 255, 255, 0.06),
+    0 12px 28px -10px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+}
+.tm-toast .tm-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.3125rem;
+  background: #71717a;
+  box-shadow: 0 0 6px currentColor;
+}
+.tm-toast[data-kind="success"] .tm-dot {
+  background: #10b981;
+}
+.tm-toast[data-kind="error"] .tm-dot {
+  background: #ef4444;
+}
+.tm-toast[data-kind="info"] .tm-dot {
+  background: #a1a1aa;
+}

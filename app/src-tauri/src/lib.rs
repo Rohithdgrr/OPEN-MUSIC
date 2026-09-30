@@ -75,6 +75,18 @@ async fn search_suggestions(
     official::suggestions(&state.client, &query).await
 }
 
+/// Endless playback's feed: continue a JioSaavn radio station, or seed a new
+/// one from `song` when `station` is empty/absent. Each call advances the
+/// station, so the UI keeps invoking it as the queue runs low.
+#[tauri::command]
+async fn recommend_songs(
+    song: Option<String>,
+    station: Option<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<official::RadioPage, String> {
+    official::recommend(&state.client, song.as_deref(), station.as_deref()).await
+}
+
 /// Resolve a song id to a playable, range-qualified stream.
 ///
 /// Runs the honesty probe before any promise of playback is made.
@@ -324,11 +336,153 @@ fn reveal_vault(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.reveal_vault()
 }
 
+// ------------------------------------------------------------- desktop card
+// The card is its own webview window (label `widget`). Placement is handled
+// here rather than in JS: the capability file only grants the default window
+// permissions, and window management is the sort of thing a page should not
+// be able to do for itself anyway.
+
+/// Reparent the card into (or out of) the WorkerW layer the shell paints the
+/// wallpaper into. Parenting it there is what "sit behind every window" means:
+/// that layer is below every application window, so the card is only ever
+/// visible on an empty stretch of desktop.
+#[cfg(windows)]
+fn reparent(win: &tauri::WebviewWindow, embed: bool) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::{HWND, LPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, FindWindowA, FindWindowExA, GetClassNameA, SendMessageTimeoutA, SetParent,
+        SMTO_NORMAL,
+    };
+
+    const PROGMAN: &[u8] = b"Progman\0";
+    const WORKERW: &[u8] = b"WorkerW\0";
+    const DEF_VIEW: &[u8] = b"SHELLDLL_DefView\0";
+
+    /// The WorkerW that owns the desktop icon surface has the wallpaper layer
+    /// as its immediate predecessor in Z-order - that sibling is our target.
+    unsafe extern "system" fn behind_icons(hwnd: HWND, lparam: LPARAM) -> i32 {
+        let slot = &mut *(lparam as *mut HWND);
+        let owns_icons = !FindWindowExA(
+            hwnd,
+            std::ptr::null_mut(),
+            DEF_VIEW.as_ptr(),
+            std::ptr::null(),
+        )
+        .is_null();
+        if owns_icons {
+            let behind = FindWindowExA(
+                std::ptr::null_mut(),
+                hwnd,
+                WORKERW.as_ptr(),
+                std::ptr::null(),
+            );
+            if !behind.is_null() {
+                *slot = behind;
+                return 0;
+            }
+        }
+        1
+    }
+
+    /// Fallback for shells that keep the icon surface on Progman itself: the
+    /// bottom-most WorkerW with no icon surface of its own is the wallpaper.
+    unsafe extern "system" fn stray_workerw(hwnd: HWND, lparam: LPARAM) -> i32 {
+        let slot = &mut *(lparam as *mut HWND);
+        let mut class = [0u8; 64];
+        let len = GetClassNameA(hwnd, class.as_mut_ptr(), class.len() as i32);
+        let is_worker = len as usize == WORKERW.len() - 1 && &class[..len as usize] == &WORKERW[..7];
+        let owns_icons = !FindWindowExA(
+            hwnd,
+            std::ptr::null_mut(),
+            DEF_VIEW.as_ptr(),
+            std::ptr::null(),
+        )
+        .is_null();
+        if is_worker && !owns_icons {
+            *slot = hwnd;
+        }
+        1
+    }
+
+    let hwnd = win.hwnd().map_err(|e| e.to_string())?.0;
+    unsafe {
+        if embed {
+            // Poke Progman: without this the shell may never have created the
+            // wallpaper WorkerW at all.
+            let progman = FindWindowA(PROGMAN.as_ptr(), std::ptr::null());
+            if !progman.is_null() {
+                let mut result: usize = 0;
+                SendMessageTimeoutA(progman, 0x052C, 0, 0, SMTO_NORMAL, 1000, &mut result);
+            }
+            let mut layer: HWND = std::ptr::null_mut();
+            EnumWindows(Some(behind_icons), &mut layer as *mut HWND as LPARAM);
+            if layer.is_null() {
+                EnumWindows(Some(stray_workerw), &mut layer as *mut HWND as LPARAM);
+            }
+            if layer.is_null() {
+                return Err("could not reach the desktop wallpaper layer".to_string());
+            }
+            SetParent(hwnd, layer);
+        } else {
+            SetParent(hwnd, std::ptr::null_mut());
+        }
+    }
+    // Topmost stops meaning anything once the card is a child of the shell,
+    // and is wrong the moment it stops being one - keep the flag in step.
+    win.set_always_on_top(!embed).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn reparent(_win: &tauri::WebviewWindow, _embed: bool) -> Result<(), String> {
+    Ok(())
+}
+
+/// Show or hide the card, placing it either above every window or on the
+/// wallpaper as a single operation so the two never disagree.
+#[tauri::command]
+fn widget_show(app: tauri::AppHandle, show: bool, embed: bool) -> Result<(), String> {
+    let win = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "desktop widget window is missing".to_string())?;
+    if !show {
+        // Always detach first: hiding a reparented window would leave the
+        // shell holding a handle we no longer control.
+        reparent(&win, false)?;
+        return win.hide().map_err(|e| e.to_string());
+    }
+    reparent(&win, embed)?;
+    win.show().map_err(|e| e.to_string())
+}
+
+/// Switch an already visible card between the two placements.
+#[tauri::command]
+fn widget_embed(app: tauri::AppHandle, embed: bool) -> Result<(), String> {
+    let win = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "desktop widget window is missing".to_string())?;
+    reparent(&win, embed)
+}
+
+/// Place the card in physical screen coordinates (what the card reports back
+/// after a drag, and where "reset position" puts it).
+#[tauri::command]
+fn widget_set_position(win: tauri::WebviewWindow, x: i32, y: i32) -> Result<(), String> {
+    win.set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())
+}
+
+/// Begin an OS drag of the frameless card from its header.
+#[tauri::command]
+fn widget_start_drag(win: tauri::WebviewWindow) -> Result<(), String> {
+    win.start_dragging().map_err(|e| e.to_string())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             // Ephemeral port, bound BEFORE the window loads: no hardcoded
-            // port, no collision, no race (architecture.md §6).
+            // port, no collision, no race (docs/architecture.md §6).
             // NOTE: `setup` runs outside the Tokio runtime, so the std ->
             // tokio listener conversion happens inside the spawned task.
             let std_listener = std::net::TcpListener::bind("127.0.0.1:0")?;
@@ -362,6 +516,7 @@ pub fn run() {
     search_songs,
     search_entities,
     search_suggestions,
+    recommend_songs,
             resolve_song,
             qualify_url,
             proxy_base,
@@ -375,7 +530,11 @@ pub fn run() {
             list_downloads,
             remove_download,
             reveal_download,
-            reveal_vault
+            reveal_vault,
+            widget_show,
+            widget_embed,
+            widget_set_position,
+            widget_start_drag
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");

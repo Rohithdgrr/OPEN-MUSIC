@@ -25,6 +25,11 @@ futures = "0.3"
 des = "0.8"
 base64 = "0.22"
 
+[target.'cfg(windows)'.dependencies]
+# The desktop card's "on the wallpaper" placement is a raw SetParent into the
+# shell's WorkerW layer, which the Tauri window API does not expose.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

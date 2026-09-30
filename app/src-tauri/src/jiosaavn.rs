@@ -115,7 +115,7 @@ pub struct PlayableAudio {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP clients — the two-client rule (see architecture.md §7)
+// HTTP clients — the two-client rule (see docs/architecture.md §7)
 // ---------------------------------------------------------------------------
 
 /// Metadata + probes: total 25 s timeout, must fail fast.

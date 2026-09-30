@@ -73,9 +73,11 @@ async fn call(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<Value
     let value: Value =
         serde_json::from_str(&body).map_err(|e| format!("decode {url}: {e}"))?;
     if let Some(err) = value.get("error") {
+        // Usually `{"error":{"msg":...}}`; a few endpoints answer with a bare
+        // string ("No new song found for current radio.").
         let msg = err
-            .get("msg")
-            .and_then(Value::as_str)
+            .as_str()
+            .or_else(|| err.get("msg").and_then(Value::as_str))
             .unwrap_or("upstream error");
         return Err(format!("{BASE}: {msg}"));
     }
@@ -175,6 +177,10 @@ fn parse_song(v: &Value) -> Track {
     let artist = text(v, "primary_artists")
         .or_else(|| text(v, "singers"))
         .or_else(|| text(v, "music"))
+        // Radio batches carry the credit only under `more_info`.
+        .or_else(|| text(info, "primary_artists"))
+        .or_else(|| text(info, "singers"))
+        .or_else(|| text(info, "music"))
         .or_else(|| text(v, "subtitle"))
         .unwrap_or_default();
     let album = text(v, "album")
@@ -951,6 +957,113 @@ fn br_to_newline(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Radio (endless playback)
+// ---------------------------------------------------------------------------
+
+/// One answer from the radio: the station id to keep calling with, plus the
+/// batch of songs it just handed over.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct RadioPage {
+    pub station: String,
+    pub tracks: Vec<Track>,
+}
+
+/// Songs per radio batch — upstream's own default.
+const RADIO_BATCH: u32 = 10;
+
+/// Seed a station from one song id (`webradio.createEntityStation`).
+async fn create_station(client: &reqwest::Client, song_id: &str) -> Result<String, String> {
+    check_id(song_id)?;
+    let entity = format!("[\"{song_id}\"]");
+    let value = call(
+        client,
+        &[
+            ("__call", "webradio.createEntityStation"),
+            ("api_version", "4"),
+            ("_format", "json"),
+            ("_marker", "0"),
+            ("ctx", "android"),
+            ("entity_id", &entity),
+            ("entity_type", "queue"),
+        ],
+    )
+    .await?;
+    text(&value, "stationid").ok_or_else(|| "radio: no station id".to_string())
+}
+
+/// The next batch for a station (`webradio.getSong`). Upstream keeps its own
+/// cursor — repeating the call yields new songs, so there is no page number.
+async fn station_songs(
+    client: &reqwest::Client,
+    station: &str,
+    k: u32,
+) -> Result<Vec<Track>, String> {
+    let limit = k.to_string();
+    let value = call(
+        client,
+        &[
+            ("__call", "webradio.getSong"),
+            ("api_version", "4"),
+            ("_format", "json"),
+            ("_marker", "0"),
+            ("ctx", "android"),
+            ("stationid", station),
+            ("k", &limit),
+        ],
+    )
+    .await?;
+    Ok(songs_from_value(&value))
+}
+
+/// Pure half of `station_songs`: the observed keyed map
+/// `{"0":{"song":{...}}, ..., "stationid": "..."}` (neighbour values fall out
+/// via the `song` probe), tolerating a plain array as well.
+fn songs_from_value(value: &Value) -> Vec<Track> {
+    let raw: Vec<&Value> = match value {
+        Value::Array(items) => items.iter().filter(|v| v.is_object()).collect(),
+        Value::Object(map) => map.values().filter_map(|v| v.get("song")).collect(),
+        _ => Vec::new(),
+    };
+    dedup_tracks(
+        raw.into_iter()
+            .map(parse_song)
+            .filter(|t| !t.id.is_empty())
+            .collect(),
+    )
+}
+
+/// Endless playback's feed: continue `station` when we still have one, else
+/// seed a new one from `song`. Drained/exhausted stations re-seed instead of
+/// failing — the frontend carries its own last-resort fallbacks.
+pub async fn recommend(
+    client: &reqwest::Client,
+    song: Option<&str>,
+    station: Option<&str>,
+) -> Result<RadioPage, String> {
+    if let Some(sid) = station.map(str::trim).filter(|s| !s.is_empty()) {
+        if let Ok(tracks) = station_songs(client, sid, RADIO_BATCH).await {
+            if !tracks.is_empty() {
+                return Ok(RadioPage {
+                    station: sid.to_string(),
+                    tracks,
+                });
+            }
+        }
+    }
+    let seed = song
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "radio: no station and no seed song".to_string())?;
+    let sid = create_station(client, seed).await?;
+    let tracks = station_songs(client, &sid, RADIO_BATCH).await?;
+    Ok(RadioPage {
+        station: sid,
+        tracks,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -1056,6 +1169,86 @@ mod tests {
         assert_eq!(t.album, "The Vvaan");
         assert!(t.hq);
         assert_eq!(t.image, "https://c.saavncdn.com/765/x-500x500.jpg");
+    }
+
+    /// Radio batches keep the artist credit only under `more_info.music` and
+    /// nest duration/album/320 there — the shape endless playback parses.
+    #[test]
+    fn parse_song_reads_radio_credits_from_more_info() {
+        let v: Value = serde_json::from_str(
+            r#"{
+              "id": "W4v72VOw",
+              "title": "Krishna Trance",
+              "subtitle": "",
+              "image": "https://c.saavncdn.com/765/x-150x150.jpg",
+              "more_info": {
+                "music": "Kaala Bhairava",
+                "duration": "420",
+                "album": "Trance One",
+                "320kbps": true
+              }
+            }"#,
+        )
+        .unwrap();
+        let t = parse_song(&v);
+        assert_eq!(t.artist, "Kaala Bhairava");
+        assert_eq!(t.album, "Trance One");
+        assert_eq!(t.duration_secs, 420);
+        assert!(t.hq);
+    }
+
+    // ---- Radio (endless playback) ----
+
+    /// `webradio.getSong` answers a keyed map: every value carries its song
+    /// under `song`, and `stationid` sits beside them (no `song` → skipped).
+    #[test]
+    fn radio_songs_parse_the_keyed_map_and_skip_neighbours() {
+        let v: Value = serde_json::from_str(
+            r#"{
+              "0": {"song": {"id": "a1", "title": "One", "more_info": {"music": "Artist A", "duration": "100"}}},
+              "1": {"song": {"id": "b2", "title": "Two", "more_info": {"music": "Artist B", "duration": "200"}}},
+              "2": {"song": {"id": "a1", "title": "One", "more_info": {"music": "Artist A", "duration": "100"}}},
+              "stationid": "STATION-ID"
+            }"#,
+        )
+        .unwrap();
+        let tracks = songs_from_value(&v);
+        assert_eq!(tracks.len(), 2, "the stationid neighbour and the dup drop");
+        assert_eq!(tracks[0].id, "a1");
+        assert_eq!(tracks[0].artist, "Artist A");
+        assert_eq!(tracks[1].id, "b2");
+    }
+
+    #[test]
+    fn radio_songs_tolerate_a_plain_array() {
+        let v: Value = serde_json::from_str(
+            r#"[{"id": "z9", "title": "Solo", "more_info": {"music": "M", "duration": "60"}},
+                 {"title": "no id"}]"#,
+        )
+        .unwrap();
+        let tracks = songs_from_value(&v);
+        assert_eq!(tracks.len(), 1, "id-less rows are dropped");
+        assert_eq!(tracks[0].id, "z9");
+        assert_eq!(tracks[0].duration, "1:00");
+    }
+
+    /// The live flow endless playback leans on: seed a station from a real
+    /// search hit, read its first batch. Skipped when `OP_OFFLINE` is set.
+    #[tokio::test]
+    async fn live_radio_station_yields_songs() {
+        if std::env::var("OP_OFFLINE").is_ok() {
+            return;
+        }
+        let client = crate::jiosaavn::api_client();
+        let hits = search(&client, "trance", 5, 1).await.expect("search");
+        let seed = hits.first().expect("a seed song").id.clone();
+        let page = recommend(&client, Some(&seed), None).await.expect("radio");
+        assert!(!page.station.is_empty(), "a station id comes back");
+        assert!(!page.tracks.is_empty(), "the first batch carries songs");
+        assert!(
+            page.tracks.iter().all(|t| !t.id.is_empty() && !t.title.is_empty()),
+            "every radio row is a playable song"
+        );
     }
 
     // ---- Home feed ----

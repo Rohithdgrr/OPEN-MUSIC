@@ -1,14 +1,42 @@
-# Build artifacts
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
 app/src-tauri/target/
 app/node_modules/
 app/dist/
+app/.vite/
 
-# Tauri generated
+# Tauri-generated schema dumps (recreated by `tauri dev`)
 app/src-tauri/gen/schemas/
 
-# Source design zips
-stitch_sona_minimal_music_downloader*.zip
+# ---------------------------------------------------------------------------
+# Design archives — large binary Stitch exports.
+# The extracted per-screen sources live in design/ and ARE tracked; only the
+# untouched .zip downloads are kept out of history.
+# ---------------------------------------------------------------------------
+archives/
+*.zip
 
-# OS / editor
+# ---------------------------------------------------------------------------
+# Local agent / editor config
+# ---------------------------------------------------------------------------
+.opencode/
+.claude/
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------------
+# OS cruft
+# ---------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ---------------------------------------------------------------------------
+# Local scratch
+# ---------------------------------------------------------------------------
+*.log
+*.tmp
+.env
+.env.local

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>TRANCE MUSIC • Desktop Widget Suite (v2.4 Core)</title>
+<!-- Tailwind CSS CDN with forms and container queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Google Fonts for Geist/Inter aesthetic & JetBrains Mono -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Geist', '-apple-system', 'BlinkMacSystemFont', 'Plus Jakarta Sans', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+          },
+          colors: {
+            obsidian: {
+              950: '#09090b',
+              900: '#111114',
+              850: '#18181b',
+              800: '#202024',
+              700: '#27272a',
+              600: '#3f3f46',
+            },
+            silver: {
+              300: '#d4d4d8',
+              400: '#a1a1aa',
+              500: '#71717a',
+            }
+          },
+          boxShadow: {
+            'widget-subtle': '0 20px 40px -15px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08)',
+            'widget-glow': '0 0 50px -10px rgba(255,255,255,0.05), 0 25px 50px -12px rgba(0,0,0,0.85), inset 0 1px 0 rgba(255,255,255,0.12)',
+            'btn-subtle': '0 2px 6px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
+          }
+        }
+      }
+    }
+  </script>
+<!-- Typography & Layout Styles -->
+<style data-purpose="typography">
+    body {
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+    .font-mono-numbers {
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum";
+    }
+  </style>
+<!-- Visualizer Animation Styles -->
+<style data-purpose="animations">
+    @keyframes spectrumPulse {
+      0%, 100% { height: 28%; opacity: 0.7; }
+      50% { height: 95%; opacity: 1; }
+    }
+    @keyframes subtleGlowPulse {
+      0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 4px rgba(255,255,255,0.4)); }
+      50% { opacity: 1; filter: drop-shadow(0 0 10px rgba(255,255,255,0.8)); }
+    }
+    .bar-anim-1 { animation: spectrumPulse 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+    .bar-anim-2 { animation: spectrumPulse 0.85s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.15s; }
+    .bar-anim-3 { animation: spectrumPulse 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.3s; }
+    .bar-anim-4 { animation: spectrumPulse 0.95s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.45s; }
+    .bar-anim-5 { animation: spectrumPulse 1.25s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.2s; }
+    .bar-anim-6 { animation: spectrumPulse 0.7s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.5s; }
+    .bar-anim-7 { animation: spectrumPulse 1.05s cubic-bezier(0.4, 0, 0.2, 1) infinite 0.1s; }
+    
+    .logo-glow-hover:hover {
+      animation: subtleGlowPulse 2s ease-in-out infinite;
+    }
+  </style>
+<!-- Ambient macOS Wallpaper Backdrop -->
+<style data-purpose="desktop-backdrop">
+    .macos-desktop-bg {
+      background-color: #08080a;
+      background-image: 
+        radial-gradient(circle at 18% 22%, rgba(35, 35, 45, 0.45) 0%, transparent 45%),
+        radial-gradient(circle at 82% 78%, rgba(26, 26, 32, 0.6) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(15, 15, 18, 0.8) 0%, #060608 100%);
+      background-attachment: fixed;
+    }
+    .frosted-glass {
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+    }
+    .subtle-grid-overlay {
+      background-size: 32px 32px;
+      background-image: linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    }
+  </style>
+</head>
+<body class="macos-desktop-bg min-h-screen text-zinc-100 flex flex-col justify-between selection:bg-zinc-800 selection:text-white relative">
+<!-- Subtle architectural fine grid overlay -->
+<div class="fixed inset-0 pointer-events-none subtle-grid-overlay z-0"></div>
+<!-- BEGIN: DesktopMenuBar -->
+<!-- Mimics macOS Top Bar with audiophile status and Widget Suite navigation -->
+<header class="w-full h-8 bg-zinc-950/70 border-b border-white/5 px-4 flex items-center justify-between text-xs tracking-tight relative z-30 select-none frosted-glass">
+<!-- Left: Apple logo, active app and context menus -->
+<div class="flex items-center space-x-4 text-zinc-400 font-medium">
+<!-- Apple Glyph -->
+<span class="text-zinc-200 hover:text-white cursor-pointer transition-colors">
+<svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 170 170">
+<path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.74 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.7-3.04-7.7-7.75-12-14.13-6.23-9.25-11.05-19.8-14.47-31.63-3.41-11.83-5.12-23.01-5.12-33.54 0-14.34 3.75-26.04 11.25-35.1 7.5-9.06 17.06-13.68 28.69-13.88 5.48 0 11.21 1.48 17.2 4.44 5.99 2.96 9.87 4.54 11.64 4.74 1.34-.19 5.37-1.78 12.09-4.74 6.71-2.97 12.79-4.22 18.23-3.76 13.9.72 24.64 5.57 32.22 14.54-12.44 7.53-18.49 17.84-18.15 30.93.34 10.22 4.29 18.79 11.84 25.7 3.51 3.28 7.6 5.86 12.26 7.74-2.88 8.65-6.57 17.47-11.05 26.47zm-32.9-122.9c0 8.08-2.9 15.65-8.71 22.7-6.88 8.24-15.35 13.06-25.4 14.45-.45-1.58-.67-3.07-.67-4.47 0-7.85 3.19-15.82 9.57-23.91 6.38-8.08 14.28-12.87 23.7-14.37.45 1.77.71 3.5.71 5.2z"></path>
+</svg>
+</span>
+<span class="font-bold text-white tracking-wide flex items-center gap-1.5">
+        TRANCE MUSIC
+        <span class="text-[9px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 font-mono font-medium">CORE 2.4</span>
+</span>
+<span class="hover:text-white cursor-pointer hidden sm:inline-block">File</span>
+<span class="hover:text-white cursor-pointer hidden sm:inline-block">Soundstage</span>
+<span class="hover:text-white cursor-pointer hidden sm:inline-block">Bit-Perfect</span>
+<span class="hover:text-white cursor-pointer text-white font-medium">Widgets</span>
+<span class="hover:text-white cursor-pointer hidden md:inline-block">Telemetry</span>
+</div>
+<!-- Center: Lossless Pipeline Indicator -->
+<div class="hidden lg:flex items-center space-x-2 text-[11px] font-mono text-zinc-400 bg-zinc-900/80 px-2.5 py-0.5 rounded-full border border-white/5">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+<span class="text-zinc-200">Exclusive CoreAudio Hog Mode</span>
+<span class="text-zinc-600">•</span>
+<span class="text-zinc-400">192 kHz / 24-bit Lossless</span>
+</div>
+<!-- Right: macOS Menu Extras / Control Center -->
+<div class="flex items-center space-x-3.5 text-zinc-300">
+<div class="flex items-center space-x-1.5 text-[11px] font-mono text-zinc-400">
+<svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>1.2ms</span>
+</div>
+<!-- Sound Volume Glyph -->
+<svg class="w-3.5 h-3.5 hover:text-white cursor-pointer transition-colors" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<!-- Battery / Power -->
+<span class="text-[11px] font-mono text-zinc-400">100%</span>
+<!-- Clock -->
+<span class="font-medium text-zinc-200 tracking-normal text-xs">Fri 23:42</span>
+<!-- Control Center Icon -->
+<svg class="w-3.5 h-3.5 hover:text-white cursor-pointer transition-colors" fill="currentColor" viewbox="0 0 24 24"><path d="M4 6h16a1 1 0 000-2H4a1 1 0 000 2zm0 7h16a1 1 0 000-2H4a1 1 0 000 2zm0 7h16a1 1 0 000-2H4a1 1 0 000 2z"></path></svg>
+</div>
+</header>
+<!-- END: DesktopMenuBar -->
+<!-- BEGIN: GalleryShowcaseToolbar -->
+<!-- Top Widget Suite Controller & Subhead -->
+<!-- END: GalleryShowcaseToolbar -->
+<!-- BEGIN: MainWidgetShowcaseStage -->
+<main class="relative z-20 flex-1 px-4 sm:px-8 md:px-12 py-6 max-w-7xl mx-auto w-full"><div class="w-full flex-1 flex flex-col items-center justify-center py-6 sm:py-10 my-auto"><div class="w-full max-w-[460px] rounded-[32px] overflow-hidden bg-zinc-950/85 border border-white/10 shadow-widget-glow frosted-glass p-5 select-none relative group transition-all duration-300 hover:border-white/20" data-purpose="hero-widget"><div class="absolute inset-0 z-0 opacity-20 filter blur-2xl scale-110 pointer-events-none" style="background-image: url('https://lh3.googleusercontent.com/aida/AEtjO1V5xkIzjNnH58UINlB03kVZUS-Qmc6mmkWTV3x0bx4dTVQhmTpsj4SU6_q07qKEEzbZLyevWpxzHKO9FzklFC4TtpxCEkmN7FlRawHvIVBlTr1ooxHtakDcRqJ9XN-jlC1q5nj3bpH5uK-30zXJiDG3XQiAbVFYEuqz9_06fCOOeyYxTkuutSccX1HEjUU1HhjfPZEnmR852ZT6VG_IdjI1SsBcIs2mqhgDgIeTsCo6gW7A2H2dR-oqhBIr'); background-size: cover; background-position: center;"></div><div class="absolute inset-0 bg-gradient-to-b from-black/70 via-zinc-950/80 to-black/90 z-0"></div><div class="relative z-10 space-y-4"><div class="flex items-center justify-between border-b border-white/[0.08] pb-3"><div class="flex items-center space-x-2.5"><div class="w-7 h-7 rounded-lg overflow-hidden border border-white/20 shadow-sm flex-shrink-0 flex items-center justify-center bg-black"><img alt="TRANCE MUSIC logo" class="w-full h-full object-cover logo-glow-hover" src="https://lh3.googleusercontent.com/aida/AEtjO1W10BeU6tiqsnZC2L2TV90DtYqhGNkBoH-pKu3O7iXv4ng1-G6Y4mDisujzbTcIdBHt9OS2EJc7F23aRxqtA2X8c2Hb8Or6gilv9o3NexAnhQHOgG9akRZsL58FaCrG8zgjw2YR1th6JfQYK4te7YTTtzgud732yMmOFobOSSiyba-93IQJ7u2470nufbxOkhAho7X0mGhRcUAfEEJWga4Wq2LCXKBkQOaB6rG6DGf_pkCx2jqg5p96Ysc"/></div><div><div class="text-xs font-bold tracking-tight text-white flex items-center gap-1.5">TRANCE MUSIC<span class="text-[9px] font-mono font-medium px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-300">DESKTOP</span></div></div></div><div class="flex items-center space-x-2"><div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-zinc-900 border border-white/10 text-[9px] font-mono text-zinc-300"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>FLAC 24/96 • BIT-PERFECT</span></div><div class="flex items-center space-x-1 pl-1"><span class="w-2 h-2 rounded-full bg-zinc-700/80 inline-block"></span><span class="w-2 h-2 rounded-full bg-zinc-700/80 inline-block"></span></div></div></div><div class="flex items-start space-x-4"><div class="relative group/cover flex-shrink-0"><div class="w-24 h-24 rounded-2xl overflow-hidden shadow-2xl border border-white/15 relative"><img alt="Midnight City Lights Cover" class="w-full h-full object-cover group-hover/cover:scale-105 transition-transform duration-500" src="https://lh3.googleusercontent.com/aida/AEtjO1V5xkIzjNnH58UINlB03kVZUS-Qmc6mmkWTV3x0bx4dTVQhmTpsj4SU6_q07qKEEzbZLyevWpxzHKO9FzklFC4TtpxCEkmN7FlRawHvIVBlTr1ooxHtakDcRqJ9XN-jlC1q5nj3bpH5uK-30zXJiDG3XQiAbVFYEuqz9_06fCOOeyYxTkuutSccX1HEjUU1HhjfPZEnmR852ZT6VG_IdjI1SsBcIs2mqhgDgIeTsCo6gW7A2H2dR-oqhBIr"/><div class="absolute inset-0 ring-1 ring-inset ring-white/10 rounded-2xl"></div><div class="absolute bottom-1.5 left-1.5 right-1.5 flex items-center justify-between text-[8px] font-mono text-white/90"><span class="bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded font-semibold tracking-wider">LOSSLESS</span><div class="flex items-end space-x-0.5 h-2.5"><span class="w-0.5 bg-white rounded-full bar-anim-1"></span><span class="w-0.5 bg-white rounded-full bar-anim-3"></span><span class="w-0.5 bg-white rounded-full bar-anim-2"></span></div></div></div></div><div class="flex-1 min-w-0 flex flex-col justify-between h-24 pt-0.5"><div class="flex items-start justify-between"><div class="min-w-0 pr-2"><h3 class="text-base font-bold text-white tracking-tight truncate leading-snug">Midnight City Lights</h3><p class="text-xs text-zinc-400 truncate mt-0.5">Solaris &amp; Kaelen — Monolith Sessions</p></div><button class="text-zinc-400 hover:text-white transition-colors p-1 flex-shrink-0" title="Favorite"><svg class="w-4 h-4 fill-white" viewbox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path></svg></button></div><div class="bg-zinc-900/60 rounded-xl px-2.5 py-1.5 border border-white/5 flex items-center justify-between"><span class="text-[9px] font-mono text-zinc-400 uppercase tracking-wider">Acoustic Live</span><div class="flex items-end space-x-1 h-4 flex-1 justify-end max-w-[140px]"><span class="w-1 bg-zinc-500 rounded-full bar-anim-1"></span><span class="w-1 bg-zinc-300 rounded-full bar-anim-2"></span><span class="w-1 bg-white rounded-full bar-anim-3"></span><span class="w-1 bg-zinc-400 rounded-full bar-anim-4"></span><span class="w-1 bg-zinc-200 rounded-full bar-anim-5"></span><span class="w-1 bg-white rounded-full bar-anim-6"></span><span class="w-1 bg-zinc-400 rounded-full bar-anim-7"></span><span class="w-1 bg-zinc-300 rounded-full bar-anim-2"></span></div></div></div></div><div class="space-y-1.5 pt-1"><div class="h-1.5 w-full bg-zinc-800/90 rounded-full overflow-hidden relative cursor-pointer"><div class="h-full bg-white rounded-full relative" style="width: 59%;"><span class="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow-[0_0_6px_#fff]"></span></div></div><div class="flex justify-between text-[10px] font-mono text-zinc-400 font-mono-numbers"><span>03:42</span><span class="text-zinc-500">06:21</span></div></div><div class="flex items-center justify-between pt-1 px-1"><div class="flex items-center space-x-2 text-zinc-400"><button class="hover:text-white transition-colors p-1" title="Shuffle"><svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"></path></svg></button><button class="hover:text-white transition-colors p-1" title="Previous"><svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M19 20L9 12l10-8v16zM7 19V5H5v14h2z"></path></svg></button></div><div class="flex items-center"><button class="w-10 h-10 rounded-full bg-white text-zinc-950 flex items-center justify-center hover:scale-105 transition-all shadow-btn-subtle" title="Pause"><svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg></button></div><div class="flex items-center space-x-2 text-zinc-400"><button class="hover:text-white transition-colors p-1" title="Next"><svg class="w-4 h-4 fill-current" viewbox="0 0 24 24"><path d="M5 4l10 8-10 8V4zm12 1v14h2V5h-2z"></path></svg></button><div class="flex items-center space-x-1.5 pl-2"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M15.536 8.464a5 5 0 010 7.072M12 6v12l-4-4H5a1 1 0 01-1-1v-2a1 1 0 011-1h3l4-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg><div class="w-12 h-1 bg-zinc-800 rounded-full overflow-hidden"><div class="h-full bg-zinc-400 rounded-full" style="width: 72%;"></div></div></div></div></div><div class="pt-3 border-t border-white/[0.08] space-y-2.5"><div class="flex items-center justify-between p-2 rounded-xl bg-zinc-900/60 hover:bg-zinc-800/60 border border-white/5 transition-colors cursor-pointer group/queue"><div class="flex items-center space-x-2.5 min-w-0"><img alt="Neon Horizons Cover" class="w-8 h-8 rounded-lg object-cover border border-white/10 flex-shrink-0" src="https://lh3.googleusercontent.com/aida/AEtjO1Xe0e27YTBOKwRrTIIDuiK1c-fljpIttnrBYdrz0KKMjtUurrbGFZnGeEvlf-AlpzifP7hPvuOtd71ItgROWcaSk3WEqoAERG20eWb-XhlRli5qcA8LG8YkkHygUpXjvo3NUhfGccWQjfk0lWuzjPi5PnpfX1h7JKCadgibcAO3rDLNS92Cbd-sge0FjH-SPGABf1zYJsBryItj23OxppbXdPS_GUdi4WvB1TPy5sNJipOTjHAAlEuZZZTv"/><div class="min-w-0"><div class="text-xs font-semibold text-zinc-200 truncate group-hover/queue:text-white transition-colors">Neon Horizons</div><div class="text-[10px] text-zinc-500 truncate">Vortex Minimalist • 05:48</div></div></div><div class="flex items-center space-x-1.5"><span class="text-[9px] font-mono text-zinc-500 uppercase px-1.5 py-0.5 rounded bg-zinc-800/80 border border-white/5">UP NEXT</span><button class="text-zinc-500 group-hover/queue:text-white p-1 transition-colors" title="Play Next"><svg class="w-3.5 h-3.5 fill-current" viewbox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg></button></div></div><div class="flex items-center justify-between text-[9px] font-mono text-zinc-500 px-1"><span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span><span class="text-zinc-400">Latency: 1.1ms</span></span><span>•</span><span class="text-zinc-400">CoreAudio Hog Mode</span><span>•</span><span class="text-zinc-400">0 Jitter</span></div></div></div></div><p class="text-xs text-zinc-500 text-center font-mono mt-4">macOS Sonoma &amp; Sequoia Desktop Interactive Glanceable</p></div></main>
+<!-- END: MainWidgetShowcaseStage -->
+<!-- BEGIN: DesktopDockSim -->
+<!-- Simulated macOS Minimalist Audio Dock -->
+<footer aria-label="macOS Simulated Dock" class="relative z-30 pb-4 pt-2 flex flex-col items-center justify-center select-none">
+<div class="frosted-glass bg-zinc-900/60 border border-white/10 rounded-2xl px-4 py-2 flex items-center space-x-3 shadow-2xl">
+<!-- App 1: Finder -->
+<div class="w-10 h-10 rounded-xl bg-gradient-to-b from-zinc-800 to-zinc-900 border border-white/10 flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer" title="Finder">
+<svg class="w-5 h-5 text-zinc-300" fill="none" stroke="currentColor" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2" stroke-width="1.5"></path><circle cx="9" cy="9" fill="currentColor" r="1"></circle><circle cx="15" cy="9" fill="currentColor" r="1"></circle></svg>
+</div>
+<!-- App 2: TRANCE MUSIC Core 2.4 (Active / Glowing Indicator Dot) -->
+<div class="relative group/app cursor-pointer">
+<div class="w-11 h-11 rounded-xl overflow-hidden border border-white/30 shadow-[0_0_15px_rgba(255,255,255,0.2)] group-hover/app:-translate-y-1.5 transition-all">
+<img alt="TRANCE MUSIC Active App Icon" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida/AEtjO1W10BeU6tiqsnZC2L2TV90DtYqhGNkBoH-pKu3O7iXv4ng1-G6Y4mDisujzbTcIdBHt9OS2EJc7F23aRxqtA2X8c2Hb8Or6gilv9o3NexAnhQHOgG9akRZsL58FaCrG8zgjw2YR1th6JfQYK4te7YTTtzgud732yMmOFobOSSiyba-93IQJ7u2470nufbxOkhAho7X0mGhRcUAfEEJWga4Wq2LCXKBkQOaB6rG6DGf_pkCx2jqg5p96Ysc"/>
+</div>
+<!-- Active macOS Dot -->
+<span class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-white shadow-[0_0_4px_#fff]"></span>
+</div>
+<!-- App 3: Terminal / Audio Telemetry -->
+<div class="w-10 h-10 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer text-zinc-400" title="CoreAudio Terminal">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path></svg>
+</div>
+<!-- App 4: System Preferences / Sound Settings -->
+<div class="w-10 h-10 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer text-zinc-400" title="System Settings">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path><circle cx="12" cy="12" r="3" stroke-width="1.5"></circle></svg>
+</div>
+<div class="h-6 w-px bg-white/10 mx-1"></div>
+<!-- Desktop Trash -->
+<div class="w-10 h-10 rounded-xl bg-zinc-900 border border-white/10 flex items-center justify-center hover:-translate-y-1 transition-transform cursor-pointer text-zinc-400" title="Trash">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path></svg>
+</div>
+</div>
+</footer>
+<!-- END: DesktopDockSim -->
+<!-- Interactive JavaScript for Live Scrubber & Toggle Simulation -->
+<script data-purpose="widget-interactions">
+    document.addEventListener('DOMContentLoaded', () => {
+      // Audio play/pause button state toggling demo
+      const playButtons = document.querySelectorAll('button[title="Pause"], button[title="Previous Track"], button[title="Next Track"], button[title="Next"]');
+      
+      playButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          // Visual click feedback
+          btn.classList.add('scale-90');
+          setTimeout(() => {
+            btn.classList.remove('scale-90');
+          }, 120);
+        });
+      });
+
+      // Simple time progression simulation
+      const elapsedDisplays = document.querySelectorAll('.font-mono-numbers');
+      let currentSeconds = 222; // 03:42
+      
+      setInterval(() => {
+        currentSeconds++;
+        const mins = Math.floor(currentSeconds / 60);
+        const secs = currentSeconds % 60;
+        const formatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        
+        // Update first occurrences
+        const firstTimeEl = document.querySelector('[data-purpose="medium-widget"] .font-mono-numbers span');
+        if (firstTimeEl && !firstTimeEl.textContent.includes('06:21')) {
+          firstTimeEl.textContent = formatted;
+        }
+      }, 1000);
+    });
+  </script>
+</body></html>
