@@ -21,7 +21,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 axum = "0.8"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 url = "2"
 futures = "0.3"
 # JioSaavn encrypts `encrypted_media_url` with DES-ECB before base64.
