@@ -15,7 +15,7 @@ export const ART_RENDS = [
   ["150x150", "500x500"],
 ];
 
-export function hqArt(url) {
+export function hqArt(url, target = "500x500") {
   if (typeof url !== "string" || !url) return "";
   let host;
   try {
@@ -26,6 +26,7 @@ export function hqArt(url) {
   if (host !== "saavncdn.com" && !host.endsWith(".saavncdn.com")) return url;
   let out = url;
   for (const [small, big] of ART_RENDS) out = out.split(small).join(big);
+  if (target !== "500x500") out = out.split("500x500").join(target);
   return out.startsWith("http://") ? "https://" + out.slice(7) : out;
 }
 
@@ -38,14 +39,14 @@ export function art(url) {
 }
 
 // Programmatic counterpart for the hero, player covers and detail headers.
-export function paintArt(img, url) {
+export function paintArt(img, url, target) {
   if (!img || !url) return;
   img.setAttribute("data-art-orig", url);
   img.removeAttribute("data-art-tried");
   img.classList.remove("hidden");
   img.style.display = "";
   img.onerror = () => window.artFail(img);
-  img.src = hqArt(url);
+  img.src = hqArt(url, target);
 }
 
 // Tries the original URL once; hides the image only when that fails too.

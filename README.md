@@ -64,13 +64,13 @@ OP_OFFLINE=1 cargo test     # offline subset only — what CI runs
 cargo check                 # fast type/borrow check
 ```
 
-The Rust suite is the only automated coverage in the repo — it covers JSON
+The Rust suite is the primary automated coverage — it covers JSON
 parsing, DES-ECB media-url decryption, quality selection, range qualification,
 the proxy's byte handling, and the lyrics source order.
 
-**The front end has no automated tests.** Behaviour lives in 18 ES modules
-under `app/src` (~200 KB, split from the old single `main.js`) with no test
-runner in `package.json`; UI changes have been verified by running the app. See
+The front end has unit tests for its pure logic (`cd app && npm test` —
+escape/fuzz/network state machine, node's built-in runner). UI behaviour is
+still verified by running the app; there is no DOM test harness. See
 [Known limitations](#known-limitations).
 
 ## Architecture
@@ -169,16 +169,16 @@ This is the part that is not obvious, so it is worth stating plainly:
 
 ## Known limitations
 
-- **No front-end tests.** See [Tests](#tests). This is the biggest gap.
+- **No front-end DOM tests.** Pure logic is covered by `npm test`; see
+  [Tests](#tests). UI-level coverage is the biggest gap.
 - **CDN dependency at runtime** for Tailwind and the Material icon font.
 - **Installers are signed with a self-signed certificate.** Installing locally
   is fine, but other machines show a SmartScreen / unknown-publisher prompt
   until a CA-issued code-signing certificate replaces it.
 - **Not a "bit-perfect" claim in the strict audiophile sense.** The badge means
   the range probe passed; it is not a measurement of the output device.
-- **The radio / endless-playback backend (`recommend_songs`) is not wired to the
-  UI.** The Rust side exists and is tested, but nothing in `main.js` calls it
-  yet. Tracked in [CHANGELOG.md](CHANGELOG.md).
+- **The radio / endless-playback backend (`recommend_songs`) is wired in.**
+  `radio.js` calls it from the UI (library radio / endless playback).
 - **Not verified on macOS or Linux.** The code keeps compiling (target-gated
   dependencies), but there is no packaging for those platforms.
 - Some sections of the UI are still Stitch placeholders (telemetry counts,

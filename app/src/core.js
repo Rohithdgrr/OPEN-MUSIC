@@ -112,7 +112,17 @@ export function toTop() {
   requestAnimationFrame(() => window.scrollTo({ top: 0 }));
 }
 
+/// Back navigation: the view the user came from, plus where they had scrolled
+/// it, so Back resumes in place instead of dumping them at the page top.
+let prevView = null;
+const scrollPos = new Map();
+
 export function showView(name) {
+  const cur = views.find((v) => !v.classList.contains("hidden"));
+  if (cur && cur.dataset.view !== name) {
+    scrollPos.set(cur.dataset.view, window.scrollY);
+    prevView = cur.dataset.view;
+  }
   for (const v of views) v.classList.toggle("hidden", v.dataset.view !== name);
   for (const a of navLinks) {
     const on = a.dataset.path === name;
@@ -133,6 +143,18 @@ export function showView(name) {
     // Entering cold: paint the hero and its table like the design shows them.
     if (!pdCurrentId && plFeatured) openPlaylist(plFeatured.p, { scroll: false });
   }
+}
+
+/// One step back: previous view at the scroll position it was left at.
+export function backView(fallback = "home") {
+  const to = prevView || fallback;
+  showView(to);
+  const y = scrollPos.get(to) || 0;
+  const settle = () => window.scrollTo({ top: y });
+  requestAnimationFrame(() => {
+    settle();
+    requestAnimationFrame(settle);
+  });
 }
 for (const a of navLinks) {
   a.addEventListener("click", (e) => {

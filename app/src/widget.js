@@ -16,6 +16,12 @@ const OFF_KEY = "tm-desk-widget";
 const card = document.getElementById("wg-card");
 const win = window.__TAURI__?.window?.getCurrentWindow?.();
 
+// Two window sizes: the wide compact card and the icon it becomes while the
+// user is in another application.
+const FULL = { w: 380, h: 190 };
+const MINI = { w: 76, h: 76 };
+let isMini = false;
+
 const el = (id) => document.getElementById(id);
 
 function setText(id, text) {
@@ -65,6 +71,8 @@ function render(s) {
   const art = el("wg-art");
   if (art) art.style.backgroundImage = s.image ? `url("${s.image}")` : "";
   setImage("wg-cover", s.image);
+  const miniBtn = el("wg-mini");
+  if (miniBtn) miniBtn.style.backgroundImage = s.image ? `url("${s.image}")` : "";
 
   const badge = el("wg-badge");
   if (badge) {
@@ -84,7 +92,6 @@ function render(s) {
   const volfill = el("wg-volfill");
   if (volfill) volfill.style.width = `${(s.muted ? 0 : Math.min(1, s.volume) * 100).toFixed(0)}%`;
 
-  el("wg-shuffle")?.classList.toggle("is-on", !!s.shuffle);
   const repeat = el("wg-repeat");
   if (repeat) {
     repeat.classList.toggle("is-on", s.repeat !== "off");
@@ -130,8 +137,8 @@ async function placeDefault() {
   try {
     const [mon, size] = await Promise.all([win.currentMonitor(), win.outerSize()]);
     if (!mon) return;
-    const w = size?.width || 460;
-    const h = size?.height || 470;
+    const w = size?.width || FULL.w;
+    const h = size?.height || FULL.h;
     // Bottom right, clear of the taskbar, matching where the app's own chrome
     // leaves room: the card should never be the thing under the cursor first.
     const x = Math.round(mon.position.x + mon.size.width - w - 24);
@@ -166,8 +173,8 @@ async function applyPosition() {
     let x = Math.round(saved.x);
     let y = Math.round(saved.y);
     if (m) {
-      const w = size?.width || 460;
-      const h = size?.height || 470;
+      const w = size?.width || FULL.w;
+      const h = size?.height || FULL.h;
       const minX = m.position.x;
       const minY = m.position.y;
       const maxX = minX + Math.max(0, m.size.width - w);
@@ -187,14 +194,67 @@ async function savePosition() {
   } catch {}
 }
 
+async function setMini(on) {
+  if (isMini === on) return;
+  isMini = on;
+  document.body.classList.toggle("is-mini", on);
+  const s = on ? MINI : FULL;
+  try {
+    if (invoke) await invoke("widget_resize", { w: s.w, h: s.h });
+  } catch {}
+  // The saved point was made at the other size and may now hang off the
+  // screen edge — re-clamp it against the new footprint.
+  applyPosition();
+}
+
+// Collapse to the icon while the user is in another application; focus on
+// this card or on the main window brings the full player back. The settle
+// delay keeps a click on the icon from collapsing it as soon as it expands.
+let appFocused = true;
+let selfFocused = document.hasFocus();
+let settle = 0;
+function syncMode() {
+  clearTimeout(settle);
+  settle = setTimeout(() => setMini(!appFocused && !selfFocused), 250);
+}
+function markSelf(focused) {
+  selfFocused = focused;
+  syncMode();
+}
+listen("app:focus", ({ payload }) => {
+  appFocused = !!payload;
+  // Focus back on the app also releases the pass-through pin: with clicks
+  // ignored the pin button itself would be unreachable.
+  if (appFocused && pinned) setPinned(false);
+  syncMode();
+});
+win?.onFocusChanged?.((f) => markSelf(f));
+window.addEventListener("focus", () => markSelf(true));
+window.addEventListener("blur", () => markSelf(false));
+
+// Pin: clicks pass through to whatever is underneath. The card sits above
+// every window, so this is how it stops stealing clicks; releasing happens
+// in the app:focus handler above (once ignored, the button can't be hit).
+let pinned = false;
+async function setPinned(on) {
+  if (pinned === on) return;
+  pinned = on;
+  setText("wg-pinicon", on ? "keep" : "keep_off");
+  el("wg-pin")?.classList.toggle("is-on", on);
+  try {
+    if (invoke) await invoke("set_widget_click_through", { enabled: on });
+  } catch {}
+}
+
 function wireControls() {
   el("wg-play")?.addEventListener("click", () => cmd("play"));
   el("wg-prev")?.addEventListener("click", () => cmd("prev"));
   el("wg-next")?.addEventListener("click", () => cmd("next"));
   el("wg-nextup")?.addEventListener("click", () => cmd("next"));
-  el("wg-shuffle")?.addEventListener("click", () => cmd("shuffle"));
+  el("wg-dl")?.addEventListener("click", () => cmd("download"));
   el("wg-repeat")?.addEventListener("click", () => cmd("repeat"));
   el("wg-mute")?.addEventListener("click", () => cmd("mute"));
+  el("wg-pin")?.addEventListener("click", () => setPinned(!pinned));
 
   el("wg-seek")?.addEventListener("click", (e) =>
     cmd("seek", ratioFrom(e.currentTarget, e.clientX)),
@@ -213,10 +273,12 @@ function wireControls() {
     } catch {}
   });
 
-  const head = el("wg-head");
+  // Drag from anywhere that is not a control — the icon included, behind a
+  // movement threshold so a plain click still expands it.
   let dragging = false;
-  head?.addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || e.target.closest("button")) return;
+  let moved = false;
+  let start = null;
+  function beginDrag() {
     dragging = true;
     try {
       invoke("widget_start_drag");
@@ -225,11 +287,32 @@ function wireControls() {
     // after the release as well as on any mouseup that does reach us.
     setTimeout(savePosition, 900);
     setTimeout(savePosition, 2400);
+  }
+  card.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest("#wg-mini")) {
+      moved = false;
+      start = { x: e.clientX, y: e.clientY };
+      return;
+    }
+    if (e.target.closest("button, a, .tm-widget__seek, .tm-widget__voltrack")) return;
+    beginDrag();
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!start || dragging) return;
+    if (Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y) > 4) {
+      moved = true;
+      beginDrag();
+    }
   });
   window.addEventListener("mouseup", () => {
+    start = null;
     if (!dragging) return;
     dragging = false;
     savePosition();
+  });
+  el("wg-mini")?.addEventListener("click", () => {
+    if (!moved) setMini(false);
   });
 }
 

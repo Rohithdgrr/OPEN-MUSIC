@@ -146,6 +146,8 @@ pub fn api_client() -> reqwest::Client {
         // review 5.1: a redirect loop must abort after a handful of hops,
         // not spin on reqwest's default of ten.
         .redirect(reqwest::redirect::Policy::limited(5))
+        .pool_max_idle_per_host(10)
+        .tcp_keepalive(Duration::from_secs(60))
         .default_headers(headers)
         .build()
         .expect("failed to build api client")
@@ -163,6 +165,8 @@ pub fn media_client() -> reqwest::Client {
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(5))
+        .pool_max_idle_per_host(10)
+        .tcp_keepalive(Duration::from_secs(60))
         .default_headers(headers)
         .build()
         .expect("failed to build media client")

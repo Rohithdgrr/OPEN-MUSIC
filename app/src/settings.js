@@ -25,6 +25,8 @@ export const LICENSES = [
   ["futures", "0.3.34", "MIT OR Apache-2.0"],
   ["des", "0.8.1", "MIT OR Apache-2.0"],
   ["base64", "0.22.1", "MIT OR Apache-2.0"],
+  ["tauri-plugin-global-shortcut", "2.4.0", "MIT OR Apache-2.0"],
+  ["tauri-plugin-single-instance", "2.5.2", "MIT OR Apache-2.0"],
 ];
 
 export const kv = (k, v) => `
@@ -352,15 +354,149 @@ export const SETTINGS_VIEWS = {
     </div>`;
     },
   },
+
+  shortcuts: {
+    eyebrow: "Settings / Keyboard Shortcuts",
+    body: () => {
+      setTimeout(fillShortcutMode, 0);
+      const rows = [
+        ["Play / pause", "Caps + Space", "Ctrl + Alt + Space"],
+        ["Search", "Caps + F", "Ctrl + Alt + F"],
+        ["Now Playing", "Caps + N", "Ctrl + Alt + N"],
+        ["Desktop widget", "Caps + W", "Ctrl + Alt + W"],
+        ["Download this track", "Caps + D", "Ctrl + Alt + D"],
+        ["Track credits", "Caps + I", "Ctrl + Alt + I"],
+        ["Media play / pause", "Media key", "Media key"],
+        ["Next track", "Media key", "Media key"],
+        ["Previous track", "Media key", "Media key"],
+      ];
+      return `
+    <div class="flex flex-col gap-3">
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">Global shortcuts: they fire even when another window has focus. Caps Lock is used as a Hyper key (Ctrl + Alt + Shift + Win) when a remap tool is running, with Ctrl + Alt as the fallback so every action works either way.</p>
+      <div id="set-shortcut-mode" class="text-xs text-on-surface-variant">Checking&hellip;</div>
+      <table class="w-full font-label-mono text-[11px] border-collapse">
+        <thead>
+          <tr class="text-on-surface-variant">
+            <th class="text-left font-normal py-1.5">Action</th>
+            <th class="text-left font-normal py-1.5">Hyper (remapped Caps)</th>
+            <th class="text-left font-normal py-1.5">Fallback</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows
+            .map(
+              ([a, h, f]) => `
+          <tr class="border-t border-surface-container-high">
+            <td class="py-1.5 pr-2 text-on-surface">${esc(a)}</td>
+            <td class="py-1.5 pr-2 text-on-surface-variant">${esc(h)}</td>
+            <td class="py-1.5 text-on-surface-variant">${esc(f)}</td>
+          </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+      <div class="flex flex-col gap-1">
+        <span class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Test</span>
+        <span id="set-shortcut-test" class="text-xs text-on-surface-variant">Press a shortcut to see it arrive here.</span>
+        <button type="button" data-shortcut-test class="mt-1 self-start px-3 py-1.5 rounded-lg border border-surface-container-highest/60 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">Listen for shortcuts (8s)</button>
+      </div>
+      <p class="text-xs leading-relaxed text-on-surface-variant">In-app key: <span class="font-label-mono">Ctrl + K</span> focuses search (global chords never double as text input).</p>
+    </div>`;
+    },
+  },
 };
 
 export const SETTINGS_MENU = [
   ["tune", "General", "Name, startup, language &amp; country", "general"],
   ["widgets", "Desktop Widget", "Now-playing card on your desktop", "widget"],
+  ["keyboard_shortcut", "Keyboard Shortcuts", "Caps Lock Hyper &amp; media keys", "shortcuts"],
   ["policy", "Open-Source Licences", "MIT &amp; Apache-2.0", "licenses"],
   ["info", "About the Project", `v${APP.version} &middot; Windows desktop`, "about"],
   ["gavel", "Terms &amp; Conditions", "Personal use, no warranty", "terms"],
 ];
+
+// ------------------------------------------------------ keyboard shortcuts -
+/// Linux (xremap) recipe for Caps Lock as Hyper: held = Ctrl+Alt+Shift+Super,
+/// tap = Escape. Shown as a copyable snippet; Windows gets PowerToys' own
+/// deep link and macOS the Karabiner page.
+const XREMAP_SNIPPET = `keymap:
+  - remap:
+      CapsLock:
+        held: [Control_L, Alt_L, Shift_L, Super_L]
+        alone: Escape`;
+
+/// Fills the mode line after the panel renders: Hyper when a remap tool was
+/// detected at boot, Ctrl+Alt fallback otherwise (with the setup buttons).
+async function fillShortcutMode() {
+  const box = $("#set-shortcut-mode");
+  if (!box) return;
+  let mode = "default";
+  try {
+    mode = (await invoke("get_shortcut_mode")) === "hyper" ? "hyper" : "default";
+  } catch {}
+  if (mode === "hyper") {
+    box.innerHTML =
+      '<span class="text-primary font-medium">Hyper active.</span> Hold Caps Lock and press a key from the table. Restart the app after changing the remap.';
+    return;
+  }
+  const ua = navigator.userAgent;
+  const enable = /windows/i.test(ua)
+    ? `<button type="button" data-shortcut-open class="mt-2 px-3 py-1.5 rounded-lg border border-surface-container-highest/60 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">Open PowerToys Keyboard Manager</button>
+       <span class="block mt-1.5">In Keyboard Manager pick <b>Remap a key</b>: key <span class="font-label-mono">Caps Lock</span> &rarr; to send <span class="font-label-mono">Ctrl + Alt + Shift + Win</span>.</span>`
+    : /mac/i.test(ua)
+      ? `<button type="button" data-shortcut-open class="mt-2 px-3 py-1.5 rounded-lg border border-surface-container-highest/60 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">Open Karabiner setup</button>
+         <span class="block mt-1.5">In Karabiner, add a rule: <span class="font-label-mono">caps_lock</span> &rarr; <span class="font-label-mono">left_control | left_option | left_shift | left_command</span>.</span>`
+      : `<button type="button" data-shortcut-copy class="mt-2 px-3 py-1.5 rounded-lg border border-surface-container-highest/60 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">Copy xremap snippet</button>
+         <span class="block mt-1.5">Run it with <span class="font-label-mono">xremap ~/.config/xremap.yaml</span>, then restart this app.</span>`;
+  box.innerHTML = `<span>Fallback active</span> &mdash; <span class="font-label-mono">Ctrl + Alt + key</span> works right now. To use Caps Lock as the Hyper key:<span class="block mt-1">${enable}</span><span class="block mt-1.5">Restart the app after installing the remap tool; it is detected at startup.</span>`;
+}
+
+const SHORTCUT_TEST_EVENTS = [
+  ["shortcut:play", "Play / pause"],
+  ["shortcut:search", "Search"],
+  ["shortcut:now-playing", "Now Playing"],
+  ["shortcut:widget", "Desktop widget"],
+  ["shortcut:download", "Download"],
+  ["shortcut:info", "Track credits"],
+];
+let testTimer = 0;
+let testOff = [];
+
+function stopShortcutTest() {
+  clearTimeout(testTimer);
+  testTimer = 0;
+  testOff.forEach((p) => {
+    if (p && typeof p.then === "function") p.then((un) => un()).catch(() => {});
+  });
+  testOff = [];
+}
+
+/// Arms the six shortcut events for 8 seconds and paints what arrives. The
+/// unlisten promises are kept so re-running or closing the dialog cleans up.
+function startShortcutTest() {
+  stopShortcutTest();
+  const box = $("#set-shortcut-test");
+  if (!box) return;
+  const heard = new Set();
+  box.textContent = "Listening for 8 seconds - press Caps + Space (or Ctrl + Alt + Space)...";
+  SHORTCUT_TEST_EVENTS.forEach(([ev, label]) => {
+    const p = window.__TAURI__?.event?.listen(ev, () => {
+      heard.add(label);
+      box.textContent = `Heard: ${[...heard].join(", ")} (${heard.size}/6)`;
+    });
+    if (p) testOff.push(p);
+  });
+  testTimer = setTimeout(() => {
+    const n = heard.size;
+    stopShortcutTest();
+    toast(
+      n ? `Heard ${n} of 6 shortcuts.` : "Nothing heard - check the remap and the fallback keys.",
+      n ? "success" : "error",
+    );
+    const dlg = $("#tm-settings");
+    if (dlg?.open && dlg.dataset.view === "shortcuts") openSettings("shortcuts");
+  }, 8000);
+}
 
 export function openSettings(view = "menu") {
   let dlg = $("#tm-settings");
@@ -380,6 +516,7 @@ export function openSettings(view = "menu") {
     dlg.addEventListener("click", (e) => {
       if (e.target === dlg) dlg.close();
     });
+    dlg.addEventListener("close", stopShortcutTest);
     dlg.addEventListener("click", (e) => {
       const row = e.target.closest("[data-settings-view]");
       if (row) return openSettings(row.dataset.settingsView);
@@ -412,6 +549,29 @@ export function openSettings(view = "menu") {
         const reset = window.__TAURI__?.event?.emit("widget:reset", null);
         if (reset && typeof reset.catch === "function") reset.catch(() => {});
         toast("Desktop widget moved back to the default spot.", "info");
+        return;
+      }
+      // Keyboard shortcuts view: open the remap tool, copy the Linux snippet,
+      // or arm the listener. The tool URL follows the current platform.
+      if (e.target.closest("[data-shortcut-open]")) {
+        const ua = navigator.userAgent;
+        const url = /windows/i.test(ua)
+          ? "powertoys://keyboardmanager"
+          : /mac/i.test(ua)
+            ? "https://karabiner-elements.pqrs.org/"
+            : "https://github.com/karubon/xremap";
+        invoke("open_external", { url }).catch((err) => diag("shortcut", false, String(err)));
+        return;
+      }
+      if (e.target.closest("[data-shortcut-copy]")) {
+        navigator.clipboard
+          ?.writeText(XREMAP_SNIPPET)
+          .then(() => toast("xremap snippet copied to the clipboard.", "success"))
+          .catch((err) => diag("shortcut", false, String(err)));
+        return;
+      }
+      if (e.target.closest("[data-shortcut-test]")) {
+        startShortcutTest();
         return;
       }
       const start = e.target.closest("[data-autostart]");
@@ -447,6 +607,7 @@ export function openSettings(view = "menu") {
   }
   const back = $("#tm-settings-back", dlg);
   const section = view === "menu" ? null : SETTINGS_VIEWS[view];
+  dlg.dataset.view = view;
   if (section) {
     npText("tm-settings-eyebrow", section.eyebrow);
     $("#tm-settings-body", dlg).innerHTML = section.body();

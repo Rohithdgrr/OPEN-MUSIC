@@ -2,19 +2,22 @@
 // Split from main.js (Phase 4 M1).
 import { paintArt } from "./art.js";
 import { wireDesktopCard } from "./bridge.js";
-import { diag, invoke, toTop } from "./core.js";
+import { diag, invoke, showView, toast, toTop } from "./core.js";
 import { $, bar, np } from "./dom.js";
 import { loadHistory } from "./history.js";
 import { loadHome, loadPlays } from "./home.js";
 import { renderFavs } from "./library.js";
 import { setRestoredTrack } from "./queue.js";
+import { startNet } from "./net.js";
 import { doSearch } from "./search.js";
+import { wireShortcuts } from "./shortcuts.js";
 import { applySysPrefs, applyWidget, paintGreeting } from "./settings.js";
 import { paintModes, paintVolume } from "./transport.js";
 import { npText, stampEntity } from "./util.js";
 
 paintModes();
 paintVolume();
+startNet({ invoke, diag, toast });
 // ------------------------------------------------------------------- boot -
 try {
   const base = await invoke("proxy_base");
@@ -40,7 +43,7 @@ if (lastPlayed) {
   if (lastPlayed.image) {
     paintArt(bar.cover, lastPlayed.image);
     bar.coverFallback?.classList.add("hidden");
-    paintArt(np.cover, lastPlayed.image);
+    paintArt(np.cover, lastPlayed.image, "1500x1500");
   }
   if (np.title) np.title.textContent = lastPlayed.title;
   if (np.artist) np.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" · ");
@@ -59,7 +62,25 @@ applySysPrefs();
 toTop();
 applyWidget();
 wireDesktopCard();
+wireShortcuts();
 renderFavs();
+showView("search"); // open on the Search tab
 doSearch({ silent: true });
 loadHome();
+
+// The desktop card collapses to an icon while the user is elsewhere, so it
+// needs to know whether this window (the app) holds focus.
+(() => {
+  const api = window.__TAURI__;
+  const report = (focused) => {
+    try {
+      const p = api?.event?.emit("app:focus", focused);
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch {}
+  };
+  const main = api?.window?.getCurrentWindow?.();
+  main?.onFocusChanged?.((f) => report(f));
+  window.addEventListener("focus", () => report(true));
+  window.addEventListener("blur", () => report(false));
+})();
 

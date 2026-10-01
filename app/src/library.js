@@ -2,7 +2,7 @@
 // Split from main.js (Phase 4 M1).
 import { art, paintArt } from "./art.js";
 import { emitState } from "./bridge.js";
-import { diag, esc, invoke, showView, toast } from "./core.js";
+import { backView, diag, esc, invoke, showView, toast } from "./core.js";
 import { $, $$, views } from "./dom.js";
 import { LIBRARY_KEY, PLAYS_KEY, homeFeed, loadHome, loadLibrary, loadPlays } from "./home.js";
 import { playQueueItem } from "./playback.js";
@@ -704,6 +704,9 @@ export async function loadAllArtistSongs() {
 /// Artists load in two streams: the songs (paged, so the whole catalogue is
 /// walkable) and the header/discography (one call).
 export async function openDetail(kind, item, opts = {}) {
+  // Playlists never use the album/artist detail screen — they open on the
+  // full Playlists overview, wherever they were clicked from.
+  if (kind === "playlist") return openPlaylist(item);
   const isArtist = kind === "artist";
   if (opts.push && ddCurrent) ddStack.push(ddCurrent);
   else ddStack.length = 0;
@@ -1016,14 +1019,10 @@ export function renderPlays() {
 }
 
 // Click wiring — one delegated listener per grid.
-// `inline` keeps the Playlists tab's own behaviour (open the panel in place);
-// everywhere else the playlist opens on the shared detail screen so the click
-// never yanks the user onto the Playlists tab.
+// Every playlist click — local or server — lands on the Playlists overview
+// screen (hero + grid + track table), never the generic detail view.
 export function openPlaylistElsewhere(item) {
-  // Local + in-memory playlists have no server id, so the detail view (which
-  // loads by id) cannot open them; they keep the inline panel.
-  if (item.local || Array.isArray(item.tracks)) return openPlaylist(item);
-  openDetail("playlist", item);
+  return openPlaylist(item);
 }
 
 export function wirePlGrid(sel, { inline = false } = {}) {
@@ -1145,7 +1144,7 @@ $("#pl-refresh")?.addEventListener("click", async () => {
   renderPlaylists();
   toast("Playlists refreshed", "success", 2200);
 });
-$("#pl-back")?.addEventListener("click", () => showView("library"));
+$("#pl-back")?.addEventListener("click", () => backView("library"));
 
 /// Hero buttons act on the very playlist the table below shows.
 export async function featuredLoaded() {
@@ -1271,7 +1270,7 @@ $("#dd-more")?.addEventListener("click", async () => {
 $("#dd-back")?.addEventListener("click", () => {
   const prev = ddStack.pop();
   if (prev) openDetail(prev.kind, prev.item);
-  else showView(ddReturnView || "home");
+  else backView(ddReturnView || "home");
 });
 $("#history-clear")?.addEventListener("click", () => {
   try {

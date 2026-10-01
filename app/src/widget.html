@@ -50,12 +50,16 @@
 <div class="tm-widget" id="wg-card">
   <div class="tm-widget__art" id="wg-art"></div>
   <div class="tm-widget__scrim"></div>
+  <button class="tm-widget__mini" id="wg-mini" title="Expand player" type="button">
+    <span class="material-symbols-outlined">graphic_eq</span>
+  </button>
   <div class="tm-widget__inner">
 
     <header class="tm-widget__head" id="wg-head">
       <span class="tm-widget__logo"><span class="material-symbols-outlined">graphic_eq</span></span>
-      <span class="tm-widget__brand">Trance Music<span class="tm-widget__tag">CORE V2.4</span></span>
+      <span class="tm-widget__brand">TRANCE MUSIC<span class="tm-widget__tag">CORE V2.4</span></span>
       <span class="tm-widget__fmt"><i class="tm-widget__dot"></i><span id="wg-format">IDLE</span></span>
+      <button class="tm-widget__btn" id="wg-pin" title="Pin: clicks pass through" type="button"><span class="material-symbols-outlined" id="wg-pinicon">keep_off</span></button>
       <button class="tm-widget__btn" id="wg-close" title="Turn the widget off" type="button"><span class="material-symbols-outlined">close</span></button>
     </header>
 
@@ -76,16 +80,17 @@
       <span class="tm-widget__bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
     </div>
 
-    <div>
+    <div class="tm-widget__track">
+      <span class="tm-widget__time tm-nums" id="wg-cur">0:00</span>
       <div class="tm-widget__seek" id="wg-seek" title="Seek">
         <span class="tm-widget__fill" id="wg-fill"></span>
       </div>
-      <div class="tm-widget__times"><span class="tm-nums" id="wg-cur">0:00</span><span class="tm-nums" id="wg-total">0:00</span></div>
+      <span class="tm-widget__time tm-nums" id="wg-total">0:00</span>
     </div>
 
     <div class="tm-widget__transport">
       <div class="tm-widget__side">
-        <button class="tm-widget__btn" id="wg-shuffle" title="Shuffle" type="button"><span class="material-symbols-outlined">shuffle</span></button>
+        <button class="tm-widget__btn" id="wg-dl" title="Download this track" type="button"><span class="material-symbols-outlined">download</span></button>
         <button class="tm-widget__btn" id="wg-prev" title="Previous" type="button"><span class="material-symbols-outlined">skip_previous</span></button>
       </div>
       <button class="tm-widget__btn tm-widget__play" id="wg-play" title="Play / pause" type="button"><span class="material-symbols-outlined" id="wg-playicon">play_arrow</span></button>

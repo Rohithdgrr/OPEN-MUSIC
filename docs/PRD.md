@@ -475,7 +475,7 @@ npm run tauri build
   1. `official.rs` — first-party `www.jiosaavn.com` source becomes primary for both search and resolve (no mirror quota, real pagination);
   2. a `429` now costs exactly **one** request and immediately moves to the next mirror (no retry storm), with the failing URL quoted in the error;
   3. the UI surfaces a **Retry** button on any search failure and the search cache is keyed per query+limit+page.
-- **Guard:** `official::tests::live_search_pages_are_disjoint_and_unbounded`, `official::tests::live_resolve_yields_all_renditions_of_the_full_file`, plus the 30-assertion headless UI self-test covering every search-screen control.
+- **Guard:** `official::tests::live_search_page2_advances_beyond_page1`, `official::tests::live_resolve_yields_all_renditions_of_the_full_file`, plus the 30-assertion headless UI self-test covering every search-screen control.
 
 ### 14.5 LATENT — Throughput ceiling
 

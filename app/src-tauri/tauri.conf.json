@@ -16,14 +16,15 @@
         "minWidth": 800,
         "minHeight": 600,
         "resizable": true,
+        "maximized": true,
         "center": true
       },
       {
         "label": "widget",
         "url": "widget.html",
         "title": "TRANCE MUSIC - desktop widget",
-        "width": 460,
-        "height": 470,
+        "width": 380,
+        "height": 190,
         "resizable": false,
         "decorations": false,
         "transparent": true,

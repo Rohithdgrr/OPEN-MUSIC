@@ -80,21 +80,22 @@ export async function playQueueItem(index) {
   paintFavHearts();
   emitState(true);
   loadLyrics(track);
-  const setCover = (img, fallback) => {
+  const setCover = (img, fallback, target) => {
     if (!img) return;
     if (track.image) {
-      img.setAttribute("data-art-orig", track.image);
+      // HD cover: try the 1500px master, then the 500px one (artFail's orig).
+      img.setAttribute("data-art-orig", target ? hqArt(track.image) : track.image);
       img.removeAttribute("data-art-tried");
       img.classList.remove("hidden");
       img.style.display = "";
       img.onerror = () => {
-        // One retry of the original URL, then fall back to the icon.
+        // One retry of the fallback URL, then fall back to the icon.
         if (window.artFail(img)) {
           img.classList.add("hidden");
           fallback?.classList.remove("hidden");
         }
       };
-      img.src = hqArt(track.image);
+      img.src = hqArt(track.image, target);
       if (fallback) fallback.classList.add("hidden");
     } else {
       img.classList.add("hidden");
@@ -102,7 +103,7 @@ export async function playQueueItem(index) {
     }
   };
   setCover(bar.cover, bar.coverFallback);
-  setCover(np.cover, null);
+  setCover(np.cover, null, "1500x1500");
   bar.badge.textContent = "RESOLVING";
   if (np.badge) np.badge.textContent = "RESOLVING…";
 

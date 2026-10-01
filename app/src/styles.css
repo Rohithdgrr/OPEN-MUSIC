@@ -498,14 +498,6 @@
   background: #fafafa;
   pointer-events: none;
 }
-.tm-widget__times {
-  display: flex;
-  justify-content: space-between;
-  margin-top: -0.5rem;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 10px;
-  color: #71717a;
-}
 
 /* Three columns keep the play button dead centre: the right side also carries
    the volume slider, so a plain flex row would pull it off centre. */
@@ -666,6 +658,115 @@
 }
 .tm-widget__foot span:nth-child(even) {
   color: #3f3f46;
+}
+
+/* --------------------------------------------------------------- compact card
+ * The window is a tight slab now (380x190): the decorative rows (spectrum,
+ * next-up, footer) stand down, every padding shrinks, and the times sit inline
+ * with the bar so head + cover + track + transport fill every pixel.
+ * ------------------------------------------------------------------------- */
+.tm-widget__viz,
+.tm-widget__next,
+.tm-widget__foot {
+  display: none;
+}
+.tm-widget__inner {
+  padding: 0.625rem;
+  gap: 0.5rem;
+}
+.tm-widget__head {
+  gap: 0.5rem;
+  padding-bottom: 0.25rem;
+}
+.tm-widget__logo {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.tm-widget__head .tm-widget__btn {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.tm-widget__np {
+  gap: 0.625rem;
+}
+.tm-widget__cover {
+  width: 3.5rem;
+  height: 3.5rem;
+}
+.tm-widget__title {
+  font-size: 1rem;
+}
+.tm-widget__track {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.tm-widget__seek {
+  flex: 1;
+  margin-top: 0;
+}
+.tm-widget__time {
+  flex: 0 0 auto;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: #71717a;
+}
+.tm-widget__transport {
+  padding-top: 0.125rem;
+}
+/* The 1fr side column strands shuffle/prev at its left edge, leaving a dead
+   zone before the play button: pack them against the centre instead. */
+.tm-widget__side:first-child {
+  justify-content: flex-end;
+}
+.tm-widget__play {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+.tm-widget__play .material-symbols-outlined {
+  font-size: 22px;
+}
+
+/* ------------------------------------------------------------------ icon mode
+ * Focus tracking collapses the card to a round icon while the user is in
+ * another application; clicking it (or focusing the app) expands it again.
+ * ------------------------------------------------------------------------- */
+.tm-widget__mini {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  border-radius: inherit;
+  background: #09090b center / cover no-repeat;
+  color: #fafafa;
+  cursor: pointer;
+}
+/* Tint so the glyph stays legible over cover art. */
+.tm-widget__mini::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.45);
+}
+.tm-widget__mini .material-symbols-outlined {
+  position: relative;
+  z-index: 1;
+  font-size: 30px;
+}
+body.is-mini .tm-widget__inner,
+body.is-mini .tm-widget__art,
+body.is-mini .tm-widget__scrim {
+  display: none;
+}
+body.is-mini .tm-widget {
+  border-radius: 9999px;
+}
+body.is-mini .tm-widget__mini {
+  display: flex;
 }
 
 /* ------------------------------------------------------------- notifications

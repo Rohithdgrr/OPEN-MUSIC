@@ -9,10 +9,13 @@ mod jiosaavn;
 mod lyrics;
 mod official;
 mod proxy;
+mod shortcuts;
+mod widget;
 
 use std::sync::Arc;
 
 use serde::Serialize;
+use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
 
@@ -178,6 +181,23 @@ fn proxy_base(state: State<'_, Arc<AppState>>) -> String {
 #[tauri::command]
 fn api_version() -> u32 {
     1
+}
+
+/// Reachability probe for the network banner: one HEAD at the artwork CDN,
+/// answered with the elapsed milliseconds. Any HTTP response (even 403/404)
+/// proves the connection works — only a transport error or the 5s timeout
+/// means the network is actually down.
+#[tauri::command]
+async fn net_ping(state: State<'_, Arc<AppState>>) -> Result<u64, String> {
+    let start = std::time::Instant::now();
+    state
+        .client
+        .head("https://c.saavncdn.com/")
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(start.elapsed().as_millis() as u64)
 }
 
 /// Home screen feed: hero playlist, curated playlists, charts, top-5 tracks.
@@ -395,7 +415,7 @@ fn reveal_vault(state: State<'_, Arc<AppState>>) -> Result<(), String> {
 /// that layer is below every application window, so the card is only ever
 /// visible on an empty stretch of desktop.
 #[cfg(windows)]
-fn reparent(win: &tauri::WebviewWindow, embed: bool) -> Result<(), String> {
+pub(crate) fn reparent(win: &tauri::WebviewWindow, embed: bool) -> Result<(), String> {
     use windows_sys::Win32::Foundation::{HWND, LPARAM};
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, FindWindowA, FindWindowExA, GetClassNameA, SendMessageTimeoutA, SetParent,
@@ -482,7 +502,7 @@ fn reparent(win: &tauri::WebviewWindow, embed: bool) -> Result<(), String> {
 }
 
 #[cfg(not(windows))]
-fn reparent(_win: &tauri::WebviewWindow, _embed: bool) -> Result<(), String> {
+pub(crate) fn reparent(_win: &tauri::WebviewWindow, _embed: bool) -> Result<(), String> {
     Ok(())
 }
 
@@ -520,6 +540,14 @@ fn widget_set_position(win: tauri::WebviewWindow, x: i32, y: i32) -> Result<(), 
         .map_err(|e| e.to_string())
 }
 
+/// Compact ↔ icon size switch for the desktop card. Lives in Rust so the
+/// webview needs no window permissions (core:default only).
+#[tauri::command]
+fn widget_resize(win: tauri::WebviewWindow, w: u32, h: u32) -> Result<(), String> {
+    win.set_size(tauri::LogicalSize::new(w as f64, h as f64))
+        .map_err(|e| e.to_string())
+}
+
 /// Begin an OS drag of the frameless card from its header.
 #[tauri::command]
 fn widget_start_drag(win: tauri::WebviewWindow) -> Result<(), String> {
@@ -530,14 +558,47 @@ fn widget_start_drag(win: tauri::WebviewWindow) -> Result<(), String> {
 /// GUI process, so without this every helper it spawns would pop its own
 /// terminal — `autostart_set` runs on each boot, which is one flash per launch.
 #[cfg(windows)]
-fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
+pub(crate) fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
     use std::os::windows::process::CommandExt;
     cmd.creation_flags(0x0800_0000)
 }
 
 #[cfg(not(windows))]
-fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
+pub(crate) fn hide_console(cmd: &mut std::process::Command) -> &mut std::process::Command {
     cmd
+}
+
+/// Focus the main window: shortcut actions, tray "Show Window" and the
+/// single-instance callback all route through here.
+pub(crate) fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Open a link outside the app (Settings → shortcuts). Scheme-allowlisted so
+/// the command cannot be pointed at `file:` or anything else local.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("powertoys://")) {
+        return Err("unsupported URL scheme".to_string());
+    }
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", "start", "", &url]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" });
+        c.arg(&url);
+        c
+    };
+    hide_console(&mut cmd).output().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Open at startup: the HKCU Run key is Windows' own autostart list - no
@@ -571,11 +632,54 @@ fn content_prefs_set(lang: String, country: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Tray menu: media controls + Show/Quit, so closing to tray is still a
+/// reachable app. Built best-effort — no icon, no tray, boot continues.
+fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+    let Some(icon) = app.default_window_icon().cloned() else {
+        return Ok(());
+    };
+    let play = MenuItem::with_id(app, "play", "Play/Pause", true, None::<&str>)?;
+    let next = MenuItem::with_id(app, "next", "Next", true, None::<&str>)?;
+    let prev = MenuItem::with_id(app, "prev", "Previous", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&play, &next, &prev, &show, &quit])?;
+    TrayIconBuilder::with_id("main-tray")
+        .icon(icon)
+        .tooltip("TRANCE MUSIC")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "play" => {
+                let _ = app.emit("media-play-pause", ());
+            }
+            "next" => {
+                let _ = app.emit("media-next", ());
+            }
+            "prev" => {
+                let _ = app.emit("media-prev", ());
+            }
+            "show" => show_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+    Ok(())
+}
+
 /// Process entry: the only place a startup failure may be fatal (review 5.6
 /// — everything inside `run` returns `Result` instead of panicking).
 #[allow(clippy::expect_used)]
 pub fn run() {
     tauri::Builder::default()
+        // First plugin: a second launch focuses the running instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main(app);
+        }))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(widget::handle_window_event)
         .setup(|app| {
             // Ephemeral port, bound BEFORE the window loads: no hardcoded
             // port, no collision, no race (docs/architecture.md §6).
@@ -606,6 +710,13 @@ pub fn run() {
                 }
             });
 
+            // Shortcuts and tray are log-only: a registration conflict must
+            // never abort startup.
+            shortcuts::register(app.handle());
+            if let Err(e) = build_tray(app) {
+                eprintln!("tray build failed: {e}");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -617,6 +728,7 @@ pub fn run() {
             qualify_url,
             proxy_base,
             api_version,
+            net_ping,
             home_feed,
             playlist_tracks,
             album_tracks,
@@ -631,7 +743,12 @@ pub fn run() {
             widget_show,
             widget_embed,
             widget_set_position,
+            widget_resize,
             widget_start_drag,
+            widget::toggle_widget,
+            widget::set_widget_click_through,
+            shortcuts::get_shortcut_mode,
+            open_external,
             autostart_set,
             content_prefs_set
         ])

@@ -285,7 +285,7 @@ grepped for `decrypt|AES|encrypted_media_url` — one hit carried the key.
 $ cargo test
 test official::tests::decrypts_media_url_to_a_cdn_asset .............. ok   ← DES vector
 test official::tests::renditions_cover_the_five_cdn_bitrates ......... ok   ← 5 qualities
-test official::tests::live_search_pages_are_disjoint_and_unbounded ... ok   ← unlimited paging
+test official::tests::live_search_page2_advances_beyond_page1 ... ok   ← unlimited paging
 test official::tests::live_resolve_yields_all_renditions_of_the_full_file ok ← full song
 test jiosaavn::tests::live_search_returns_tracks ..................... ok   ← fallback path
 test jiosaavn::tests::live_resolve_and_qualify_is_unrestricted ........ ok

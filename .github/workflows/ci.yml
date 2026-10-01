@@ -23,6 +23,17 @@ jobs:
         env:
           OP_OFFLINE: "1"
 
+  audit:
+    name: Rust — cargo audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit
+
   frontend:
     name: Frontend — ESLint, syntax
     runs-on: ubuntu-latest

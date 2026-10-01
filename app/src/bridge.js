@@ -4,6 +4,7 @@ import { audio, np } from "./dom.js";
 import { isFav, toggleFavTrack } from "./library.js";
 import { current, queue, queueIndex, repeatMode, restoredTrack, shuffleMode } from "./queue.js";
 import { paintVolume, step, togglePlay, toggleRepeat, toggleShuffle } from "./transport.js";
+import { downloadTrack } from "./vault.js";
 
 // Stamp of the last state pushed to the desktop card (see emitState below).
 export let stateEmitAt = 0;
@@ -101,6 +102,9 @@ export function wireDesktopCard() {
         break;
       case "shuffle":
         toggleShuffle();
+        break;
+      case "download":
+        downloadTrack(queue[queueIndex] ? queue[queueIndex].track : restoredTrack, null);
         break;
       case "repeat":
         toggleRepeat();
