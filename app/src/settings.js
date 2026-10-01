@@ -11,7 +11,7 @@ import { npText } from "./util.js";
 // the menu and a single section, so a nested dialog is never needed.
 export const APP = { name: "TRANCE MUSIC", version: "0.1.0", id: "com.openmusic.trancemusic" };
 
-/// Direct Rust dependencies, read off Cargo.lock â€” the list an attribution
+/// Direct Rust dependencies, read off Cargo.lock — the list an attribution
 /// page is expected to carry. The full transitive tree is 469 crates and is not
 /// useful on screen; the lock file is the authoritative copy.
 export const LICENSES = [

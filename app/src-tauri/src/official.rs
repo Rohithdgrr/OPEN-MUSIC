@@ -1,4 +1,4 @@
-//! First-party JioSaavn adapter â€” `www.jiosaavn.com/api.php`.
+//! First-party JioSaavn adapter — `www.jiosaavn.com/api.php`.
 //!
 //! This is the API JioSaavn's own web player calls, so it is the primary
 //! catalog source: no community-mirror rate limit, real pagination (`n`/`p`)
@@ -6,7 +6,7 @@
 //!
 //! Media urls arrive as `encrypted_media_url`: base64 over DES-ECB with an
 //! 8-byte key. Decrypting yields the CDN asset of the 96 kbps rendition, from
-//! which the other four renditions are derived by suffix swap â€” so every song
+//! which the other four renditions are derived by suffix swap — so every song
 //! resolves to the complete file, not a preview.
 //!
 //! Must NOT know anything about HTTP servers (that is `proxy.rs`'s job).
@@ -165,7 +165,7 @@ pub fn decrypt_media_url(encoded: &str) -> Result<String, String> {
     String::from_utf8(out).map_err(|e| format!("media url is not utf-8: {e}"))
 }
 
-/// Derive every rendition url from a decrypted `â€¦_96.mp4` asset url.
+/// Derive every rendition url from a decrypted `…_96.mp4` asset url.
 fn renditions(base: &str) -> Vec<QualityUrl> {
     let stem = match base.strip_suffix("_96.mp4") {
         Some(stem) => stem,
@@ -305,7 +305,7 @@ pub async fn search(
         .get("results")
         .and_then(Value::as_array)
         .ok_or_else(|| "search response missing results".to_string())?;
-    // Raw parse â€” `jiosaavn::search_songs` collapses repeats and keeps the
+    // Raw parse — `jiosaavn::search_songs` collapses repeats and keeps the
     // un-deduped page length for its `page_full` signal.
     Ok(results.iter().map(parse_song).collect())
 }
@@ -315,7 +315,7 @@ pub async fn search(
 #[serde(rename_all = "snake_case")]
 pub struct EntityPage {
     pub items: Vec<FeedItem>,
-    /// Whether upstream still had rows *after* this page â€” read from
+    /// Whether upstream still had rows *after* this page — read from
     /// `total`/`start`, never from `items.len()` (dedup shrinks it).
     pub page_full: bool,
 }
@@ -330,7 +330,7 @@ const ENTITY_OPS: &[(&str, &str)] = &[
 
 /// Normalise one row of an entity search into the card shape the grids render.
 /// Field names differ per kind (`albumid`/`listid`/`id`, `text`/`name`/
-/// `listname`), so each is picked explicitly â€” never guessed from leftovers.
+/// `listname`), so each is picked explicitly — never guessed from leftovers.
 fn entity_item(kind: &str, v: &Value) -> Option<FeedItem> {
     let (id, title) = match kind {
         "album" => (text(v, "albumid")?, text(v, "text")?),
@@ -425,7 +425,7 @@ pub async fn search_entities(
     })
 }
 
-/// Inline search suggestions â€” the `autocomplete.get` call the web player
+/// Inline search suggestions — the `autocomplete.get` call the web player
 /// fires as you type. One round-trip returns the top match plus a handful of
 /// songs, albums, artists and playlists.
 #[derive(Clone, Debug, Serialize)]
@@ -433,7 +433,7 @@ pub async fn search_entities(
 pub struct Suggestions {
     /// The single best match, whatever type it turned out to be.
     pub top: Option<FeedItem>,
-    /// `top`'s own type (`song` / `album` / `artist`) â€” a card can't say.
+    /// `top`'s own type (`song` / `album` / `artist`) — a card can't say.
     pub top_kind: Option<String>,
     pub songs: Vec<FeedItem>,
     pub albums: Vec<FeedItem>,
@@ -441,7 +441,7 @@ pub struct Suggestions {
     pub playlists: Vec<FeedItem>,
 }
 
-/// Last path segment of a `url` â€” the token `album_tracks` / `artist_tracks`
+/// Last path segment of a `url` — the token `album_tracks` / `artist_tracks`
 /// take. Suggestions carry a full url, not a bare token.
 fn token_from_url(url: &str) -> Option<String> {
     url.trim_end_matches('/')
@@ -451,7 +451,7 @@ fn token_from_url(url: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// One suggestion row â†’ the card shape the grids already render. Rows without
+/// One suggestion row ? the card shape the grids already render. Rows without
 /// an id or a title are skipped, never rendered blank.
 fn sug_item(v: &Value, subtitle: String) -> Option<FeedItem> {
     let id = text(v, "id")?;
@@ -503,7 +503,7 @@ pub async fn suggestions(client: &reqwest::Client, query: &str) -> Result<Sugges
     suggestions_from_value(&value)
 }
 
-/// Pure half of `suggestions` â€” split out so tests can feed it recorded
+/// Pure half of `suggestions` — split out so tests can feed it recorded
 /// bodies instead of the network.
 fn suggestions_from_value(value: &Value) -> Result<Suggestions, String> {
     let top = value
@@ -598,7 +598,7 @@ pub struct FeedItem {
     pub count: u64,
     /// Release year when the payload declares one, else empty.
     pub year: String,
-    /// Last path segment of `perma_url` â€” resolves albums/artists via
+    /// Last path segment of `perma_url` — resolves albums/artists via
     /// `webapi.get`. Empty when the payload carries no url.
     pub token: String,
 }
@@ -606,13 +606,13 @@ pub struct FeedItem {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct HomeFeed {
-    /// Hero banner â€” a real playlist the buttons can start.
+    /// Hero banner — a real playlist the buttons can start.
     pub spotlight: Option<FeedItem>,
     pub playlists: Vec<FeedItem>,
     pub charts: Vec<FeedItem>,
     /// Chart the "Full 100 Charts" button plays in full.
     pub chart_id: String,
-    /// First five tracks of `chart_id` â€” the countdown rows.
+    /// First five tracks of `chart_id` — the countdown rows.
     pub top_tracks: Vec<Track>,
     /// New releases ("New Lossless Masters").
     pub albums: Vec<FeedItem>,
@@ -697,7 +697,7 @@ pub async fn home(client: &reqwest::Client) -> Result<HomeFeed, String> {
         .into_iter()
         .filter(|p| p.id != spotlight_id)
         .collect();
-    // A missing chart only costs the countdown rows â€” the rest still renders.
+    // A missing chart only costs the countdown rows — the rest still renders.
     let top_tracks = match playlist_tracks(client, &chart_id).await {
         Ok(tracks) => tracks.into_iter().take(5).collect(),
         Err(_) => Vec::new(),
@@ -949,7 +949,7 @@ pub async fn lyrics(
 
     let body = match value.get("lyrics").and_then(Value::as_str) {
         Some(s) if !s.trim().is_empty() => s,
-        // `{"lyrics": null}` / empty string â€” this song has no lyrics here.
+        // `{"lyrics": null}` / empty string — this song has no lyrics here.
         _ => return Ok(None),
     };
     let copyright = value
@@ -961,7 +961,9 @@ pub async fn lyrics(
     Ok(Some((br_to_newline(&html_unescape(body)), copyright)))
 }
 
-/// JioSaavn separates lines with `<br>` in every casing/spacing variant.
+/// JioSaavn separates lines with `<br>` in every casing/spacing variant:
+/// `<br>`, `<BR>`, `<br />`, `<BR/>` — the three shapes it ships all start
+/// with `<br` followed by `>`, ` ` or `/`.
 fn br_to_newline(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
@@ -969,17 +971,11 @@ fn br_to_newline(s: &str) -> String {
         out.push_str(&rest[..i]);
         rest = &rest[i..];
         let is_br = rest
-            .get(..4)
-            .map(|t| t.eq_ignore_ascii_case("<br>"))
-            .unwrap_or(false);
-        let is_br_tag = rest
-            .get(..4)
-            .map(|t| t.eq_ignore_ascii_case("<br "))
-            .unwrap_or(false);
+            .get(..3)
+            .map(|t| t.eq_ignore_ascii_case("<br"))
+            .unwrap_or(false)
+            && matches!(rest.as_bytes().get(3), Some(b'>') | Some(b' ') | Some(b'/'));
         if is_br {
-            out.push('\n');
-            rest = &rest[4..];
-        } else if is_br_tag {
             match rest.find('>') {
                 Some(j) => {
                     out.push('\n');
@@ -1111,7 +1107,7 @@ pub async fn recommend(
 mod tests {
     use super::*;
 
-    /// Captured from `song.getDetails` for `aRZbUYD7` â€” the vector that
+    /// Captured from `song.getDetails` for `aRZbUYD7` — the vector that
     /// pins the DES key, the base64 alphabet and the PKCS#7 unpad.
     const ENCRYPTED: &str = "ID2ieOjCrwfgWvL5sXl4B1ImC5QfbsDySan+n+AW12BvOaQj7cuGfg8Ed085rYUtqDj8DQY3nIMQdr42ScGdtRw7tS9a8Gtq";
     const DECRYPTED: &str = "https://aac.saavncdn.com/450/f467e05e2825cec2203546333e0d0550_96.mp4";
@@ -1186,7 +1182,7 @@ mod tests {
     }
 
     /// `webapi.get` album/artist items nest duration, album and the 320
-    /// flag under `more_info` â€” the shape the detail screens resolve.
+    /// flag under `more_info` — the shape the detail screens resolve.
     #[test]
     fn parse_song_reads_webapi_get_nested_fields() {
         let v: Value = serde_json::from_str(
@@ -1242,7 +1238,7 @@ mod tests {
     // ---- Radio (endless playback) ----
 
     /// `webradio.getSong` answers a keyed map: every value carries its song
-    /// under `song`, and `stationid` sits beside them (no `song` → skipped).
+    /// under `song`, and `stationid` sits beside them (no `song` ? skipped).
     #[test]
     fn radio_songs_parse_the_keyed_map_and_skip_neighbours() {
         let v: Value = serde_json::from_str(
@@ -1458,7 +1454,7 @@ mod tests {
     }
 
     /// The frontend reads `payload.items` / `payload.page_full` and each card's
-    /// `id`/`title`/`subtitle`/`image`/`token` â€” a rename here silently blanks
+    /// `id`/`title`/`subtitle`/`image`/`token` — a rename here silently blanks
     /// the grid, so pin the wire names.
     #[test]
     fn entity_page_serializes_the_field_names_the_ui_reads() {
@@ -1524,7 +1520,7 @@ mod tests {
         assert_eq!(s.songs[0].id, "YiVML4Zo");
         assert_eq!(s.songs[0].subtitle, "Shashwat Sachdev, Arijit Singh");
         assert_eq!(s.songs[0].token, "KQE9fDgEbVw");
-        // No `primary_artists` â†’ `singers` is the credit of record.
+        // No `primary_artists` ? `singers` is the credit of record.
         assert_eq!(s.songs[1].subtitle, "Arijit Singh");
 
         assert_eq!(s.albums.len(), 1);
@@ -1550,7 +1546,7 @@ mod tests {
     }
 
     /// The dropdown reads `top`/`top_kind`/`songs`/`albums`/`artists`/
-    /// `playlists` â€” pin the wire names.
+    /// `playlists` — pin the wire names.
     #[test]
     fn suggestions_serialize_the_field_names_the_dropdown_reads() {
         let s = Suggestions {
@@ -1606,6 +1602,25 @@ mod tests {
             v.get("item").is_none(),
             "card fields must not nest under item"
         );
+    }
+
+    /// Every `<br>` shape JioSaavn ships becomes a newline; real tags and
+    /// truncations are left alone.
+    #[test]
+    fn br_variants_become_newlines() {
+        assert_eq!(br_to_newline("a<br>b"), "a\nb");
+        assert_eq!(br_to_newline("a<BR>b"), "a\nb", "uppercase");
+        assert_eq!(br_to_newline("a<br />b"), "a\nb", "spaced self-close");
+        assert_eq!(br_to_newline("a<br/>b"), "a\nb", "tight self-close");
+        assert_eq!(br_to_newline("a<Br >b"), "a\nb", "mixed case with space");
+        assert_eq!(br_to_newline("one<br>two<br>three"), "one\ntwo\nthree");
+        assert_eq!(br_to_newline("no breaks"), "no breaks");
+        assert_eq!(
+            br_to_newline("<b>not a break</b>"),
+            "<b>not a break</b>",
+            "unrelated tags survive"
+        );
+        assert_eq!(br_to_newline("trailing<br"), "trailing<br", "truncated tag");
     }
 
     // ---- Live contract tests (require network) ----

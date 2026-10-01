@@ -3,9 +3,9 @@
 import { esc } from "./core.js";
 
 // --------------------------------------------------------------- artwork ---
-// The API only ships 150px thumbs (`â€¦-150x150.jpg`, often over plain http),
+// The API only ships 150px thumbs (`…-150x150.jpg`, often over plain http),
 // which smear as soon as a card renders them at 300px+. Ask the same CDN for
-// the 500px master instead â€” the size token lives in the filename.
+// the 500px master instead — the size token lives in the filename.
 export const ART_RENDS = [
   ["-50x50x100", "-500x500"],
   ["-150x150x100", "-500x500"],

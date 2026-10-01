@@ -1,13 +1,13 @@
 // vault.js — download pipeline and vault/downloads view
 // Split from main.js (Phase 4 M1).
 import { art } from "./art.js";
-import { diag, esc, invoke, showError, toast } from "./core.js";
+import { Channel, diag, esc, invoke, showError, toast } from "./core.js";
 import { $, $$ } from "./dom.js";
 import { playTrack, resultsSub, uniqById } from "./search.js";
 import { fmtBytes, fmtTime } from "./util.js";
 
 // ---------------------------------------------------------------- download -
-/// `quiet` batches: no per-track toast/icon dance â€” the caller owns the button
+/// `quiet` batches: no per-track toast/icon dance — the caller owns the button
 /// and reports the summary; failures are rethrown so the batch can count them.
 export async function downloadTrack(track, btn, quiet = false) {
   if (!track) return;
@@ -33,7 +33,22 @@ export async function downloadTrack(track, btn, quiet = false) {
   });
   renderActive();
   try {
-    const path = await invoke("download_song", { id: track.id });
+    // Scoped progress stream for this one download (review 4.4): the
+    // command gets a Channel instead of broadcasting to every listener.
+    const progress = new Channel();
+    progress.onmessage = (p) => {
+      if (p.done) {
+        activeDownloads.delete(p.id);
+        refreshVault();
+      } else {
+        activeDownloads.set(p.id, { ...activeDownloads.get(p.id), ...p });
+      }
+      renderActive();
+    };
+    const path = await invoke("download_song", {
+      id: track.id,
+      onProgress: progress,
+    });
     diag(`download ${track.id}`, true, path);
     activeDownloads.delete(track.id);
     renderActive();
@@ -123,7 +138,8 @@ export async function downloadAll(items, what, btn) {
 }
 
 // --------------------------------------------------------------- downloads -
-// Live rows, keyed by song id, fed by the backend `download-progress` events.
+// Live rows, keyed by song id, fed by each download's scoped progress
+// Channel (created in downloadTrack, review 4.4).
 export const activeDownloads = new Map();
 export let vaultEntries = [];
 export let vaultQuality = "all";
@@ -162,8 +178,8 @@ export function activeCard(p) {
       <div class="flex flex-col flex-1 min-w-0">
         <div class="flex items-start justify-between gap-2">
           <div class="truncate">
-            <h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate">${esc(p.title)}</h3>
-            <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([p.artist, p.album].filter(Boolean).join(" â€¢ "))}</p>
+            <h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate" dir="auto">${esc(p.title)}</h3>
+            <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([p.artist, p.album].filter(Boolean).join(" • "))}</p>
           </div>
           <span class="font-label-mono text-label-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface shrink-0">${Math.round(pct)}%</span>
         </div>
@@ -229,10 +245,10 @@ export function vaultRow(e) {
       </div>
       <div class="flex flex-col min-w-0">
         <div class="flex items-center gap-2">
-          <span class="font-headline-md text-body-lg font-medium text-on-surface truncate">${esc(e.title)}</span>
+          <span class="font-headline-md text-body-lg font-medium text-on-surface truncate" dir="auto">${esc(e.title)}</span>
           <span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface shrink-0">${esc(e.quality)}</span>
         </div>
-        <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([e.artist, e.album].filter(Boolean).join(" â€¢ "))}</p>
+        <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([e.artist, e.album].filter(Boolean).join(" • "))}</p>
       </div>
     </div>
     <div class="flex items-center gap-4 shrink-0">
@@ -277,7 +293,7 @@ export function renderVault() {
   const summary = $("#dl-summary");
   if (summary) {
     summary.textContent = !vaultEntries.length
-      ? "Nothing saved yet â€” hit the download icon on any track."
+      ? "Nothing saved yet — hit the download icon on any track."
       : shown.length === vaultEntries.length
         ? `${vaultEntries.length} song${vaultEntries.length === 1 ? "" : "s"} on disk, ready to play offline.`
         : `${shown.length} of ${vaultEntries.length} songs match.`;
@@ -294,28 +310,13 @@ export async function refreshVault() {
     // Id collision = same song recorded twice (legacy manifests); show one.
     vaultEntries = uniqById((vault && vault.entries) || []);
     const dir = $("#dl-dir");
-    if (dir) dir.textContent = (vault && vault.dir) || "â€”";
+    if (dir) dir.textContent = (vault && vault.dir) || "—";
     renderVault();
     diag("vault", true, `${vaultEntries.length} saved`);
   } catch (err) {
     diag("vault", false, String(err));
     showError(`Could not read the downloads vault: ${err}`);
   }
-}
-
-if (window.__TAURI__?.event?.listen) {
-  window.__TAURI__.event
-    .listen("download-progress", (event) => {
-      const p = event.payload;
-      if (p.done) {
-        activeDownloads.delete(p.id);
-        refreshVault();
-      } else {
-        activeDownloads.set(p.id, { ...activeDownloads.get(p.id), ...p });
-      }
-      renderActive();
-    })
-    .catch((err) => diag("download-progress", false, String(err)));
 }
 
 $("#dl-vault")?.addEventListener("click", async (e) => {

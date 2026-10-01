@@ -12,7 +12,7 @@ export let autoScrollLyrics = true;
 /// Bumped on every track change so a slow fetch never paints over a newer one.
 export let lyricToken = 0;
 
-/// Class strings the static demo markup uses â€” rendered lines must match them
+/// Class strings the static demo markup uses — rendered lines must match them
 /// so the sync highlight, hover and cursor styles keep working.
 export const LYRIC_LINE_CLASS =
   "lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none";
@@ -72,7 +72,7 @@ export function renderLyrics(data) {
 
 export async function loadLyrics(track) {
   const token = ++lyricToken;
-  setLyricsPlaceholder("Fetching lyricsâ€¦");
+  setLyricsPlaceholder("Fetching lyrics…");
   let data = null;
   try {
     data = await invoke("get_lyrics", {
@@ -113,7 +113,7 @@ export function syncLyrics() {
   }
 }
 
-/// Click any line to seek there â€” the footer promises it.
+/// Click any line to seek there — the footer promises it.
 $("#lyrics-scroll-box")?.addEventListener("click", (e) => {
   const line = e.target.closest(".lyric-line");
   const seconds = line?.dataset.seconds;
@@ -140,7 +140,7 @@ $("#btn-fullscreen-lyrics")?.addEventListener("click", () => {
 np.fav?.addEventListener("click", () => {
   const t = queue[queueIndex]?.track;
   if (!t) {
-    toast("Nothing is playing yet â€” start a track first.", "info");
+    toast("Nothing is playing yet — start a track first.", "info");
     return;
   }
   toggleFavTrack(t);
@@ -149,7 +149,7 @@ np.fav?.addEventListener("click", () => {
 $("#np-download-btn")?.addEventListener("click", (e) => {
   const t = queue[queueIndex]?.track;
   if (!t) {
-    toast("Nothing is playing yet â€” start a track first.", "info");
+    toast("Nothing is playing yet — start a track first.", "info");
     return;
   }
   downloadTrack(t, e.currentTarget);

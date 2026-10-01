@@ -22,17 +22,17 @@ export function stampEntity(el, kind, name) {
   }
 }
 
-/// "Artist Â· Album" where each half is a link to its own page.
+/// "Artist · Album" where each half is a link to its own page.
 export function metaLinks(t) {
   const one = (kind, value) =>
     `<span class="hover:underline cursor-pointer" data-entity-kind="${esc(kind)}" data-entity-name="${esc(value)}">${esc(value)}</span>`;
   const parts = [];
   if (t.artist) parts.push(one("artist", t.artist));
   if (t.album) parts.push(one("album", t.album));
-  return parts.join('<span class="opacity-60"> Â· </span>');
+  return parts.join('<span class="opacity-60"> · </span>');
 }
 
-/// Rows only carry plain names â€” one search turns the name into a token,
+/// Rows only carry plain names — one search turns the name into a token,
 /// then the same artist/album screen the home cards open.
 export async function openEntityByName(kind, name) {
   const raw = String(name || "").trim();

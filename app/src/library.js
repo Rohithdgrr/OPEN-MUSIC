@@ -49,7 +49,7 @@ export function removeLocalPl(id) {
 }
 
 // The picker: one modal, one capture-phase listener, so no row builder needs
-// its own handler â€” clicking Add anywhere stops the row's play click first.
+// its own handler — clicking Add anywhere stops the row's play click first.
 export let pickTrack = null;
 
 export function renderPickerList() {
@@ -60,16 +60,16 @@ export function renderPickerList() {
     ? list
         .map(
           (p) => `<button type="button" data-pick-id="${esc(p.id)}" class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg hover:bg-surface-container-low text-left transition-colors">
-      <span class="font-body-md text-body-md text-on-surface truncate">${esc(p.title)}</span>
+      <span class="font-body-md text-body-md text-on-surface truncate" dir="auto">${esc(p.title)}</span>
       <span class="font-label-mono text-label-mono text-secondary shrink-0">${(p.tracks || []).length} tracks</span>
     </button>`,
         )
         .join("")
-    : '<p class="font-body-sm text-body-sm text-on-surface-variant px-1 py-2">No local playlists yet â€” name one below.</p>';
+    : '<p class="font-body-sm text-body-sm text-on-surface-variant px-1 py-2">No local playlists yet — name one below.</p>';
 }
 export function openPicker(t) {
   pickTrack = t;
-  npText("pl-picker-track", [t.artist, t.title].filter(Boolean).join(" â€” "));
+  npText("pl-picker-track", [t.artist, t.title].filter(Boolean).join(" — "));
   renderPickerList();
   $("#pl-picker")?.classList.remove("hidden");
   $("#pl-picker-name")?.focus();
@@ -234,12 +234,14 @@ export function renderFavs() {
   if (count) count.textContent = `${favs.length} track${favs.length === 1 ? "" : "s"}`;
   if (!favs.length) {
     box.innerHTML =
-      '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Nothing favorited yet â€” tap the heart on any track.</p>';
+      '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Nothing favorited yet — tap the heart on any track.</p>';
     return;
   }
   box.innerHTML = "";
+  const favFrag = document.createDocumentFragment();
   favs.forEach((t, i) => {
     const row = document.createElement("div");
+    row.dataset.rowI = String(i);
     row.className =
       "flex items-center justify-between gap-4 px-4 py-4 hover:bg-surface-container-low transition-colors cursor-pointer group";
     row.innerHTML = `
@@ -248,7 +250,7 @@ export function renderFavs() {
           <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(t.image || "")} />
         </div>
         <div class="min-w-0">
-          <div class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(t.title || "")}</div>
+          <div class="font-body-md text-body-md font-semibold text-on-surface truncate" dir="auto">${esc(t.title || "")}</div>
           <div class="font-body-sm text-body-sm text-secondary truncate">${metaLinks(t)}</div>
         </div>
       </div>
@@ -261,23 +263,28 @@ export function renderFavs() {
           <span class="material-symbols-outlined text-[17px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
         </button>
       </div>`;
-    row.addEventListener("click", (e) => {
-      const del = e.target.closest("[data-fav-del]");
-      if (del) {
-        e.stopPropagation();
-        toggleFavTrack(favs[Number(del.dataset.favDel)]);
-        return;
-      }
-      const dl = e.target.closest("[data-fav-dl]");
-      if (dl) {
-        e.stopPropagation();
-        downloadTrack(favs[Number(dl.dataset.favDl)], dl);
-        return;
-      }
-      playTracksAt(favs, i);
-    });
-    box.appendChild(row);
+    favFrag.appendChild(row);
   });
+  box.appendChild(favFrag);
+  // One delegated handler per paint instead of per row (review 4.2).
+  box.onclick = (e) => {
+    const row = e.target.closest("[data-row-i]");
+    if (!row) return;
+    const i = Number(row.dataset.rowI);
+    const del = e.target.closest("[data-fav-del]");
+    if (del) {
+      e.stopPropagation();
+      toggleFavTrack(favs[Number(del.dataset.favDel)]);
+      return;
+    }
+    const dl = e.target.closest("[data-fav-dl]");
+    if (dl) {
+      e.stopPropagation();
+      downloadTrack(favs[Number(dl.dataset.favDl)], dl);
+      return;
+    }
+    playTracksAt(favs, i);
+  };
 }
 
 export function playTracksAt(list, index) {
@@ -315,9 +322,10 @@ export function trackRows(list, box, emptyMsg, limit) {
     return;
   }
   const shown = Number.isFinite(limit) && limit < list.length ? list.slice(0, limit) : list;
-  box.innerHTML = "";
+  const frag = document.createDocumentFragment();
   shown.forEach((t, i) => {
     const row = document.createElement("div");
+    row.dataset.rowI = String(i);
     row.className =
       "flex items-center justify-between gap-4 px-4 py-4 hover:bg-surface-container-low transition-colors cursor-pointer group";
     row.innerHTML = `
@@ -327,7 +335,7 @@ export function trackRows(list, box, emptyMsg, limit) {
           <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(t.image || "")} />
         </div>
         <div class="min-w-0">
-          <div class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(t.title || "")}</div>
+          <div class="font-body-md text-body-md font-semibold text-on-surface truncate" dir="auto">${esc(t.title || "")}</div>
           <div class="font-body-sm text-body-sm text-secondary truncate"><span class="hover:underline cursor-pointer" data-entity-kind="artist" data-entity-name="${esc(t.artist || "")}">${esc(t.artist || "")}</span></div>
         </div>
       </div>
@@ -342,23 +350,31 @@ export function trackRows(list, box, emptyMsg, limit) {
         ${addBtn(t)}
         <span class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-100">play_arrow</span>
       </div>`;
-    row.addEventListener("click", (e) => {
-      const fav = e.target.closest("[data-fav-idx]");
-      if (fav) {
-        e.stopPropagation();
-        toggleFavTrack(list[Number(fav.dataset.favIdx)]);
-        return;
-      }
-      const dl = e.target.closest("[data-dl-idx]");
-      if (dl) {
-        e.stopPropagation();
-        downloadTrack(list[Number(dl.dataset.dlIdx)], dl);
-        return;
-      }
-      playTracksAt(list, i);
-    });
-    box.appendChild(row);
+    frag.appendChild(row);
   });
+  box.innerHTML = "";
+  box.appendChild(frag);
+  // One handler per paint (property assignment overwrites the last one)
+  // instead of one closure per row — rows are rebuilt constantly, the box
+  // is not (review 4.2).
+  box.onclick = (e) => {
+    const row = e.target.closest("[data-row-i]");
+    if (!row) return;
+    const i = Number(row.dataset.rowI);
+    const fav = e.target.closest("[data-fav-idx]");
+    if (fav) {
+      e.stopPropagation();
+      toggleFavTrack(list[Number(fav.dataset.favIdx)]);
+      return;
+    }
+    const dl = e.target.closest("[data-dl-idx]");
+    if (dl) {
+      e.stopPropagation();
+      downloadTrack(list[Number(dl.dataset.dlIdx)], dl);
+      return;
+    }
+    playTracksAt(list, i);
+  };
 }
 
 export let pdTracks = [];
@@ -369,9 +385,11 @@ export let pdVisible = 0;
 export let pdLocal = false;
 export let pdCurrentId = "";
 export let pdSeq = 0;
+/// In-playlist filter box — "search within this playlist" (review 3.1).
+export let pdQuery = "";
 export const PD_FIRST = 30;
 export let plFeatured = null;
-/// Entries rendered by the last `renderPlaylists()` â€” card, tag and label.
+/// Entries rendered by the last `renderPlaylists()` — card, tag and label.
 export let plItems = [];
 export let plFilter = "all";
 export let plQuery = "";
@@ -393,10 +411,10 @@ export const FILTER_ON =
 export const FILTER_OFF =
   "px-3 py-1 rounded-full text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors";
 export const DD_FIRST = 50; // rows painted the moment the screen opens
-/// Detail screens opened from inside another one â€” Back walks out of them.
+/// Detail screens opened from inside another one — Back walks out of them.
 export const ddStack = [];
 export let ddCurrent = null;
-/// The view Back lands on when the stack is empty (Home, Search, â€¦).
+/// The view Back lands on when the stack is empty (Home, Search, …).
 export let ddReturnView = "home";
 /// Bumped by every open so a stale response never paints over a newer screen.
 export let ddSeq = 0;
@@ -431,13 +449,16 @@ export async function openPlaylist(item, { scroll = true } = {}) {
   pdLocal = Array.isArray(item.tracks);
   pdTracks = pdLocal ? (item.tracks || []).slice() : [];
   pdVisible = Math.min(PD_FIRST, pdTracks.length);
+  pdQuery = "";
+  const pdSearch = $("#pd-search");
+  if (pdSearch) pdSearch.value = "";
   showView("playlists");
   paintFeatured();
   const detail = $("#playlist-detail");
   detail?.classList.remove("hidden");
   npText("pd-title", item.title || "Playlist");
-  npText("pd-title-copy", item.title ? `â€¢ ${item.title}` : "");
-  npText("pd-subtitle", item.subtitle || (pdLocal ? "Local playlist" : "Loading tracksâ€¦"));
+  npText("pd-title-copy", item.title ? `• ${item.title}` : "");
+  npText("pd-subtitle", item.subtitle || (pdLocal ? "Local playlist" : "Loading tracks…"));
   $("#pd-delete")?.classList.toggle("hidden", !item.local);
   const img = $("#pd-image");
   if (img) {
@@ -450,7 +471,7 @@ export async function openPlaylist(item, { scroll = true } = {}) {
   }
   const box = $("#pd-tracks");
   if (box && !pdLocal) {
-    box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracksâ€¦</p>';
+    box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracks…</p>';
   }
   if (scroll) detail?.scrollIntoView({ behavior: "smooth", block: "start" });
   paintPd();
@@ -481,7 +502,7 @@ export function paintPd() {
   const n = pdTracks.length;
   const item = plFeatured?.p || {};
   npText("pd-total", n ? `${n} TRACKS TOTAL` : "");
-  npText("pd-subtitle", [item.subtitle, `${n} tracks`].filter(Boolean).join(" Â· "));
+  npText("pd-subtitle", [item.subtitle, `${n} tracks`].filter(Boolean).join(" · "));
   paintPdRows();
   paintFeaturedMeta();
 }
@@ -492,43 +513,72 @@ export function paintPdRows() {
   box.innerHTML = "";
   if (!pdTracks.length) {
     box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">${
-      pdLocal ? "No tracks yet â€” open any track elsewhere and hit the add button." : "That playlist has no tracks."
+      pdLocal ? "No tracks yet — open any track elsewhere and hit the add button." : "That playlist has no tracks."
     }</p>`;
     $("#pd-foot")?.classList.add("hidden");
     return;
   }
-  const shown = pdTracks.slice(0, pdVisible);
+  // Filtered view (search within playlist): show every match; otherwise the
+  // incremental `pdVisible` window over the full list.
+  const q = pdQuery;
+  const list = q
+    ? pdTracks.filter((t) =>
+        `${t.title || ""} ${t.artist || ""} ${t.album || ""}`.toLowerCase().includes(q),
+      )
+    : pdTracks;
+  if (q && !list.length) {
+    box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">No tracks match "${esc(q)}".</p>`;
+    $("#pd-foot")?.classList.remove("hidden");
+    $("#pd-more")?.classList.add("hidden");
+    npText("pd-showing", `0 of ${pdTracks.length} tracks match`);
+    return;
+  }
+  const shown = q ? list : list.slice(0, pdVisible);
+  const frag = document.createDocumentFragment();
   shown.forEach((t, i) => {
     const wrap = document.createElement("div");
     wrap.innerHTML = trackRow(t, i, i === queueIndex && queue[queueIndex]?.track.id === t.id, "list");
     const row = wrap.firstElementChild;
-    row.addEventListener("click", (e) => {
-      const action = e.target.closest("[data-row-action]")?.dataset.rowAction;
-      if (action === "download") {
-        e.stopPropagation();
-        downloadTrack(t, e.target.closest("button"));
-        return;
-      }
-      if (action === "fav") {
-        e.stopPropagation();
-        toggleFavTrack(t);
-        return;
-      }
-      playTracksAt(pdTracks, i);
-    });
-    box.appendChild(row);
+    row.dataset.ri = String(i);
+    frag.appendChild(row);
   });
-  const left = pdTracks.length - shown.length;
+  box.innerHTML = "";
+  box.appendChild(frag);
+  // Delegated, one handler per paint (review 4.2) — the visible list owns the rows.
+  box.onclick = (e) => {
+    const row = e.target.closest("[data-ri]");
+    if (!row) return;
+    const t = list[Number(row.dataset.ri)];
+    if (!t) return;
+    const action = e.target.closest("[data-row-action]")?.dataset.rowAction;
+    if (action === "download") {
+      e.stopPropagation();
+      downloadTrack(t, e.target.closest("button"));
+      return;
+    }
+    if (action === "fav") {
+      e.stopPropagation();
+      toggleFavTrack(t);
+      return;
+    }
+    playTracksAt(list, Number(row.dataset.ri));
+  };
+  const left = q ? 0 : pdTracks.length - shown.length;
   $("#pd-foot")?.classList.toggle("hidden", !pdTracks.length);
   $("#pd-more")?.classList.toggle("hidden", !left);
-  npText("pd-showing", `Showing ${shown.length} of ${pdTracks.length} tracks in playlist`);
+  npText(
+    "pd-showing",
+    q
+      ? `${shown.length} of ${pdTracks.length} tracks match "${q}"`
+      : `Showing ${shown.length} of ${pdTracks.length} tracks in playlist`,
+  );
   npText("pd-more-label", `Load all ${pdTracks.length} tracks`);
 }
 
 /// Subtitle = whatever the card said + how much of the work is loaded.
 export function paintDdSubtitle() {
   const loaded = ddTracks.length ? `${ddTracks.length} ${ddUnit}` : "";
-  npText("dd-subtitle", [ddSubExtra, loaded].filter(Boolean).join(" Â· "));
+  npText("dd-subtitle", [ddSubExtra, loaded].filter(Boolean).join(" · "));
 }
 
 /// The track list plus its "show/load more" bar, kept in step with each other.
@@ -597,12 +647,12 @@ export function renderReleases() {
   }
 }
 
-/// One discography card â€” same tokens the album cards take, so a click opens
+/// One discography card — same tokens the album cards take, so a click opens
 /// the release itself.
 export function releaseCard(a) {
   const meta = [a.year, a.count ? `${a.count} track${a.count === 1 ? "" : "s"}` : ""]
     .filter(Boolean)
-    .join(" Â· ");
+    .join(" · ");
   return `
     <div data-dd-kind="album" data-dd-token="${esc(a.token || "")}" data-dd-title="${esc(a.title || "")}" data-dd-sub="${esc(a.subtitle || "")}" data-dd-img="${esc(a.image || "")}" class="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col cursor-pointer">
       <div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high mb-2.5">
@@ -650,7 +700,7 @@ export async function loadAllArtistSongs() {
   return true;
 }
 
-/// Album / artist screen (the `detail` view) â€” token comes from the card.
+/// Album / artist screen (the `detail` view) — token comes from the card.
 /// Artists load in two streams: the songs (paged, so the whole catalogue is
 /// walkable) and the header/discography (one call).
 export async function openDetail(kind, item, opts = {}) {
@@ -665,8 +715,8 @@ export async function openDetail(kind, item, opts = {}) {
   const seq = ++ddSeq;
   showView("detail");
   npText("dd-kind", kind.toUpperCase());
-  npText("dd-title", item.title || "â€”");
-  npText("dd-subtitle", "Loading tracksâ€¦");
+  npText("dd-title", item.title || "—");
+  npText("dd-subtitle", "Loading tracks…");
   for (const sel of ["#dd-verified", "#dd-listeners", "#dd-bio", "#dd-discography", "#dd-more-wrap", "#dd-list-head"])
     $(sel)?.classList.add("hidden");
   ddTracks = [];
@@ -690,7 +740,7 @@ export async function openDetail(kind, item, opts = {}) {
     }
   }
   const box = $("#dd-tracks");
-  if (box) box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracksâ€¦</p>';
+  if (box) box.innerHTML = '<p class="font-body-sm text-body-sm text-on-surface-variant p-4">Loading tracks…</p>';
 
   if (!isArtist) {
     try {
@@ -735,7 +785,7 @@ export async function openDetail(kind, item, opts = {}) {
   ddSubExtra = ddReleases ? `${ddReleases} releases` : ddSubExtra;
   paintDdSubtitle();
   renderDd("No songs found for this artist.");
-  diag("artist", true, `${ddTracks.length} songs Â· ${ddReleases} releases`);
+  diag("artist", true, `${ddTracks.length} songs · ${ddReleases} releases`);
 }
 
 /// One playlist card: corner tag, cover, blurb, track count + optional source
@@ -760,7 +810,7 @@ export function plCard(p, tag = "CURATED", label = "") {
         </button>
       </div>
       <div class="p-3.5 flex flex-col gap-1.5 min-w-0">
-        <p class="font-body-md text-body-md font-semibold text-on-surface truncate">${esc(p.title || "")}</p>
+        <p class="font-body-md text-body-md font-semibold text-on-surface truncate" dir="auto">${esc(p.title || "")}</p>
         <p class="font-body-sm text-body-sm text-on-surface-variant line-clamp-2">${esc(blurb)}</p>
         <div class="flex items-center justify-between gap-2 pt-0.5">
           <span class="font-label-mono text-label-mono text-secondary truncate">${n ? `${n} Tracks` : ""}</span>
@@ -864,7 +914,7 @@ export function plDedupe(entries) {
   return entries.filter((e) => (seen.has(e.p.id) ? false : (seen.add(e.p.id), true)));
 }
 
-/// Chips, cards and the featured hero â€” one pass over the real sources.
+/// Chips, cards and the featured hero — one pass over the real sources.
 export function renderPlaylists() {
   const box = $("#playlists-grid");
   if (!box) return;
@@ -892,7 +942,7 @@ export function renderPlaylists() {
     btn.textContent = `${btn.dataset.plLabel} (${counts[btn.dataset.plFilter] || 0})`;
   }
   // The hero shows a real playlist (like the design's featured card); the
-  // auto-generated ones stay in the grid. Nothing open yet â†’ first in view.
+  // auto-generated ones stay in the grid. Nothing open yet ? first in view.
   if (!pdCurrentId && shown.length) {
     plFeatured = shown.find((e) => !e.p.synthetic) || shown[0];
     paintFeatured();
@@ -905,7 +955,7 @@ export function featuredMetaText() {
   const n = open ? pdTracks.length : p.count || (p.tracks || []).length || 0;
   const total = open ? fmtSpan(pdTracks.reduce((s, t) => s + (t.duration_secs || 0), 0)) : "";
   // Followers already sit in the blurb, so keep this to tracks + running time.
-  return [n ? `${n} tracks` : "", total].filter(Boolean).join(" Â· ");
+  return [n ? `${n} tracks` : "", total].filter(Boolean).join(" · ");
 }
 
 export function paintFeaturedMeta() {
@@ -955,7 +1005,7 @@ export function renderLibrary() {
     ? lib
         .map((p) => plCard(p, p.local ? "Local" : "Saved", p.local ? "Local" : "In Library"))
         .join("")
-    : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet â€” hit â€œSave to Libraryâ€ on Home.</p>';
+    : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — hit “Save to Library” on Home.</p>';
 }
 export function renderPlays() {
   const plays = uniqById(loadPlays());
@@ -965,7 +1015,7 @@ export function renderPlays() {
   trackRows(plays.slice(0, 5), $("#library-recent"), "No plays yet.");
 }
 
-// Click wiring â€” one delegated listener per grid.
+// Click wiring — one delegated listener per grid.
 // `inline` keeps the Playlists tab's own behaviour (open the panel in place);
 // everywhere else the playlist opens on the shared detail screen so the click
 // never yanks the user onto the Playlists tab.
@@ -1007,7 +1057,7 @@ export function wireDdGrid(sel) {
       subtitle: card.dataset.ddSub,
       image: card.dataset.ddImg,
     };
-    // No token (payload oddity) â†’ fall back to a real search instead of dead click.
+    // No token (payload oddity) ? fall back to a real search instead of dead click.
     if (!item.token) {
       doSearch({ query: item.title || "" });
       return;
@@ -1022,6 +1072,10 @@ wireDdGrid("#results");
 wirePlGrid("#results");
 
 // ------------------------------------------------------- playlists screen -
+$("#pd-search")?.addEventListener("input", (e) => {
+  pdQuery = e.target.value.toLowerCase().trim();
+  paintPdRows();
+});
 $("#pd-play")?.addEventListener("click", () => pdTracks.length && playTracksAt(pdTracks, 0));
 $("#pd-shuffle")?.addEventListener("click", () => {
   if (!pdTracks.length) return;
@@ -1045,7 +1099,7 @@ $("#pd-delete")?.addEventListener("click", (e) => {
   const btn = e.currentTarget;
   const name = plFeatured?.p.title;
   if (!pdCurrentId || !name) return;
-  // Two clicks instead of a native confirm() â€” webviews do not all have one.
+  // Two clicks instead of a native confirm() — webviews do not all have one.
   if (btn.dataset.armed !== "1") {
     btn.dataset.armed = "1";
     btn.title = "Click again to delete";
@@ -1200,7 +1254,7 @@ $("#dd-more")?.addEventListener("click", async () => {
   const seq = ddSeq;
   const btn = $("#dd-more");
   if (btn) btn.disabled = true;
-  npText("dd-more-label", "Loadingâ€¦");
+  npText("dd-more-label", "Loading…");
   try {
     const next = await invoke("artist_tracks", { token: ddToken, page: ddPage + 1 });
     if (seq !== ddSeq) return;

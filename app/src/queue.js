@@ -38,7 +38,8 @@ export function renderQueue() {
 }
 
 export function renderQueueNow() {
-  queueListEl.innerHTML = "";
+  // Off-DOM build, one attach: N live appends would reflow N times (4.2).
+  const frag = document.createDocumentFragment();
   const visible = queue
     .map((item, i) => ({ item, i }))
     .filter(({ item, i }) =>
@@ -47,8 +48,11 @@ export function renderQueueNow() {
   for (const { item, i } of visible) {
     const t = item.track;
     const div = document.createElement("div");
+    div.dataset.qI = String(i);
+    div.draggable = queueTab === "next" && i > queueIndex;
     div.className =
-      "queue-item group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low border border-transparent hover:border-black/[0.04] transition-all cursor-pointer" +
+      "queue-item group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low border border-transparent hover:border-black/[0.04] transition-all " +
+      (div.draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer") +
       (i === queueIndex ? " bg-surface-container-low" : "");
     div.innerHTML = `
       <div class="flex items-center gap-3 min-w-0">
@@ -56,10 +60,10 @@ export function renderQueueNow() {
           <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(t.image)} />
         </div>
         <div class="flex flex-col min-w-0">
-          <span class="text-[13px] text-on-surface font-semibold truncate">${esc(t.title)}</span>
+          <span class="text-[13px] text-on-surface font-semibold truncate" dir="auto">${esc(t.title)}</span>
           <span class="text-xs text-on-surface-variant truncate">${metaLinks(t)}</span>
           <div class="flex items-center gap-2 mt-0.5">
-            <span class="font-mono text-[10px] text-on-surface-variant">${i === queueIndex ? (item.state === "done" ? "played" : item.state === "failed" ? "failed" : "playingâ€¦") : item.state === "done" ? "played" : item.state === "failed" ? "failed" : item.reco ? "recommended" : ""}</span>
+            <span class="font-mono text-[10px] text-on-surface-variant">${i === queueIndex ? (item.state === "done" ? "played" : item.state === "failed" ? "failed" : "playing…") : item.state === "done" ? "played" : item.state === "failed" ? "failed" : item.reco ? "recommended" : ""}</span>
           </div>
         </div>
       </div>
@@ -73,15 +77,57 @@ export function renderQueueNow() {
         ${addBtn(t)}
         <span class="font-mono text-[10px] text-on-surface-variant">${esc(t.duration)}</span>
       </div>`;
-    div.addEventListener("click", () => playQueueItem(i));
-    queueListEl.appendChild(div);
+    frag.appendChild(div);
   }
-  if (queueCountEl) queueCountEl.textContent = String(queue.length);
+  queueListEl.innerHTML = "";
+  queueListEl.appendChild(frag);
+    if (queueCountEl) queueCountEl.textContent = String(queue.length);
     const barCount = $("#queue-count-badge-bar");
     if (barCount) barCount.textContent = String(queue.length);
     paintQueueTabs();
     emitState();
+    persistQueue();
   }
+
+// ------------------------------------------------------------ persistence -
+// The queue is rebuilt from localStorage on boot (main.js) so a restart
+// lands you back on the same session. Every mutation funnels through
+// renderQueue(), so persisting there covers enqueue, play-next, DnD moves,
+// advance, shuffle, clear and the direct rewrites in playTracksAt.
+const QUEUE_KEY = "tm-queue";
+const QUEUE_CAP = 200;
+let persistTimer = 0;
+function persistQueue() {
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = 0;
+    try {
+      localStorage.setItem(
+        QUEUE_KEY,
+        JSON.stringify({ i: queueIndex, shuffle: shuffleMode, repeat: repeatMode, q: queue.slice(0, QUEUE_CAP) }),
+      );
+    } catch {}
+  }, 400);
+}
+
+/// Restore a saved queue without autoplaying. Returns true when one was
+/// loaded, so the boot path can skip the single-track "last played" seed.
+export function restoreQueue() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(QUEUE_KEY) || "null");
+  } catch {
+    return false;
+  }
+  if (!saved || !Array.isArray(saved.q)) return false;
+  const items = saved.q.filter((it) => it && it.track && typeof it.track.id === "string");
+  if (!items.length) return false;
+  queue.push(...items);
+  queueIndex = Math.min(Math.max(Number(saved.i) || -1, -1), queue.length - 1);
+  shuffleMode = saved.shuffle === true;
+  repeatMode = saved.repeat === "one" ? "one" : saved.repeat === "all" ? "all" : "off";
+  return true;
+}
 
 export function paintQueueTabs() {
   const next = $("#queue-tab-next");
@@ -92,9 +138,11 @@ export function paintQueueTabs() {
   if (hist) hist.className = queueTab === "history" ? active : inactive;
 }
 
-// Queue rows re-render on every state change, so download clicks are
-// intercepted on the persistent list. Capture phase is required: each row
-// also listens for clicks (to start playback) and would fire first.
+// Queue rows re-render on every state change, so every click is handled on
+// the persistent list — download/fav intercept first (capture), then a plain
+// row click plays (delegation: one listener instead of one per row, review
+// 4.2). Capture phase is required: the global document-capture handlers for
+// add-to-playlist and entity links stop the click before this list runs.
 queueListEl.addEventListener(
   "click",
   (e) => {
@@ -107,14 +155,64 @@ queueListEl.addEventListener(
       return;
     }
     const btn = e.target.closest("[data-q-dl]");
-    if (!btn) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const item = queue[Number(btn.dataset.qDl)];
-    if (item) downloadTrack(item.track, btn);
+    if (btn) {
+      e.stopPropagation();
+      e.preventDefault();
+      const item = queue[Number(btn.dataset.qDl)];
+      if (item) downloadTrack(item.track, btn);
+      return;
+    }
+    const row = e.target.closest("[data-q-i]");
+    if (row) playQueueItem(Number(row.dataset.qI));
   },
   true,
 );
+
+// ---------------------------------------------------------- drag reorder -
+// Only upcoming rows drag (`draggable` is set in renderQueueNow), and the
+// current entry's index rides along in moveQueue so a drop never changes
+// which track is playing.
+let dragFrom = -1;
+let dragHl = null;
+function setDragHl(row) {
+  if (dragHl === row) return;
+  dragHl?.classList.remove("bg-surface-container-low");
+  dragHl = null;
+  if (row && Number(row.dataset.qI) !== queueIndex) {
+    row.classList.add("bg-surface-container-low");
+    dragHl = row;
+  }
+}
+queueListEl.addEventListener("dragstart", (e) => {
+  const row = e.target.closest("[data-q-i]");
+  if (!row || e.target.closest("button")) {
+    e.preventDefault();
+    return;
+  }
+  dragFrom = Number(row.dataset.qI);
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", String(dragFrom));
+});
+queueListEl.addEventListener("dragover", (e) => {
+  if (dragFrom < 0) return;
+  const row = e.target.closest("[data-q-i]");
+  if (!row) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  setDragHl(row);
+});
+queueListEl.addEventListener("drop", (e) => {
+  if (dragFrom < 0) return;
+  const row = e.target.closest("[data-q-i]");
+  setDragHl(null);
+  e.preventDefault();
+  if (row) moveQueue(dragFrom, Number(row.dataset.qI));
+  dragFrom = -1;
+});
+queueListEl.addEventListener("dragend", () => {
+  setDragHl(null);
+  dragFrom = -1;
+});
 
 export function enqueue(track) {
   const existing = queue.findIndex((q) => q.track.id === track.id);
@@ -125,6 +223,26 @@ export function enqueue(track) {
   queue.push({ track, state: null });
   renderQueue();
   return queue.length - 1;
+}
+
+/// "Play next": slot the track in right behind whatever is playing.
+export function insertNext(track) {
+  if (queueIndex < 0 || !queue[queueIndex]) return enqueue(track);
+  queue.splice(queueIndex + 1, 0, { track, state: null });
+  renderQueue();
+  return queueIndex + 1;
+}
+
+/// Drag-reorder within the queue: keep the playing entry's index tracking
+/// the item it points at so a drop across it never changes what's playing.
+export function moveQueue(from, to) {
+  if (from === to || from < 0 || to < 0 || from >= queue.length || to >= queue.length) return;
+  const [item] = queue.splice(from, 1);
+  queue.splice(to, 0, item);
+  if (queueIndex === from) queueIndex = to;
+  else if (from < queueIndex && to >= queueIndex) queueIndex -= 1;
+  else if (from > queueIndex && to <= queueIndex) queueIndex += 1;
+  renderQueue();
 }
 
 export function markQueue(state) {
@@ -148,7 +266,7 @@ export function pickNextIndex() {
 export async function advanceQueue() {
   if (advancing) return;
   let next = pickNextIndex();
-  // Out of queue with repeat off: never dead air â€” let the radio feed it.
+  // Out of queue with repeat off: never dead air — let the radio feed it.
   if (next < 0 && repeatMode === "off" && queue.length) {
     await ensureReco();
     next = pickNextIndex();

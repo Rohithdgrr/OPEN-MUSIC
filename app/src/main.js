@@ -35,7 +35,7 @@ const lastPlayed = loadPlays()[0];
 setRestoredTrack(lastPlayed || null);
 if (lastPlayed) {
   bar.title.textContent = lastPlayed.title;
-  bar.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" Â· ");
+  bar.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" · ");
   stampEntity(bar.artist, "artist", lastPlayed.artist);
   if (lastPlayed.image) {
     paintArt(bar.cover, lastPlayed.image);
@@ -43,13 +43,13 @@ if (lastPlayed) {
     paintArt(np.cover, lastPlayed.image);
   }
   if (np.title) np.title.textContent = lastPlayed.title;
-  if (np.artist) np.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" Â· ");
+  if (np.artist) np.artist.textContent = [lastPlayed.artist, lastPlayed.album].filter(Boolean).join(" · ");
   stampEntity(np.artist, "artist", lastPlayed.artist);
-  npText("np-album", lastPlayed.album || "â€”");
+  npText("np-album", lastPlayed.album || "—");
   stampEntity(document.getElementById("np-album"), "album", lastPlayed.album);
-  npText("np-artist-tile", lastPlayed.artist || "â€”");
+  npText("np-artist-tile", lastPlayed.artist || "—");
   stampEntity(document.getElementById("np-artist-tile"), "artist", lastPlayed.artist);
-  npText("np-length", lastPlayed.duration || "â€”");
+  npText("np-length", lastPlayed.duration || "—");
   diag("restore", true, `last played: ${lastPlayed.title}`);
 }
 // The desktop card is a separate window: show it if it was left switched on,

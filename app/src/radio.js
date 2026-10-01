@@ -31,7 +31,7 @@ export function scoreReco(cands) {
     scored.push({ t, s });
   }
   if (!scored.length) {
-    // The batch was all repeats â€” endless mode prefers a rerun over silence,
+    // The batch was all repeats — endless mode prefers a rerun over silence,
     // so fall back to whatever at least is not sitting in the queue right now.
     for (const t of cands) {
       if (!t?.id || queued.has(t.id) || taken.has(t.id)) continue;
@@ -78,7 +78,7 @@ export async function ensureReco() {
         radioStation = page.station;
         fresh = page.tracks || [];
       }
-      diag("radio", !!fresh.length, fresh.length ? `${fresh.length} songs Â· station kept` : "empty batch");
+      diag("radio", !!fresh.length, fresh.length ? `${fresh.length} songs · station kept` : "empty batch");
     } catch (err) {
       diag("radio", false, String(err));
     }

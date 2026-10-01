@@ -17,10 +17,10 @@ export function setBadge(status, info) {
   const full = status === "unrestricted";
   const preview = status === "restricted_first_mb";
   const badgeText = full
-    ? `FULL SONG Â· ${info.chosen_quality} Â· ${fmtBytes(info.content_length)}`
+    ? `FULL SONG · ${info.chosen_quality} · ${fmtBytes(info.content_length)}`
     : preview
-      ? "PREVIEW ONLY â€” stream capped near ~1 MB"
-      : "UNREACHABLE â€” stream failed range checks";
+      ? "PREVIEW ONLY — stream capped near ~1 MB"
+      : "UNREACHABLE — stream failed range checks";
   bar.badge.textContent = full ? `${info.chosen_quality}` : preview ? "PREVIEW" : "UNREACHABLE";
   bar.badge.classList.remove("hidden");
   if (np.badge) np.badge.textContent = badgeText;
@@ -28,10 +28,10 @@ export function setBadge(status, info) {
   npText("np-quality", info.chosen_quality);
   emitState(true);
   document.title = full
-    ? "â–¶ " + bar.title.textContent
+    ? "▶ " + bar.title.textContent
     : preview
-      ? "â— preview â€” " + bar.title.textContent
-      : "âœ– unreachable";
+      ? "◐ preview — " + bar.title.textContent
+      : "✖ unreachable";
 }
 
 for (const ev of ["playing", "pause", "waiting", "ended"]) {

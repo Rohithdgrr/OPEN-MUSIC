@@ -29,6 +29,14 @@ const MAX_RETRIES: u32 = 2;
 const BACKOFF_BASE_MS: u64 = 1000;
 const BACKOFF_CAP_MS: u64 = 8000;
 
+/// A `Retry-After` asking us to wait longer than this is not honoured:
+/// moving to the next mirror (with its own budget) is faster and kinder.
+const RETRY_AFTER_CAP_SECS: u64 = 4;
+
+/// Refuse mirror bodies bigger than this before handing them to serde
+/// (review 5.5: a hostile/broken mirror must not OOM the parser).
+const MAX_JSON_BYTES: usize = 10 * 1024 * 1024;
+
 /// Media hosts allowed for streaming (scheme must be https).
 pub const MEDIA_HOSTS: &[&str] = &["saavncdn.com"];
 
@@ -120,6 +128,9 @@ pub struct PlayableAudio {
 
 /// Metadata + probes: total 25 s timeout, must fail fast.
 /// Sends browser-like headers to avoid being flagged as a bot.
+// review 5.6: a client that cannot build (TLS backend broken at install
+// time) is fatal by design — fail loudly at boot, not on first request.
+#[allow(clippy::expect_used)]
 pub fn api_client() -> reqwest::Client {
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, USER_AGENT};
     let mut headers = HeaderMap::new();
@@ -132,12 +143,17 @@ pub fn api_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(25))
+        // review 5.1: a redirect loop must abort after a handful of hops,
+        // not spin on reqwest's default of ten.
+        .redirect(reqwest::redirect::Policy::limited(5))
         .default_headers(headers)
         .build()
         .expect("failed to build api client")
 }
 
 /// Media bodies: NO total timeout (a 10 MB song on a slow link takes > 25 s).
+// review 5.6: same fatal-by-design invariant as `api_client`.
+#[allow(clippy::expect_used)]
 pub fn media_client() -> reqwest::Client {
     use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
     let mut headers = HeaderMap::new();
@@ -146,6 +162,7 @@ pub fn media_client() -> reqwest::Client {
     reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::limited(5))
         .default_headers(headers)
         .build()
         .expect("failed to build media client")
@@ -457,10 +474,20 @@ fn backoff_ms(attempt: u32) -> u64 {
 }
 
 async fn get_json(client: &reqwest::Client, path: &str) -> Result<Value, String> {
+    get_json_from(client, MIRRORS, path).await
+}
+
+/// Mirror walk with an injectable base list (tests point this at a local
+/// wiremock server; production always passes [`MIRRORS`]).
+async fn get_json_from(
+    client: &reqwest::Client,
+    bases: &[&str],
+    path: &str,
+) -> Result<Value, String> {
     let mut last_err = String::new();
     let mut mirrors_tried = Vec::new();
 
-    for base in MIRRORS {
+    for base in bases {
         let url = format!("{base}{path}");
         mirrors_tried.push(base.to_string());
 
@@ -469,11 +496,17 @@ async fn get_json(client: &reqwest::Client, path: &str) -> Result<Value, String>
                 Ok(resp) => {
                     let status = resp.status();
                     if status.as_u16() == 429 {
-                        // Rate limited. Retrying the same host only extends the
-                        // penalty, so name the failing URL and move on: the next
-                        // mirror has its own budget. A 429 therefore costs one
-                        // request, never MAX_RETRIES of them.
                         last_err = format!("{url} -> HTTP {status}");
+                        // Honour a short `Retry-After`: one calm retry beats
+                        // hammering the same host. A long (or missing) wait
+                        // falls through to the next mirror, which has its own
+                        // budget — a 429 never costs more than one request.
+                        if attempt < MAX_RETRIES {
+                            if let Some(delay) = retry_after_delay(&resp) {
+                                tokio::time::sleep(delay).await;
+                                continue;
+                            }
+                        }
                         break;
                     }
                     if status.is_server_error() {
@@ -489,13 +522,22 @@ async fn get_json(client: &reqwest::Client, path: &str) -> Result<Value, String>
                         break;
                     }
                     match resp.text().await {
-                        Ok(body) => match serde_json::from_str::<Value>(&body) {
-                            Ok(v) => return Ok(v),
-                            Err(e) => {
-                                last_err = format!("decode {url}: {e}");
+                        Ok(body) => {
+                            if body.len() > MAX_JSON_BYTES {
+                                last_err = format!(
+                                    "refusing oversized body from {url}: {} bytes",
+                                    body.len()
+                                );
                                 break;
                             }
-                        },
+                            match serde_json::from_str::<Value>(&body) {
+                                Ok(v) => return Ok(v),
+                                Err(e) => {
+                                    last_err = format!("decode {url}: {e}");
+                                    break;
+                                }
+                            }
+                        }
                         Err(e) => {
                             last_err = format!("read {url}: {e}");
                             break;
@@ -515,10 +557,22 @@ async fn get_json(client: &reqwest::Client, path: &str) -> Result<Value, String>
     }
     Err(format!(
         "all {} mirrors failed (tried: {}). Last error: {}",
-        MIRRORS.len(),
+        bases.len(),
         mirrors_tried.join(", "),
         last_err
     ))
+}
+
+/// Seconds the server asked us to wait, when the answer is a sane short
+/// pause. Malformed or long values return `None` (skip to next mirror).
+fn retry_after_delay(resp: &reqwest::Response) -> Option<Duration> {
+    let raw = resp
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?;
+    let secs: u64 = raw.trim().parse().ok()?;
+    (secs <= RETRY_AFTER_CAP_SECS).then_some(Duration::from_secs(secs))
 }
 
 // ---------------------------------------------------------------------------
@@ -695,7 +749,11 @@ pub fn dedup_tracks(tracks: Vec<Track>) -> Vec<Track> {
             unique.push(t);
         }
     }
-    // Pass 2: same recording under different ids.
+    // Pass 2: same recording under different ids. Each surviving title bucket
+    // is scanned with set intersections, so cost is O(n·k) over same-title
+    // candidates — fine at page size 40 and for artist catalogues in the
+    // hundreds; if catalogues ever reach 1000+ songs sharing titles, index by
+    // (title_key, duration_bucket) instead (review B7).
     let mut by_title: std::collections::HashMap<String, Vec<usize>> =
         std::collections::HashMap::new();
     let mut out: Vec<Track> = Vec::with_capacity(unique.len());
@@ -1351,7 +1409,6 @@ mod tests {
 
     #[test]
     fn media_host_allow_list_is_suffix_safe() {
-        assert!(is_media_host("aac.saavncdn.com"));
         assert!(is_media_host("c.saavncdn.com"));
         assert!(is_media_host("SAAVNCDN.COM"));
         assert!(!is_media_host("example.com"));
@@ -1359,6 +1416,12 @@ mod tests {
         assert!(validate_media_url("https://aac.saavncdn.com/x.mp4").is_ok());
         assert!(validate_media_url("http://aac.saavncdn.com/x.mp4").is_err());
         assert!(validate_media_url("https://example.com/x.mp4").is_err());
+        // SSRF shapes (review 5.5): non-https schemes and link-local /
+        // metadata endpoints never reach the media client.
+        assert!(validate_media_url("file:///C:/Windows/System32/calc.exe").is_err());
+        assert!(validate_media_url("ftp://aac.saavncdn.com/x.mp4").is_err());
+        assert!(validate_media_url("http://169.254.169.254/latest/meta-data").is_err());
+        assert!(validate_media_url("https://169.254.169.254/latest/meta-data").is_err());
     }
 
     #[test]
@@ -1449,6 +1512,176 @@ mod tests {
         assert_eq!(html_unescape("it&#39;s / &#x27;s"), "it's / 's");
         assert_eq!(html_unescape("bare & symbol"), "bare & symbol");
         assert_eq!(html_unescape("no entities"), "no entities");
+        // unknown entities pass through untouched — never guessed, never dropped
+        assert_eq!(html_unescape("Love &foo; life"), "Love &foo; life");
+        assert_eq!(html_unescape("&notreal"), "&notreal", "no terminator");
+        assert_eq!(html_unescape("&amp; &unknown; &lt;"), "& &unknown; <");
+    }
+
+    // ---- Transport edge cases (review 5.1) — wiremock, runs offline ----
+
+    use wiremock::matchers::{method, path as url_path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn ok_json() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true}))
+    }
+
+    /// 429 with a short `Retry-After` is honoured: one calm retry succeeds.
+    #[tokio::test]
+    async fn mirror_honours_short_retry_after_on_429() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(url_path("/api/test"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "0"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(url_path("/api/test"))
+            .respond_with(ok_json())
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let json = get_json_from(&api_client(), &[base.as_str()], "/api/test")
+            .await
+            .expect("429 then 200 succeeds");
+        assert_eq!(json["ok"], true);
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            2,
+            "exactly one retry"
+        );
+    }
+
+    /// A long `Retry-After` is not waited out — the next mirror (its own
+    /// budget) answers instead, and the rate-limited host is hit once.
+    #[tokio::test]
+    async fn long_retry_after_falls_through_to_next_mirror() {
+        let slow = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(429).insert_header("Retry-After", "3600"))
+            .mount(&slow)
+            .await;
+        let fast = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ok_json())
+            .mount(&fast)
+            .await;
+
+        let slow_uri = slow.uri();
+        let fast_uri = fast.uri();
+        let json = get_json_from(
+            &api_client(),
+            &[slow_uri.as_str(), fast_uri.as_str()],
+            "/api/test",
+        )
+        .await
+        .expect("second mirror answers");
+        assert_eq!(json["ok"], true);
+        assert_eq!(
+            slow.received_requests().await.unwrap().len(),
+            1,
+            "no blind retry against a host that asked us to back off"
+        );
+    }
+
+    /// 429 without `Retry-After` costs one request against that host —
+    /// retrying the same mirror only extends the penalty.
+    #[tokio::test]
+    async fn bare_429_costs_exactly_one_request_then_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let err = get_json_from(&api_client(), &[base.as_str()], "/api/test")
+            .await
+            .expect_err("rate limit with no guidance fails");
+        assert!(err.contains("429"), "{err}");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    /// 503 is retried with the jittered backoff and can succeed.
+    #[tokio::test]
+    async fn server_error_retries_with_backoff_then_succeeds() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(503))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .respond_with(ok_json())
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let json = get_json_from(&api_client(), &[base.as_str()], "/api/test")
+            .await
+            .expect("503 then 200 succeeds");
+        assert_eq!(json["ok"], true);
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    /// Bodies over 10 MB are refused before serde ever sees them (5.5).
+    #[tokio::test]
+    async fn oversized_mirror_body_is_refused_before_parse() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![b'x'; MAX_JSON_BYTES + 1]))
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let err = get_json_from(&api_client(), &[base.as_str()], "/api/test")
+            .await
+            .expect_err("oversized body refused");
+        assert!(err.contains("oversized"), "{err}");
+    }
+
+    /// A 200 carrying HTML (captive portal / intercepting proxy) fails as a
+    /// decode error — never a panic, never cached.
+    #[tokio::test]
+    async fn html_body_from_interceptor_fails_cleanly() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw("<html><body>Sign in to continue</body></html>", "text/html"),
+            )
+            .mount(&server)
+            .await;
+
+        let base = server.uri();
+        let err = get_json_from(&api_client(), &[base.as_str()], "/api/test")
+            .await
+            .expect_err("html is not json");
+        assert!(err.contains("decode"), "{err}");
+    }
+
+    /// A circular redirect aborts after the configured handful of hops
+    /// (Policy::limited(5)), not reqwest's default ten.
+    #[tokio::test]
+    async fn redirect_loop_aborts_after_five_hops() {
+        let server = MockServer::start().await;
+        let uri = server.uri();
+        Mock::given(method("GET"))
+            .and(url_path("/loop"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("location", format!("{uri}/loop").as_str()),
+            )
+            .mount(&server)
+            .await;
+
+        let resp = api_client().get(format!("{uri}/loop")).send().await;
+        assert!(resp.is_err(), "redirect loop must abort, not spin");
+        let hops = server.received_requests().await.unwrap().len();
+        assert!(hops <= 7, "bounded hops (got {hops}, default policy is 10)");
     }
 
     // ---- Live contract tests (require network) ----

@@ -4,6 +4,7 @@
 //! port binding). Nothing here talks HTTP directly — that is `jiosaavn.rs`
 //! (catalog) and `proxy.rs` (media relay) territory.
 
+mod db;
 mod jiosaavn;
 mod lyrics;
 mod official;
@@ -18,7 +19,8 @@ use tauri::State;
 use jiosaavn::{best_quality, check_id, PlayableAudio, RangeStatus, SearchPage, Track};
 use proxy::{proxy_url_for, AppState, DownloadEntry, Vault};
 
-/// Payload of the `download-progress` event, emitted while a song is saved.
+/// Payload of each `download_song` progress message, streamed over the
+/// caller's scoped channel while a song is saved.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct DownloadProgress {
@@ -31,6 +33,16 @@ pub struct DownloadProgress {
     pub received: u64,
     pub total: Option<u64>,
     pub done: bool,
+}
+
+/// Free-text queries end up as cache keys and upstream params — cap them so a
+/// pathological paste can't bloat the caches (review S4). Clamped on a char
+/// boundary; short queries pass through untouched.
+fn clamp_query(query: String) -> String {
+    if query.chars().count() <= 200 {
+        return query;
+    }
+    query.chars().take(200).collect()
 }
 
 /// Search the catalog. `limit` is clamped to 1..=40 (default 20) upstream,
@@ -46,7 +58,7 @@ async fn search_songs(
     state: State<'_, Arc<AppState>>,
 ) -> Result<SearchPage, String> {
     state
-        .cached_search(&query, limit.unwrap_or(20), page.unwrap_or(1))
+        .cached_search(&clamp_query(query), limit.unwrap_or(20), page.unwrap_or(1))
         .await
 }
 
@@ -64,7 +76,7 @@ async fn search_entities(
     official::search_entities(
         &state.client,
         &kind,
-        &query,
+        &clamp_query(query),
         limit.unwrap_or(20),
         page.unwrap_or(1),
     )
@@ -78,7 +90,7 @@ async fn search_suggestions(
     query: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<official::Suggestions, String> {
-    official::suggestions(&state.client, &query).await
+    official::suggestions(&state.client, &clamp_query(query)).await
 }
 
 /// Endless playback's feed: continue a JioSaavn radio station, or seed a new
@@ -229,6 +241,14 @@ async fn get_lyrics(
         .await
 }
 
+/// Windows device names that are invalid as a file stem even with an
+/// extension (`CON.mp3` cannot be created); each component we build is
+/// checked so the guarantee is compositional.
+const WINDOWS_RESERVED: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
 /// Strip characters that are illegal in file names on any desktop OS.
 fn safe_file_name(s: &str) -> String {
     let cleaned: String = s
@@ -247,7 +267,18 @@ fn safe_file_name(s: &str) -> String {
         .trim()
         .to_string();
     if trimmed.is_empty() {
-        "track".to_string()
+        return "track".to_string();
+    }
+    // `CON`, `CON.mp3`, `con` … all resolve to the reserved device; anything
+    // else keeps its name.
+    let stem = trimmed
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
+    if WINDOWS_RESERVED.contains(&stem.as_str()) {
+        format!("_{trimmed}")
     } else {
         trimmed
     }
@@ -255,18 +286,17 @@ fn safe_file_name(s: &str) -> String {
 
 /// Save a complete song to the user's offline vault.
 ///
-/// Emits `download-progress` while the body streams and records the file in
-/// `<vault>/index.json` when the byte count matches what the CDN declared.
-/// Returns the path of the finished file.
+/// Progress streams over the caller's scoped `on_progress` channel while the
+/// body downloads (review 4.4: Channel instead of broadcast events), and the
+/// file is recorded in the vault when the byte count matches what the CDN
+/// declared. Returns the path of the finished file.
 #[tauri::command]
 async fn download_song(
-    app: tauri::AppHandle,
     id: String,
     quality: Option<String>,
+    on_progress: tauri::ipc::Channel<DownloadProgress>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    use tauri::Emitter;
-
     check_id(&id)?;
     let prefer = quality.unwrap_or_else(|| "320kbps".to_string());
     let song = state.cached_song(&id).await?;
@@ -296,13 +326,12 @@ async fn download_song(
         total: None,
         done: false,
     };
-    let emitter = app.clone();
     let (path, written) = state
         .download_to(&chosen.url, &dest, |received, total| {
-            let mut event = progress.clone();
-            event.received = received;
-            event.total = total;
-            let _ = emitter.emit("download-progress", &event);
+            let mut msg = progress.clone();
+            msg.received = received;
+            msg.total = total;
+            let _ = on_progress.send(msg);
         })
         .await?;
 
@@ -322,10 +351,10 @@ async fn download_song(
             .unwrap_or(0),
     })?;
 
-    let mut event = progress;
-    event.received = written;
-    event.done = true;
-    let _ = emitter.emit("download-progress", &event);
+    let mut msg = progress;
+    msg.received = written;
+    msg.done = true;
+    let _ = on_progress.send(msg);
 
     eprintln!("[TRANCE MUSIC] saved {written} bytes to {}", path.display());
     Ok(path.display().to_string())
@@ -542,6 +571,9 @@ fn content_prefs_set(lang: String, country: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Process entry: the only place a startup failure may be fatal (review 5.6
+/// — everything inside `run` returns `Result` instead of panicking).
+#[allow(clippy::expect_used)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
@@ -605,4 +637,54 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{clamp_query, safe_file_name};
+
+    #[test]
+    fn queries_over_200_chars_are_clamped_on_a_char_boundary() {
+        assert_eq!(clamp_query("a".repeat(500)).len(), 200);
+        assert_eq!(clamp_query("short".into()), "short");
+        assert_eq!(clamp_query("Ac".repeat(300)).chars().count(), 200);
+    }
+
+    /// Vault filenames must be creatable on every desktop OS (review 5.2):
+    /// separators and shell metacharacters are replaced, Windows device
+    /// names are prefixed, unicode survives, and nothing runs away with the
+    /// 120-char budget.
+    #[test]
+    fn file_names_are_portable_across_desktop_oses() {
+        assert_eq!(safe_file_name("a/b\\c"), "a-b-c");
+        assert_eq!(safe_file_name("CON"), "_CON");
+        assert_eq!(safe_file_name("con.mp3"), "_con.mp3");
+        assert_eq!(safe_file_name("aux"), "_aux");
+        assert_eq!(
+            safe_file_name("console"),
+            "console",
+            "lookalikes are not reserved"
+        );
+        assert_eq!(
+            safe_file_name("日本語 🎵"),
+            "日本語 🎵",
+            "unicode preserved"
+        );
+        assert_eq!(safe_file_name("   "), "track", "empty falls back");
+        assert_eq!(safe_file_name(".hidden"), "hidden", "leading dots stripped");
+        assert_eq!(safe_file_name(&"x".repeat(500)).len(), 120, "length capped");
+
+        let traversal = safe_file_name("../../etc/passwd");
+        assert!(!traversal.contains('/'));
+        assert!(
+            !traversal.starts_with('.'),
+            "no leading parent hops: {traversal}"
+        );
+
+        let nasty = safe_file_name(r#"a<b>c:d"e|f?g*h"#);
+        assert!(
+            !nasty.contains(['<', '>', ':', '"', '|', '?', '*']),
+            "{nasty}"
+        );
+    }
 }

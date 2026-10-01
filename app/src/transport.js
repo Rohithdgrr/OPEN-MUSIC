@@ -4,13 +4,19 @@ import { emitState } from "./bridge.js";
 import { diag, openCredits, showError, showView, toast } from "./core.js";
 import { $, audio, bar, np } from "./dom.js";
 import { loadPlays } from "./home.js";
+import { createLocalPl } from "./library.js";
 import { playQueueItem } from "./playback.js";
 import { current, pickNextIndex, queue, queueIndex, renderQueue, repeatMode, setQueueIndex, setQueueTab, setRepeatMode, setShuffleMode, shuffleMode } from "./queue.js";
 
 // --------------------------------------------------------------- transport -
 export async function togglePlay() {
   if (!audio.src) {
-    // Fresh open: the bar shows the last played track but nothing is loaded.
+    // Fresh open: either a restored queue (no autoplay) or the last played
+    // track as a one-track seed.
+    if (queue.length) {
+      playQueueItem(queueIndex >= 0 && queueIndex < queue.length ? queueIndex : 0);
+      return;
+    }
     const last = loadPlays()[0];
     if (last) {
       queue.length = 0;
@@ -111,15 +117,46 @@ bar.queue.addEventListener("click", () => {
 });
 
 // ------------------------------------------------------------ queue extras -
-$("#btn-shuffle-queue")?.addEventListener("click", () => {
-  for (let i = queue.length - 1; i > 0; i--) {
+/// Recency-weighted, artist-aware shuffle: never the same artist within 3
+/// slots when the queue allows it, and tracks played recently sink toward
+/// the back. Replaces the plain Fisher-Yates in the shuffle-queue button.
+export function smartShuffleQueue() {
+  if (queue.length < 2) return;
+  const recent = new Set(loadPlays().slice(0, 15).map((t) => t.id));
+  const pool = queue.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [queue[i], queue[j]] = [queue[j], queue[i]];
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
+  const placed = [];
+  while (pool.length) {
+    let best = 0;
+    let bestScore = Infinity;
+    for (let p = 0; p < pool.length; p++) {
+      const it = pool[p];
+      const artist = String(it.track.artist || "").toLowerCase();
+      let score = Math.random() * 0.9;
+      if (recent.has(it.track.id)) score += 100;
+      for (let w = 1; w <= 3 && w <= placed.length; w++) {
+        if (String(placed[placed.length - w].track.artist || "").toLowerCase() === artist) {
+          score += 50;
+          break;
+        }
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    placed.push(...pool.splice(best, 1));
+  }
+  queue.length = 0;
+  queue.push(...placed);
   setQueueIndex(-1);
   renderQueue();
-  diag("queue", null, "shuffled");
-});
+  diag("queue", null, "shuffled (artist-aware)");
+}
+$("#btn-shuffle-queue")?.addEventListener("click", smartShuffleQueue);
 $("#btn-clear-queue")?.addEventListener("click", () => {
   audio.pause();
   queue.length = 0;
@@ -136,7 +173,17 @@ $("#queue-tab-history")?.addEventListener("click", () => {
   renderQueue();
 });
 $("#btn-save-as-playlist")?.addEventListener("click", () => {
-  diag("playlist", null, `${queue.length} tracks â€” saved to session only`);
+  if (!queue.length) {
+    toast("The queue is empty.", "info");
+    return;
+  }
+  const suggestion = `Queue ${new Date().toLocaleDateString()}`;
+  const answer = window.prompt("Save queue as playlist", suggestion);
+  if (answer === null) return;
+  const pl = createLocalPl(answer.trim() || suggestion, queue.map((q) => q.track));
+  if (!pl) return;
+  toast(`Saved ${queue.length} tracks to "${pl.title}".`);
+  diag("playlist", true, `${queue.length} tracks -> ${pl.title}`);
 });
 $("#dac-menu-toggle")?.addEventListener("click", () => {
   $("#dac-dropdown")?.classList.toggle("hidden");
@@ -168,7 +215,7 @@ creditsBtn?.addEventListener("click", () => {
     return;
   }
   const quality = current?.chosen_quality || "unknown";
-  diag("credits", true, `${t.title} Â· ${quality}`);
+  diag("credits", true, `${t.title} · ${quality}`);
   openCredits(t, quality);
 });
 

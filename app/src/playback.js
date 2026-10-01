@@ -59,23 +59,23 @@ export async function playQueueItem(index) {
   setQueueIndex(index);
   renderQueue();
   // Keep the endless radio one step ahead once the queue runs low.
-  // Repeat all/one never needs it â€” those modes never run out.
+  // Repeat all/one never needs it — those modes never run out.
   if (repeatMode === "off" && queue.length - index <= 3) ensureReco();
   const track = item.track;
   clearError();
   setCurrent(null);
   bar.title.textContent = track.title;
-  bar.artist.textContent = [track.artist, track.album].filter(Boolean).join(" Â· ");
+  bar.artist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
   stampEntity(bar.artist, "artist", track.artist);
   if (np.title) np.title.textContent = track.title;
-  if (np.artist) np.artist.textContent = [track.artist, track.album].filter(Boolean).join(" Â· ");
+  if (np.artist) np.artist.textContent = [track.artist, track.album].filter(Boolean).join(" · ");
   stampEntity(np.artist, "artist", track.artist);
-  npText("np-album", track.album || "â€”");
+  npText("np-album", track.album || "—");
   stampEntity(document.getElementById("np-album"), "album", track.album);
-  npText("np-artist-tile", track.artist || "â€”");
+  npText("np-artist-tile", track.artist || "—");
   stampEntity(document.getElementById("np-artist-tile"), "artist", track.artist);
-  npText("np-length", track.duration || "â€”");
-  npText("np-trackline", `TRACK ${String(index + 1).padStart(2, "0")} â€¢ STEREO DIRECT`);
+  npText("np-length", track.duration || "—");
+  npText("np-trackline", `TRACK ${String(index + 1).padStart(2, "0")} • STEREO DIRECT`);
   if (np.favIcon) np.favIcon.dataset.favIcon = track.id;
   paintFavHearts();
   emitState(true);
@@ -104,7 +104,7 @@ export async function playQueueItem(index) {
   setCover(bar.cover, bar.coverFallback);
   setCover(np.cover, null);
   bar.badge.textContent = "RESOLVING";
-  if (np.badge) np.badge.textContent = "RESOLVINGâ€¦";
+  if (np.badge) np.badge.textContent = "RESOLVING…";
 
   let info;
   try {
@@ -113,7 +113,7 @@ export async function playQueueItem(index) {
     diag(
       `resolve ${track.id}`,
       info.range_status === "unrestricted",
-      `${info.chosen_quality} Â· ${info.host} Â· ${info.range_status}`,
+      `${info.chosen_quality} · ${info.host} · ${info.range_status}`,
     );
   } catch (err) {
     diag(`resolve ${track.id}`, false, String(err));

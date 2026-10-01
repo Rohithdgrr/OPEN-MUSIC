@@ -1,11 +1,12 @@
 // core.js — invoke, $ helpers, views, diagnostics, errors, toasts, esc
 // Split from main.js (Phase 4 M1).
 import { $, errorEl, navLinks, views } from "./dom.js";
+import { esc } from "./html.js";
 import { openPlaylist, pdCurrentId, plFeatured, renderFavs, renderLibrary, renderPlaylists } from "./library.js";
 import { fmtTime } from "./util.js";
 import { refreshVault } from "./vault.js";
 
-/* TRANCE MUSIC â€” frontend controller (vanilla ES module, no build step).
+/* TRANCE MUSIC — frontend controller (vanilla ES module, no build step).
  *
  * Wires the three Stitch views (home / search / now-playing) to the Rust
  * backend: search_songs -> results, resolve_song -> badge -> <audio>,
@@ -39,6 +40,57 @@ if (!invoke) {
     banner.textContent =
       "Tauri IPC unavailable (window.__TAURI_INTERNALS__ missing). Backend commands will not work.";
     banner.classList.remove("hidden");
+  }
+}
+
+// Scoped streaming IPC (review 4.4). Vendored from @tauri-apps/api@2.12.0
+// core.js (MIT OR Apache-2.0) — this app runs unbundled ES modules with no
+// npm api package. Wire format: toJSON() -> "__CHANNEL__:<id>"; Rust pushes
+// {message, index} envelopes ({end, index} on close), and out-of-order
+// indexes buffer here until the gap fills, so handlers see send() order.
+export class Channel {
+  #onmessage = () => {};
+  #nextIndex = 0;
+  #pending = [];
+  #endIndex = undefined;
+  constructor(onmessage) {
+    if (onmessage) this.#onmessage = onmessage;
+    this.__TAURI_CHANNEL_MARKER__ = true;
+    this.id = window.__TAURI_INTERNALS__.transformCallback((raw) => {
+      const index = raw.index;
+      if ("end" in raw) {
+        if (index == this.#nextIndex) this.cleanup();
+        else this.#endIndex = index;
+        return;
+      }
+      if (index == this.#nextIndex) {
+        this.#onmessage(raw.message);
+        this.#nextIndex = index + 1;
+        while (this.#nextIndex in this.#pending) {
+          this.#onmessage(this.#pending[this.#nextIndex]);
+          delete this.#pending[this.#nextIndex];
+          this.#nextIndex += 1;
+        }
+        if (this.#nextIndex === this.#endIndex) this.cleanup();
+      } else {
+        this.#pending[index] = raw.message;
+      }
+    });
+  }
+  cleanup() {
+    window.__TAURI_INTERNALS__.unregisterCallback?.(this.id);
+  }
+  set onmessage(handler) {
+    this.#onmessage = handler;
+  }
+  get onmessage() {
+    return this.#onmessage;
+  }
+  ["__TAURI_TO_IPC_KEY__"]() {
+    return `__CHANNEL__:${this.id}`;
+  }
+  toJSON() {
+    return this["__TAURI_TO_IPC_KEY__"]();
   }
 }
 
@@ -98,7 +150,7 @@ export function diag(step, ok, detail) {
     "font-mono text-[11px] " +
     (ok === true ? "text-emerald-600" : ok === false ? "text-red-600" : "text-on-surface-variant");
   const t = new Date().toLocaleTimeString();
-  li.textContent = detail ? `${t} ${step} â€” ${detail}` : `${t} ${step}`;
+  li.textContent = detail ? `${t} ${step} — ${detail}` : `${t} ${step}`;
   diagEl.prepend(li);
   while (diagEl.children.length > 40) diagEl.lastChild.remove();
 }
@@ -191,12 +243,8 @@ export function openCredits(t, quality) {
   dlg.showModal();
 }
 
-// Every value that ever came from the API must pass through esc() — in text
-// position AND inside attributes/URLs. It escapes quotes too, so
-// `attr="${esc(x)}"` is injection-safe. Never interpolate raw data.
-export function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
-}
+// Escaping lives in html.js (DOM-free, unit-tested by `npm test`) and is
+// re-exported here so the existing `import { esc } from "./core.js"` call
+// sites keep working.
+export { esc };
 

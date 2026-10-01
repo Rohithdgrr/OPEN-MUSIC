@@ -76,8 +76,8 @@ export function renderHomePlaylists() {
         <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
           <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(p.image)} />
           <div class="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/30 flex flex-col justify-end p-3">
-            <span class="font-label-mono text-[9px] uppercase tracking-wider text-on-primary/80">${p.count || "â€”"} tracks</span>
-            <span class="font-headline-md text-on-primary font-semibold text-[16px] leading-tight">${esc(p.title)}</span>
+            <span class="font-label-mono text-[9px] uppercase tracking-wider text-on-primary/80">${p.count || "—"} tracks</span>
+            <span class="font-headline-md text-on-primary font-semibold text-[16px] leading-tight" dir="auto">${esc(p.title)}</span>
           </div>
           <button type="button" data-playlist-id="${esc(p.id)}" title="Play this playlist" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
             <span class="material-symbols-outlined text-[18px]">play_arrow</span>
@@ -96,7 +96,7 @@ export function renderHomePlaylists() {
 export function renderHomeTop() {
   const list = $("#home-top-list");
   if (!list || !homeFeed) return;
-  // Already deduped in loadHome â€” render the same array the click handlers
+  // Already deduped in loadHome — render the same array the click handlers
   // index into, or a removed dupe would shift every row's data-top-* id.
   const tracks = homeFeed.top_tracks;
   if (!tracks.length) {
@@ -114,13 +114,13 @@ export function renderHomeTop() {
           <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(t.image)} />
         </div>
         <div class="truncate">
-          <span class="font-body-md font-semibold text-on-surface block truncate">${esc(t.title)}</span>
+          <span class="font-body-md font-semibold text-on-surface block truncate" dir="auto">${esc(t.title)}</span>
           <span class="font-body-sm text-secondary truncate"><span class="hover:underline cursor-pointer" data-entity-kind="artist" data-entity-name="${esc(t.artist)}">${esc(t.artist)}</span></span>
         </div>
       </div>
       <div class="flex items-center gap-6 shrink-0 font-label-mono text-label-mono text-secondary">
         <span class="px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium text-[10px]">${t.hq ? "320 kbps" : "Standard"}</span>
-        <span class="hidden sm:inline">${esc(t.plays ? `${t.plays.toLocaleString()} plays` : "â€”")}</span>
+        <span class="hidden sm:inline">${esc(t.plays ? `${t.plays.toLocaleString()} plays` : "—")}</span>
         <span>${esc(t.duration)}</span>
         <button type="button" data-top-fav="${i}" title="Favorite this track" class="w-8 h-8 rounded-full bg-surface-container-high hover:bg-primary hover:text-on-primary flex items-center justify-center transition-colors">
           <span class="material-symbols-outlined text-[16px]" data-fav-icon="${esc(t.id)}"${favFill(t.id)}>favorite</span>
@@ -161,7 +161,7 @@ export async function loadHome() {
   diag(
     "home",
     true,
-    `${homeFeed.playlists.length} playlists Â· ${homeFeed.charts.length} charts Â· ${homeFeed.top_tracks.length} top tracks`,
+    `${homeFeed.playlists.length} playlists · ${homeFeed.charts.length} charts · ${homeFeed.top_tracks.length} top tracks`,
   );
   renderHero();
   renderHomePlaylists();
@@ -243,7 +243,7 @@ $("#hero-save")?.addEventListener("click", () => {
     diag("library", null, `removed ${spot.title}`);
   } else {
     lib.push({ id: spot.id, title: spot.title });
-    if (label) label.textContent = "Saved âœ“";
+    if (label) label.textContent = "Saved ✓";
     diag("library", true, spot.title);
   }
   try {
@@ -256,7 +256,7 @@ $("#home-releases-all")?.addEventListener("click", () => {
 $("#home-artists-all")?.addEventListener("click", () => {
   browseCards("artists", homeFeed && homeFeed.artists, "Artists");
 });
-// Genre pills anywhere on Home run a real track search â€” never inherit
+// Genre pills anywhere on Home run a real track search — never inherit
 // whatever entity chip was left active on the Search screen.
 $('[data-view="home"]')?.addEventListener("click", (e) => {
   const chip = e.target.closest("[data-query]");

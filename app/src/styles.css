@@ -1,4 +1,4 @@
-/* TRANCE MUSIC — custom layer on top of the Stitch/Tailwind markup.
+@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}/* TRANCE MUSIC — custom layer on top of the Stitch/Tailwind markup.
  * Vanilla CSS only. Critical utilities are re-declared here so the app
  * stays usable even if the Tailwind CDN is unreachable. */
 
