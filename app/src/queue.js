@@ -3,13 +3,14 @@
 import { art } from "./art.js";
 import { emitState } from "./bridge.js";
 import { esc, toast } from "./core.js";
-import { $ } from "./dom.js";
+import { $, audio } from "./dom.js";
 import { favFill, toggleFavTrack } from "./library.js";
 import { playQueueItem } from "./playback.js";
 import { ensureReco } from "./radio.js";
 import { addBtn, contentIndex, findDuplicate } from "./search.js";
 import { metaLinks } from "./util.js";
-import { downloadTrack } from "./vault.js";
+import { downloadTrack, isDownloaded } from "./vault.js";
+import { netMode } from "./net.js";
 
 // -------------------------------------------------------------------- queue -
 export const queue = []; // { track, state: null | "done" | "failed" }
@@ -47,13 +48,16 @@ export function renderQueueNow() {
     );
   for (const { item, i } of visible) {
     const t = item.track;
+    const saved = isDownloaded(t.id);
+    const offlineMiss = netMode() === "offline" && !saved;
     const div = document.createElement("div");
     div.dataset.qI = String(i);
     div.draggable = queueTab === "next" && i > queueIndex;
     div.className =
       "queue-item group relative flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low border border-transparent hover:border-black/[0.04] transition-all " +
       (div.draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer") +
-      (i === queueIndex ? " bg-surface-container-low" : "");
+      (i === queueIndex ? " bg-surface-container-low" : "") +
+      (offlineMiss && i !== queueIndex ? " opacity-50" : "");
     div.innerHTML = `
       <div class="flex items-center gap-3 min-w-0">
         <div class="relative w-12 h-12 rounded-lg bg-surface-container overflow-hidden flex-shrink-0 shadow-sm">
@@ -63,7 +67,9 @@ export function renderQueueNow() {
           <span class="text-[13px] text-on-surface font-semibold truncate" dir="auto">${esc(t.title)}</span>
           <span class="text-xs text-on-surface-variant truncate">${metaLinks(t)}</span>
           <div class="flex items-center gap-2 mt-0.5">
-            <span class="font-mono text-[10px] text-on-surface-variant">${i === queueIndex ? (item.state === "done" ? "played" : item.state === "failed" ? "failed" : "playing…") : item.state === "done" ? "played" : item.state === "failed" ? "failed" : item.reco ? "recommended" : ""}</span>
+            <span class="font-mono text-[10px] text-on-surface-variant">${i === queueIndex ? (item.state === "done" ? "played" : item.state === "failed" ? "failed" : audio.paused ? "paused" : "playing…") : item.state === "done" ? "played" : item.state === "failed" ? "failed" : item.reco ? "recommended" : ""}</span>
+            ${saved ? `<span class="font-mono text-[10px] text-emerald-500" title="In the offline vault — plays without a network">⬇</span>` : ""}
+            ${offlineMiss ? `<span class="font-mono text-[10px]" title="Not downloaded — unavailable while offline">⚠</span>` : ""}
           </div>
         </div>
       </div>

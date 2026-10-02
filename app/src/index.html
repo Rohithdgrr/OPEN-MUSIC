@@ -1,5 +1,5 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0" name="viewport"><meta content="web_standard" name="shell-type"><title>TRANCE MUSIC</title><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://c.saavncdn.com" rel="preconnect"><link href="https://aac.saavncdn.com" rel="dns-prefetch"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"on-secondary-fixed":"#1b1b1e","surface-bright":"#f9f9fb","outline":"#77767b","surface-container-highest":"#e2e2e4","on-tertiary-container":"#83838c","surface-container-high":"#e8e8ea","on-primary":"#ffffff","secondary":"#5f5e61","surface-container":"#eeeef0","background":"#f9f9fb","tertiary-fixed-dim":"#c6c5cf","on-secondary":"#ffffff","inverse-primary":"#c8c5ca","on-primary-container":"#858387","inverse-surface":"#2f3132","on-primary-fixed":"#1b1b1e","surface":"#f9f9fb","on-secondary-container":"#656467","tertiary-fixed":"#e3e1ec","secondary-fixed":"#e4e1e5","primary":"#000000","on-surface":"#1a1c1d","surface-container-low":"#f3f3f5","on-error-container":"#93000a","secondary-fixed-dim":"#c8c6c9","tertiary-container":"#1a1b22","on-surface-variant":"#47464b","on-error":"#ffffff","on-tertiary-fixed":"#1a1b22","inverse-on-surface":"#f0f0f2","on-secondary-fixed-variant":"#47464a","on-tertiary":"#ffffff","surface-tint":"#5f5e61","outline-variant":"#c8c5cb","on-background":"#1a1c1d","surface-variant":"#e2e2e4","error-container":"#ffdad6","error":"#ba1a1a","surface-container-lowest":"#ffffff","on-primary-fixed-variant":"#47464a","tertiary":"#000000","secondary-container":"#e4e1e5","primary-fixed":"#e4e1e6","surface-dim":"#d9dadc","primary-container":"#1b1b1e","primary-fixed-dim":"#c8c5ca","on-tertiary-fixed-variant":"#46464e"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"space-xs":"0.25rem","gutter":"1rem","space-md":"0.75rem","space-lg":"1.25rem","space-sm":"0.5rem","space-xl":"2rem","margin":"1.5rem"},"fontFamily":{"body-sm":["Geist"],"label-md":["Geist"],"headline-xl":["Geist"],"body-lg":["Geist"],"body-md":["Geist"],"label-sm":["Geist"],"headline-md":["Geist"],"headline-lg":["Geist"],"label-mono":["JetBrains Mono"]},"fontSize":{"body-sm":["12px",{"lineHeight":"16px","letterSpacing":"0em","fontWeight":"400"}],"label-md":["12px",{"lineHeight":"16px","letterSpacing":"0.01em","fontWeight":"500"}],"headline-xl":["32px",{"lineHeight":"38px","letterSpacing":"-0.03em","fontWeight":"600"}],"body-lg":["15px",{"lineHeight":"22px","letterSpacing":"-0.01em","fontWeight":"400"}],"body-md":["13px",{"lineHeight":"19px","letterSpacing":"-0.005em","fontWeight":"400"}],"label-sm":["11px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"500"}],"headline-md":["18px",{"lineHeight":"24px","letterSpacing":"-0.015em","fontWeight":"500"}],"headline-lg":["24px",{"lineHeight":"30px","letterSpacing":"-0.025em","fontWeight":"600"}],"label-mono":["11px",{"lineHeight":"14px","letterSpacing":"-0.01em","fontWeight":"400"}]}}}};</script><link rel="stylesheet" href="styles.css" /><script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="tailwind.css"><link rel="stylesheet" href="styles.css" /><script>
 /* WebView2 HTTP-caches the custom protocol across rebuilds, and the asset URLs
    never change, so a rebuilt app kept executing yesterday's bytes while the
    screen still showed yesterday's UI. Stamping the URL turns every launch into
@@ -15,6 +15,7 @@
    it before the body exists so every launch and tab lands at the top. */
 if ("scrollRestoration" in history) history.scrollRestoration = "manual";
 document.querySelector('link[href="styles.css"]').href = "styles.css?v=" + Date.now();
+document.querySelector('link[href="tailwind.css"]').href = "tailwind.css?v=" + Date.now();
 addEventListener("DOMContentLoaded", () => {
   const v = Date.now();
   const mods = ["art","bridge","core","dom","history","home","library","lyrics","playback","player","queue","radio","search","settings","transport","util","vault"];
@@ -26,38 +27,20 @@ addEventListener("DOMContentLoaded", () => {
       document.head.appendChild(s);
     });
 });
-</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 w-full px-gutter flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="w-7 h-7 rounded bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">graphic_eq</span></div><div class="flex items-center gap-space-xs"><span class="font-headline-md text-headline-md tracking-tight uppercase text-on-surface font-semibold">Trance Music</span><span class="font-label-mono text-label-mono bg-surface-container-high px-space-xs py-0.5 rounded text-on-surface-variant">CORE V2.4</span></div></div><nav class="hidden md:flex items-center gap-space-xs p-1 bg-surface-container-low rounded-lg" data-active-classes="bg-primary text-on-primary font-label-md text-label-md rounded px-space-md py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"><a aria-current="page" class="transition-all bg-primary text-on-primary font-label-md text-label-md rounded px-space-md py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]" data-path="home" href="#">Home</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="search" href="#">Search</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="downloads" href="#">Downloads</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="now-playing" href="#">Now Playing</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="library" href="#">Library</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="history" href="#">History</a></nav><form id="nav-search-form" class="hidden md:flex items-center gap-2 flex-1 max-w-md mx-4 bg-surface-container-lowest rounded-lg px-3 py-1.5 shadow-sm" role="search"><span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span><input id="nav-search-input" class="w-full bg-transparent text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant focus:outline-none" placeholder="Search songs, artists..." autocomplete="off" /></form><div class="flex items-center gap-space-md"><button type="button" id="settings-btn" title="Settings" class="w-8 h-8 rounded-full border border-black/[0.08] bg-surface-container-lowest flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:border-black/20 transition-colors shadow-sm"><span class="material-symbols-outlined text-[18px]">settings</span></button></div></div></header><main class="w-full pt-16 pb-36 min-h-screen bg-surface px-gutter"><div class="flex flex-col w-full max-w-[1440px] mx-auto pb-12 space-y-space-xl"><div data-view="home"><div class="flex flex-col w-full max-w-[1440px] mx-auto pb-12 space-y-space-xl">
+</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/90 backdrop-blur-xl shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-16 w-full px-gutter flex items-center justify-between"><div class="flex items-center gap-space-md"><div class="w-7 h-7 rounded bg-primary flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[18px]">graphic_eq</span></div><div class="flex items-center gap-space-xs"><span class="font-headline-md text-headline-md tracking-tight uppercase text-on-surface font-semibold">Trance Music</span><span class="font-label-mono text-label-mono bg-surface-container-high px-space-xs py-0.5 rounded text-on-surface-variant">CORE V2.4</span></div></div><nav class="hidden md:flex items-center gap-space-xs p-1 bg-surface-container-low rounded-lg" data-active-classes="bg-primary text-on-primary font-label-md text-label-md rounded px-space-md py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]"><a aria-current="page" class="transition-all bg-primary text-on-primary font-label-md text-label-md rounded px-space-md py-1.5 shadow-[0_1px_2px_rgba(0,0,0,0.04)]" data-path="home" href="#">Home</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="search" href="#">Search</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="downloads" href="#">Downloads</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="now-playing" href="#">Now Playing</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="library" href="#">Library</a><a class="font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container px-space-md py-1.5 rounded transition-all" data-path="history" href="#">History</a></nav><form id="nav-search-form" class="hidden md:flex items-center gap-2 flex-1 max-w-md mx-4 bg-surface-container-lowest rounded-lg px-3 py-1.5 shadow-sm" role="search"><span class="material-symbols-outlined text-on-surface-variant text-[18px]">search</span><input id="nav-search-input" class="w-full bg-transparent text-on-surface font-body-md text-body-md placeholder:text-on-surface-variant focus:outline-none" placeholder="Search songs, artists..." autocomplete="off" /></form><div class="flex items-center gap-space-md"><span id="net-badge" role="status" title="Network mode" class="flex items-center gap-1.5 font-label-mono text-[10px] select-none" style="color:#22c55e"><span data-net-dot style="width:7px;height:7px;border-radius:9999px;background:#22c55e"></span><span data-net-label>Online</span></span><button type="button" id="settings-btn" title="Settings" class="w-8 h-8 rounded-full border border-black/[0.08] bg-surface-container-lowest flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:border-black/20 transition-colors shadow-sm"><span class="material-symbols-outlined text-[18px]">settings</span></button></div></div></header><main class="w-full pt-16 pb-36 min-h-screen bg-surface px-gutter"><div class="flex flex-col w-full max-w-[1440px] mx-auto pb-12 space-y-space-xl"><div data-view="home"><div class="flex flex-col w-full max-w-[1440px] mx-auto pb-12 space-y-space-xl">
 <!-- 1. Top Welcome & Session Greeting -->
 <section class="flex flex-col md:flex-row md:items-end justify-between gap-space-md pt-2">
 <div class="flex flex-col gap-space-xs">
 <div class="flex items-center gap-space-sm text-secondary">
 <span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
-<span class="font-label-mono text-label-mono tracking-widest uppercase">VAULT AUDIOPHILE FEED â€¢ LOSSLESS BITSTREAM DISCOVERY</span>
+<span class="font-label-mono text-label-mono tracking-widest uppercase">VAULT AUDIOPHILE FEED • LOSSLESS BITSTREAM DISCOVERY</span>
 </div>
 <h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Good evening, <span id="home-name">Listener</span></h1>
 </div>
-<!-- Quick Vibe Pills -->
-<div class="flex items-center gap-space-xs overflow-x-auto pb-1">
-<button type="button" data-query="progressive trance" class="px-space-md py-1.5 rounded bg-primary text-on-primary font-label-md text-label-md shrink-0 shadow-sm transition-opacity hover:opacity-90">
-        Deep Progressive
-      </button>
-<button type="button" data-query="uplifting trance" class="px-space-md py-1.5 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shrink-0 shadow-sm hover:bg-surface-container-high transition-colors">
-        Uplifting 138 BPM
-      </button>
-<button type="button" data-query="ambient" class="px-space-md py-1.5 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shrink-0 shadow-sm hover:bg-surface-container-high transition-colors">
-        Hypnotic Ambient
-      </button>
-<button type="button" data-query="tech trance" class="px-space-md py-1.5 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shrink-0 shadow-sm hover:bg-surface-container-high transition-colors">
-        Tech Trance
-      </button>
-<button type="button" data-query="acoustic" class="px-space-md py-1.5 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shrink-0 shadow-sm hover:bg-surface-container-high transition-colors">
-        Studio Direct Cuts
-      </button>
-</div>
+<!-- Recent Searches: the last five queries, filled from search history -->
+<div id="home-recent" class="hidden items-center gap-space-xs overflow-x-auto pb-1"></div>
 </section><!-- Audiophile Telemetry KPI Cards -->
 
-
-<!-- Sonic Spectrum & Daily Listening Velocity -->
 
 <!-- 2. Hero Featured Master Stream Banner -->
 <section class="relative w-full rounded-xl bg-surface-container-lowest shadow-md overflow-hidden cursor-pointer" id="hero">
@@ -79,9 +62,9 @@ addEventListener("DOMContentLoaded", () => {
 </div>
 <div class="mt-2">
 <h2 class="font-headline-xl text-headline-xl text-on-surface tracking-tight leading-tight" id="hero-title">
-              Loading the chartâ€¦
+              Loading the chart…
             </h2>
-<p class="font-body-lg text-body-lg text-secondary mt-1" id="hero-artist">â€”</p>
+<p class="font-body-lg text-body-lg text-secondary mt-1" id="hero-artist">—</p>
 </div>
 <p class="font-body-md text-body-md text-on-surface-variant max-w-xl mt-2 line-clamp-2">
             A surgical, precision-cut progressive journey engineered specifically for high-impedance headphones and dedicated reference DAC rigs. Zero gain compensation, full acoustic dynamic range.
@@ -89,7 +72,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="flex items-center gap-space-lg text-secondary font-label-mono text-label-mono mt-2">
 <div class="flex items-center gap-1.5">
 <span class="material-symbols-outlined text-[16px]">schedule</span>
-<span class="" id="hero-meta">â€”</span>
+<span class="" id="hero-meta">—</span>
 </div>
 <div class="flex items-center gap-1.5">
 <span class="material-symbols-outlined text-[16px]">equalizer</span>
@@ -126,7 +109,7 @@ addEventListener("DOMContentLoaded", () => {
 <section class="flex flex-col gap-space-md">
   <div class="flex items-center justify-between">
     <div>
-      <h3 class="font-headline-md text-headline-md text-on-surface">Featured Curated Playlists</h3>
+      <h3 id="home-playlists-title" class="font-headline-md text-headline-md text-on-surface">Featured Curated Playlists</h3>
       <p class="font-body-sm text-body-sm text-secondary mt-0.5">Hand-sequenced continuous bitstreams matched for harmonic keys and dynamic pacing</p>
     </div>
     <div class="flex items-center gap-2">
@@ -240,8 +223,18 @@ addEventListener("DOMContentLoaded", () => {
     </div>
   </div>
 </section>
+<!-- Daily Updates: fresh playlists rotated by the catalog -->
+<section class="flex flex-col gap-space-md">
+  <div class="flex items-center justify-between">
+    <div>
+      <h3 id="home-daily-title" class="font-headline-md text-headline-md text-on-surface">Daily Updates</h3>
+      <p class="font-body-sm text-body-sm text-secondary mt-0.5">Fresh playlists the catalog rotates every day</p>
+    </div>
+  </div>
+  <div id="home-daily" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md"></div>
+</section>
 
-<!-- Heavy Rotation â€¢ Top 5 Masters Countdown -->
+<!-- Heavy Rotation • Top 5 Masters Countdown -->
 <section class="rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm p-6">
   <div class="flex items-center justify-between pb-4 border-b border-surface-container-high">
     <div>
@@ -249,7 +242,7 @@ addEventListener("DOMContentLoaded", () => {
         <span class="font-label-mono text-[10px] uppercase px-2 py-0.5 rounded bg-primary text-on-primary font-medium">Global Vault Telemetry</span>
         <span class="font-label-mono text-[11px] text-secondary">Live Stream Rankings</span>
       </div>
-      <h3 class="font-headline-md text-headline-md text-on-surface mt-1">Heavy Rotation â€¢ Top 5 Masters Countdown</h3>
+      <h3 id="home-top-title" class="font-headline-md text-headline-md text-on-surface mt-1">Heavy Rotation • Top 5 Masters Countdown</h3>
     </div>
     <button type="button" id="home-charts-link" class="font-label-mono text-label-mono text-secondary hover:text-on-surface flex items-center gap-1 transition-colors">
       <span class="">Full 100 Charts</span>
@@ -262,7 +255,7 @@ addEventListener("DOMContentLoaded", () => {
     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
       <div class="flex items-center gap-4 min-w-0">
         <span class="font-headline-md font-semibold text-primary w-6 text-center">01</span>
-        <span class="text-[10px] font-label-mono text-emerald-500 font-semibold flex items-center">â–² +2</span>
+        <span class="text-[10px] font-label-mono text-emerald-500 font-semibold flex items-center">▲ +2</span>
         <div class="w-10 h-10 rounded bg-primary-container flex items-center justify-center text-on-primary shrink-0">
           <span class="material-symbols-outlined text-[20px]">graphic_eq</span>
         </div>
@@ -285,7 +278,7 @@ addEventListener("DOMContentLoaded", () => {
     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
       <div class="flex items-center gap-4 min-w-0">
         <span class="font-headline-md font-semibold text-on-surface-variant w-6 text-center">02</span>
-        <span class="text-[10px] font-label-mono text-secondary font-semibold flex items-center">â€” 0</span>
+        <span class="text-[10px] font-label-mono text-secondary font-semibold flex items-center">— 0</span>
         <div class="w-10 h-10 rounded bg-surface-container-high flex items-center justify-center text-on-surface-variant shrink-0">
           <span class="material-symbols-outlined text-[20px]">album</span>
         </div>
@@ -308,7 +301,7 @@ addEventListener("DOMContentLoaded", () => {
     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
       <div class="flex items-center gap-4 min-w-0">
         <span class="font-headline-md font-semibold text-on-surface-variant w-6 text-center">03</span>
-        <span class="text-[10px] font-label-mono text-error font-semibold flex items-center">â–¼ -1</span>
+        <span class="text-[10px] font-label-mono text-error font-semibold flex items-center">▼ -1</span>
         <div class="w-10 h-10 rounded bg-surface-container-high flex items-center justify-center text-on-surface-variant shrink-0">
           <span class="material-symbols-outlined text-[20px]">album</span>
         </div>
@@ -331,7 +324,7 @@ addEventListener("DOMContentLoaded", () => {
     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
       <div class="flex items-center gap-4 min-w-0">
         <span class="font-headline-md font-semibold text-on-surface-variant w-6 text-center">04</span>
-        <span class="text-[10px] font-label-mono text-emerald-500 font-semibold flex items-center">â–² +3</span>
+        <span class="text-[10px] font-label-mono text-emerald-500 font-semibold flex items-center">▲ +3</span>
         <div class="w-10 h-10 rounded bg-surface-container-high flex items-center justify-center text-on-surface-variant shrink-0">
           <span class="material-symbols-outlined text-[20px]">album</span>
         </div>
@@ -354,7 +347,7 @@ addEventListener("DOMContentLoaded", () => {
     <div class="flex items-center justify-between p-3 rounded-lg hover:bg-surface-container-low transition-colors group cursor-pointer">
       <div class="flex items-center gap-4 min-w-0">
         <span class="font-headline-md font-semibold text-on-surface-variant w-6 text-center">05</span>
-        <span class="text-[10px] font-label-mono text-secondary font-semibold flex items-center">â€” 0</span>
+        <span class="text-[10px] font-label-mono text-secondary font-semibold flex items-center">— 0</span>
         <div class="w-10 h-10 rounded bg-surface-container-high flex items-center justify-center text-on-surface-variant shrink-0">
           <span class="material-symbols-outlined text-[20px]">album</span>
         </div>
@@ -373,243 +366,33 @@ addEventListener("DOMContentLoaded", () => {
       </div>
     </div>
   </div>
-</section><!-- Sonic Domains & Sub-Genres -->
-<section class="flex flex-col gap-space-md">
-  <div class="flex items-center justify-between">
-    <div>
-      <h3 class="font-headline-md text-headline-md text-on-surface">Sonic Domains &amp; Sub-Genres</h3>
-      <p class="font-body-sm text-body-sm text-secondary mt-0.5">High-resolution algorithmic vaults sorted by dynamic frequency and tempo signature</p>
-    </div>
-    <div class="flex items-center gap-2">
-      <span class="font-label-mono text-label-mono text-secondary">8 Domains Filtered</span>
-    </div>
-  </div>
-  <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">bolt</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Uplifting 138</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">412 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">138-142 BPM</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">waves</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Deep Prog</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">284 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">122-126 BPM</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">record_voice_over</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Hypnotic Vocal</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">195 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">132-136 BPM</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">all_inclusive</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Neo-Goa Psy</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">160 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">142-148 BPM</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">precision_manufacturing</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Tech Trance</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">230 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">136-140 BPM</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">air</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Ambient Drone</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">98 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">Beatless</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">history_edu</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Classic 1999</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">310 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">Vinyl Rips</span>
-    </div>
-
-    <div class="p-3 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 hover:border-primary cursor-pointer hover:shadow-sm transition-all group flex flex-col justify-between">
-      <div class="w-8 h-8 rounded bg-surface-container-high flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-on-primary transition-colors">
-        <span class="material-symbols-outlined text-[18px]">theater_comedy</span>
-      </div>
-      <div class="mt-3">
-        <span class="font-body-md text-body-md font-semibold text-on-surface block truncate">Orchestral Hall</span>
-        <span class="font-label-mono text-[10px] text-secondary block mt-0.5">114 Masters</span>
-      </div>
-      <span class="font-label-mono text-[9px] px-1 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium mt-2 text-center">Acoustic Live</span>
-    </div>
-  </div>
 </section>
-<!-- 3. Jump Back In / Continue Listening -->
+<!-- 3. Most Listened -->
 <section class="flex flex-col gap-space-md">
 <div class="flex items-center justify-between">
 <div class="flex items-center gap-space-sm">
-<h3 class="font-headline-md text-headline-md text-on-surface">Jump Back In</h3>
-<span class="font-label-mono text-label-mono text-on-surface-variant">4 IN PROGRESS</span>
+<h3 class="font-headline-md text-headline-md text-on-surface">Most Listened</h3>
+<span id="home-jump-count" class="font-label-mono text-label-mono text-on-surface-variant">&#8212;</span>
 </div>
 <button type="button" data-path-jump="history" class="font-label-mono text-label-mono text-secondary hover:text-on-surface flex items-center gap-1 transition-colors">
 <span class="">Full Playback History</span>
 <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
 </button>
 </div>
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
-<!-- Resume Card 1 -->
-<div class="p-space-md rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow group flex flex-col justify-between">
-<div class="flex items-start gap-space-md">
-<div class="relative w-16 h-16 rounded overflow-hidden shrink-0 bg-surface-container-high">
-<img class="w-full h-full object-cover grayscale" data-alt="Minimal black and white high contrast architecture photography of sleek glass high-rises in night fog, abstract geometric lines, monochromatic luxury album cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB0VaprDlTpFD-cUg7ehSd1VktZhj6pA-j0WZ8KJQrUHaXBCVx1H2GWGP9P3oYDjP3zT_5T6KQozph_-NN2I-SghYdM99TwXYGs5ajfWZTn8_j7sYEvH-iWmaFT91HjqntFlmQBXiFviSUZZY2sWdr3ZsWycPBMXU-wHnVLajZ1kUHOO6yx0WRnaBIJdBca8psLdCc3ZwGpq8CiNJvUQfOSF-SHHpjuC7yKIReJWw7O9uiyiAzJ-NK48g">
-<div class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-<span class="material-symbols-outlined text-on-primary text-[24px]">play_arrow</span>
+<div id="home-jump" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md"></div>
+<div id="home-jump-pref" class="hidden flex flex-col gap-space-md">
+<div class="flex items-center gap-space-sm">
+<span class="font-label-mono text-[10px] uppercase tracking-widest text-secondary">From your taste</span>
+<span class="font-label-mono text-label-mono text-on-surface-variant">ALBUMS YOU KEEP COMING BACK TO</span>
 </div>
-</div>
-<div class="min-w-0 flex-1">
-<div class="flex items-center justify-between">
-<span class="font-label-mono text-[10px] uppercase text-on-surface-variant">Track 04</span>
-<span class="font-label-mono text-[10px] px-1 rounded bg-surface-container-high text-on-surface-variant">FLAC 24/96</span>
-</div>
-<h4 class="font-body-md text-body-md font-medium text-on-surface truncate mt-1">Midnight City Lights</h4>
-<p class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen</p>
-</div>
-</div>
-<div class="mt-4">
-<div class="flex justify-between items-center text-on-surface-variant font-label-mono text-[10px] mb-1">
-<span class="">03:42</span>
-<span class="">62%</span>
-</div>
-<div class="w-full h-1 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full" style="width: 62%;"></div>
-</div>
-</div>
-</div>
-<!-- Resume Card 2 -->
-<div class="p-space-md rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow group flex flex-col justify-between">
-<div class="flex items-start gap-space-md">
-<div class="relative w-16 h-16 rounded overflow-hidden shrink-0 bg-surface-container-high">
-<img class="w-full h-full object-cover grayscale" data-alt="Brutalist concrete monolith tower cloaked in thick mist and horizontal light beams, stark monochrome album art cover minimalist architecture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAfTpVmMKI-zhJBa2qbH6V4RHT_P8O7JHb8G0iAbnMBSPLsdyTMpYFnoStZwUkbaTMT8eoGlyuePilBuGCXpbcTtrzPnUWghQZAwCSSOuylp9qeK4-OhS2lqpLwM9cVgKDdk35zkhr0HNp52Pt-CD99IHIERNOc8JzVsPQ4uBPhcjllx4bZIBdGrebAGfMwcP-_yB7JphQQaRLV1k0-6s_8Tsw5c_rYXFJnK26B2Hz3LhVA-VhEdRXryQ">
-<div class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-<span class="material-symbols-outlined text-on-primary text-[24px]">play_arrow</span>
-</div>
-</div>
-<div class="min-w-0 flex-1">
-<div class="flex items-center justify-between">
-<span class="font-label-mono text-[10px] uppercase text-on-surface-variant">Track 02</span>
-<span class="font-label-mono text-[10px] px-1 rounded bg-surface-container-high text-on-surface-variant">192kHz Direct</span>
-</div>
-<h4 class="font-body-md text-body-md font-medium text-on-surface truncate mt-1">Neon Horizons</h4>
-<p class="font-body-sm text-body-sm text-secondary truncate">Aura Sound</p>
-</div>
-</div>
-<div class="mt-4">
-<div class="flex justify-between items-center text-on-surface-variant font-label-mono text-[10px] mb-1">
-<span class="">02:18</span>
-<span class="">40%</span>
-</div>
-<div class="w-full h-1 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full" style="width: 40%;"></div>
-</div>
-</div>
-</div>
-<!-- Resume Card 3 -->
-<div class="p-space-md rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow group flex flex-col justify-between">
-<div class="flex items-start gap-space-md">
-<div class="relative w-16 h-16 rounded overflow-hidden shrink-0 bg-surface-container-high">
-<img class="w-full h-full object-cover grayscale" data-alt="Smooth white marble sculptural form on solid concrete plinth labeled Subtle Echoes, extreme chiaroscuro black background, fine art audiophile cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCcu9lsuAXmGFvkV8GKigMujB20H3OaZkVqz8flPlv7x-5OFmJO3sBw6_zxEbhZx73xiMG4BYPJlDXWqZJJmHnyI6ZmXykoh8dK4tAcz0-vQYurRu9q0L_XGDyO2wCxD3y59UWIv_bsRBXRK_jYv_Zmq6U3omieCeq0Kn2m3lnvLRGJQet2OaXs3B9HnwxgT9pwwHTQvEzW5YTDV19drkx-wbe4K3PpqIYJE2BPs8C5ZizXNmyUJvUjYA">
-<div class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-<span class="material-symbols-outlined text-on-primary text-[24px]">play_arrow</span>
-</div>
-</div>
-<div class="min-w-0 flex-1">
-<div class="flex items-center justify-between">
-<span class="font-label-mono text-[10px] uppercase text-on-surface-variant">Track 07</span>
-<span class="font-label-mono text-[10px] px-1 rounded bg-surface-container-high text-on-surface-variant">DSD 2.8MHz</span>
-</div>
-<h4 class="font-body-md text-body-md font-medium text-on-surface truncate mt-1">Subtle Echoes</h4>
-<p class="font-body-sm text-body-sm text-secondary truncate">Mirage</p>
-</div>
-</div>
-<div class="mt-4">
-<div class="flex justify-between items-center text-on-surface-variant font-label-mono text-[10px] mb-1">
-<span class="">06:40</span>
-<span class="">85%</span>
-</div>
-<div class="w-full h-1 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full" style="width: 85%;"></div>
-</div>
-</div>
-</div>
-<!-- Resume Card 4 -->
-<div class="p-space-md rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-shadow group flex flex-col justify-between">
-<div class="flex items-start gap-space-md">
-<div class="relative w-16 h-16 rounded overflow-hidden shrink-0 bg-surface-container-high flex items-center justify-center">
-<svg class="w-10 h-10 text-on-surface-variant" fill="none" viewBox="0 0 100 100">
-<polygon fill="none" points="50,15 85,75 15,75" stroke="currentColor" stroke-width="3"></polygon>
-<polygon points="50,30 75,75 25,75" stroke="currentColor" stroke-dasharray="3 3" stroke-width="2"></polygon>
-<circle cx="50" cy="55" fill="currentColor" r="4"></circle>
-</svg>
-<div class="absolute inset-0 bg-primary/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-<span class="material-symbols-outlined text-on-primary text-[24px]">play_arrow</span>
-</div>
-</div>
-<div class="min-w-0 flex-1">
-<div class="flex items-center justify-between">
-<span class="font-label-mono text-[10px] uppercase text-on-surface-variant">Track 01</span>
-<span class="font-label-mono text-[10px] px-1 rounded bg-surface-container-high text-on-surface-variant">WAV 32-bit Float</span>
-</div>
-<h4 class="font-body-md text-body-md font-medium text-on-surface truncate mt-1">Crystalline Dispersion</h4>
-<p class="font-body-sm text-body-sm text-secondary truncate">Kaelen</p>
-</div>
-</div>
-<div class="mt-4">
-<div class="flex justify-between items-center text-on-surface-variant font-label-mono text-[10px] mb-1">
-<span class="">01:05</span>
-<span class="">15%</span>
-</div>
-<div class="w-full h-1 bg-surface-container-high rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full" style="width: 15%;"></div>
-</div>
-</div>
-</div>
+<div id="home-jump-albums" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md"></div>
 </div>
 </section>
 <!-- 4. Curated Master Soundstages & New Lossless Releases -->
 <section class="flex flex-col gap-space-md">
 <div class="flex items-center justify-between">
 <div>
-<h3 class="font-headline-md text-headline-md text-on-surface">New Lossless Masters</h3>
+<h3 id="home-albums-title" class="font-headline-md text-headline-md text-on-surface">New Lossless Masters</h3>
 <p class="font-body-sm text-body-sm text-secondary mt-0.5">Reference-grade dynamic studio pressings recorded in Scandinavian mastering facilities</p>
 </div>
 <button type="button" id="home-releases-all" class="font-label-mono text-label-mono text-on-surface font-medium hover:underline flex items-center gap-1">
@@ -705,7 +488,7 @@ addEventListener("DOMContentLoaded", () => {
         <span class="font-label-mono text-[10px] uppercase px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">Curated Roster</span>
         <span class="font-label-mono text-[11px] text-secondary">Studio Soundstage Spotlight</span>
       </div>
-      <h3 class="font-headline-md text-headline-md text-on-surface mt-1">Featured Artists in Residence</h3>
+      <h3 id="home-artists-title" class="font-headline-md text-headline-md text-on-surface mt-1">Featured Artists in Residence</h3>
     </div>
 <button type="button" id="home-artists-all" class="font-label-mono text-label-mono text-on-surface font-medium hover:underline flex items-center gap-1">
 <span class="">All 64 Artists</span>
@@ -821,12 +604,17 @@ addEventListener("DOMContentLoaded", () => {
 <section class="flex flex-col gap-space-md">
 <div class="flex items-center justify-between">
 <div>
-<h3 class="font-headline-md text-headline-md text-on-surface">Live Bitstream Streams</h3>
+<h3 id="home-charts-title" class="font-headline-md text-headline-md text-on-surface">Live Bitstream Streams</h3>
 <p class="font-body-sm text-body-sm text-secondary mt-0.5">Continuous 24/7 uncompressed FLAC server nodes broadcasting uninterrupted live sessions</p>
 </div>
+<div class="flex items-center gap-4">
 <div class="flex items-center gap-2">
 <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-<span class="font-label-mono text-label-mono text-secondary">3 NODES SYNCHRONIZED</span>
+<span class="font-label-mono text-label-mono text-secondary">LIVE</span>
+</div>
+<button type="button" id="home-charts-more" class="font-label-mono text-label-mono text-on-surface font-medium hover:underline flex items-center gap-1">
+<span>More Charts</span>
+</button>
 </div>
 </div>
 <div id="home-stations" class="grid grid-cols-1 md:grid-cols-3 gap-space-md">
@@ -834,7 +622,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="p-5 rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
 <div>
 <div class="flex items-center justify-between mb-4">
-<span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #01 â€¢ 138 BPM</span>
+<span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #01 • 138 BPM</span>
 <div class="flex items-center gap-1 font-label-mono text-[10px] text-secondary">
 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
 <span class="">1,420 listening</span>
@@ -858,7 +646,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="p-5 rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
 <div>
 <div class="flex items-center justify-between mb-4">
-<span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #02 â€¢ 120-124 BPM</span>
+<span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #02 • 120-124 BPM</span>
 <div class="flex items-center gap-1 font-label-mono text-[10px] text-secondary">
 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
 <span class="">890 listening</span>
@@ -882,7 +670,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="p-5 rounded-lg bg-surface-container-lowest shadow-sm hover:shadow-md transition-all flex flex-col justify-between group">
 <div>
 <div class="flex items-center justify-between mb-4">
-<span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #03 â€¢ CLASSIC / MELODIC</span>
+<span class="font-label-mono text-[10px] px-2 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-medium">NODE #03 • CLASSIC / MELODIC</span>
 <div class="flex items-center gap-1 font-label-mono text-[10px] text-secondary">
 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
 <span class="">2,110 listening</span>
@@ -949,7 +737,7 @@ addEventListener("DOMContentLoaded", () => {
       <p class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Library / Playlists</p>
       <div class="flex items-baseline gap-space-sm flex-wrap mt-0.5">
         <h1 class="font-headline-xl text-headline-xl text-on-surface tracking-tight">Playlists</h1>
-        <p class="font-body-sm text-body-sm text-secondary">Your library, custom mixes, artist radios, and queue</p>
+        <p class="font-body-sm text-body-sm text-secondary">Curated mixes, charts, and your quick-access collections</p>
       </div>
     </div>
     <button id="pl-refresh" type="button" title="Refresh the playlist feed" class="w-9 h-9 rounded-lg bg-surface-container-lowest border border-surface-container-high hover:bg-surface-container flex items-center justify-center text-on-surface transition-colors shadow-sm">
@@ -961,11 +749,10 @@ addEventListener("DOMContentLoaded", () => {
       <button type="button" data-pl-filter="all" data-pl-label="All Playlists" class="px-3 py-1 rounded-full text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">All Playlists</button>
       <button type="button" data-pl-filter="curated" data-pl-label="Curated" class="px-3 py-1 rounded-full text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">Curated</button>
       <button type="button" data-pl-filter="charts" data-pl-label="Charts" class="px-3 py-1 rounded-full text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">Charts</button>
-      <button type="button" data-pl-filter="saved" data-pl-label="Saved" class="px-3 py-1 rounded-full text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors">Saved</button>
     </div>
     <label class="relative flex items-center flex-1 min-w-[200px] max-w-[320px]">
       <span class="material-symbols-outlined absolute left-3 text-[18px] text-on-surface-variant pointer-events-none">search</span>
-      <input id="pl-search" type="search" placeholder="Search in playlistsâ€¦" class="w-full pl-9 pr-3 py-2 rounded-lg bg-surface-container-lowest border border-surface-container-high font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/50" />
+      <input id="pl-search" type="search" placeholder="Search in playlists…" class="w-full pl-9 pr-3 py-2 rounded-lg bg-surface-container-lowest border border-surface-container-high font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/50" />
     </label>
     <span id="pl-visible" class="font-label-mono text-label-mono text-secondary ml-auto"></span>
   </div>
@@ -980,10 +767,10 @@ addEventListener("DOMContentLoaded", () => {
       <div class="flex items-center gap-space-xs">
         <span class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Playlist</span>
         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-        <span id="plf-eyebrow" class="font-label-mono text-label-mono uppercase tracking-wider text-emerald-600">â€”</span>
+        <span id="plf-eyebrow" class="font-label-mono text-label-mono uppercase tracking-wider text-emerald-600">—</span>
       </div>
-      <h2 id="plf-title" class="font-headline-lg text-headline-lg text-on-surface">â€”</h2>
-      <p id="plf-desc" class="font-body-sm text-body-sm text-on-surface-variant max-w-[640px] leading-relaxed line-clamp-2">â€”</p>
+      <h2 id="plf-title" class="font-headline-lg text-headline-lg text-on-surface">—</h2>
+      <p id="plf-desc" class="font-body-sm text-body-sm text-on-surface-variant max-w-[640px] leading-relaxed line-clamp-2">—</p>
       <p id="plf-meta" class="font-label-md text-label-md text-secondary"></p>
       <div class="flex items-center gap-space-sm pt-2 flex-wrap">
         <button id="plf-play" type="button" class="flex items-center gap-space-sm px-4 py-2 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors shadow-sm"><span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Play</span></button>
@@ -993,27 +780,18 @@ addEventListener("DOMContentLoaded", () => {
     </div>
   </div>
 </section>
-<section class="flex flex-col gap-space-md">
-  <div class="flex items-end justify-between gap-space-sm flex-wrap">
-    <div class="flex items-baseline gap-space-sm flex-wrap">
-      <h3 class="font-headline-md text-headline-md text-on-surface">Your Playlists &amp; Mixes</h3>
-      <span id="pl-count" class="font-label-mono text-label-mono text-on-surface-variant"></span>
-    </div>
-    <button id="pl-viewall" type="button" class="font-label-mono text-label-mono text-secondary hover:text-on-surface">View all playlists ?</button>
-  </div>
-  <div id="playlists-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-space-md"><p class="font-body-sm text-body-sm text-on-surface-variant">Loading playlistsâ€¦</p></div>
-</section>
 <section id="playlist-detail" class="hidden rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm overflow-hidden">
   <div class="flex flex-col md:flex-row gap-space-lg p-6">
     <img id="pd-image" alt="" class="w-40 h-40 rounded-lg object-cover bg-surface-container-high hidden shrink-0" />
     <div class="flex-1 flex flex-col gap-space-sm min-w-0">
       <span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary">Playlist</span>
-      <h2 id="pd-title" class="font-headline-lg text-headline-lg text-on-surface">â€”</h2>
-      <p id="pd-subtitle" class="font-body-sm text-body-sm text-secondary">â€”</p>
+      <h2 id="pd-title" class="font-headline-lg text-headline-lg text-on-surface">—</h2>
+      <p id="pd-subtitle" class="font-body-sm text-body-sm text-secondary">—</p>
       <div class="flex items-center gap-space-sm pt-2 flex-wrap">
         <button id="pd-play" type="button" class="flex items-center gap-space-sm px-4 py-2 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors shadow-sm"><span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Play all</span></button>
         <button id="pd-shuffle" type="button" class="flex items-center gap-space-xs px-4 py-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[16px]">shuffle</span><span>Shuffle</span></button>
         <button id="pd-download" type="button" title="Download the whole playlist to the offline vault" class="flex items-center gap-space-xs px-4 py-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[16px]">download</span><span>Download all</span></button>
+        <button id="pd-fav" type="button" title="Save to Library" class="hidden w-10 h-10 rounded bg-surface-container-high flex items-center justify-center text-on-surface hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[18px]">favorite</span></button>
         <button id="pd-back" type="button" class="flex items-center gap-space-xs px-3 py-2 rounded text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[16px]">arrow_back</span><span>All playlists</span></button>
       </div>
     </div>
@@ -1047,6 +825,16 @@ addEventListener("DOMContentLoaded", () => {
     <button id="pd-more" type="button" class="flex items-center gap-space-xs px-4 py-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[16px]">expand_more</span><span id="pd-more-label">Load all tracks</span></button>
   </div>
 </section>
+<section class="flex flex-col gap-space-md">
+  <div class="flex items-end justify-between gap-space-sm flex-wrap">
+    <div class="flex items-baseline gap-space-sm flex-wrap">
+      <h3 class="font-headline-md text-headline-md text-on-surface">Your Playlists &amp; Mixes</h3>
+      <span id="pl-count" class="font-label-mono text-label-mono text-on-surface-variant"></span>
+    </div>
+    <button id="pl-viewall" type="button" class="font-label-mono text-label-mono text-secondary hover:text-on-surface">View all playlists ?</button>
+  </div>
+  <div id="playlists-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-space-md"><p class="font-body-sm text-body-sm text-on-surface-variant">Loading playlists…</p></div>
+</section>
 </div></div><div data-view="detail" class="hidden"><div class="flex flex-col w-full max-w-[1440px] mx-auto pb-12 space-y-space-xl">
 <section class="rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm overflow-hidden">
   <div class="flex flex-col md:flex-row gap-space-lg p-6">
@@ -1057,13 +845,14 @@ addEventListener("DOMContentLoaded", () => {
         <span id="dd-verified" class="hidden inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface font-label-mono text-[10px] uppercase tracking-wider"><span class="material-symbols-outlined text-[13px]" style="font-variation-settings: 'FILL' 1;">verified</span>Verified Artist</span>
         <span id="dd-listeners" class="hidden px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-mono text-[10px] uppercase tracking-wider"></span>
       </div>
-      <h2 id="dd-title" class="font-headline-lg text-headline-lg text-on-surface">â€”</h2>
-      <p id="dd-subtitle" class="font-body-sm text-body-sm text-secondary">â€”</p>
+      <h2 id="dd-title" class="font-headline-lg text-headline-lg text-on-surface">—</h2>
+      <p id="dd-subtitle" class="font-body-sm text-body-sm text-secondary">—</p>
       <p id="dd-bio" class="hidden font-body-sm text-body-sm text-on-surface-variant max-w-[640px] leading-relaxed line-clamp-3"></p>
       <div class="flex items-center gap-space-sm pt-2">
         <button id="dd-play" type="button" class="flex items-center gap-space-sm px-4 py-2 rounded bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors shadow-sm"><span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Play all</span></button>
         <button id="dd-shuffle" type="button" class="flex items-center gap-space-xs px-4 py-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[16px]">shuffle</span><span>Shuffle</span></button>
         <button id="dd-download" type="button" title="Download the whole album to the offline vault" class="flex items-center gap-space-xs px-4 py-2 rounded bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[16px]">download</span><span>Download all</span></button>
+        <button id="dd-fav" type="button" title="Save to Library" class="hidden w-10 h-10 rounded bg-surface-container-high flex items-center justify-center text-on-surface hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[18px]">favorite</span></button>
         <button id="dd-back" type="button" class="flex items-center gap-space-xs px-3 py-2 rounded text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[16px]">arrow_back</span><span>Back</span></button>
       </div>
     </div>
@@ -1107,14 +896,28 @@ addEventListener("DOMContentLoaded", () => {
       <button id="lib-new-pl" type="button" class="flex items-center gap-space-xs px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors shadow-sm"><span class="material-symbols-outlined text-[16px]">add</span><span>New Playlist</span></button>
     </div>
   </div>
-  <div id="library-saved" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md"><p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet â€” hit â€œSave to Libraryâ€ on Home.</p></div>
+  <div id="library-saved" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md"><p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — hit “Save to Library” on Home.</p></div>
+</section>
+<section class="flex flex-col gap-space-md">
+  <div class="flex items-center justify-between">
+    <h3 class="font-headline-md text-headline-md text-on-surface">Albums &amp; Movies</h3>
+    <span id="library-albums-count" class="font-label-mono text-label-mono text-secondary">0 saved</span>
+  </div>
+  <div id="library-albums" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md"><p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet &mdash; tap the heart on any album or movie.</p></div>
+</section>
+<section class="flex flex-col gap-space-md">
+  <div class="flex items-center justify-between">
+    <h3 class="font-headline-md text-headline-md text-on-surface">Artists</h3>
+    <span id="library-artists-count" class="font-label-mono text-label-mono text-secondary">0 saved</span>
+  </div>
+  <div id="library-artists" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-space-md"><p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet &mdash; tap the heart on any artist.</p></div>
 </section>
 <section class="flex flex-col gap-space-md">
   <div class="flex items-center justify-between">
     <h3 class="font-headline-md text-headline-md text-on-surface">Favorite Masters</h3>
     <span id="library-favs-count" class="font-label-mono text-label-mono text-secondary">0 tracks</span>
   </div>
-  <div id="library-favs" class="flex flex-col rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 divide-y divide-surface-container-high"><p class="font-body-sm text-body-sm text-on-surface-variant p-4">Nothing favorited yet â€” tap the heart on any track.</p></div>
+  <div id="library-favs" class="flex flex-col rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 divide-y divide-surface-container-high"><p class="font-body-sm text-body-sm text-on-surface-variant p-4">Nothing favorited yet — tap the heart on any track.</p></div>
 </section>
 <section class="flex flex-col gap-space-md">
   <div class="flex items-center justify-between">
@@ -1193,8 +996,8 @@ addEventListener("DOMContentLoaded", () => {
       <span class="material-symbols-outlined text-[18px] text-on-surface">database</span>
       <h3 class="font-headline-md text-headline-md text-on-surface">Physical Storage Allocator</h3>
     </div>
-    <p class="font-body-sm text-body-sm text-on-surface-variant">Bit-perfect copies are written straight to disk â€” no resampler, no cache layer.</p>
-    <code id="dl-dir" class="font-label-mono text-label-mono px-3 py-1.5 rounded bg-surface-container-lowest text-on-surface self-start shadow-sm break-all">â€”</code>
+    <p class="font-body-sm text-body-sm text-on-surface-variant">Bit-perfect copies are written straight to disk — no resampler, no cache layer.</p>
+    <code id="dl-dir" class="font-label-mono text-label-mono px-3 py-1.5 rounded bg-surface-container-lowest text-on-surface self-start shadow-sm break-all">—</code>
   </div>
   <div class="flex flex-col gap-2 min-w-[260px]">
     <div class="flex items-center justify-between font-label-mono text-label-mono">
@@ -1204,9 +1007,29 @@ addEventListener("DOMContentLoaded", () => {
     <div class="w-full h-2 rounded-full bg-surface-container-high overflow-hidden flex">
       <div id="dl-bar" class="h-full bg-primary transition-all duration-300" style="width: 0%"></div>
     </div>
-    <div class="flex items-center justify-between pt-1">
-      <span class="text-[11px] text-on-surface-variant font-label-mono">Max offline cache: 100 GB</span>
+    <div class="flex items-center justify-between pt-1 gap-2 flex-wrap">
+      <label class="text-[11px] text-on-surface-variant font-label-mono flex items-center gap-1.5">Cache limit
+        <select id="dl-quota" title="Vault storage quota (LRU eviction)" class="px-1.5 py-0.5 rounded bg-surface-container-lowest text-on-surface font-label-mono text-[11px] cursor-pointer hover:bg-surface-container transition-colors">
+          <option value="">Unlimited</option>
+          <option value="1">1 GB</option>
+          <option value="2">2 GB</option>
+          <option value="5">5 GB</option>
+          <option value="10">10 GB</option>
+          <option value="20">20 GB</option>
+          <option value="50">50 GB</option>
+        </select>
+      </label>
+      <label class="text-[11px] text-on-surface-variant font-label-mono flex items-center gap-1 cursor-pointer hover:text-on-surface transition-colors" title="Download the next queued track while the current one plays">
+        <input id="dl-prefetch" type="checkbox" class="accent-primary w-3.5 h-3.5 cursor-pointer" />
+        <span>Prefetch next</span>
+      </label>
       <button id="dl-open-vault" type="button" class="text-label-md font-label-md text-on-surface hover:underline font-medium">Open vault folder</button>
+    </div>
+    <div class="flex items-center gap-1.5 flex-wrap pt-1">
+      <button id="dl-verify" type="button" title="Re-hash every file against its recorded SHA-256" class="px-2.5 py-1 rounded bg-surface-container-high text-label-sm font-label-sm text-on-surface hover:bg-surface-container-highest transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">shield</span><span>Verify</span></button>
+      <button id="dl-export" type="button" title="Export the vault manifest as JSON" class="px-2.5 py-1 rounded bg-surface-container-high text-label-sm font-label-sm text-on-surface hover:bg-surface-container-highest transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">file_download</span><span>Export</span></button>
+      <button id="dl-import" type="button" title="Import a vault manifest JSON (files must be in the vault)" class="px-2.5 py-1 rounded bg-surface-container-high text-label-sm font-label-sm text-on-surface hover:bg-surface-container-highest transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">file_upload</span><span>Import</span></button>
+      <input id="dl-import-file" type="file" accept=".json,application/json" class="hidden" />
     </div>
   </div>
 </section>
@@ -1275,6 +1098,21 @@ addEventListener("DOMContentLoaded", () => {
 <option value="mid">3-5 min</option>
 <option value="long">Over 5 min</option>
 </select>
+<select id="filter-artist" title="Filter by artist" class="w-full bg-surface-container text-on-surface font-label-md text-label-md rounded-lg px-2 py-1.5 hover:bg-surface-container-high transition-colors cursor-pointer" disabled>
+<option value="">Any artist</option>
+</select>
+<select id="filter-album" title="Filter by album" class="w-full bg-surface-container text-on-surface font-label-md text-label-md rounded-lg px-2 py-1.5 hover:bg-surface-container-high transition-colors cursor-pointer" disabled>
+<option value="">Any album</option>
+</select>
+<select id="filter-mood" title="Filter by mood" class="w-full bg-surface-container text-on-surface font-label-md text-label-md rounded-lg px-2 py-1.5 hover:bg-surface-container-high transition-colors cursor-pointer">
+<option value="">Any mood</option>
+<option value="chill">Chill / Relax</option>
+<option value="party">Party / Dance</option>
+<option value="energy">Energy / Workout</option>
+<option value="focus">Focus / Study</option>
+<option value="romantic">Romantic</option>
+<option value="sad">Melancholy</option>
+</select>
 </div>
 </div>
 </div>
@@ -1327,7 +1165,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
 <div class="flex items-center gap-1.5">
 <span class="material-symbols-outlined text-[14px] text-on-surface">graphic_eq</span>
-<span class="font-label-mono text-label-mono text-on-surface font-medium">FLAC 96/24 â€¢ 64.2 MB</span>
+<span class="font-label-mono text-label-mono text-on-surface font-medium">FLAC 96/24 • 64.2 MB</span>
 </div>
 <button type="button" data-action="download" class="download-action-btn flex items-center justify-center w-7 h-7 rounded bg-surface-container-lowest hover:bg-primary hover:text-on-primary text-on-surface transition-colors shadow-xs" title="Download Master">
 <span class="material-symbols-outlined text-[15px]">download</span>
@@ -1357,7 +1195,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
 <div class="flex items-center gap-1.5">
 <span class="material-symbols-outlined text-[14px] text-on-surface">album</span>
-<span class="font-label-mono text-label-mono text-on-surface font-medium">FLAC 192k â€¢ 78.4 MB</span>
+<span class="font-label-mono text-label-mono text-on-surface font-medium">FLAC 192k • 78.4 MB</span>
 </div>
 <button type="button" data-action="download" class="download-action-btn flex items-center justify-center w-7 h-7 rounded bg-surface-container-lowest hover:bg-primary hover:text-on-primary text-on-surface transition-colors shadow-xs" title="Download Master">
 <span class="material-symbols-outlined text-[15px]">download</span>
@@ -1381,13 +1219,13 @@ addEventListener("DOMContentLoaded", () => {
 <h3 class="font-headline-md text-headline-md text-on-surface truncate">Subtle Echoes</h3>
 <span class="font-label-mono text-label-mono text-on-surface-variant">2023</span>
 </div>
-<p class="font-body-md text-body-md text-on-surface-variant truncate">Mirage â€¢ Spatial LP</p>
+<p class="font-body-md text-body-md text-on-surface-variant truncate">Mirage • Spatial LP</p>
 </div>
 </div>
 <div class="pt-3 mt-3 flex items-center justify-between bg-surface-container-low px-3 py-2 rounded-lg">
 <div class="flex items-center gap-1.5">
 <span class="material-symbols-outlined text-[14px] text-on-surface">waves</span>
-<span class="font-label-mono text-label-mono text-on-surface font-medium">DSD 2.8M â€¢ 142 MB</span>
+<span class="font-label-mono text-label-mono text-on-surface font-medium">DSD 2.8M • 142 MB</span>
 </div>
 <button type="button" data-action="download" class="download-action-btn flex items-center justify-center w-7 h-7 rounded bg-surface-container-lowest hover:bg-primary hover:text-on-primary text-on-surface transition-colors shadow-xs" title="Download Master">
 <span class="material-symbols-outlined text-[15px]">download</span>
@@ -1415,11 +1253,11 @@ addEventListener("DOMContentLoaded", () => {
 <!-- Catalog Table Header -->
 <div id="results-head" class="grid grid-cols-12 gap-4 px-4 py-1 font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">
 <div class="col-span-1 text-center">#</div>
-<div class="col-span-6">Track &amp; Artist</div>
+<div class="col-span-5">Track &amp; Artist</div>
 <div class="col-span-2">Format / Rate</div>
 <div class="col-span-1 text-right">Size</div>
 <div class="col-span-1 text-right">Time</div>
-<div class="col-span-1 text-right">Actions</div>
+<div class="col-span-2 text-right">Actions</div>
 </div>
 <!-- List of Tracks -->
 <div class="flex flex-col gap-2">
@@ -1445,12 +1283,12 @@ addEventListener("DOMContentLoaded", () => {
 <!-- Top Floating Lossless Pill -->
 <div class="absolute top-4 left-4 flex items-center gap-2 backdrop-blur-md bg-white/85 px-3 py-1.5 rounded-full shadow-sm border border-white/40">
 <span class="w-2 h-2 rounded-full bg-primary"></span>
-<span id="np-badge" class="text-on-surface font-mono text-[11px] uppercase tracking-wider font-semibold">RESOLVING â€¢ 24-BIT / 96kHz</span>
+<span id="np-badge" class="text-on-surface font-mono text-[11px] uppercase tracking-wider font-semibold">RESOLVING • 24-BIT / 96kHz</span>
 </div>
 <!-- Bottom Floating Vinyl Indicator -->
 <div class="absolute bottom-4 right-4 backdrop-blur-md bg-neutral-900/85 text-white px-3 py-1.5 rounded-full shadow-md flex items-center gap-2 border border-white/10">
 <span class="material-symbols-outlined text-[15px] animate-spin" id="spinning-vinyl-icon" style="animation-duration: 8s;">album</span>
-<span id="np-format" class="font-mono text-[11px]">320kbps â€¢ 4,608 kbps</span>
+<span id="np-format" class="font-mono text-[11px]">320kbps • 4,608 kbps</span>
 </div>
 </div>
 <!-- Scrubber & Controls Panel -->
@@ -1467,7 +1305,7 @@ addEventListener("DOMContentLoaded", () => {
 </div>
 <div class="flex justify-between items-center text-on-surface-variant font-mono text-xs">
 <span class="font-medium text-on-surface" id="track-current">01:42</span>
-<span class="text-on-surface-variant/60 tracking-wider text-[11px]">STEREO L/R CH 01-02 â€¢ BIT-PERFECT</span>
+<span class="text-on-surface-variant/60 tracking-wider text-[11px]">STEREO L/R CH 01-02 • BIT-PERFECT</span>
 <span id="track-total">04:18</span>
 </div>
 </div>
@@ -1512,7 +1350,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="flex items-start justify-between">
 <div class="flex flex-col">
 <div class="flex items-center gap-2">
-<span class="font-mono text-xs text-on-surface-variant tracking-wider uppercase" id="np-trackline">TRACK 01 â€¢ STEREO DIRECT</span>
+<span class="font-mono text-xs text-on-surface-variant tracking-wider uppercase" id="np-trackline">TRACK 01 • STEREO DIRECT</span>
 <span class="px-2 py-0.5 rounded-full bg-surface-container-low text-[10px] font-mono font-medium text-neutral-600" id="np-quality">320kbps</span>
 </div>
 <h1 class="text-2xl sm:text-[28px] font-semibold text-on-surface mt-1 tracking-tight" id="track-title-heading" dir="auto">Midnight City Lights</h1>
@@ -1534,34 +1372,40 @@ addEventListener("DOMContentLoaded", () => {
 <div class="grid grid-cols-3 gap-2.5 pt-1">
 <div class="flex flex-col p-3 rounded-lg bg-surface-container-low border border-black/[0.02]">
 <span class="font-mono text-on-surface-variant text-[10px] uppercase">Album</span>
-<span class="text-xs text-on-surface font-medium truncate mt-0.5 cursor-pointer hover:underline" id="np-album" title="Open album page">â€”</span>
+<span class="text-xs text-on-surface font-medium truncate mt-0.5 cursor-pointer hover:underline" id="np-album" title="Open album page">—</span>
 </div>
 <div class="flex flex-col p-3 rounded-lg bg-surface-container-low border border-black/[0.02]">
 <span class="font-mono text-on-surface-variant text-[10px] uppercase">Artist</span>
-<span class="text-xs text-on-surface font-medium truncate mt-0.5 cursor-pointer hover:underline" id="np-artist-tile" title="Open artist page">â€”</span>
+<span class="text-xs text-on-surface font-medium truncate mt-0.5 cursor-pointer hover:underline" id="np-artist-tile" title="Open artist page">—</span>
 </div>
 <div class="flex flex-col p-3 rounded-lg bg-surface-container-low border border-black/[0.02]">
 <span class="font-mono text-on-surface-variant text-[10px] uppercase">Length</span>
-<span class="text-xs text-on-surface font-medium truncate mt-0.5" id="np-length">â€”</span>
+<span class="text-xs text-on-surface font-medium truncate mt-0.5" id="np-length">—</span>
 </div>
 </div>
 </div>
 <!-- REAL-TIME INTERACTIVE SYNCHRONIZED LYRICS STAGE -->
 <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-black/[0.04] flex flex-col gap-4 transition-all duration-300" id="lyrics-card">
-<div class="flex items-center justify-between border-b border-black/[0.04] pb-3">
-<div class="flex items-center gap-2 text-on-surface min-w-0">
+<div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/[0.04] pb-3">
+<div class="flex items-center gap-2 text-on-surface shrink-0">
 <span class="material-symbols-outlined text-[18px]">subtitles</span>
-<span class="text-sm font-semibold truncate">Lyrics</span>
-<span class="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-on-surface-variant shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>Live</span>
+<span class="text-sm font-semibold">Lyrics</span>
+<span class="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-on-surface-variant"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>Live</span>
 </div>
 <!-- Lyrics Stage Action Buttons -->
-<div class="flex items-center gap-1 shrink-0">
-<button class="h-8 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium whitespace-nowrap flex items-center gap-1.5" id="toggle-sync-mode" title="Auto-follow Playhead">
+<div class="flex flex-wrap items-center gap-1.5">
+<button class="h-8 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition-colors" id="toggle-sync-mode" title="Auto-follow Playhead">
 <span class="material-symbols-outlined text-[16px]">arrow_downward</span>
 <span id="sync-mode-label">Auto-scroll on</span>
 </button>
-<button class="h-8 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium whitespace-nowrap" id="toggle-translation-btn" title="Toggle English / Poetic Gloss">Gloss</button>
-<button class="w-8 h-8 grid place-items-center rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface" id="btn-fullscreen-lyrics" title="Lyrics Stage Fullscreen">
+<button class="h-8 px-3 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-medium whitespace-nowrap transition-colors" id="toggle-translation-btn" title="Toggle English / Poetic Gloss">Gloss</button>
+<div class="flex items-center h-8 rounded-lg bg-surface-container overflow-hidden">
+<button id="lyric-offset-minus" title="Lyrics 100ms earlier" class="h-8 w-8 grid place-items-center text-on-surface text-xs font-mono hover:bg-surface-container-high transition-colors">−</button>
+<span id="lyric-offset-label" class="text-[11px] font-mono text-on-surface-variant tabular-nums w-12 text-center select-none">+0ms</span>
+<button id="lyric-offset-plus" title="Lyrics 100ms later" class="h-8 w-8 grid place-items-center text-on-surface text-xs font-mono hover:bg-surface-container-high transition-colors">+</button>
+</div>
+<button id="lyric-offset-reset" title="Reset lyrics offset" class="w-8 h-8 grid place-items-center rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors"><span class="material-symbols-outlined text-[16px]">restart_alt</span></button>
+<button class="w-8 h-8 grid place-items-center rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors" id="btn-fullscreen-lyrics" title="Lyrics Stage Fullscreen">
 <span class="material-symbols-outlined text-[18px]">open_in_full</span>
 </button>
 </div>
@@ -1667,6 +1511,12 @@ addEventListener("DOMContentLoaded", () => {
 </div>
 <!-- Queue Action Controls -->
 <div class="flex items-center gap-2">
+<select id="set-xfade" title="Crossfade duration per transition" class="px-1.5 py-1 rounded-lg bg-surface-container text-[11px] font-mono text-neutral-600 hover:text-neutral-900 cursor-pointer">
+<option value="0">No fade</option>
+<option value="2">2s fade</option>
+<option value="4">4s fade</option>
+<option value="6">6s fade</option>
+</select>
 <button class="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-neutral-200 text-[11px] font-mono text-neutral-600 transition-colors flex items-center gap-1" id="btn-shuffle-queue" title="Shuffle queue sequence">
 <span class="material-symbols-outlined text-[13px]">shuffle</span>
 <span>Shuffle</span>
@@ -1701,7 +1551,7 @@ addEventListener("DOMContentLoaded", () => {
 </div>
 <div class="flex flex-col min-w-0">
 <span class="text-[13px] text-on-surface font-semibold truncate">Neon Horizons</span>
-<span class="text-xs text-on-surface-variant truncate">Aura Sound â€¢ Monolith Suite</span>
+<span class="text-xs text-on-surface-variant truncate">Aura Sound • Monolith Suite</span>
 <div class="flex items-center gap-2 mt-0.5">
 <span class="font-mono text-[10px] text-neutral-700 bg-surface-container px-1.5 py-0.5 rounded font-medium">FLAC 192k / 24b</span>
 <span class="font-mono text-[10px] text-neutral-400">84.2 MB</span>
@@ -1713,7 +1563,7 @@ addEventListener("DOMContentLoaded", () => {
 <!-- Hover Action Pills -->
 <div class="hidden group-hover:flex items-center gap-1">
 <button class="queue-play-now px-2 py-1 rounded bg-neutral-900 text-white text-[10px] font-mono font-medium hover:bg-neutral-800 transition-colors" title="Play immediately">Play</button>
-<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">âœ•</button>
+<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">✕</button>
 </div>
 <span class="font-mono text-xs text-on-surface-variant pl-1">05:14</span>
 </div>
@@ -1727,7 +1577,7 @@ addEventListener("DOMContentLoaded", () => {
 </div>
 <div class="flex flex-col min-w-0">
 <span class="text-[13px] text-on-surface font-semibold truncate">Subtle Echoes</span>
-<span class="text-xs text-on-surface-variant truncate">Mirage â€¢ Resonant Architectures</span>
+<span class="text-xs text-on-surface-variant truncate">Mirage • Resonant Architectures</span>
 <div class="flex items-center gap-2 mt-0.5">
 <span class="font-mono text-[10px] text-neutral-700 bg-surface-container px-1.5 py-0.5 rounded font-medium">DSD 2.8M (1-bit)</span>
 <span class="font-mono text-[10px] text-neutral-400">142.0 MB</span>
@@ -1738,7 +1588,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="flex items-center gap-2 flex-shrink-0">
 <div class="hidden group-hover:flex items-center gap-1">
 <button class="queue-play-now px-2 py-1 rounded bg-neutral-900 text-white text-[10px] font-mono font-medium hover:bg-neutral-800 transition-colors" title="Play immediately">Play</button>
-<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">âœ•</button>
+<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">✕</button>
 </div>
 <span class="font-mono text-xs text-on-surface-variant pl-1">03:52</span>
 </div>
@@ -1752,7 +1602,7 @@ addEventListener("DOMContentLoaded", () => {
 </div>
 <div class="flex flex-col min-w-0">
 <span class="text-[13px] text-on-surface font-semibold truncate">Crystalline Dispersion</span>
-<span class="text-xs text-on-surface-variant truncate">Kaelen â€¢ Analog Archive Vol. II</span>
+<span class="text-xs text-on-surface-variant truncate">Kaelen • Analog Archive Vol. II</span>
 <div class="flex items-center gap-2 mt-0.5">
 <span class="font-mono text-[10px] text-neutral-700 bg-surface-container px-1.5 py-0.5 rounded font-medium">WAV 32-bit Float</span>
 <span class="font-mono text-[10px] text-neutral-400">118.5 MB</span>
@@ -1763,7 +1613,7 @@ addEventListener("DOMContentLoaded", () => {
 <div class="flex items-center gap-2 flex-shrink-0">
 <div class="hidden group-hover:flex items-center gap-1">
 <button class="queue-play-now px-2 py-1 rounded bg-neutral-900 text-white text-[10px] font-mono font-medium hover:bg-neutral-800 transition-colors" title="Play immediately">Play</button>
-<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">âœ•</button>
+<button class="queue-remove-btn w-6 h-6 rounded hover:bg-neutral-200 text-neutral-500 hover:text-neutral-900 flex items-center justify-center transition-colors" title="Remove from queue">✕</button>
 </div>
 <span class="font-mono text-xs text-on-surface-variant pl-1">04:47</span>
 </div>
@@ -1796,11 +1646,11 @@ addEventListener("DOMContentLoaded", () => {
     </div>
     <div id="pl-picker-list" class="flex flex-col gap-1 max-h-[40vh] overflow-y-auto"></div>
     <div class="flex items-center gap-space-xs pt-3 border-t border-surface-container-high">
-      <input id="pl-picker-name" type="text" placeholder="New playlist nameâ€¦" class="flex-1 px-3 py-2 rounded-lg bg-surface-container border border-surface-container-high font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none" />
+      <input id="pl-picker-name" type="text" placeholder="New playlist name…" class="flex-1 px-3 py-2 rounded-lg bg-surface-container border border-surface-container-high font-body-sm text-body-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none" />
       <button id="pl-picker-create" type="button" class="px-3 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors">Create</button>
     </div>
   </div>
-</div><audio id="audio" preload="metadata" class="hidden"></audio><footer class="fixed bottom-0 left-0 right-0 w-full z-40 bg-surface-container-lowest/95 backdrop-blur-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.04)]"><div class="h-24 w-full px-gutter flex items-center justify-between gap-space-lg"><div data-path-jump="now-playing" title="Open Now Playing" class="flex items-center gap-space-md min-w-[240px] max-w-[320px] cursor-pointer"><div class="w-14 h-14 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)]"><img id="bar-cover" class="w-full h-full object-cover hidden" alt="" /><span id="bar-cover-fallback" class="material-symbols-outlined text-on-surface-variant text-[28px]">album</span></div><div class="min-w-0"><div class="flex items-center gap-space-xs"><span id="bar-title" dir="auto" class="font-body-md text-body-md font-semibold text-on-surface truncate">TRANCE MUSIC</span><span id="bar-badge" class="font-label-mono text-[9px] leading-tight px-1 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-medium shrink-0">IDLE</span></div><p id="bar-artist" class="font-body-sm text-body-sm text-on-surface-variant truncate mt-0.5">Search and play a track</p></div></div><div class="flex-1 max-w-2xl flex flex-col items-center gap-space-xs"><div class="flex items-center gap-space-lg"><button id="bar-shuffle" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[18px]">shuffle</span></button><button id="bar-prev" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[20px]">skip_previous</span></button><button id="bar-play" class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center hover:opacity-90 transition-opacity" type="button"><span id="bar-play-icon" class="material-symbols-outlined text-[20px]">play_arrow</span></button><button id="bar-next" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[20px]">skip_next</span></button><button id="bar-repeat" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[18px]">repeat</span></button></div><div class="w-full flex items-center gap-space-md"><span id="bar-time-cur" class="font-label-mono text-label-mono text-on-surface-variant">00:00</span><div id="bar-progress" class="relative flex-1 h-1 bg-surface-container-high rounded-full overflow-hidden cursor-pointer group"><div id="bar-progress-fill" class="absolute left-0 top-0 bottom-0 w-0 bg-primary rounded-full group-hover:bg-primary-container transition-all"></div></div><span id="bar-time-total" class="font-label-mono text-label-mono text-on-surface-variant">00:00</span></div></div><div class="flex items-center justify-end gap-space-md min-w-[240px]"><span class="font-label-mono text-label-mono px-space-xs py-0.5 rounded bg-surface-container-low text-on-surface-variant font-medium tracking-tight">DSD/PCM OUT</span><div class="flex items-center gap-space-xs w-28"><span class="material-symbols-outlined text-on-surface-variant text-[18px]">volume_up</span><div id="bar-vol-track" class="relative flex-1 h-1 bg-surface-container-high rounded-full overflow-hidden cursor-pointer"><div id="bar-vol-fill" class="absolute left-0 top-0 bottom-0 w-3/4 bg-primary rounded-full"></div></div></div><button id="bar-queue" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button" title="Open queue"><span class="material-symbols-outlined text-[20px]">queue_music</span></button></div></div></footer><script>
+</div><audio id="audio" preload="metadata" class="hidden"></audio><audio id="audio2" preload="auto" class="hidden"></audio><footer class="fixed bottom-0 left-0 right-0 w-full z-40 bg-surface-container-lowest/95 backdrop-blur-2xl shadow-[0_-4px_20px_rgba(0,0,0,0.04)]"><div class="h-24 w-full px-gutter flex items-center justify-between gap-space-lg"><div data-path-jump="now-playing" title="Open Now Playing" class="flex items-center gap-space-md min-w-[240px] max-w-[320px] cursor-pointer"><div class="w-14 h-14 rounded-lg bg-surface-container-high flex items-center justify-center shrink-0 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04)]"><img id="bar-cover" class="w-full h-full object-cover hidden" alt="" /><span id="bar-cover-fallback" class="material-symbols-outlined text-on-surface-variant text-[28px]">album</span></div><div class="min-w-0"><div class="flex items-center gap-space-xs"><span id="bar-title" dir="auto" class="font-body-md text-body-md font-semibold text-on-surface truncate">TRANCE MUSIC</span><span id="bar-badge" class="font-label-mono text-[9px] leading-tight px-1 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-medium shrink-0">IDLE</span></div><p id="bar-artist" class="font-body-sm text-body-sm text-on-surface-variant truncate mt-0.5">Search and play a track</p></div></div><div class="flex-1 max-w-2xl flex flex-col items-center gap-space-xs"><div class="flex items-center gap-space-lg"><button id="bar-shuffle" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[18px]">shuffle</span></button><button id="bar-prev" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[20px]">skip_previous</span></button><button id="bar-play" class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center hover:opacity-90 transition-opacity" type="button"><span id="bar-play-icon" class="material-symbols-outlined text-[20px]">play_arrow</span></button><button id="bar-next" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[20px]">skip_next</span></button><button id="bar-repeat" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button"><span class="material-symbols-outlined text-[18px]">repeat</span></button></div><div class="w-full flex items-center gap-space-md"><span id="bar-time-cur" class="font-label-mono text-label-mono text-on-surface-variant">00:00</span><div id="bar-progress" class="relative flex-1 h-1 bg-surface-container-high rounded-full overflow-hidden cursor-pointer group"><div id="bar-progress-fill" class="absolute left-0 top-0 bottom-0 w-0 bg-primary rounded-full group-hover:bg-primary-container transition-all"></div></div><span id="bar-time-total" class="font-label-mono text-label-mono text-on-surface-variant">00:00</span></div></div><div class="flex items-center justify-end gap-space-md min-w-[240px]"><span class="font-label-mono text-label-mono px-space-xs py-0.5 rounded bg-surface-container-low text-on-surface-variant font-medium tracking-tight">DSD/PCM OUT</span><div class="flex items-center gap-space-xs w-28"><span class="material-symbols-outlined text-on-surface-variant text-[18px]">volume_up</span><div id="bar-vol-track" class="relative flex-1 h-1 bg-surface-container-high rounded-full overflow-hidden cursor-pointer"><div id="bar-vol-fill" class="absolute left-0 top-0 bottom-0 w-3/4 bg-primary rounded-full"></div></div></div><button id="bar-queue" class="text-on-surface-variant hover:text-on-surface transition-colors p-1" type="button" title="Open queue"><span class="material-symbols-outlined text-[20px]">queue_music</span></button></div></div></footer><script>
     (function () {
       const filterChips = document.querySelectorAll('.filter-chip');
       filterChips.forEach(chip => {

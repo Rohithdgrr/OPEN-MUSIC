@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#f9f9fb;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary": "#ffffff", "inverse-surface": "#2f3132", "error-container": "#ffdad6", "on-primary-fixed": "#1b1b1b", "secondary-fixed": "#e4e1e5", "background": "#f9f9fa", "surface": "#f9f9fb", "surface-bright": "#f9f9fb", "surface-tint": "#5e5e5e", "secondary-fixed-dim": "#c8c6c9", "on-surface": "#1a1c1d", "error": "#ba1a1a", "on-secondary-container": "#656467", "surface-container": "#eeeeef", "surface-container-low": "#f3f3f4", "primary": "#000000", "tertiary-fixed": "#e2e2e2", "on-secondary-fixed": "#1b1b1e", "surface-variant": "#e2e2e3", "surface-container-lowest": "#ffffff", "on-primary-fixed-variant": "#474747", "primary-fixed": "#e2e2e2", "surface-container-highest": "#e2e2e4", "on-secondary-fixed-variant": "#474649", "tertiary": "#000000", "surface-dim": "#dadadb", "on-surface-variant": "#4c4546", "on-tertiary-fixed": "#1b1b1b", "secondary": "#5f5e61", "on-tertiary-container": "#848484", "on-background": "#1a1c1d", "primary-container": "#1b1b1e", "on-error-container": "#93000a", "on-tertiary": "#ffffff", "surface-container-high": "#e8e8e9", "on-primary": "#ffffff", "inverse-primary": "#c6c6c6", "tertiary-container": "#1b1b1b", "on-primary-container": "#858387", "outline": "#77767b", "inverse-on-surface": "#f1f1f1", "primary-fixed-dim": "#c6c6c6", "on-error": "#ffffff", "secondary-container": "#e4e1e5", "on-tertiary-fixed-variant": "#474747", "tertiary-fixed-dim": "#c6c6c6", "outline-variant": "#cfc4c5" }, borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, spacing: { "gutter": "1rem", "space-xl": "2rem", "margin": "1.5rem", "space-xs": "0.25rem", "space-lg": "1.25rem", "space-md": "0.75rem", "space-sm": "0.5rem" }, fontFamily: { "body-lg": ["Geist"], "headline-md": ["Geist"], "label-mono": ["JetBrains Mono"], "label-md": ["Geist"], "body-md": ["Geist"], "body-sm": ["Geist"], "headline-xl": ["Geist"], "label-sm": ["Geist"], "headline-lg": ["Geist"] }, fontSize: { "body-lg": ["15px", { "lineHeight": "22px", "letterSpacing": "-0.01em", "fontWeight": "400" }], "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.015em", "fontWeight": "500" }], "label-mono": ["11px", { "lineHeight": "14px", "letterSpacing": "-0.01em", "fontWeight": "400" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "500" }], "body-md": ["13px", { "lineHeight": "19px", "letterSpacing": "-0.005em", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.03em", "fontWeight": "600" }], "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }], "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.025em", "fontWeight": "600" }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased"><header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><div class="w-2.5 h-2.5 bg-primary rounded-none"></div><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface">Library</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Telemetry and Audio Settings" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">tune</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full gap-space-lg">
+<!-- Telemetry Sub-Header & Controls -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<button aria-label="Go Back" class="w-8 h-8 flex items-center justify-center rounded bg-surface-container hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px] text-on-surface">chevron_left</span>
+</button>
+<div class="flex flex-col">
+<span class="font-headline-md text-headline-md text-on-surface leading-tight">Listening History</span>
+<span class="font-label-mono text-label-mono text-secondary uppercase tracking-wider">LOG.REON.SESSION_092</span>
+</div>
+</div>
+<button class="flex items-center gap-space-xs px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high text-secondary hover:text-on-surface transition-colors" id="clear-history-trigger">
+<span class="material-symbols-outlined text-[15px]">delete_sweep</span>
+<span class="font-label-sm text-label-sm">Clear</span>
+</button>
+</div>
+<!-- Session Overview & Acoustic Verification Module -->
+<section class="flex flex-col bg-surface-container-lowest rounded-xl p-space-md shadow-sm gap-space-md relative overflow-hidden">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-0.5">
+<div class="flex items-center gap-space-xs">
+<span class="w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
+<span class="font-label-mono text-label-mono text-secondary uppercase">Today Acoustic Log</span>
+</div>
+<span class="font-headline-lg text-headline-lg text-on-surface tracking-tight">3h 14m <span class="font-body-md text-body-md text-secondary">monitored</span></span>
+</div>
+<button class="flex items-center gap-space-xs px-space-md py-1.5 bg-primary text-on-primary rounded text-label-md font-label-md hover:bg-primary-container transition-all">
+<span class="material-symbols-outlined text-[16px]">replay</span>
+<span>Replay Queue</span>
+</button>
+</div>
+<!-- Acoustic Telemetry Ribbon -->
+<div class="flex items-center justify-between bg-surface-container-low px-space-md py-space-sm rounded">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant flex-shrink-0" style="font-variation-settings: 'FILL' 1;">verified</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-mono text-label-mono text-on-surface font-medium truncate">100% BIT-PERFECT STREAM</span>
+<span class="font-label-mono text-[10px] text-secondary truncate">DIRECT DAC PASS-THROUGH • ZERO RESAMPLING</span>
+</div>
+</div>
+<div class="flex items-center gap-1 flex-shrink-0 pl-space-sm">
+<span class="font-label-mono text-label-mono text-on-surface font-semibold">96 kHz</span>
+<span class="text-[9px] text-secondary font-label-mono">/ 24b</span>
+</div>
+</div>
+</section>
+<!-- History Feed Section -->
+<div class="flex flex-col gap-space-lg">
+<!-- Time Group 1: TODAY -->
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between px-space-xs py-1">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-mono text-label-mono text-on-surface font-semibold tracking-wider">TODAY</span>
+<span class="text-secondary text-[10px] font-label-mono">• 4 TRACKS</span>
+</div>
+<span class="font-label-mono text-label-mono text-secondary">ACTIVE PROTOCOL</span>
+</div>
+<div class="flex flex-col bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm">
+<!-- Track 1: Now Playing -->
+<div class="flex items-center justify-between p-space-sm bg-surface-container-low/60 hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale contrast-125" data-alt="Minimalist abstract architectural album artwork with monochrome concrete textures and harsh studio light, clean Scandinavian design." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAUBiwYHER7_IyfhF_IZfqoNUwnCL2Ub6zn-25z8ZCBDyHSHbB2mdx6dZUsyQTagMdNKTgU-9aCWIJZhIJxJXdeKzjkPQCBAXtocMA92ySm_LEa-sLDUAxmFDKnPvfkwdwoQq8Faq4g1Y5XH9JGbpqU9bztS_LIr4CDGG21ZKBjpKI0xOzdhlddRuoBlmctIn7_YbTQIIEEyTPSJDpRwggiKUYjBdptnxHLsizWBKBpiMBuIZUhm_fWoQ"/>
+<div class="absolute inset-0 bg-primary/30 flex items-center justify-center">
+<div class="flex items-end gap-0.5 h-3.5">
+<span class="w-0.5 bg-on-primary h-full animate-[pulse_0.6s_ease-in-out_infinite]"></span>
+<span class="w-0.5 bg-on-primary h-2/3 animate-[pulse_0.8s_ease-in-out_infinite]"></span>
+<span class="w-0.5 bg-on-primary h-4/5 animate-[pulse_0.5s_ease-in-out_infinite]"></span>
+</div>
+</div>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Midnight City Lights</span>
+<span class="px-1 py-0.2 bg-primary text-on-primary text-[9px] font-label-mono font-medium rounded-sm">NOW</span>
+</div>
+<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">24-BIT / 96kHz FLAC</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">12m ago</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-primary hover:text-on-surface transition-colors favorite-btn" data-liked="true">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Midnight City Lights">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 2 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Monochrome geometric brutalist poster design with sharp shadows and subtle grain texture, audiophile packaging." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBn9Hl--z-vc9p7LeaDZRYRb6BzZrqTZ_cNhEPxSZ-I1q6chRgk70dXuWmSF5rKrc5zUQho5Eew-Bjn9C7PO1vLUxywiovcw-CwdcbjiLUYmWQWs6vijweMzRIMyqxp3jBI7ER336VEv_sgmfDFw17ndBPRzAAiyh-UgIZ9UwSvAowCBTSolyJQAYxHfu2HPkMHhu8TbWQRm5hfqaAihELJgbhnYNVitYDJewOXu0YBw3ZlNv9aaA7chg"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Neon Horizons</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Aura Sound</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">DSD 11.2MHz</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">42m ago</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Neon Horizons">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 3 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Architectural minimal interior in pale gray tones with diffuse studio lighting, subtle clean lines." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlUW9272FwP4kfjf-9JgJGCmvA6Fd3n3Bh5l4iToO-dUOFKjwsRKeDMkK5V3n9M4XLXAeHwAhSJc5Q9zf1neVO_lJ5-Zdc09Fn6_HVhBdxcn3PrBQXRRQj6FkhqdwmlOViXoxGLIrMcVUUNGAGXiQ0ZUViJvSAyFGTtZC2TbRcpJTbQ59_9MaN-Bsv2kGnGLJwMyKfl7nhgkcSRbahCXtZPvpsfhawJU7PMr_GVsIj12HJMapIFE9YUA"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Subtle Echoes</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Mirage Architecture</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">24-BIT / 192kHz</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">1h ago</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Subtle Echoes">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 4 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Monochrome deep dark obsidian rock texture with high key studio specular highlights, fine grain." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBW1951Wk6V4PUF0NYdVr-1wbw6hPfsqfLHAqygpwW13pkA1PxlNwSESpT_VlGzdhvDT3ljp_4ssamLe2mN5W7B3slf5OGLdJUW-Gb0IEXGF0mhczXvvNA-eVGkZvNnPfsrbb5dWNQfgiKn4akFEIg4KRJ0tgWGpRWKlsYG3vxOiRwPgkQ0zD71TS7j9QMh59TsFl6zHlkGrnoaNK8P16Tt2Z5sGAfG8MPbTcsAA73cPqBMs07TZo9TzQ"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Obsidian Echoes</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Solaris</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">FLAC LOSSLESS</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">2h ago</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Obsidian Echoes">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Time Group 2: YESTERDAY -->
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between px-space-xs py-1">
+<div class="flex items-center gap-space-xs">
+<span class="font-label-mono text-label-mono text-on-surface font-semibold tracking-wider">YESTERDAY</span>
+<span class="text-secondary text-[10px] font-label-mono">— 5 HRS 22 MIN</span>
+</div>
+<span class="font-label-mono text-label-mono text-secondary">ARCHIVE</span>
+</div>
+<div class="flex flex-col bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm">
+<!-- Track 5 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Minimalist dark abstract wave form typography poster in pure black and white with Scandinavian layout." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAktkyDdvWAlYBi19Nb_LlJ6gg4xxzauTg3NZMnmCQtbMQssDcw4uf6BkoisUoPJMaN961zlxpHz2hnJZl6jxGeq-StyWYr9fCM_e0e-3hjPEtM2DA42s4a0P-3aj8ySWZCA_WDmXY1BlR7tApnuVJIeAa4fu0UKSXKGli7QnS6ClvZvNIf_oVoELC2nFi-f5Gz_Wlk52m7CmYh8_RHSKmubzRyhnqsKBp_iwPwaX-quCDMkP4AkNnGtg"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Nocturne Trance Vol. IV</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen feat. Aura</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">24-BIT / 96kHz</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">11:45 PM</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-primary hover:text-on-surface transition-colors favorite-btn" data-liked="true">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Nocturne Trance Vol. IV">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 6 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Prismatic light refraction on matte aluminum plate, black and white minimal photography." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAg_D79TzrdkYTGeWpSvqm51Z2LXdYXyc2ziqsE0WdquK7sapWGNMTN_0mg0xBEk6q8dd3wqotuJMz6_CUbBGhk69WBe5VCrWhQDsmshiflUIQ03pCoXx-oU0ZwBO_8f-te6OxNgMUpOix-lhlR1FwR4aHuc70AzuAC-CVMGuGSUqqPm89MNdUQTTXb-ocXW-EbQJeslcfAcXYOPvif_jqohjrfk2eY4JGUXnrKq7rlbUuOHvJYD8vAbg"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Crystalline Dispersion</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Kaelen Solo Archive</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">WAV 32-BIT FLOAT</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">10:30 PM</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Crystalline Dispersion">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 7 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Monochrome subterranean architectural columns with stark shadow patterns and clean negative space." src="https://lh3.googleusercontent.com/aida-public/AB6AXuB5EEjI6x6Dh6L2APWBbCxX_IbTfFDbcoJ5ihxbFjazhYFOhHIaC-HYgqkJ2gLZ2txyu0NtplTeNsN81NeS3YbsB4Sa8aXMYPHALcEIOrOuGQy4rbCb9v-rcPCv2TazdkTq-iVSvrJQuML5GKUXk5V6Fz6NUqf-ruRxdhr1UXe1Yyntp2UDgBvRw5k-pFr2NBSXbb_coH2abLZvHk2SLG95Gy5HvJRQ8GnC1aDZ_C7E1ekQ3jozlLqnEQ"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Architectural Lows</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Deep Architecture</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">24-BIT / 48kHz</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">9:15 PM</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Architectural Lows">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 8 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Subtle silk fabric rippling under soft diffused natural window light, artistic grayscale studio still." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAkp8rmNdNCr7B7IRN7P02RUpilV1paL3gcAlzh0IBmN47zFEioHiOfjIeEnlHindI4pMO5N3ayPaiUkCusjbzLNttaRuBCf7gufaaCXqIDCzIVBDKx5Vh1P6gifJEc9bWrIGALAagg5IytwQ1cTLIJFd1kJvCSYr3wQzO2VMkncn0MMshRDOXulilHjzST_LwHcyCEbgKEC0ePF1yHuajgjBRs9hf0lC7U6r3RV-NOw1nSg13QtyyFgg"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Velvet Cascade</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Aura &amp; The Chamber Ensemble</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">DSD 5.6MHz</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">8:04 PM</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Velvet Cascade">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Time Group 3: OCTOBER 24 -->
+<div class="flex flex-col gap-space-xs">
+<div class="flex items-center justify-between px-space-xs py-1">
+<span class="font-label-mono text-label-mono text-on-surface font-semibold tracking-wider">OCTOBER 24</span>
+<span class="font-label-mono text-label-mono text-secondary">STORED TELEMETRY</span>
+</div>
+<div class="flex flex-col bg-surface-container-lowest rounded-xl overflow-hidden shadow-sm">
+<!-- Track 9 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Monolithic stone sculpture photographed in high contrast black and white on plain studio ground." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCi_Qo2yzXJmVrNzc5hzTGCw8vovSIun55A82ARt-waj46niT4iwlEF_hgZcqBCVakfeM18tvNiK7mQjIf9DUxziqm1rpOkKy4wnAwPIrB9iLaJYFljUF5meq_CErp-5mFnCMj0qwFqwnNwStaYMG7Nqf7JxBwNr5cxK6vkug_rgoGkPe0amQtW7xGxHUhrQ8mN2F-wtZRVHSk7_5TGl-Ftds98UzJYw6T6V2sfBbWhx9fbODDrY71tLw"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Monolith Prelude</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">24-BIT MASTER</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">Oct 24</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-primary hover:text-on-surface transition-colors favorite-btn" data-liked="true">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Monolith Prelude">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+<div class="h-[1px] bg-surface-container mx-space-sm"></div>
+<!-- Track 10 -->
+<div class="flex items-center justify-between p-space-sm hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-md min-w-0 flex-1">
+<div class="relative w-11 h-11 bg-surface-container-highest rounded flex-shrink-0 overflow-hidden">
+<img class="w-full h-full object-cover grayscale" data-alt="Subtle abstract particle trails in deep gray gradient field, high precision scientific visualization." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAzGRiulyf-jnOimI4lDN6MMHqb8nUDuneAFj73nd2qhmyUcfTZxA3sJheKzaivbyzRB0T1RlQpXcMPBEWFeJG7PPb6cYkSyS9zwTS5_MIa2Wp3AOpyiKt-KH7RY95MJ-RL06EJqViSalJwrhzV1gWz0qHVVswq-HMCd1yRpySjjZ-w14IANpFGOtJGgphZFP68lEvNn7p7rF_CjK1tnLG1Tcz8anTpQ1ktVLg34D3a6OAMIiQLIdkFQQ"/>
+</div>
+<div class="flex flex-col min-w-0 pr-space-xs">
+<span class="font-headline-md text-label-md text-on-surface font-medium truncate">Subatomic Drift</span>
+<span class="font-body-sm text-body-sm text-secondary truncate">Mirage</span>
+<div class="flex items-center gap-space-xs mt-0.5">
+<span class="font-label-mono text-[10px] text-on-surface-variant font-medium">LOSSLESS</span>
+<span class="text-secondary text-[8px]">•</span>
+<span class="font-label-mono text-[10px] text-secondary">Oct 24</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-0.5 flex-shrink-0">
+<button aria-label="Toggle favorite" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors favorite-btn" data-liked="false">
+<span class="material-symbols-outlined text-[18px]">favorite</span>
+</button>
+<button aria-label="Track actions" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors menu-trigger" data-title="Subatomic Drift">
+<span class="material-symbols-outlined text-[18px]">more_vert</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Sheet / Context Modal -->
+<div class="fixed inset-0 z-50 bg-primary/20 backdrop-blur-sm hidden flex-col justify-end transition-opacity" id="context-modal">
+<div class="bg-surface-container-lowest w-full rounded-t-xl p-space-lg flex flex-col gap-space-md shadow-xl max-w-lg mx-auto" id="modal-content">
+<div class="flex items-center justify-between pb-space-sm border-b border-surface-container">
+<div class="flex flex-col min-w-0">
+<span class="font-label-mono text-label-mono text-secondary uppercase">AUDIO PROTOCOL ACTION</span>
+<span class="font-headline-md text-headline-md text-on-surface truncate" id="modal-track-name">Track Options</span>
+</div>
+<button class="w-8 h-8 flex items-center justify-center rounded bg-surface-container text-on-surface" id="modal-close">
+<span class="material-symbols-outlined text-[18px]">close</span>
+</button>
+</div>
+<div class="flex flex-col gap-1">
+<button class="flex items-center gap-space-md px-space-md py-space-sm hover:bg-surface-container-low rounded text-left transition-colors modal-action" data-msg="Added to Play Next queue">
+<span class="material-symbols-outlined text-[20px] text-on-surface">queue_music</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Play Next</span>
+<span class="font-label-mono text-[10px] text-secondary">Insert as high-priority stream buffer</span>
+</div>
+</button>
+<button class="flex items-center gap-space-md px-space-md py-space-sm hover:bg-surface-container-low rounded text-left transition-colors modal-action" data-msg="Saved to Selected Playlist">
+<span class="material-symbols-outlined text-[20px] text-on-surface">playlist_add</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md text-on-surface font-medium">Add to Playlist</span>
+<span class="font-label-mono text-[10px] text-secondary">Index into permanent library set</span>
+</div>
+</button>
+<button class="flex items-center gap-space-md px-space-md py-space-sm hover:bg-surface-container-low rounded text-left transition-colors text-error modal-action" data-msg="Removed from History log">
+<span class="material-symbols-outlined text-[20px]">history_toggle_off</span>
+<div class="flex flex-col">
+<span class="font-body-md text-body-md font-medium">Remove from History</span>
+<span class="font-label-mono text-[10px] text-secondary">Erase track acoustic metadata</span>
+</div>
+</button>
+</div>
+</div>
+</div>
+<!-- Minimal Feedback Toast -->
+<div class="fixed top-16 inset-x-gutter z-50 flex justify-center pointer-events-none transition-all duration-300 opacity-0 -translate-y-2" id="toast">
+<div class="bg-primary text-on-primary px-space-md py-1.5 rounded shadow-lg flex items-center gap-space-xs font-label-mono text-label-mono">
+<span class="material-symbols-outlined text-[14px]">done</span>
+<span id="toast-message">Action Complete</span>
+</div>
+</div>
+</div>
+<script>
+  (function () {
+    const modal = document.getElementById('context-modal');
+    const modalClose = document.getElementById('modal-close');
+    const modalTitle = document.getElementById('modal-track-name');
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-message');
+    const menuTriggers = document.querySelectorAll('.menu-trigger');
+    const favoriteBtns = document.querySelectorAll('.favorite-btn');
+    const clearTrigger = document.getElementById('clear-history-trigger');
+    const modalActions = document.querySelectorAll('.modal-action');
+
+    function showToast(msg) {
+      if (!toast) return;
+      toastMsg.textContent = msg;
+      toast.classList.remove('opacity-0', '-translate-y-2');
+      toast.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        toast.classList.remove('opacity-100', 'translate-y-0');
+      }, 2200);
+    }
+
+    menuTriggers.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const title = btn.getAttribute('data-title') || 'Track';
+        modalTitle.textContent = title;
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      });
+    });
+
+    function closeModal() {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    modalClose.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    modalActions.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const msg = btn.getAttribute('data-msg') || 'Completed';
+        closeModal();
+        showToast(msg);
+      });
+    });
+
+    favoriteBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isLiked = btn.getAttribute('data-liked') === 'true';
+        const nextState = !isLiked;
+        btn.setAttribute('data-liked', nextState.toString());
+        const icon = btn.querySelector('.material-symbols-outlined');
+        if (nextState) {
+          btn.classList.remove('text-secondary');
+          btn.classList.add('text-primary');
+          icon.style.fontVariationSettings = "'FILL' 1";
+          showToast('Added to Liked Audio');
+        } else {
+          btn.classList.remove('text-primary');
+          btn.classList.add('text-secondary');
+          icon.style.fontVariationSettings = "'FILL' 0";
+          showToast('Removed from Liked Audio');
+        }
+      });
+    });
+
+    if (clearTrigger) {
+      clearTrigger.addEventListener('click', () => {
+        showToast('Playback telemetry log cleared');
+      });
+    }
+  })();
+</script></main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span><span class="text-secondary text-[8px]">•</span><span class="font-label-mono text-label-mono text-secondary">24-BIT</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[20px]">person</span><span class="font-label-sm text-label-sm">Profile</span></a></div></nav></body></html>

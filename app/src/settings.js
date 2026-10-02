@@ -1,15 +1,48 @@
 // settings.js — settings dialog, widget prefs, user preferences
 // Split from main.js (Phase 4 M1).
-import { diag, esc, invoke, toast } from "./core.js";
+import { diag, esc, invoke, notifyLocalChange, toast } from "./core.js";
 import { $, errorEl } from "./dom.js";
 import { loadHome } from "./home.js";
+import {
+  loadFavs,
+  loadLocalPls,
+  paintFavHearts,
+  renderFavs,
+  renderLibrary,
+  saveFavs,
+  saveLocalPls,
+} from "./library.js";
+import {
+  LAST_SYNC_KEY,
+  applyBackup,
+  backupFilename,
+  buildBackup,
+  parseBackupFile,
+  playlistFilename,
+  playlistToCsv,
+  playlistToM3u,
+  readSettings,
+  writeSettings,
+} from "./sync.js";
+import { isSyncing, syncRound } from "./gsync.js";
 import { doSearch } from "./search.js";
-import { npText } from "./util.js";
+import { fmtBytes, npText } from "./util.js";
+import { DL_QUALITY_KEY, prefDlQuality } from "./vault.js";
+import { NET_MODE_KEY, setModePref } from "./net.js";
 
 // ---------------------------------------------------------------- settings -
 // One native <dialog>, three entries and nothing else. The body swaps between
 // the menu and a single section, so a nested dialog is never needed.
-export const APP = { name: "TRANCE MUSIC", version: "0.1.0", id: "com.openmusic.trancemusic" };
+export const APP = { name: "TRANCE MUSIC", version: "0.2.0", id: "com.openmusic.trancemusic" };
+
+/// What to call this machine wherever the copy used to hard-code "Windows".
+export const PLATFORM = /windows/i.test(navigator.userAgent)
+  ? "Windows"
+  : /mac/i.test(navigator.userAgent)
+    ? "macOS"
+    : /linux|x11/i.test(navigator.userAgent)
+      ? "Linux"
+      : "Desktop";
 
 /// Direct Rust dependencies, read off Cargo.lock — the list an attribution
 /// page is expected to carry. The full transitive tree is 469 crates and is not
@@ -30,16 +63,58 @@ export const LICENSES = [
 ];
 
 export const kv = (k, v) => `
-  <div class="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3">
+  <div class="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-3 px-3.5 py-2.5">
     <dt class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant sm:w-28 shrink-0">${esc(k)}</dt>
     <dd class="text-sm text-on-surface min-w-0">${esc(v)}</dd>
   </div>`;
 
 export const clause = (n, h, body) => `
-  <li class="flex flex-col gap-1">
-    <h3 class="text-sm font-semibold text-on-surface">${esc(n)}. ${esc(h)}</h3>
-    <p class="text-[13px] leading-relaxed text-on-surface-variant">${body}</p>
+  <li class="flex gap-3 px-4 py-3.5">
+    <span class="w-6 h-6 shrink-0 mt-0.5 rounded-md bg-primary text-on-primary font-label-mono text-[11px] flex items-center justify-center">${esc(n)}</span>
+    <span class="min-w-0 flex flex-col gap-1">
+      <h3 class="text-sm font-semibold text-on-surface">${esc(h)}</h3>
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">${body}</p>
+    </span>
   </li>`;
+
+// ------------------------------------------------------------- view chrome -
+// Every Settings view is built from these five shapes, so the nine sections
+// read as one dialog rather than nine hand-styled screens: a card, a row with
+// a tile, a switch, a select, and a note pinned off the left edge.
+export const setCard = (rows) =>
+  `<div class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70">${rows}</div>`;
+
+export const setTile = (icon) => `
+        <span class="w-8 h-8 shrink-0 rounded-lg bg-surface-container border border-surface-container-highest/60 flex items-center justify-center text-on-surface-variant">
+          <span class="material-symbols-outlined text-[18px]">${icon}</span>
+        </span>`;
+
+export const setRow = (icon, label, sub, control = "") => `
+      <div class="flex items-center gap-3 px-3.5 py-3 transition-colors">
+        ${setTile(icon)}
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-medium text-on-surface">${label}</span>
+          <span class="block text-xs text-on-surface-variant mt-0.5">${sub}</span>
+        </span>
+        ${control}
+      </div>`;
+
+export const setSwitch = (on, attrs = "", tag = "button") => `
+        <${tag}${tag === "button" ? ` type="button" role="switch" aria-checked="${on}"` : ""} ${attrs} class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+          on ? "bg-primary" : "bg-surface-container-highest"
+        }"><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}"></span></${tag}>`;
+
+export const setSelect =
+  "max-w-[9.5rem] shrink-0 bg-surface-container-lowest border border-surface-container-highest/70 rounded-lg px-2 py-1.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20";
+
+export const setBtn = (label, attrs = "", cls = "") =>
+  `<button type="button" ${attrs} class="px-3 py-1.5 rounded-lg border border-surface-container-highest/70 bg-surface-container-lowest text-xs font-medium text-on-surface hover:bg-surface-container transition-colors ${cls}">${label}</button>`;
+
+export const setGroup = (label) =>
+  `<span class="font-label-mono text-[10px] uppercase tracking-[0.16em] text-on-surface-variant px-1 block">${label}</span>`;
+
+export const setNote = (html) =>
+  `<p class="text-xs leading-relaxed text-on-surface-variant border-l-2 border-primary/40 pl-3">${html}</p>`;
 
 // ----------------------------------------------------------- desktop widget -
 // The card is its own Tauri window (label "widget", declared in
@@ -80,7 +155,7 @@ export async function applyWidget({ show = widgetPref(), embed = widgetMode() ==
 // window); the pieces the backend needs are pushed over once at boot.
 export const NAME_KEY = "tm-name";
 export const AUTOSTART_KEY = "tm-autostart"; // missing = on, so first run starts with Windows
-export const LANG_KEY = "tm-lang"; // "all" or a JioSaavn language slug
+export const LANG_KEY = "tm-lang"; // JSON array of JioSaavn language slugs; empty = all
 export const COUNTRY_KEY = "tm-country"; // ISO code, "" = source default
 
 export function prefStr(key, dflt) {
@@ -93,10 +168,28 @@ export function prefStr(key, dflt) {
 export function savePref(key, value) {
   try {
     localStorage.setItem(key, value);
+    notifyLocalChange();
   } catch {}
 }
 export const prefName = () => prefStr(NAME_KEY, "Listener");
-export const prefLang = () => prefStr(LANG_KEY, "all");
+/// Every language the listener picked. A bare slug (the pre-multi format) is
+/// read as a one-language list, so nothing is lost on upgrade.
+export function prefLangs() {
+  const raw = prefStr(LANG_KEY, "");
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    if (Array.isArray(v)) return v.filter((s) => typeof s === "string" && s && s !== "all");
+  } catch {}
+  return raw === "all" ? [] : [raw];
+}
+export function saveLangs(list) {
+  savePref(LANG_KEY, JSON.stringify([...new Set(list.filter((s) => s && s !== "all"))]));
+}
+/// The one language the catalog itself is asked for — the first pick. The rest
+/// are applied client-side by `filterLang`, which is the only place that can
+/// keep a multi-language set.
+export const prefLang = () => prefLangs()[0] || "all";
 export const prefCountry = () => prefStr(COUNTRY_KEY, "");
 export const autostartPref = () => prefStr(AUTOSTART_KEY, "1") !== "0";
 
@@ -106,29 +199,81 @@ export function paintGreeting() {
 }
 
 /// Registry Run entry (startup) + the language/country every catalog request
-/// is built with.
+/// is built with. The whole language set goes over so the backend cache key
+/// changes whenever *any* pick changes, not just the leading one.
 export function applySysPrefs() {
   invoke("autostart_set", { on: autostartPref() }).catch((e) => diag("autostart", false, String(e)));
-  invoke("content_prefs_set", { lang: prefLang(), country: prefCountry() }).catch((e) =>
+  invoke("content_prefs_set", { lang: prefLangs().join(","), country: prefCountry() }).catch((e) =>
     diag("prefs", false, String(e)),
   );
 }
 
 /// Search results, load-more pages and Home's rankings all flow through here:
-/// keep the selected language, but only when the source actually speaks it -
-/// an all-English query under a Telugu preference would otherwise paint an
-/// empty page instead of the results the user asked for.
+/// keep the selected languages, but only when the source actually speaks one
+/// of them - an all-English query under a Telugu-only preference would
+/// otherwise paint an empty page instead of the results the user asked for.
+/// A track in any one of the picked languages passes; when nothing matches,
+/// the unfiltered list is returned rather than an empty screen.
 export function filterLang(list) {
-  const lang = prefLang();
-  if (lang === "all" || !Array.isArray(list)) return list;
+  const langs = prefLangs();
+  if (!langs.length || !Array.isArray(list)) return list;
   const hit = list.filter((t) =>
     String(t.language || "")
       .toLowerCase()
       .split(",")
-      .some((s) => s.trim() === lang),
+      .some((s) => langs.includes(s.trim())),
   );
   return hit.length ? hit : list;
 }
+
+/// Display label for a language slug — "telugu" → "Telugu".
+export function langLabel(slug) {
+  const hit = LANGS.find(([v]) => v === slug);
+  if (hit) return hit[1];
+  return slug ? slug[0].toUpperCase() + slug.slice(1) : "";
+}
+
+/// Home's own filter, stricter than `filterLang`: rows that carry a language
+/// must match the picks, rows that carry none are kept (nothing to filter
+/// them by). A shelf is only emptied when its source *does* speak another
+/// language — which `langShelves` in home.js then refills from a
+/// language-scoped search.
+export function filterLangHome(list) {
+  const langs = prefLangs();
+  if (!langs.length || !Array.isArray(list)) return list;
+  if (!list.some((t) => String(t.language || "").trim())) return list;
+  return list.filter((t) =>
+    String(t.language || "")
+      .toLowerCase()
+      .split(",")
+      .some((s) => langs.includes(s.trim())),
+  );
+}
+
+/// JioSaavn language slugs the catalog speaks. Module scope (not scoped to the
+/// General view) because the chip handler names the picked languages in its
+/// toast after the panel is repainted.
+const LANGS = [
+  ["all", "All languages"],
+  ["telugu", "Telugu"],
+  ["hindi", "Hindi"],
+  ["tamil", "Tamil"],
+  ["bengali", "Bengali"],
+  ["kannada", "Kannada"],
+  ["malayalam", "Malayalam"],
+  ["english", "English"],
+  ["chinese", "Chinese"],
+  ["german", "German"],
+  ["marathi", "Marathi"],
+  ["punjabi", "Punjabi"],
+  ["gujarati", "Gujarati"],
+  ["odia", "Odia"],
+  ["urdu", "Urdu"],
+  ["spanish", "Spanish"],
+  ["french", "French"],
+  ["japanese", "Japanese"],
+  ["korean", "Korean"],
+];
 
 export const SETTINGS_VIEWS = {
   general: {
@@ -136,29 +281,8 @@ export const SETTINGS_VIEWS = {
     body: () => {
       const name = prefName();
       const startOn = autostartPref();
-      const lang = prefLang();
+      const langs = prefLangs();
       const country = prefCountry();
-      const LANGS = [
-        ["all", "All languages"],
-        ["telugu", "Telugu"],
-        ["hindi", "Hindi"],
-        ["tamil", "Tamil"],
-        ["bengali", "Bengali"],
-        ["kannada", "Kannada"],
-        ["malayalam", "Malayalam"],
-        ["english", "English"],
-        ["chinese", "Chinese"],
-        ["german", "German"],
-        ["marathi", "Marathi"],
-        ["punjabi", "Punjabi"],
-        ["gujarati", "Gujarati"],
-        ["odia", "Odia"],
-        ["urdu", "Urdu"],
-        ["spanish", "Spanish"],
-        ["french", "French"],
-        ["japanese", "Japanese"],
-        ["korean", "Korean"],
-      ];
       const COUNTRIES = [
         ["", "Automatic"],
         ["IN", "India"],
@@ -185,47 +309,210 @@ export const SETTINGS_VIEWS = {
         rows
           .map(([v, l]) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`)
           .join("");
-      const row = (icon, label, sub, control) => `
-      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-container transition-colors">
-        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">${icon}</span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-on-surface">${label}</span>
-          <span class="block text-xs text-on-surface-variant">${sub}</span>
-        </span>
-        ${control}
-      </div>`;
-      const selectCls =
-        "max-w-[9.5rem] shrink-0 bg-surface-container-lowest border border-surface-container-highest/60 rounded-lg px-2 py-1.5 text-sm text-on-surface";
+      // A native <select multiple> needs ctrl-click and a modifier most people
+      // never try, so the language picker is a chip group: one tap toggles.
+      const langChip = (v, l, on) =>
+        `<button type="button" data-lang="${esc(v)}" aria-pressed="${on}" class="px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+          on
+            ? "bg-primary text-on-primary"
+            : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+        }">${esc(l)}</button>`;
+      const langChips = `<div id="set-langs" class="flex flex-wrap gap-1 justify-end max-w-[15rem]">${
+        langChip("all", "All", !langs.length) +
+        LANGS.filter(([v]) => v !== "all")
+          .map(([v, l]) => langChip(v, l, langs.includes(v)))
+          .join("")
+      }</div>`;
       return `
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-surface-container transition-colors">
-        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">person</span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-on-surface">Display name</span>
-          <span class="block text-xs text-on-surface-variant">Shown in the greeting on Home.</span>
-        </span>
-        <input id="set-name" type="text" maxlength="32" value="${esc(name)}" placeholder="Listener"
-          class="w-40 shrink-0 bg-surface-container-lowest border border-surface-container-highest/60 rounded-lg px-2 py-1.5 text-sm text-on-surface" />
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Profile")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "person",
+            "Display name",
+            "Shown in the greeting on Home.",
+            `<input id="set-name" type="text" maxlength="32" value="${esc(name)}" placeholder="Listener"
+              class="w-40 shrink-0 bg-surface-container-lowest border border-surface-container-highest/70 rounded-lg px-2 py-1.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20" />`,
+          ) +
+            setRow(
+              "power_settings_new",
+              "Open at startup",
+              startOn ? `Starts with ${PLATFORM}` : "Off - start it yourself",
+              setSwitch(startOn, "data-autostart"),
+            ),
+        )}</div>
       </div>
-      ${row(
-        "power_settings_new",
-        "Open at startup",
-        startOn ? "Starts with Windows" : "Off - start it yourself",
-        `<button type="button" role="switch" aria-checked="${startOn}" data-autostart class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${startOn ? "bg-primary" : "bg-surface-container-highest"}"><span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${startOn ? "translate-x-4" : "translate-x-0.5"}"></span></button>`,
-      )}
-      ${row(
-        "translate",
-        "Music language",
-        "Songs are filtered to the language you pick",
-        `<select id="set-lang" class="${selectCls}">${options(LANGS, lang)}</select>`,
-      )}
-      ${row(
-        "public",
-        "Country",
-        "Sets the region the catalog is read from",
-        `<select id="set-country" class="${selectCls}">${options(COUNTRIES, country)}</select>`,
-      )}
-      <p class="text-xs leading-relaxed text-on-surface-variant">Language and country apply to new searches and refresh Home straight away; favourites and downloads you already saved are never filtered.</p>
+      <div>
+        ${setGroup("Catalog")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "translate",
+            "Music language",
+            langs.length
+              ? `Songs are filtered to ${langs.length} language${langs.length > 1 ? "s" : ""} — tap to add or remove`
+              : "Showing every language — tap to filter",
+            langChips,
+          ) +
+            setRow(
+              "public",
+              "Country",
+              "Sets the region the catalog is read from",
+              `<select id="set-country" class="${setSelect}">${options(COUNTRIES, country)}</select>`,
+            ) +
+            setRow(
+              "wifi",
+              "Network mode",
+              "Auto probes the link and switches modes; force online/offline to pin it",
+              `<select id="set-net-mode" class="${setSelect}">${options(
+                [
+                  ["auto", "Auto"],
+                  ["online", "Force online"],
+                  ["offline", "Force offline"],
+                ],
+                prefStr(NET_MODE_KEY, "auto"),
+              )}</select>`,
+            ) +
+            setRow(
+              "high_quality",
+              "Download quality",
+              "Opus bitrate for new downloads (normalized to −16 LUFS)",
+              `<select id="set-dl-quality" class="${setSelect}">${options(
+                [
+                  ["320kbps", "320 kbps — max"],
+                  ["160kbps", "160 kbps"],
+                  ["96kbps", "96 kbps"],
+                  ["64kbps", "64 kbps — small"],
+                  ["48kbps", "48 kbps — tiny"],
+                ],
+                prefDlQuality(),
+              )}</select>`,
+            ),
+        )}</div>
+      </div>
+      ${setNote("Language and country apply to new searches and refresh Home straight away; favourites and downloads you already saved are never filtered.")}
+    </div>`;
+    },
+  },
+
+  storage: {
+    eyebrow: "Settings / Storage",
+    body: () => {
+      // Usage arrives async (disk walk), so the line fills after render —
+      // same pattern as fillShortcutMode.
+      setTimeout(fillStorage, 0);
+      return `
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Usage")}
+        <div id="set-storage-usage" class="mt-1.5 rounded-xl border border-surface-container-highest/60 bg-surface-container px-3.5 py-3 font-label-mono text-[11px] leading-relaxed text-on-surface-variant">Reading usage&hellip;</div>
+      </div>
+      <div>
+        ${setGroup("Cache")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "hard_drive",
+            "Cache size",
+            "Cap for covers, lyrics and stream metadata kept on disk.",
+            `<select id="set-cache-size" class="${setSelect}">
+              <option value="100">100 MB</option>
+              <option value="500">500 MB &mdash; default</option>
+              <option value="1024">1 GB</option>
+              <option value="2048">2 GB</option>
+              <option value="5120">5 GB &mdash; max</option>
+            </select>`,
+          ) +
+            `<button type="button" data-cache-clear class="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors">
+              ${setTile("delete_sweep")}
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium text-on-surface">Clear cache</span>
+                <span class="block text-xs text-on-surface-variant mt-0.5">Frees covers, lyrics and metadata now; they re-download on demand.</span>
+              </span>
+              <span id="set-cache-clearing" class="text-xs text-on-surface-variant hidden">Clearing&hellip;</span>
+            </button>`,
+        )}</div>
+      </div>
+      ${setNote("Saved downloads live in the vault outside this cache and are never affected. Entries also expire on their own: stream links after 30 minutes, metadata after 6 hours, lyrics after 7 days.")}
+    </div>`;
+    },
+  },
+
+  backup: {
+    eyebrow: "Settings / Backup & Export",
+    body: () => {
+      // Counts + Drive status arrive after render — same skeleton pattern
+      // as fillStorage.
+      setTimeout(() => {
+        fillBackupInfo();
+        refreshGDrive();
+      }, 0);
+      return `
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Backup file")}
+        <div id="set-backup-info" class="mt-1.5 rounded-xl border border-surface-container-highest/60 bg-surface-container px-3.5 py-3 font-label-mono text-[11px] leading-relaxed text-on-surface-variant">Reading&hellip;</div>
+        <div class="mt-1.5 flex flex-wrap gap-2">
+          ${setBtn("Save backup&hellip;", "data-backup-export")}
+          ${setBtn("Restore&hellip;", "data-backup-restore")}
+        </div>
+      </div>
+      <div>
+        ${setGroup("Playlists")}
+        <div class="mt-1.5 rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest px-3.5 py-3 flex flex-col gap-2.5">
+          <select id="set-backup-pl" class="${setSelect}">
+            <option value="">Loading&hellip;</option>
+          </select>
+          <div class="flex flex-wrap gap-2">
+            ${setBtn("Export CSV", "data-pl-csv")}
+            ${setBtn("Export M3U", "data-pl-m3u")}
+          </div>
+        </div>
+      </div>
+      <div>
+        ${setGroup("Google Drive (optional)")}
+        <div class="mt-1.5 rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest px-3.5 py-3 flex flex-col gap-2.5">
+          <div id="set-gdrive-status" class="text-xs leading-relaxed text-on-surface-variant">Checking&hellip;</div>
+          <div class="flex flex-wrap gap-2">
+            ${setBtn("Sign in with Google", "data-gdrive-signin")}
+            ${setBtn("Sync now", "data-gdrive-sync")}
+            ${setBtn("Sign out", "data-gdrive-signout")}
+          </div>
+        </div>
+      </div>
+      ${setNote("A backup holds favorites, local playlists and settings — downloads, cache and history stay on this machine. Sign in below to also keep them in your Google Drive; the file stays the manual path.")}
+    </div>`;
+    },
+  },
+
+  updates: {
+    eyebrow: "Settings / Updates",
+    body: () => {
+      // The check is a network round-trip, so the panel paints a skeleton
+      // first — same pattern as fillStorage / fillShortcutMode.
+      setTimeout(fillUpdates, 0);
+      return `
+    <div class="flex flex-col gap-4">
+      <div class="rounded-xl border border-surface-container-highest/60 bg-surface-container px-3.5 py-3 flex flex-col gap-2.5">
+        <div id="set-update-status" class="text-xs leading-relaxed text-on-surface-variant">Checking for updates&hellip;</div>
+        <div id="set-update-progress" class="hidden">
+          <div class="flex items-center justify-between text-xs text-on-surface-variant mb-1">
+            <span id="set-update-phase">Downloading&hellip;</span>
+            <span id="set-update-pct" class="font-label-mono">0%</span>
+          </div>
+          <div class="h-1.5 rounded-full bg-surface-container-high overflow-hidden">
+            <div id="set-update-bar" class="h-full w-0 bg-primary transition-all"></div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        ${setBtn("Check again", "data-update-check")}
+        ${setBtn("Releases page", "data-update-page")}
+      </div>
+      <div>
+        ${setGroup("Previous releases")}
+        <div id="set-update-releases" class="mt-1.5 rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden p-1">Waiting for the check&hellip;</div>
+      </div>
+      ${setNote("Updates install over the current copy; the vault is never touched. Picking an older release steps the app back to it &mdash; every package is signature-checked against this build's key before it runs.")}
     </div>`;
     },
   },
@@ -233,32 +520,34 @@ export const SETTINGS_VIEWS = {
   licenses: {
     eyebrow: "Settings / Licences",
     body: () => `
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-4">
       <p class="text-[13px] leading-relaxed text-on-surface-variant">TRANCE MUSIC itself is MIT licensed &mdash; see <span class="font-label-mono">LICENSE</span> in the repository. The Rust core links the direct dependencies below; every one is MIT or dual MIT&nbsp;/&nbsp;Apache-2.0.</p>
-      <table class="w-full font-label-mono text-[11px] border-collapse">
-        <thead>
-          <tr class="text-on-surface-variant">
-            <th class="text-left font-normal py-1.5">Crate</th>
-            <th class="text-left font-normal py-1.5 w-20">Version</th>
-            <th class="text-left font-normal py-1.5">Licence</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${LICENSES.map(
-            ([n, v, l]) => `
-          <tr class="border-t border-surface-container-high">
-            <td class="py-1.5 pr-2 text-on-surface">${esc(n)}</td>
-            <td class="py-1.5 pr-2 text-on-surface-variant">${esc(v)}</td>
-            <td class="py-1.5 text-on-surface-variant">${esc(l)}</td>
+      <div class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden">
+        <table class="w-full font-label-mono text-[11px] border-collapse">
+          <thead>
+            <tr class="bg-surface-container text-on-surface-variant">
+              <th class="text-left font-normal uppercase tracking-wider text-[10px] px-3.5 py-2">Crate</th>
+              <th class="text-left font-normal uppercase tracking-wider text-[10px] px-3.5 py-2 w-20">Version</th>
+              <th class="text-left font-normal uppercase tracking-wider text-[10px] px-3.5 py-2 w-36">Licence</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${LICENSES.map(
+              ([n, v, l]) => `
+          <tr class="border-t border-surface-container-high/70">
+            <td class="px-3.5 py-2 text-on-surface">${esc(n)}</td>
+            <td class="px-3.5 py-2 text-on-surface-variant">${esc(v)}</td>
+            <td class="px-3.5 py-2 text-on-surface-variant">${esc(l)}</td>
           </tr>`,
-          ).join("")}
-          <tr class="border-t border-surface-container-high">
-            <td class="py-1.5 pr-2 text-on-surface">@tauri-apps/cli</td>
-            <td class="py-1.5 pr-2 text-on-surface-variant">^2 (dev)</td>
-            <td class="py-1.5 text-on-surface-variant">MIT OR Apache-2.0</td>
-          </tr>
-        </tbody>
-      </table>
+            ).join("")}
+            <tr class="border-t border-surface-container-high/70">
+              <td class="px-3.5 py-2 text-on-surface">@tauri-apps/cli</td>
+              <td class="px-3.5 py-2 text-on-surface-variant">^2 (dev)</td>
+              <td class="px-3.5 py-2 text-on-surface-variant">MIT OR Apache-2.0</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p class="text-xs leading-relaxed text-on-surface-variant">The complete dependency tree is 469 crates and lives in <span class="font-label-mono">app/src-tauri/Cargo.lock</span>. Full licence texts: <span class="font-label-mono">LICENSE</span> for this project, and each upstream repository for its crate. No copyleft licences are linked.</p>
     </div>`,
   },
@@ -266,40 +555,45 @@ export const SETTINGS_VIEWS = {
   about: {
     eyebrow: "Settings / About",
     body: () => `
-    <div class="flex flex-col gap-3">
-      <div>
-        <p class="text-base font-semibold text-on-surface">${esc(APP.name)}</p>
-        <p class="font-label-mono text-[11px] text-on-surface-variant mt-0.5">v${esc(APP.version)} &middot; ${esc(APP.id)} &middot; Windows</p>
+    <div class="flex flex-col gap-4">
+      <div class="flex items-center gap-3.5">
+        <span class="w-11 h-11 shrink-0 rounded-xl bg-primary flex items-center justify-center">
+          <span class="material-symbols-outlined text-[22px] text-on-primary" style="font-variation-settings: &quot;FILL&quot; 1;">graphic_eq</span>
+        </span>
+        <div class="min-w-0">
+          <p class="text-base font-semibold text-on-surface">${esc(APP.name)}</p>
+          <p class="font-label-mono text-[11px] text-on-surface-variant mt-0.5">v${esc(APP.version)} &middot; ${esc(APP.id)} &middot; ${PLATFORM}</p>
+        </div>
       </div>
       <p class="text-[13px] leading-relaxed text-on-surface-variant">A desktop music player that streams from JioSaavn through a local range relay, keeps an offline vault on your disk, and never lets the webview talk to a third-party CDN directly.</p>
-      <dl class="flex flex-col gap-2">
+      <dl class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70">
         ${kv("Shell", "Tauri 2, Rust 1.77+")}
         ${kv("Front end", "Vanilla ES modules, no build step, Tailwind via CDN")}
         ${kv("Catalog", "JioSaavn first-party, 5 community mirrors as fallback")}
         ${kv("Playback", "Local axum relay on 127.0.0.1, Range forwarded verbatim")}
         ${kv("Lyrics", "LRCLIB, then JioSaavn, then LRCLIB search")}
-        ${kv("Vault", "~/Downloads/TRANCE MUSIC")}
+        ${kv("Vault", "App data folder · TRANCE MUSIC")}
         ${kv("Licence", "MIT")}
       </dl>
-      <p class="text-xs text-on-surface-variant">No installer and no code signing yet &mdash; this build runs from source. Development status is in <span class="font-label-mono">CHANGELOG.md</span>.</p>
+      ${setNote("No installer and no code signing yet &mdash; this build runs from source. Development status is in <span class='font-label-mono'>CHANGELOG.md</span>.")}
     </div>`,
   },
 
   terms: {
     eyebrow: "Settings / Terms",
     body: () => `
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-4">
       <p class="text-[13px] leading-relaxed text-on-surface-variant">Last updated 30 September 2026. By using ${esc(APP.name)} you accept these terms.</p>
-      <ol class="flex flex-col gap-3 list-none">
+      <ol class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70 list-none">
         ${clause(1, "Personal, non-commercial use", "You may use TRANCE MUSIC for your own personal, non-commercial listening. Reselling access, redistributing the application, or operating a public service built on it requires written permission.")}
         ${clause(2, "No content is bundled", "TRANCE MUSIC ships no audio. It is a player: tracks, artwork and lyrics are fetched at request time from third-party services. Rights to that content stay with their owners, and those services' own terms also apply to you.")}
-        ${clause(3, "Your downloads are yours", "Anything you save lands in your own Downloads folder and is your responsibility to keep, back up and delete. TRANCE MUSIC is not liable for lost or damaged files.")}
+        ${clause(3, "Your downloads are yours", "Anything you save lands in this app's own data folder on your disk and is your responsibility to keep, back up and delete. TRANCE MUSIC is not liable for lost or damaged files.")}
         ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by JioSaavn, LRCLIB, or any mirror listed in the source.`)}
         ${clause(5, "Limitation of liability", "To the fullest extent permitted by law, the authors and contributors are not liable for any indirect, incidental or consequential damages arising from use of the software, including lost data, lost profits, or unavailable services.")}
         ${clause(6, "Copyright complaints", "Copyright holders may ask for stored media to be removed. Contact the maintainers through the repository and the relevant item will be deleted from the vault promptly.")}
         ${clause(7, "Changes", "These terms may change as the project matures. The date above and the copy in the repository are authoritative; material changes will be noted in the changelog.")}
       </ol>
-      <p class="text-xs text-on-surface-variant">This summary is provided for convenience and is not legal advice.</p>
+      ${setNote("This summary is provided for convenience and is not legal advice.")}
     </div>`,
   },
 
@@ -312,45 +606,44 @@ export const SETTINGS_VIEWS = {
         ["top", "open_in_full", "Always on top", "Floats above every window, wherever you drag it."],
         ["desktop", "desktop_windows", "On the wallpaper", "Sits behind every window - visible only on your desktop."],
       ];
-      return `
-    <div class="flex flex-col gap-3">
-      <p class="text-[13px] leading-relaxed text-on-surface-variant">A now-playing card for your Windows desktop: cover art, title, artist, progress and transport controls, fed live from the player. It is a separate window, so it stays where you leave it.</p>
-      <button type="button" role="switch" aria-checked="${on}" data-widget-toggle class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors">
-        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">widgets</span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-on-surface">Show desktop widget</span>
-          <span class="block text-xs text-on-surface-variant truncate">${
-            on ? "Added to your desktop" : "Not on the desktop yet"
-          }</span>
-        </span>
-        <span class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${on ? "bg-primary" : "bg-surface-container-highest"}">
-          <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${on ? "translate-x-4" : "translate-x-0.5"}"></span>
-        </span>
-      </button>
-      <div class="flex flex-col gap-1 ${on ? "" : "opacity-50 pointer-events-none"}">
-        <span class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Placement</span>
-        ${modes
-          .map(
-            ([id, icon, label, sub]) => `
-        <button type="button" role="radio" aria-checked="${mode === id}" data-widget-mode="${id}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors">
-          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">${icon}</span>
+      const modeBtn = (id, icon, label, sub) => `
+        <button type="button" role="radio" aria-checked="${mode === id}" data-widget-mode="${id}" class="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors ${
+          mode === id ? "bg-surface-container" : "hover:bg-surface-container-low"
+        }">
+          ${setTile(icon)}
           <span class="min-w-0 flex-1">
             <span class="block text-sm font-medium text-on-surface">${label}</span>
-            <span class="block text-xs text-on-surface-variant truncate">${sub}</span>
+            <span class="block text-xs text-on-surface-variant mt-0.5 truncate">${sub}</span>
           </span>
           <span class="material-symbols-outlined text-[18px] ${mode === id ? "text-on-surface" : "opacity-0"}">check</span>
-        </button>`,
-          )
-          .join("")}
-        <button type="button" data-widget-reset class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors">
-          <span class="material-symbols-outlined text-[20px] text-on-surface-variant">my_location</span>
+        </button>`;
+      return `
+    <div class="flex flex-col gap-4">
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">A now-playing card for your ${PLATFORM} desktop: cover art, title, artist, progress and transport controls, fed live from the player. It is a separate window, so it stays where you leave it.</p>
+      <div class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70">
+        <button type="button" role="switch" aria-checked="${on}" data-widget-toggle class="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors">
+          ${setTile("widgets")}
           <span class="min-w-0 flex-1">
-            <span class="block text-sm font-medium text-on-surface">Reset position</span>
-            <span class="block text-xs text-on-surface-variant truncate">Put the card back above the miniplayer</span>
+            <span class="block text-sm font-medium text-on-surface">Show desktop widget</span>
+            <span class="block text-xs text-on-surface-variant mt-0.5 truncate">${
+              on ? "Added to your desktop" : "Not on the desktop yet"
+            }</span>
           </span>
+          ${setSwitch(on, "", "span")}
         </button>
+        <div class="${on ? "" : "opacity-50 pointer-events-none"}">
+          <div class="px-3.5 pt-3 pb-1">${setGroup("Placement")}</div>
+          ${modes.map(([id, icon, label, sub]) => modeBtn(id, icon, label, sub)).join("")}
+          <button type="button" data-widget-reset class="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-container-low">
+            ${setTile("my_location")}
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-on-surface">Reset position</span>
+              <span class="block text-xs text-on-surface-variant mt-0.5 truncate">Put the card back above the miniplayer</span>
+            </span>
+          </button>
+        </div>
       </div>
-      <p class="text-xs leading-relaxed text-on-surface-variant">Drag the card by its header; the X hides it here. The card follows playback only while this app is running.</p>
+      ${setNote("Drag the card by its header; the X hides it here. The card follows playback only while this app is running.")}
     </div>`;
     },
   },
@@ -371,36 +664,42 @@ export const SETTINGS_VIEWS = {
         ["Previous track", "Media key", "Media key"],
       ];
       return `
-    <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-4">
       <p class="text-[13px] leading-relaxed text-on-surface-variant">Global shortcuts: they fire even when another window has focus. Caps Lock is used as a Hyper key (Ctrl + Alt + Shift + Win) when a remap tool is running, with Ctrl + Alt as the fallback so every action works either way.</p>
-      <div id="set-shortcut-mode" class="text-xs text-on-surface-variant">Checking&hellip;</div>
-      <table class="w-full font-label-mono text-[11px] border-collapse">
-        <thead>
-          <tr class="text-on-surface-variant">
-            <th class="text-left font-normal py-1.5">Action</th>
-            <th class="text-left font-normal py-1.5">Hyper (remapped Caps)</th>
-            <th class="text-left font-normal py-1.5">Fallback</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows
-            .map(
-              ([a, h, f]) => `
-          <tr class="border-t border-surface-container-high">
-            <td class="py-1.5 pr-2 text-on-surface">${esc(a)}</td>
-            <td class="py-1.5 pr-2 text-on-surface-variant">${esc(h)}</td>
-            <td class="py-1.5 text-on-surface-variant">${esc(f)}</td>
+      <div id="set-shortcut-mode" class="rounded-xl border border-surface-container-highest/60 bg-surface-container px-3.5 py-2.5 text-xs leading-relaxed text-on-surface-variant">Checking&hellip;</div>
+      <div class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-x-auto">
+        <table class="w-full font-label-mono text-[11px] border-collapse">
+          <thead>
+            <tr class="bg-surface-container text-on-surface-variant">
+              <th class="text-left font-normal uppercase tracking-wider text-[10px] px-3.5 py-2">Action</th>
+              <th class="text-left font-normal uppercase tracking-wider text-[10px] px-3.5 py-2">Hyper (remapped Caps)</th>
+              <th class="text-left font-normal uppercase tracking-wider text-[10px] px-3.5 py-2">Fallback</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                ([a, h, f]) => `
+          <tr class="border-t border-surface-container-high/70">
+            <td class="px-3.5 py-2 text-on-surface">${esc(a)}</td>
+            <td class="px-3.5 py-2 text-on-surface-variant">${esc(h)}</td>
+            <td class="px-3.5 py-2 text-on-surface-variant">${esc(f)}</td>
           </tr>`,
-            )
-            .join("")}
-        </tbody>
-      </table>
-      <div class="flex flex-col gap-1">
-        <span class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Test</span>
-        <span id="set-shortcut-test" class="text-xs text-on-surface-variant">Press a shortcut to see it arrive here.</span>
-        <button type="button" data-shortcut-test class="mt-1 self-start px-3 py-1.5 rounded-lg border border-surface-container-highest/60 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">Listen for shortcuts (8s)</button>
+              )
+              .join("")}
+          </tbody>
+        </table>
       </div>
-      <p class="text-xs leading-relaxed text-on-surface-variant">In-app key: <span class="font-label-mono">Ctrl + K</span> focuses search (global chords never double as text input).</p>
+      <div>
+        ${setGroup("Test")}
+        <div class="mt-1.5 rounded-xl border border-surface-container-highest/60 bg-surface-container px-3.5 py-3 flex flex-col gap-2">
+          <span id="set-shortcut-test" class="text-xs text-on-surface-variant">Press a shortcut to see it arrive here.</span>
+          ${setBtn("Listen for shortcuts (8s)", "data-shortcut-test", "self-start")}
+        </div>
+      </div>
+      ${setNote(
+        `In-app keys (window focused): <span class="font-label-mono">Space</span> play / pause &middot; <span class="font-label-mono">Ctrl + &larr; / Ctrl + &rarr;</span> previous / next &middot; <span class="font-label-mono">Ctrl + D</span> download &middot; <span class="font-label-mono">L</span> like &middot; <span class="font-label-mono">Ctrl + K</span> focus search. Typing in a field never triggers them.`,
+      )}
     </div>`;
     },
   },
@@ -410,10 +709,203 @@ export const SETTINGS_MENU = [
   ["tune", "General", "Name, startup, language &amp; country", "general"],
   ["widgets", "Desktop Widget", "Now-playing card on your desktop", "widget"],
   ["keyboard_shortcut", "Keyboard Shortcuts", "Caps Lock Hyper &amp; media keys", "shortcuts"],
+  ["hard_drive", "Storage", "Cache size, usage &amp; clear", "storage"],
+  ["backup", "Backup &amp; Export", "Save, restore, CSV &amp; M3U", "backup"],
+  ["system_update", "Updates", "New releases &amp; revert to an older one", "updates"],
   ["policy", "Open-Source Licences", "MIT &amp; Apache-2.0", "licenses"],
-  ["info", "About the Project", `v${APP.version} &middot; Windows desktop`, "about"],
+  ["info", "About the Project", `v${APP.version} &middot; ${PLATFORM} desktop`, "about"],
   ["gavel", "Terms &amp; Conditions", "Personal use, no warranty", "terms"],
 ];
+
+// ---------------------------------------------------------------- backup -
+// Phase 1: portable backup/restore + CSV/M3U export. Cancellation of the
+// native dialog is silent (Rust reports "cancelled"); everything else
+// surfaces as a toast + diag line.
+function backupSnapshot() {
+  return buildBackup(
+    { favorites: loadFavs(), playlists: loadLocalPls(), settings: readSettings() },
+    Date.now(),
+  );
+}
+
+function fillBackupInfo() {
+  const box = $("#set-backup-info");
+  if (box) {
+    const favs = loadFavs().length;
+    const pls = loadLocalPls();
+    box.textContent = `${favs} favorites · ${pls.length} local playlists · ${Object.keys(readSettings()).length} settings`;
+  }
+  const sel = $("#set-backup-pl");
+  if (sel) {
+    const list = loadLocalPls();
+    sel.innerHTML = list.length
+      ? list
+          .map(
+            (p) => `<option value="${esc(p.id)}">${esc(p.title)} (${(p.tracks || []).length})</option>`,
+          )
+          .join("")
+      : '<option value="">No local playlists yet</option>';
+  }
+}
+
+function cancelledByUser(err) {
+  return /cancelled/.test(String((err && err.message) || err || ""));
+}
+
+async function doBackupExport() {
+  const doc = backupSnapshot();
+  try {
+    const path = await invoke("export_file", {
+      content: JSON.stringify(doc, null, 2),
+      suggestedName: backupFilename(doc.exportedAt),
+      filterLabel: "TRANCE MUSIC backup",
+      extensions: ["json"],
+    });
+    toast(`Backup saved (${doc.favorites.records.length} favorites, ${doc.playlists.records.length} playlists).`, "success");
+    diag("backup", true, `wrote ${path}`);
+  } catch (err) {
+    if (cancelledByUser(err)) return;
+    diag("backup", false, String(err));
+    toast(`Backup failed: ${err}`, "error");
+  }
+}
+
+async function doBackupRestore() {
+  let text;
+  try {
+    text = await invoke("read_import_file");
+  } catch (err) {
+    if (cancelledByUser(err)) return;
+    diag("restore", false, String(err));
+    toast(`Restore failed: ${err}`, "error");
+    return;
+  }
+  let doc;
+  try {
+    doc = parseBackupFile(text);
+  } catch (err) {
+    diag("restore", false, String(err && err.message ? err.message : err));
+    toast(`Restore failed: ${err && err.message ? err.message : err}`, "error");
+    return;
+  }
+  const applied = applyBackup(doc);
+  saveFavs(applied.favorites);
+  saveLocalPls(applied.playlists);
+  writeSettings(applied.settings);
+  paintFavHearts();
+  renderFavs();
+  renderLibrary();
+  toast(
+    `Restored ${applied.counts.favorites} favorites and ${applied.counts.playlists} playlists.`,
+    "success",
+  );
+  diag("restore", true, `${applied.counts.favorites} favorites, ${applied.counts.playlists} playlists`);
+  openSettings("backup");
+}
+
+async function doPlaylistExport(format) {
+  const sel = $("#set-backup-pl");
+  const picked = sel ? sel.value : "";
+  const playlist = loadLocalPls().find((p) => p.id === picked);
+  if (!playlist) {
+    toast("Pick a playlist first — or create one in Library.", "info");
+    return;
+  }
+  const isCsv = format === "csv";
+  try {
+    const path = await invoke("export_file", {
+      content: isCsv ? playlistToCsv(playlist) : playlistToM3u(playlist),
+      suggestedName: playlistFilename(playlist.title, format),
+      filterLabel: isCsv ? "CSV spreadsheet" : "M3U playlist",
+      extensions: [format],
+    });
+    toast(`Exported ${playlist.title} (${(playlist.tracks || []).length} tracks).`, "success");
+    diag("export", true, `${format} -> ${path}`);
+  } catch (err) {
+    if (cancelledByUser(err)) return;
+    diag("export", false, String(err));
+    toast(`Export failed: ${err}`, "error");
+  }
+}
+
+function gdriveBtn(name, show) {
+  const btn = document.querySelector(`[data-gdrive-${name}]`);
+  if (btn) btn.style.display = show ? "" : "none";
+}
+
+function lastSyncLine() {
+  let ts = 0;
+  try {
+    ts = Number(localStorage.getItem(LAST_SYNC_KEY)) || 0;
+  } catch {}
+  return ts ? `Last synced ${new Date(ts).toLocaleString()}.` : "Never synced on this machine.";
+}
+
+/// Paint the Drive row from backend status: sign-in/out/sync buttons show
+/// only when they can act; an unconfigured build says so plainly.
+async function refreshGDrive() {
+  const box = $("#set-gdrive-status");
+  let status = { configured: false, signed_in: false };
+  try {
+    status = await invoke("gdrive_status");
+  } catch (err) {
+    diag("gdrive", false, String(err));
+  }
+  gdriveBtn("signin", status.configured && !status.signed_in);
+  gdriveBtn("sync", status.configured && status.signed_in);
+  gdriveBtn("signout", status.configured && status.signed_in);
+  if (box) {
+    box.textContent = !status.configured
+      ? "Google Drive sync is not configured in this build."
+      : status.signed_in
+        ? `Signed in. ${lastSyncLine()}`
+        : "Not signed in. Sign-in is optional — backup files always work.";
+  }
+}
+
+async function doGDriveSignIn() {
+  toast("Browser opened — complete the Google sign-in there.", "info");
+  try {
+    await invoke("gdrive_sign_in");
+    toast("Signed in with Google.", "success");
+    diag("gdrive", true, "sign-in complete");
+  } catch (err) {
+    diag("gdrive", false, String(err));
+    toast(`Google sign-in failed: ${err}`, "error");
+  }
+  refreshGDrive();
+}
+
+async function doGDriveSignOut() {
+  try {
+    await invoke("gdrive_sign_out");
+    toast("Signed out — your local data stays.", "info");
+    diag("gdrive", true, "signed out");
+  } catch (err) {
+    diag("gdrive", false, String(err));
+    toast(`Sign-out failed: ${err}`, "error");
+  }
+  refreshGDrive();
+}
+
+/// Manual full sync: the shared engine round, with toasts. Auto runs stay
+/// silent; the button reports.
+async function doGDriveSyncNow() {
+  if (isSyncing()) {
+    toast("A sync is already running.", "info");
+    return;
+  }
+  try {
+    const counts = await syncRound();
+    toast(`Synced (${counts.favorites} favorites, ${counts.playlists} playlists).`, "success");
+    diag("gdrive", true, "sync complete");
+  } catch (err) {
+    diag("gdrive", false, String(err));
+    toast(`Sync failed: ${err}`, "error");
+  } finally {
+    openSettings("backup");
+  }
+}
 
 // ------------------------------------------------------ keyboard shortcuts -
 /// Linux (xremap) recipe for Caps Lock as Hyper: held = Ctrl+Alt+Shift+Super,
@@ -449,6 +941,160 @@ async function fillShortcutMode() {
       : `<button type="button" data-shortcut-copy class="mt-2 px-3 py-1.5 rounded-lg border border-surface-container-highest/60 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors">Copy xremap snippet</button>
          <span class="block mt-1.5">Run it with <span class="font-label-mono">xremap ~/.config/xremap.yaml</span>, then restart this app.</span>`;
   box.innerHTML = `<span>Fallback active</span> &mdash; <span class="font-label-mono">Ctrl + Alt + key</span> works right now. To use Caps Lock as the Hyper key:<span class="block mt-1">${enable}</span><span class="block mt-1.5">Restart the app after installing the remap tool; it is detected at startup.</span>`;
+}
+
+/// Storage view: live usage line plus the active disk-budget value. The
+/// budget comes back as bytes and is matched onto the select's MB options,
+/// with a "(custom)" option injected when the file holds an out-of-range
+/// or hand-edited value.
+async function fillStorage() {
+  const box = $("#set-storage-usage");
+  if (!box) return;
+  try {
+    const s = await invoke("cache_stats");
+    if (!box.isConnected) return;
+    box.innerHTML = storageLine(s);
+    const sel = $("#set-cache-size");
+    const mb = String(Math.round(s.budget_bytes / (1024 * 1024)));
+    if (sel && sel.value !== mb) {
+      if (![...sel.options].some((o) => o.value === mb)) sel.add(new Option(`${mb} MB — custom`, mb));
+      sel.value = mb;
+    }
+  } catch (err) {
+    if (box.isConnected) box.textContent = "Usage unavailable.";
+    diag("cache", false, String(err));
+  }
+}
+
+function storageLine(s) {
+  const disk = s.art_bytes + s.lyrics_bytes;
+  return `Cache: <span class="font-label-mono">${fmtBytes(disk)}</span> on disk (${s.art_count} cover${s.art_count === 1 ? "" : "s"}, ${s.lyrics_count} lyric file${s.lyrics_count === 1 ? "" : "s"}) &middot; vault: <span class="font-label-mono">${fmtBytes(s.vault_bytes)}</span>${s.disk_enabled ? "" : " &middot; disk cache disabled"}`;
+}
+
+/// Where the "Releases page" button goes; refreshed by every successful check.
+let lastUpdatePage = "https://github.com/Rohithdgrr/OPEN-MUSIC/releases";
+
+/// Updates view: one call returns the whole story — signed manifest first,
+/// GitHub metadata as the fallback, plus the rollback list.
+async function fillUpdates() {
+  const box = $("#set-update-status");
+  const list = $("#set-update-releases");
+  if (!box) return;
+  let r;
+  try {
+    r = await invoke("update_check");
+  } catch (err) {
+    if (box.isConnected) box.textContent = "Could not reach GitHub — check the connection and try again.";
+    if (list?.isConnected) list.textContent = "";
+    diag("update", false, String(err));
+    return;
+  }
+  if (!box.isConnected) return;
+  lastUpdatePage = r.page || lastUpdatePage;
+  if (r.latest) {
+    const v = `v${esc(r.latest.version)}`;
+    const notes = r.latest.notes ? ` — ${esc(r.latest.notes.split("\n")[0])}` : "";
+    box.innerHTML = r.latest.installable
+      ? `<span class="text-primary font-medium">${v} is available.</span> You are on ${esc(r.current)}${notes}
+         <button type="button" data-update-install class="block mt-2 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-medium hover:opacity-90 transition-opacity">Install ${v} &amp; restart</button>`
+      : `<span class="text-primary font-medium">${v} is out,</span> but it was published before in-app updates — install it from the releases page.${notes}`;
+  } else {
+    box.textContent = `You are up to date on ${r.current}.`;
+  }
+  const row = (rel) => `
+  <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container transition-colors">
+    <span class="min-w-0 flex-1">
+      <span class="block text-sm text-on-surface">${esc(rel.name || rel.tag)}</span>
+      <span class="block text-xs text-on-surface-variant">${esc(rel.tag)}${rel.published ? " · " + esc(rel.published.slice(0, 10)) : ""}</span>
+    </span>
+    ${
+      rel.current
+        ? '<span class="text-[11px] font-medium text-primary shrink-0">Current</span>'
+        : `<button type="button" data-update-revert="${esc(rel.tag)}" class="px-2.5 py-1 rounded-lg border border-surface-container-highest/60 text-[11px] font-medium text-on-surface hover:bg-surface-container-high transition-colors shrink-0">Revert</button>`
+    }
+  </div>`;
+  if (list?.isConnected) {
+    list.innerHTML = r.releases.length
+      ? r.releases.map(row).join("")
+      : '<span class="text-xs text-on-surface-variant">Release list unavailable (offline or rate-limited).</span>';
+  }
+}
+
+let updateOff = null;
+let updating = false;
+
+/// Progress for install / revert: the Rust side streams `update:progress`
+/// while the package downloads and verifies. On Windows the app exits into
+/// the installer at the end of that stream, so this listener is also the
+/// last thing the panel paints before the new version relaunches.
+function watchUpdateProgress() {
+  if (updateOff) return;
+  updateOff = window.__TAURI__?.event?.listen("update:progress", (e) => {
+    const wrap = $("#set-update-progress");
+    const bar = $("#set-update-bar");
+    if (!bar) return;
+    wrap?.classList.remove("hidden");
+    const p = e.payload || {};
+    if (p.phase === "download" && p.total) {
+      const n = Math.min(100, Math.round((p.received / p.total) * 100));
+      bar.style.width = `${n}%`;
+      const pct = $("#set-update-pct");
+      if (pct) pct.textContent = `${n}%`;
+      const phase = $("#set-update-phase");
+      if (phase) phase.textContent = "Downloading…";
+    } else if (p.phase === "verify") {
+      bar.style.width = "100%";
+      const pct = $("#set-update-pct");
+      if (pct) pct.textContent = "100%";
+      const phase = $("#set-update-phase");
+      if (phase) phase.textContent = "Verifying signature…";
+    } else if (p.phase === "done") {
+      const phase = $("#set-update-phase");
+      if (phase) phase.textContent = "Installed — restart the app.";
+    }
+  });
+  if (updateOff && typeof updateOff.catch === "function") {
+    updateOff.catch(() => {
+      updateOff = null;
+    });
+  }
+}
+
+function stopUpdateProgress() {
+  const p = updateOff;
+  updateOff = null;
+  if (p && typeof p.then === "function") p.then((un) => un()).catch(() => {});
+}
+
+function runUpdateInstall() {
+  if (updating) return;
+  updating = true;
+  watchUpdateProgress();
+  $("#set-update-progress")?.classList.remove("hidden");
+  invoke("update_install")
+    .then(() => toast("Update installed — restart the app to switch versions.", "success"))
+    .catch((err) => {
+      updating = false;
+      diag("update", false, String(err));
+      toast(String(err), "error");
+      $("#set-update-progress")?.classList.add("hidden");
+    });
+}
+
+function runUpdateRollback(tag) {
+  if (updating) return;
+  updating = true;
+  watchUpdateProgress();
+  $("#set-update-progress")?.classList.remove("hidden");
+  toast(`Installing ${tag}…`, "info");
+  invoke("update_rollback", { tag })
+    .then(() => toast(`${tag} installed — restart the app to switch versions.`, "success"))
+    .catch((err) => {
+      updating = false;
+      diag("update", false, String(err));
+      toast(String(err), "error");
+      $("#set-update-progress")?.classList.add("hidden");
+    });
 }
 
 const SHORTCUT_TEST_EVENTS = [
@@ -504,19 +1150,25 @@ export function openSettings(view = "menu") {
     dlg = document.createElement("dialog");
     dlg.id = "tm-settings";
     dlg.innerHTML = `
-    <div class="w-[min(34rem,calc(100vw-2rem))] max-h-[calc(100vh-3rem)] rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-xl overflow-hidden flex flex-col">
-      <div class="flex items-center gap-2 px-5 py-3.5 border-b border-surface-container-high shrink-0">
+    <div class="w-[min(36rem,calc(100vw-2rem))] max-h-[calc(100vh-3rem)] rounded-2xl bg-surface-container-lowest ring-1 ring-black/5 shadow-2xl overflow-hidden flex flex-col">
+      <div class="flex items-center gap-3 px-5 py-4 border-b border-surface-container-high/80 bg-surface-container-low/70 shrink-0">
         <button type="button" id="tm-settings-back" title="Back" class="hidden">
           <span class="material-symbols-outlined text-[18px]">arrow_back</span>
         </button>
-        <span id="tm-settings-eyebrow" class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant">Settings</span>
+        <span id="tm-settings-eyebrow" class="min-w-0 flex-1 font-label-mono text-[10px] uppercase tracking-[0.16em] text-on-surface-variant">Settings</span>
+        <span class="w-8 h-8 shrink-0 rounded-lg bg-primary flex items-center justify-center" aria-hidden="true">
+          <span class="material-symbols-outlined text-[18px] text-on-primary">settings</span>
+        </span>
       </div>
-      <div id="tm-settings-body" class="px-5 py-4 overflow-y-auto"></div>
+      <div id="tm-settings-body" class="px-5 py-5 overflow-y-auto"></div>
     </div>`;
     dlg.addEventListener("click", (e) => {
       if (e.target === dlg) dlg.close();
     });
-    dlg.addEventListener("close", stopShortcutTest);
+    dlg.addEventListener("close", () => {
+      stopShortcutTest();
+      stopUpdateProgress();
+    });
     dlg.addEventListener("click", (e) => {
       const row = e.target.closest("[data-settings-view]");
       if (row) return openSettings(row.dataset.settingsView);
@@ -574,11 +1226,101 @@ export function openSettings(view = "menu") {
         startShortcutTest();
         return;
       }
+      // Storage view: clear every cache tier (never the vault) in place.
+      if (e.target.closest("[data-cache-clear]")) {
+        const flag = $("#set-cache-clearing");
+        if (flag) flag.classList.remove("hidden");
+        invoke("cache_clear")
+          .then((s) => {
+            const box = $("#set-storage-usage");
+            if (box) box.innerHTML = storageLine(s);
+            toast("Cache cleared — covers and lyrics re-download as you browse.", "success");
+          })
+          .catch((err) => diag("cache", false, String(err)))
+          .finally(() => {
+            const f = $("#set-cache-clearing");
+            if (f) f.classList.add("hidden");
+          });
+        return;
+      }
+      // Backup view: portable file in / out, plus per-playlist CSV / M3U.
+      if (e.target.closest("[data-backup-export]")) {
+        doBackupExport();
+        return;
+      }
+      if (e.target.closest("[data-backup-restore]")) {
+        doBackupRestore();
+        return;
+      }
+      if (e.target.closest("[data-pl-csv]")) {
+        doPlaylistExport("csv");
+        return;
+      }
+      if (e.target.closest("[data-pl-m3u]")) {
+        doPlaylistExport("m3u");
+        return;
+      }
+      // Google Drive (optional sign-in): authenticate, drop the token, or
+      // run one manual pull-merge-push round.
+      if (e.target.closest("[data-gdrive-signin]")) {
+        doGDriveSignIn();
+        return;
+      }
+      if (e.target.closest("[data-gdrive-signout]")) {
+        doGDriveSignOut();
+        return;
+      }
+      if (e.target.closest("[data-gdrive-sync]")) {
+        doGDriveSyncNow();
+        return;
+      }
+      // Updates view: re-check, open the releases page, install the signed
+      // update, or step back to a published older release.
+      if (e.target.closest("[data-update-check]")) {
+        fillUpdates();
+        return;
+      }
+      if (e.target.closest("[data-update-page]")) {
+        invoke("open_external", { url: lastUpdatePage }).catch((err) =>
+          diag("update", false, String(err)),
+        );
+        return;
+      }
+      if (e.target.closest("[data-update-install]")) {
+        runUpdateInstall();
+        return;
+      }
+      const revert = e.target.closest("[data-update-revert]");
+      if (revert) {
+        runUpdateRollback(revert.dataset.updateRevert);
+        return;
+      }
       const start = e.target.closest("[data-autostart]");
       if (start) {
         savePref(AUTOSTART_KEY, autostartPref() ? "0" : "1");
         applySysPrefs();
         return openSettings("general");
+      }
+      // Music language: one tap toggles a language in or out of the set.
+      const chip = e.target.closest("[data-lang]");
+      if (chip) {
+        const v = chip.dataset.lang;
+        const cur = prefLangs();
+        const next = v === "all" ? [] : cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
+        saveLangs(next);
+        applySysPrefs();
+        // Repaint the panel so the chips show the new state, then re-read the
+        // catalog under it.
+        openSettings("general");
+        loadHome();
+        if ($("#search-input")?.value.trim()) doSearch({ silent: true });
+        toast(
+          next.length
+            ? `Filtering to ${next.map((x) => LANGS.find(([k]) => k === x)?.[1] || x).join(", ")}.`
+            : "Showing songs in every language.",
+          "info",
+        );
+        return;
       }
     });
     // Text and selects commit on change so typing a name never re-renders the
@@ -589,18 +1331,28 @@ export function openSettings(view = "menu") {
       paintGreeting();
     });
     dlg.addEventListener("change", (e) => {
-      if (e.target.id === "set-lang") {
-        savePref(LANG_KEY, e.target.value);
-        applySysPrefs();
-        loadHome();
-        if ($("#search-input")?.value.trim()) doSearch({ silent: true });
-        toast(`Songs filtered to ${e.target.selectedOptions[0]?.textContent}.`, "info");
-      } else if (e.target.id === "set-country") {
+      if (e.target.id === "set-country") {
         savePref(COUNTRY_KEY, e.target.value);
         applySysPrefs();
         loadHome();
         if ($("#search-input")?.value.trim()) doSearch({ silent: true });
         toast(`Reading charts for ${e.target.selectedOptions[0]?.textContent}.`, "info");
+      } else if (e.target.id === "set-dl-quality") {
+        savePref(DL_QUALITY_KEY, e.target.value);
+        toast(`New downloads will be saved at ${e.target.selectedOptions[0]?.textContent}.`, "info");
+      } else if (e.target.id === "set-net-mode") {
+        savePref(NET_MODE_KEY, e.target.value);
+        setModePref(e.target.value); // toast + queue refresh live in net.js
+      } else if (e.target.id === "set-cache-size") {
+        // Applies immediately (evicts down to the new cap) so the number on
+        // screen matches what is actually kept.
+        invoke("cache_set_budget", { mb: Number(e.target.value) })
+          .then((s) => {
+            const box = $("#set-storage-usage");
+            if (box) box.innerHTML = storageLine(s);
+            toast(`Cache capped at ${e.target.selectedOptions[0]?.textContent}.`, "info");
+          })
+          .catch((err) => diag("cache", false, String(err)));
       }
     });
     document.body.appendChild(dlg);
@@ -613,22 +1365,41 @@ export function openSettings(view = "menu") {
     $("#tm-settings-body", dlg).innerHTML = section.body();
     // Swap the whole class string, never add/remove `flex` on top of `hidden`:
     // Tailwind emits `.hidden` after `.flex`, so the two cannot coexist.
-    if (back) back.className = "flex items-center text-on-surface-variant hover:text-on-surface transition-colors";
+    if (back)
+      back.className =
+        "flex w-8 h-8 shrink-0 rounded-lg bg-surface-container-lowest border border-surface-container-highest/70 items-center justify-center text-on-surface-variant hover:text-on-surface hover:border-black/20 transition-colors";
   } else {
     npText("tm-settings-eyebrow", "Settings");
+    const groups = [
+      ["Preferences", SETTINGS_MENU.slice(0, 3)],
+      ["Storage & updates", SETTINGS_MENU.slice(3, 5)],
+      ["About", SETTINGS_MENU.slice(5)],
+    ];
     $("#tm-settings-body", dlg).innerHTML = `
-    <div class="flex flex-col gap-1">
-      ${SETTINGS_MENU.map(
-        ([icon, label, sub, view]) => `
-      <button type="button" data-settings-view="${view}" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left hover:bg-surface-container transition-colors group">
-        <span class="material-symbols-outlined text-[20px] text-on-surface-variant">${icon}</span>
-        <span class="min-w-0 flex-1">
-          <span class="block text-sm font-medium text-on-surface">${label}</span>
-          <span class="block text-xs text-on-surface-variant truncate">${sub}</span>
-        </span>
-        <span class="material-symbols-outlined text-[18px] text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>
-      </button>`,
-      ).join("")}
+    <div class="flex flex-col gap-4">
+      ${groups
+        .map(
+          ([title, items]) => `
+      <div>
+        ${setGroup(title)}
+        <div class="mt-1.5">${setCard(
+          items
+            .map(
+              ([icon, label, sub, view]) => `
+          <button type="button" data-settings-view="${view}" class="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-container-low group">
+            ${setTile(icon)}
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-medium text-on-surface">${label}</span>
+              <span class="block text-xs text-on-surface-variant mt-0.5 truncate">${sub}</span>
+            </span>
+            <span class="material-symbols-outlined text-[18px] text-on-surface-variant transition-transform group-hover:translate-x-0.5">chevron_right</span>
+          </button>`,
+            )
+            .join(""),
+        )}</div>
+      </div>`,
+        )
+        .join("")}
     </div>`;
     if (back) back.className = "hidden";
   }

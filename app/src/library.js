@@ -2,16 +2,16 @@
 // Split from main.js (Phase 4 M1).
 import { art, paintArt } from "./art.js";
 import { emitState } from "./bridge.js";
-import { backView, diag, esc, invoke, showView, toast } from "./core.js";
+import { backView, diag, esc, invoke, notifyLocalChange, showView, toast } from "./core.js";
 import { $, $$, views } from "./dom.js";
-import { LIBRARY_KEY, PLAYS_KEY, homeFeed, loadHome, loadLibrary, loadPlays } from "./home.js";
+import { LIBRARY_KEY, PLAYS_KEY, homeFeed, loadHome, loadLibrary, loadPlays, paintTaste } from "./home.js";
 import { playQueueItem } from "./playback.js";
-import { queue, queueIndex, renderQueue, setQueueIndex, setQueueTab, setShuffleMode } from "./queue.js";
+import { enqueue, insertNext, queue, queueIndex, renderQueue, setQueueIndex, setQueueTab, setShuffleMode } from "./queue.js";
 import { setRadioStation } from "./radio.js";
 import { addBtn, dedupeTracks, doSearch, lastCards, trackRow, uniqById } from "./search.js";
 import { paintModes } from "./transport.js";
-import { fmtTime, metaLinks, npText, openEntityByName } from "./util.js";
-import { downloadAll, downloadTrack } from "./vault.js";
+import { artistLinks, fmtTime, metaLinks, npText, openEntityByName } from "./util.js";
+import { downloadAll, downloadTrack, refreshVault } from "./vault.js";
 
 // ------------------------------------------------- local playlists (mine) -
 // They live in the same library array as saved items, flagged `local`, so the
@@ -23,6 +23,7 @@ export function saveLocalPls(list) {
   try {
     const rest = loadLibrary().filter((p) => !p.local);
     localStorage.setItem(LIBRARY_KEY, JSON.stringify([...rest, ...list].slice(0, 50)));
+    notifyLocalChange();
   } catch {}
 }
 export function createLocalPl(name, tracks = []) {
@@ -152,13 +153,20 @@ $("#pl-picker")?.addEventListener("click", (e) => {
   if (e.target.closest("[data-pl-picker-close]")) closePicker();
 });
 
-/// One listening session, recorded where playback actually starts.
+/// One listening session, recorded where playback actually starts. The entry
+/// carries how many times it has been started — Home's "Most Listened" ranks
+/// by that, so the count rides along with the row it belongs to.
 export function pushPlay(track) {
   try {
-    const next = [{ ...track, ts: Date.now() }, ...loadPlays().filter((x) => x.id !== track.id)].slice(0, 100);
+    const prev = loadPlays().find((x) => x.id === track.id);
+    const count = (Number(prev?.count) || 0) + 1;
+    const next = [{ ...track, ts: Date.now(), count }, ...loadPlays().filter((x) => x.id !== track.id)].slice(0, 100);
     localStorage.setItem(PLAYS_KEY, JSON.stringify(next));
     renderPlays();
   } catch {}
+  // Home's taste section is built from plays — a new one is new taste, so it
+  // repaints here too.
+  paintTaste();
 }
 
 // ---------------------------------------------------------------- favorites -
@@ -175,6 +183,7 @@ export function loadFavs() {
 export function saveFavs(list) {
   try {
     localStorage.setItem(FAVS_KEY, JSON.stringify(list.slice(0, 200)));
+    notifyLocalChange();
   } catch {}
 }
 export function isFav(id) {
@@ -222,8 +231,131 @@ export function toggleFavTrack(track) {
   );
   diag("favorite", on, track.title);
   emitState(true);
+  // Two-tier vault: a favorited song that is already saved gets re-saved at
+  // the premium bitrate in the background. Songs that were never downloaded
+  // are left alone — a heart must not start a download.
+  if (on) promoteVaulted(track);
   return on;
 }
+
+/// Ask the backend to upgrade a saved song to the premium tier. Fire and
+/// forget: the favorite heart is already saved, and a failed promotion leaves
+/// the existing copy exactly as it was.
+async function promoteVaulted(track) {
+  try {
+    const upgraded = await invoke("promote_song", { id: track.id });
+    if (!upgraded) return;
+    diag("vault", true, `promoted ${track.title} to 128 kbps`);
+    toast(`"${track.title}" re-saved at 128 kbps.`, "success");
+    refreshVault();
+  } catch (err) {
+    diag("vault", false, `promote ${track.id}: ${err}`);
+  }
+}
+
+// ---------------------------------------------------------- entity favorites -
+// Albums, artists and playlists heart into the same Library store the hero
+// "Save to Library" button uses, tagged with a `kind` so Library can group
+// them. Playlists keep their raw id (the tracks endpoint needs it); albums
+// and artists key on token, prefixed so ids can never collide across kinds.
+export function isEntityFav(kind = "playlist", key) {
+  if (!key) return false;
+  return loadLibrary().some(
+    (x) => (x.kind || "playlist") === kind && (kind === "playlist" ? x.id === key : x.token === key),
+  );
+}
+
+/// Toggle one entity; returns the new saved state. Metadata only — tracks
+/// are fetched when the card is opened, exactly like every other save.
+export function toggleEntityFav(ent) {
+  const kind = ent.kind || "playlist";
+  const key = String(ent.key || "");
+  if (!key) return false;
+  let lib = [];
+  try {
+    lib = JSON.parse(localStorage.getItem(LIBRARY_KEY) || "[]");
+  } catch {}
+  const at = lib.findIndex(
+    (x) => (x.kind || "playlist") === kind && (kind === "playlist" ? x.id === key : x.token === key),
+  );
+  let on;
+  if (at >= 0) {
+    lib.splice(at, 1);
+    on = false;
+  } else {
+    lib.unshift(
+      kind === "playlist"
+        ? { id: key, title: ent.title || "Playlist", subtitle: ent.subtitle || "", image: ent.image || "" }
+        : {
+            kind,
+            id: `${kind}:${key}`,
+            token: key,
+            title: ent.title || "",
+            subtitle: ent.subtitle || "",
+            image: ent.image || "",
+          },
+    );
+    on = true;
+  }
+  try {
+    localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib.slice(0, 100)));
+  } catch {}
+  return on;
+}
+
+/// One heart button, self-contained like `addBtn`: the delegated listener
+/// below reads everything it needs off the element. Hidden until hover
+/// unless already saved, so the state stays visible.
+export function entFavBtn(kind, item) {
+  const key = kind === "playlist" ? item.id : item.token || item.id;
+  // Synthetic cards (Liked/Queue) are in-memory only, and a tokenless album
+  // could never be reopened from Library — no heart either.
+  if (item.synthetic || !key || (kind !== "playlist" && !item.token)) return "";
+  const saved = isEntityFav(kind, key);
+  const local = kind === "playlist" && !!item.local;
+  const fill = saved ? ` style="font-variation-settings: 'FILL' 1;"` : "";
+  return `<button type="button" data-ent-fav="1" data-ent-kind="${esc(kind)}" data-ent-key="${esc(key || "")}" data-ent-title="${esc(item.title || "")}" data-ent-sub="${esc(item.subtitle || "")}" data-ent-img="${esc(item.image || "")}"${
+    local ? ` data-ent-local="1"` : ""
+  } title="${local ? "Already in your Library" : saved ? "Remove from Library" : "Save to Library"}" class="w-8 h-8 rounded-full bg-surface-container-lowest/90 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md hover:scale-105 transition-all${
+    saved ? "" : " opacity-0 group-hover:opacity-100"
+  }"><span class="material-symbols-outlined text-[18px]"${fill}>favorite</span></button>`;
+}
+
+/// Capture phase: the heart sits inside a card that opens on click, so the
+/// card's own handler must never see this event (same pattern as addBtn).
+document.addEventListener(
+  "click",
+  (e) => {
+    const btn = e.target.closest?.("[data-ent-fav]");
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const kind = btn.dataset.entKind || "playlist";
+    const title = btn.dataset.entTitle || "";
+    if (btn.dataset.entLocal) {
+      toast("This playlist already lives in your Library.", "info", 2200);
+      return;
+    }
+    const on = toggleEntityFav({
+      kind,
+      key: btn.dataset.entKey,
+      title,
+      subtitle: btn.dataset.entSub,
+      image: btn.dataset.entImg,
+    });
+    const icon = btn.querySelector(".material-symbols-outlined");
+    if (icon) icon.style.fontVariationSettings = on ? "'FILL' 1" : "'FILL' 0";
+    btn.title = on ? "Remove from Library" : "Save to Library";
+    renderLibrary();
+    renderPlaylists();
+    renderHomeAlbums();
+    renderHomeArtists();
+    paintFeatured();
+    toast(on ? `Added "${title}" to Library.` : `Removed "${title}" from Library.`, on ? "success" : "info", 2200);
+    diag("library", on, title);
+  },
+  true,
+);
 
 /// Library "Favorite Masters" section: play on row click, download + remove.
 export function renderFavs() {
@@ -256,6 +388,9 @@ export function renderFavs() {
       </div>
       <div class="flex items-center gap-2 shrink-0 font-label-mono text-label-mono text-secondary">
         <span class="hidden sm:inline">${esc(t.duration || "")}</span>
+        <button type="button" data-fav-next="${i}" title="Play next" class="w-7 h-7 rounded-full hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
+          <span class="material-symbols-outlined text-[17px]">skip_next</span>
+        </button>
         <button type="button" data-fav-dl="${i}" title="Download this track" class="w-7 h-7 rounded-full hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
           <span class="material-symbols-outlined text-[17px]">download</span>
         </button>
@@ -281,6 +416,17 @@ export function renderFavs() {
     if (dl) {
       e.stopPropagation();
       downloadTrack(favs[Number(dl.dataset.favDl)], dl);
+      return;
+    }
+    const nx = e.target.closest("[data-fav-next]");
+    if (nx) {
+      e.stopPropagation();
+      const t = favs[Number(nx.dataset.favNext)];
+      if (t) {
+        insertNext(t);
+        toast(`"${t.title}" plays next.`, "success", 2200);
+        diag("queue", null, `next: ${t.title}`);
+      }
       return;
     }
     playTracksAt(favs, i);
@@ -336,11 +482,14 @@ export function trackRows(list, box, emptyMsg, limit) {
         </div>
         <div class="min-w-0">
           <div class="font-body-md text-body-md font-semibold text-on-surface truncate" dir="auto">${esc(t.title || "")}</div>
-          <div class="font-body-sm text-body-sm text-secondary truncate"><span class="hover:underline cursor-pointer" data-entity-kind="artist" data-entity-name="${esc(t.artist || "")}">${esc(t.artist || "")}</span></div>
+          <div class="font-body-sm text-body-sm text-secondary truncate">${artistLinks(t.artist || "")}</div>
         </div>
       </div>
       <div class="flex items-center gap-3 shrink-0 font-label-mono text-label-mono text-secondary">
         <span class="hidden sm:inline">${esc(t.duration || "")}</span>
+        <button type="button" data-next-idx="${i}" title="Play next" class="w-7 h-7 rounded-full hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
+          <span class="material-symbols-outlined text-[17px]">skip_next</span>
+        </button>
         <button type="button" data-fav-idx="${i}" title="Favorite this track" class="w-7 h-7 rounded-full hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors">
           <span class="material-symbols-outlined text-[17px]" data-fav-icon="${esc(t.id || "")}"${favFill(t.id || "")}>favorite</span>
         </button>
@@ -371,6 +520,17 @@ export function trackRows(list, box, emptyMsg, limit) {
     if (dl) {
       e.stopPropagation();
       downloadTrack(list[Number(dl.dataset.dlIdx)], dl);
+      return;
+    }
+    const nx = e.target.closest("[data-next-idx]");
+    if (nx) {
+      e.stopPropagation();
+      const t = list[Number(nx.dataset.nextIdx)];
+      if (t) {
+        insertNext(t);
+        toast(`"${t.title}" plays next.`, "success", 2200);
+        diag("queue", null, `next: ${t.title}`);
+      }
       return;
     }
     playTracksAt(list, i);
@@ -460,6 +620,13 @@ export async function openPlaylist(item, { scroll = true } = {}) {
   npText("pd-title-copy", item.title ? `• ${item.title}` : "");
   npText("pd-subtitle", item.subtitle || (pdLocal ? "Local playlist" : "Loading tracks…"));
   $("#pd-delete")?.classList.toggle("hidden", !item.local);
+  // Save heart: remote playlists only — local + synthetic already live here.
+  const pdFav = $("#pd-fav");
+  pdFav?.classList.toggle("hidden", pdLocal || !!item.synthetic);
+  const pdSaved = isEntityFav("playlist", pdCurrentId);
+  const pdFavIcon = pdFav?.querySelector(".material-symbols-outlined");
+  if (pdFavIcon) pdFavIcon.style.fontVariationSettings = pdSaved ? "'FILL' 1" : "'FILL' 0";
+  if (pdFav) pdFav.title = pdSaved ? "Remove from Library" : "Save to Library";
   const img = $("#pd-image");
   if (img) {
     if (item.image) {
@@ -561,6 +728,19 @@ export function paintPdRows() {
       toggleFavTrack(t);
       return;
     }
+    if (action === "queue" || action === "next") {
+      e.stopPropagation();
+      const where = action === "next" ? insertNext(t) : enqueue(t);
+      toast(
+        action === "next"
+          ? `"${t.title}" plays next.`
+          : `"${t.title}" queued at position ${where + 1}.`,
+        "success",
+        2200,
+      );
+      diag("queue", null, `${action}: ${t.title}`);
+      return;
+    }
     playTracksAt(list, Number(row.dataset.ri));
   };
   const left = q ? 0 : pdTracks.length - shown.length;
@@ -657,6 +837,7 @@ export function releaseCard(a) {
     <div data-dd-kind="album" data-dd-token="${esc(a.token || "")}" data-dd-title="${esc(a.title || "")}" data-dd-sub="${esc(a.subtitle || "")}" data-dd-img="${esc(a.image || "")}" class="p-3.5 rounded-xl bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col cursor-pointer">
       <div class="relative w-full aspect-square rounded-lg overflow-hidden bg-surface-container-high mb-2.5">
         <img alt="" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(a.image || "")} />
+        <span class="absolute top-2 left-2">${entFavBtn("album", a)}</span>
         ${a.year ? `<span class="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-surface-container-lowest/90 backdrop-blur-md font-label-mono text-[9px] text-on-surface">${esc(a.year)}</span>` : ""}
         <div class="absolute inset-0 bg-primary/20 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <span class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span></span>
@@ -711,6 +892,13 @@ export async function openDetail(kind, item, opts = {}) {
   if (opts.push && ddCurrent) ddStack.push(ddCurrent);
   else ddStack.length = 0;
   ddCurrent = { kind, item };
+  // Save heart: albums + artists only (playlists route to the playlists screen).
+  const ddFav = $("#dd-fav");
+  ddFav?.classList.toggle("hidden", kind === "playlist");
+  const ddSaved = isEntityFav(kind, item.token || item.id);
+  const ddFavIcon = ddFav?.querySelector(".material-symbols-outlined");
+  if (ddFavIcon) ddFavIcon.style.fontVariationSettings = ddSaved ? "'FILL' 1" : "'FILL' 0";
+  if (ddFav) ddFav.title = ddSaved ? "Remove from Library" : "Save to Library";
   // Captured before the view switch: where Back lands once the stack is dry.
   const here = views.find((v) => !v.classList.contains("hidden"));
   if (!opts.push && here && here.dataset.view !== "detail") ddReturnView = here.dataset.view;
@@ -808,9 +996,12 @@ export function plCard(p, tag = "CURATED", label = "") {
       <div class="relative aspect-square overflow-hidden bg-surface-container-high">
         ${cover}
         <span class="absolute top-2.5 left-2.5 px-2 py-1 rounded bg-black/70 text-white font-label-mono text-[9px] uppercase tracking-wider">${esc(tag)}</span>
-        <button type="button" title="Open playlist" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
-          <span class="material-symbols-outlined text-[18px]">play_arrow</span>
-        </button>
+        <span class="absolute top-2 right-2 flex items-center gap-1.5">
+          ${entFavBtn("playlist", p)}
+          <button type="button" title="Open playlist" class="w-8 h-8 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+            <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+          </button>
+        </span>
       </div>
       <div class="p-3.5 flex flex-col gap-1.5 min-w-0">
         <p class="font-body-md text-body-md font-semibold text-on-surface truncate" dir="auto">${esc(p.title || "")}</p>
@@ -828,6 +1019,7 @@ export function ddCard(kind, a) {
     <div data-dd-kind="${esc(kind)}" data-dd-token="${esc(a.token || "")}" data-dd-title="${esc(a.title || "")}" data-dd-sub="${esc(a.subtitle || "")}" data-dd-img="${esc(a.image || "")}" class="p-3.5 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer">
       <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
         <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(a.image || "")} />
+        <span class="absolute top-2 right-2">${entFavBtn(kind, a)}</span>
         <button type="button" title="Open" class="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-md hover:scale-105">
           <span class="material-symbols-outlined text-[18px]">play_arrow</span>
         </button>
@@ -852,7 +1044,10 @@ export function stationCard(c, i) {
       </div>
       <div class="mt-4 pt-3 border-t border-surface-container-high flex items-center justify-between">
         <span class="font-label-mono text-[10px] text-secondary">Chart</span>
-        <span class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[18px]">radio</span></span>
+        <span class="flex items-center gap-2">
+          ${entFavBtn("playlist", c)}
+          <span class="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[18px]">radio</span></span>
+        </span>
       </div>
     </div>`;
 }
@@ -904,11 +1099,12 @@ export function plSyntheticEntries() {
 
 export function plBuckets() {
   const feed = homeFeed || { playlists: [], charts: [] };
+  // ponytail: created + saved playlists are Library-only (user's call) — the
+  // Playlists screen is the JioSaavn feed plus the two auto-generated cards.
   return {
     synthetic: plSyntheticEntries(),
     curated: (feed.playlists || []).map((p) => ({ p, tag: "Curated", label: "" })),
     charts: (feed.charts || []).map((p) => ({ p, tag: "Chart", label: "Chart" })),
-    saved: loadLibrary().map((p) => ({ p, tag: p.local ? "Local" : "Saved", label: p.local ? "Local" : "In Library" })),
   };
 }
 
@@ -922,14 +1118,13 @@ export function renderPlaylists() {
   const box = $("#playlists-grid");
   if (!box) return;
   const b = plBuckets();
-  const all = plDedupe([...b.synthetic, ...b.curated, ...b.charts, ...b.saved]);
+  const all = plDedupe([...b.synthetic, ...b.curated, ...b.charts]);
   const counts = {
     all: all.length,
     curated: b.curated.length,
     charts: b.charts.length,
-    saved: b.saved.length,
   };
-  const list = plFilter === "all" ? all : plFilter === "curated" ? b.curated : plFilter === "charts" ? b.charts : b.saved;
+  const list = plFilter === "curated" ? b.curated : plFilter === "charts" ? b.charts : all;
   const q = plQuery.trim().toLowerCase();
   const shown = q ? list.filter((e) => (e.p.title || "").toLowerCase().includes(q)) : list;
   // Entries stay resolvable from any chip, so a card opened later still tags right.
@@ -984,31 +1179,131 @@ export function paintFeatured() {
   const inLib = loadLibrary().some((x) => x.id === p.id);
   npText("plf-save-label", inLib ? "Saved" : "Save");
 }
+// How many cards each Home shelf has revealed so far. A "More" button
+// grows the counter and re-renders the same grid, so the row loads more
+// in place instead of jumping to a separate browse screen.
+let homeAlbumsShown = 4;
+let homeArtistsShown = 3;
+let homeChartsShown = 3;
+
+export function resetHomeShelves() {
+  homeAlbumsShown = 4;
+  homeArtistsShown = 3;
+  homeChartsShown = 3;
+}
+
+export function moreHomeAlbums() {
+  if (!homeFeed) return;
+  homeAlbumsShown = Math.min(homeFeed.albums.length, homeAlbumsShown + 4);
+  renderHomeAlbums();
+}
+export function moreHomeArtists() {
+  if (!homeFeed) return;
+  homeArtistsShown = Math.min(homeFeed.artists.length, homeArtistsShown + 3);
+  renderHomeArtists();
+}
+export function moreHomeCharts() {
+  if (!homeFeed) return;
+  homeChartsShown = Math.min(homeFeed.charts.length, homeChartsShown + 3);
+  renderHomeStations();
+}
+
 export function renderHomeAlbums() {
   const box = $("#home-albums");
   if (!box || !homeFeed) return;
-  box.innerHTML = homeFeed.albums.length ? homeFeed.albums.map((a) => ddCard("album", a)).join("") : GRID_EMPTY;
+  const shown = homeFeed.albums.slice(0, homeAlbumsShown);
+  box.innerHTML = shown.length ? shown.map((a) => ddCard("album", a)).join("") : GRID_EMPTY;
+  const more = $("#home-releases-all");
+  if (more) {
+    const left = homeFeed.albums.length - shown.length;
+    more.classList.toggle("hidden", left <= 0);
+    const lbl = more.querySelector("span");
+    if (lbl) lbl.textContent = left > 0 ? `More Releases (${left})` : "View All Releases";
+  }
 }
 export function renderHomeArtists() {
   const box = $("#home-artists");
   if (!box || !homeFeed) return;
-  box.innerHTML = homeFeed.artists.length ? homeFeed.artists.map((a) => ddCard("artist", a)).join("") : GRID_EMPTY;
+  const shown = homeFeed.artists.slice(0, homeArtistsShown);
+  box.innerHTML = shown.length ? shown.map((a) => ddCard("artist", a)).join("") : GRID_EMPTY;
+  const more = $("#home-artists-all");
+  if (more) {
+    const left = homeFeed.artists.length - shown.length;
+    more.classList.toggle("hidden", left <= 0);
+    const lbl = more.querySelector("span");
+    if (lbl) lbl.textContent = left > 0 ? `More Artists (${left})` : "View All Artists";
+  }
 }
 export function renderHomeStations() {
   const box = $("#home-stations");
   if (!box || !homeFeed) return;
-  const list = homeFeed.charts.slice(0, 3);
-  box.innerHTML = list.length ? list.map(stationCard).join("") : GRID_EMPTY;
+  const shown = homeFeed.charts.slice(0, homeChartsShown);
+  box.innerHTML = shown.length ? shown.map(stationCard).join("") : GRID_EMPTY;
+  const more = $("#home-charts-more");
+  if (more) {
+    const left = homeFeed.charts.length - shown.length;
+    more.classList.toggle("hidden", left <= 0);
+    const lbl = more.querySelector("span");
+    if (lbl) lbl.textContent = left > 0 ? `More Charts (${left})` : "More Charts";
+  }
+}
+export function renderHomeDaily() {
+  const box = $("#home-daily");
+  if (!box || !homeFeed) return;
+  const items = homeFeed.daily || [];
+  box.innerHTML = items.length
+    ? items
+        .map(
+          (p, i) => `
+    <div data-daily-index="${i}" class="p-3.5 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer">
+      <div>
+        <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
+          <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(p.image)} />
+          <div class="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/30 flex flex-col justify-end p-3">
+            <span class="font-label-mono text-[9px] uppercase tracking-wider text-on-primary/80">Fresh today</span>
+            <span class="font-headline-md text-on-primary font-semibold text-[16px] leading-tight" dir="auto">${esc(p.title)}</span>
+          </div>
+          <button type="button" data-daily-play="${i}" title="Play this playlist" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface-container-lowest text-on-surface flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md">
+            <span class="material-symbols-outlined text-[18px]">play_arrow</span>
+          </button>
+        </div>
+        <p class="font-body-sm text-body-sm text-secondary line-clamp-2">${esc(p.subtitle)}</p>
+      </div>
+      <div class="mt-3 pt-2 border-t border-surface-container-high flex items-center justify-between text-on-surface-variant font-label-mono text-[10px]">
+        <span>${p.count ? `${p.count} Tracks` : "Daily mix"}</span>
+        <span>${p.subtitle ? esc(p.subtitle) : "Daily"}</span>
+      </div>
+    </div>`,
+        )
+        .join("")
+    : GRID_EMPTY;
 }
 export function renderLibrary() {
   const box = $("#library-saved");
   if (!box) return;
   const lib = uniqById(loadLibrary());
-  box.innerHTML = lib.length
-    ? lib
+  // Groups: playlists (created + saved) stay their own section; albums/movies
+  // and artists get theirs, each opening its complete detail view on click.
+  const pls = lib.filter((p) => !p.kind || p.kind === "playlist");
+  const albums = lib.filter((p) => p.kind === "album");
+  const artists = lib.filter((p) => p.kind === "artist");
+  box.innerHTML = pls.length
+    ? pls
         .map((p) => plCard(p, p.local ? "Local" : "Saved", p.local ? "Local" : "In Library"))
         .join("")
     : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — hit “Save to Library” on Home.</p>';
+  const abox = $("#library-albums");
+  if (abox)
+    abox.innerHTML = albums.length
+      ? albums.map((a) => ddCard("album", a)).join("")
+      : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — tap the heart on any album or movie.</p>';
+  const artbox = $("#library-artists");
+  if (artbox)
+    artbox.innerHTML = artists.length
+      ? artists.map((a) => ddCard("artist", a)).join("")
+      : '<p class="font-body-sm text-body-sm text-on-surface-variant">Nothing saved yet — tap the heart on any artist.</p>';
+  npText("library-albums-count", `${albums.length} saved`);
+  npText("library-artists-count", `${artists.length} saved`);
 }
 export function renderPlays() {
   const plays = uniqById(loadPlays());
@@ -1066,6 +1361,11 @@ export function wireDdGrid(sel) {
 }
 wireDdGrid("#home-albums");
 wireDdGrid("#home-artists");
+// "Most Listened" → the albums this listener already has a relationship with.
+wireDdGrid("#home-jump-albums");
+// Library groups: albums/movies and artists open their complete detail view.
+wireDdGrid("#library-albums");
+wireDdGrid("#library-artists");
 // The search grid holds whichever card type the active chip selected.
 wireDdGrid("#results");
 wirePlGrid("#results");
@@ -1093,6 +1393,19 @@ $("#pd-download")?.addEventListener("click", () => {
 $("#pd-more")?.addEventListener("click", () => {
   pdVisible = pdTracks.length;
   paintPdRows();
+});
+$("#pd-fav")?.addEventListener("click", () => {
+  const p = plFeatured?.p;
+  if (!p || !p.id || p.synthetic || pdLocal) return;
+  const on = toggleEntityFav({ kind: "playlist", key: p.id, title: p.title, subtitle: p.subtitle, image: p.image });
+  const icon = $("#pd-fav .material-symbols-outlined");
+  if (icon) icon.style.fontVariationSettings = on ? "'FILL' 1" : "'FILL' 0";
+  $("#pd-fav").title = on ? "Remove from Library" : "Save to Library";
+  renderLibrary();
+  renderPlaylists();
+  paintFeatured();
+  toast(on ? "Saved to Library" : "Removed from Library", on ? "success" : "info", 2200);
+  diag("library", on, p.title);
 });
 $("#pd-delete")?.addEventListener("click", (e) => {
   const btn = e.currentTarget;
@@ -1231,6 +1544,26 @@ $("#dd-download")?.addEventListener("click", async () => {
   if (ddMore && !(await loadAllArtistSongs())) return;
   const kind = ddCurrent?.kind || "album";
   downloadAll(ddTracks, kind === "artist" ? "artist songs" : `${kind} tracks`, $("#dd-download"));
+});
+$("#dd-fav")?.addEventListener("click", () => {
+  const cur = ddCurrent;
+  if (!cur || cur.kind === "playlist") return;
+  const item = cur.item;
+  const on = toggleEntityFav({
+    kind: cur.kind,
+    key: item.token || item.id,
+    title: item.title,
+    subtitle: item.subtitle,
+    image: item.image,
+  });
+  const icon = $("#dd-fav .material-symbols-outlined");
+  if (icon) icon.style.fontVariationSettings = on ? "'FILL' 1" : "'FILL' 0";
+  $("#dd-fav").title = on ? "Remove from Library" : "Save to Library";
+  renderLibrary();
+  renderHomeAlbums();
+  renderHomeArtists();
+  toast(on ? `Added "${item.title}" to Library.` : `Removed "${item.title}" from Library.`, on ? "success" : "info", 2200);
+  diag("library", on, item.title);
 });
 $("#dd-shuffle")?.addEventListener("click", async () => {
   if (!ddTracks.length) return;

@@ -11,6 +11,9 @@ export const errorEl = $("#error");
 // ------------------------------------------------------------------ player -
 export const audio = $("#audio");
 audio.volume = 0.75;
+// Crossfade bed: silent until a fade starts, so a stray src can never blast.
+export const audio2 = $("#audio2");
+audio2.volume = 0;
 
 export const bar = {
   cover: $("#bar-cover"),

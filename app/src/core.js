@@ -156,6 +156,39 @@ export function backView(fallback = "home") {
     requestAnimationFrame(settle);
   });
 }
+
+// ------------------------------------------------------- floating back -
+// Detail pages (playlist, artist, album, Now Playing's queue) scroll far
+// enough that the Back link at the top of the content leaves the screen.
+// This pill slides in under the fixed header once the page is deep enough
+// for Back to be off-screen, and returns one step — restoring the scroll
+// the previous view was left at. It doubles as "top" when there is no
+// history yet (backView falls back to the current view and toTop()).
+const floatBack = document.createElement("button");
+floatBack.type = "button";
+floatBack.id = "float-back";
+floatBack.title = "Back";
+floatBack.setAttribute("aria-label", "Back");
+floatBack.className =
+  "fixed top-20 left-6 z-40 w-8 h-8 grid place-items-center rounded-full " +
+  "bg-surface/90 backdrop-blur-xl border border-surface-container-high/60 " +
+  "text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low " +
+  "shadow-[0_1px_8px_rgba(0,0,0,0.04)] " +
+  "opacity-0 -translate-y-2 pointer-events-none transition-all duration-200";
+floatBack.innerHTML = '<span class="material-symbols-outlined text-[18px]">arrow_back</span>';
+document.body.appendChild(floatBack);
+floatBack.addEventListener("click", () => backView());
+
+const BACK_APPEARS_AT = 240;
+function paintFloatBack() {
+  const show = window.scrollY > BACK_APPEARS_AT;
+  floatBack.classList.toggle("opacity-0", !show);
+  floatBack.classList.toggle("-translate-y-2", !show);
+  floatBack.classList.toggle("pointer-events-none", !show);
+  floatBack.setAttribute("aria-hidden", show ? "false" : "true");
+}
+window.addEventListener("scroll", paintFloatBack, { passive: true });
+paintFloatBack();
 for (const a of navLinks) {
   a.addEventListener("click", (e) => {
     e.preventDefault();
@@ -188,6 +221,15 @@ export function clearError() {
 }
 
 // ------------------------------------------------------------------ toasts -
+// Phase 3 auto-sync: the save funnels (saveFavs, saveLocalPls, savePref)
+// announce local edits through this event; the sync engine debounces it
+// into a round. A DOM event keeps the funnels dependency-free (no cycles).
+export function notifyLocalChange() {
+  try {
+    window.dispatchEvent(new Event("tm:local-change"));
+  } catch {}
+}
+
 // Background results (downloads especially) must be visible from every view,
 // so they render into a stack rooted at <body>, not inside one view.
 export function toast(msg, kind = "info", ms = 4500) {
@@ -240,24 +282,36 @@ export function openCredits(t, quality) {
       </div>
     </form>`;
     dlg.addEventListener("click", (e) => {
-      if (e.target === dlg) dlg.close();
+      // Backdrop click closes; the catalog's own page link was removed from
+      // this dialog on purpose — nothing in here opens the browser now.
+      if (e.target === dlg) return dlg.close();
     });
     document.body.appendChild(dlg);
   }
+  // Everything the catalog said about this track, minus the rows it left
+  // blank — `duration` reaches the front end as "m:ss", so it is shown as-is
+  // and only the numeric form goes through the clock formatter.
+  const dur = String(t.duration || "");
   const rows = [
     ["Title", t.title],
     ["Artist", t.artist || "Unknown"],
     ["Album", t.album || "Unknown"],
-    ["Duration", fmtTime(t.duration || 0)],
+    ["Duration", /^\d{1,2}:\d{2}(:\d{2})?$/.test(dur) ? dur : fmtTime(Number(t.duration_secs) || 0)],
+    ["Year", t.year],
+    ["Language", t.language],
+    ["Label", t.label],
     ["Quality", quality],
+    ["Catalog plays", t.plays ? Number(t.plays).toLocaleString("en") : ""],
+    ["Lyrics", t.has_lyrics ? "Available" : ""],
+    ["Explicit", t.explicit ? "Yes" : ""],
     ["ID", t.id],
-  ];
+  ].filter(([, v]) => v !== "" && v != null);
   $("#tm-dialog-body", dlg).innerHTML = rows
     .map(
       ([k, v]) => `
       <div class="flex flex-col sm:flex-row sm:items-baseline gap-0.5 sm:gap-4">
         <dt class="font-label-mono text-[10px] uppercase tracking-wider text-on-surface-variant sm:w-24 shrink-0">${esc(k)}</dt>
-        <dd class="text-sm text-on-surface break-words min-w-0">${esc(v)}</dd>
+        <dd class="text-sm text-on-surface break-words min-w-0">${esc(String(v))}</dd>
       </div>`,
     )
     .join("");

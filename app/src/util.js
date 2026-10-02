@@ -22,12 +22,33 @@ export function stampEntity(el, kind, name) {
   }
 }
 
+/// Split a credits string the way the catalog indexes it — "Arijit Singh,
+/// Nikhita Gandhi" or "Sonu Nigam & Shreya Ghoshal" are three artists, and
+/// handing the whole line to a search returns one arbitrary page for every
+/// row on screen.
+export function creditNames(s) {
+  return String(s || "")
+    .split(/,|&/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+/// Per-name artist links for a row that has room for them; the first names
+/// only, since a truncated cell has none to spare.
+export function artistLinks(artist, max = 3) {
+  const names = creditNames(artist);
+  const one = (n) =>
+    `<span class="hover:underline cursor-pointer" data-entity-kind="artist" data-entity-name="${esc(n)}">${esc(n)}</span>`;
+  const shown = names.slice(0, max).map(one).join('<span class="opacity-60">, </span>');
+  const rest = names.length > max ? `<span class="opacity-60"> +${names.length - max}</span>` : "";
+  return shown + rest;
+}
+
 /// "Artist · Album" where each half is a link to its own page.
 export function metaLinks(t) {
   const one = (kind, value) =>
     `<span class="hover:underline cursor-pointer" data-entity-kind="${esc(kind)}" data-entity-name="${esc(value)}">${esc(value)}</span>`;
-  const parts = [];
-  if (t.artist) parts.push(one("artist", t.artist));
+  const parts = creditNames(t.artist).map((n) => one("artist", n));
   if (t.album) parts.push(one("album", t.album));
   return parts.join('<span class="opacity-60"> · </span>');
 }
@@ -37,8 +58,11 @@ export function metaLinks(t) {
 export async function openEntityByName(kind, name) {
   const raw = String(name || "").trim();
   if (!raw) return;
-  // JioSaavn sometimes ships "Artist - Title" inside the artist field.
-  const query = kind === "artist" ? raw.split(/\s+-\s+/)[0].trim() : raw;
+  // JioSaavn sometimes ships "Artist - Title" inside the artist field, and a
+  // row stamped with a whole credits line looks up its first name — the same
+  // first name `creditNames` hands `metaLinks`.
+  const query =
+    kind === "artist" ? (creditNames(raw)[0] || "").split(/\s+-\s+/)[0].trim() : raw;
   if (!query) return;
   diag("entity", null, `${kind}: ${query}`);
   let page;
@@ -49,7 +73,14 @@ export async function openEntityByName(kind, name) {
     showError(`Could not look up that ${kind}: ${err}`);
     return;
   }
-  const hit = (page?.items || [])[0];
+  const items = page?.items || [];
+  // Exact title wins: a fuzzy first hit is how every artist used to open the
+  // same page. Falls back to a prefix match, then to the old first hit.
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const want = norm(query);
+  const hit = items.find((it) => norm(it.title) === want) ||
+    items.find((it) => norm(it.title).startsWith(want)) ||
+    items[0];
   if (!hit) {
     showError(`No ${kind} found for "${query}".`);
     return;

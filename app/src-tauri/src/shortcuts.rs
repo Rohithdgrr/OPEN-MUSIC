@@ -20,12 +20,42 @@ pub struct Action {
 }
 
 pub const ACTIONS: &[Action] = &[
-    Action { name: "play", key: Code::Space, event: "shortcut:play", focus: true },
-    Action { name: "search", key: Code::KeyF, event: "shortcut:search", focus: true },
-    Action { name: "now-playing", key: Code::KeyN, event: "shortcut:now-playing", focus: true },
-    Action { name: "widget", key: Code::KeyW, event: "shortcut:widget", focus: false },
-    Action { name: "download", key: Code::KeyD, event: "shortcut:download", focus: true },
-    Action { name: "info", key: Code::KeyI, event: "shortcut:info", focus: true },
+    Action {
+        name: "play",
+        key: Code::Space,
+        event: "shortcut:play",
+        focus: true,
+    },
+    Action {
+        name: "search",
+        key: Code::KeyF,
+        event: "shortcut:search",
+        focus: true,
+    },
+    Action {
+        name: "now-playing",
+        key: Code::KeyN,
+        event: "shortcut:now-playing",
+        focus: true,
+    },
+    Action {
+        name: "widget",
+        key: Code::KeyW,
+        event: "shortcut:widget",
+        focus: false,
+    },
+    Action {
+        name: "download",
+        key: Code::KeyD,
+        event: "shortcut:download",
+        focus: true,
+    },
+    Action {
+        name: "info",
+        key: Code::KeyI,
+        event: "shortcut:info",
+        focus: true,
+    },
 ];
 
 /// Media keys as plain global shortcuts: the shell still shows its volume
@@ -95,13 +125,15 @@ pub fn hyper_tool_running() -> bool {
     }
     #[cfg(not(windows))]
     {
-        ["karabiner_console_user_server", "kanata", "xremap"].iter().any(|name| {
-            std::process::Command::new("pgrep")
-                .arg("-x")
-                .arg(name)
-                .map(|c| c.status.map(|s| s.success()).unwrap_or(false))
-                .unwrap_or(false)
-        })
+        ["karabiner_console_user_server", "kanata", "xremap"]
+            .iter()
+            .any(|name| {
+                std::process::Command::new("pgrep")
+                    .arg("-x")
+                    .arg(name)
+                    .map(|c| c.status.map(|s| s.success()).unwrap_or(false))
+                    .unwrap_or(false)
+            })
     }
 }
 
@@ -111,15 +143,16 @@ fn bind(
     event: &'static str,
     focus: bool,
 ) -> Result<(), tauri_plugin_global_shortcut::Error> {
-    app.global_shortcut().on_shortcut(sc, move |handle, _sc, e| {
-        if e.state != ShortcutState::Pressed {
-            return;
-        }
-        if focus {
-            crate::show_main(handle);
-        }
-        let _ = handle.emit(event, ());
-    })
+    app.global_shortcut()
+        .on_shortcut(sc, move |handle, _sc, e| {
+            if e.state != ShortcutState::Pressed {
+                return;
+            }
+            if focus {
+                crate::show_main(handle);
+            }
+            let _ = handle.emit(event, ());
+        })
 }
 
 /// Register everything at startup. Fallible per shortcut: failures log and
@@ -182,7 +215,11 @@ mod tests {
             true
         });
         assert_eq!(d, Decision::Hyper);
-        assert_eq!(calls, vec![Variant::Hyper], "no double-fire: fallback skipped");
+        assert_eq!(
+            calls,
+            vec![Variant::Hyper],
+            "no double-fire: fallback skipped"
+        );
     }
 
     #[test]

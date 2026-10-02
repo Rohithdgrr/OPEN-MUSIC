@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="shell-type" content="mobile_tab">
+<title>TRANCE MUSIC</title>
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<link rel="stylesheet" href="/tailwind.css">
+<script src="tailwind-config.js"></script>
+<style>
+@layer base {
+  html, body { width: 100vw; margin: 0; padding: 0; background-color: #f9f9fb; }
+  body { overscroll-behavior: none; min-height: max(884px, 100dvh); }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+  main > :first-child { margin-top: 0 !important; }
+  main > :last-child { margin-bottom: 0 !important; }
+}
+/* Screens' fixed headers carry .pt-safe, so <main>'s top offset must add the
+   same status-bar inset — a bare pt-14/pt-16 left the first row (the search
+   field) sitting under the header on devices with a cutout. */
+main.pt-14 { padding-top: calc(3.5rem + env(safe-area-inset-top, 0px)); }
+main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
+::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased">
+<div id="screen"></div>
+<audio id="audio" preload="metadata"></audio>
+<script src="router.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

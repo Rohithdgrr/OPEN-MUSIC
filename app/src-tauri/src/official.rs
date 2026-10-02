@@ -72,6 +72,13 @@ fn pref(m: &Mutex<String>) -> String {
     m.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
+/// Cache-key fragment for the current preferences: a memoised answer is only
+/// valid for the lang/country it was fetched with, so every key the caches in
+/// `proxy.rs` build appends this.
+pub fn prefs_key() -> String {
+    format!("{}|{}", pref(&PREF_LANG), pref(&PREF_COUNTRY))
+}
+
 // ---------------------------------------------------------------------------
 // Transport
 // ---------------------------------------------------------------------------
@@ -86,7 +93,13 @@ async fn call(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<Value
         }
         let lang = pref(&PREF_LANG);
         if !lang.is_empty() && lang != "all" {
-            ser.append_pair("lang", &lang);
+            // Settings allows several languages at once. The catalog takes a
+            // single bias, so the first pick leads; the full comma-joined set
+            // is still what `prefs_key` caches under, so switching any pick
+            // invalidates the memoised answers.
+            if let Some(primary) = lang.split(',').map(str::trim).find(|s| !s.is_empty()) {
+                ser.append_pair("lang", primary);
+            }
         }
         let country = pref(&PREF_COUNTRY);
         if !country.is_empty() {
@@ -367,6 +380,7 @@ fn entity_item(kind: &str, v: &Value) -> Option<FeedItem> {
         token: text(v, "perma_url")
             .and_then(|u| u.rsplit('/').next().map(str::to_string))
             .unwrap_or_default(),
+        language: text(v, "language").unwrap_or_default(),
     })
 }
 
@@ -467,6 +481,7 @@ fn sug_item(v: &Value, subtitle: String) -> Option<FeedItem> {
         count: 0,
         year: text(v, "year").unwrap_or_default(),
         token: token_from_url(&text(v, "url").unwrap_or_default()).unwrap_or_default(),
+        language: text(v, "language").unwrap_or_default(),
     })
 }
 
@@ -601,6 +616,10 @@ pub struct FeedItem {
     /// Last path segment of `perma_url` — resolves albums/artists via
     /// `webapi.get`. Empty when the payload carries no url.
     pub token: String,
+    /// Catalog language (`hindi`, `telugu`, …) when the payload declares one.
+    /// Empty for rows that have no language of their own (artist recos).
+    #[serde(default)]
+    pub language: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -618,6 +637,8 @@ pub struct HomeFeed {
     pub albums: Vec<FeedItem>,
     /// Recommended artists ("Featured Artists in Residence").
     pub artists: Vec<FeedItem>,
+    /// Daily-updating fresh playlists (Taaza Tunes-style modules).
+    pub daily: Vec<FeedItem>,
 }
 
 fn feed_item(v: &Value) -> Option<FeedItem> {
@@ -639,6 +660,7 @@ fn feed_item(v: &Value) -> Option<FeedItem> {
         token: text(v, "perma_url")
             .and_then(|u| u.rsplit('/').next().map(str::to_string))
             .unwrap_or_default(),
+        language: text(v, "language").unwrap_or_default(),
     })
 }
 
@@ -677,8 +699,18 @@ pub async fn home(client: &reqwest::Client) -> Result<HomeFeed, String> {
     )
     .await?;
 
-    let playlists = dedup_feed(feed_list(&value["top_playlists"], "playlist"));
+    let mut playlists = dedup_feed(feed_list(&value["top_playlists"], "playlist"));
+    for extra in feed_list(&value["promo:vx:data:76"], "playlist")
+        .into_iter()
+        .chain(feed_list(&value["promo:vx:data:185"], "playlist"))
+    {
+        if !playlists.iter().any(|p| p.id == extra.id) {
+            playlists.push(extra);
+        }
+    }
     let charts = dedup_feed(feed_list(&value["charts"], "playlist"));
+    // Daily updates: the fresh-hits module the web player rotates daily.
+    let daily = dedup_feed(feed_list(&value["promo:vx:data:68"], "playlist"));
     let spotlight = feed_list(&value["new_trending"], "playlist")
         .into_iter()
         .next()
@@ -711,6 +743,7 @@ pub async fn home(client: &reqwest::Client) -> Result<HomeFeed, String> {
         top_tracks,
         albums,
         artists,
+        daily,
     })
 }
 
@@ -1337,6 +1370,7 @@ mod tests {
             count: 0,
             year: String::new(),
             token: String::new(),
+            language: String::new(),
         };
         let out = dedup_feed(vec![
             card("1", "First"),
@@ -1467,6 +1501,7 @@ mod tests {
                 count: 0,
                 year: String::new(),
                 token: "-iNdCmFNV9o_".into(),
+                language: String::new(),
             }],
             page_full: true,
         };
@@ -1558,6 +1593,7 @@ mod tests {
                 count: 0,
                 year: String::new(),
                 token: "LlRWpHzy3Hk_".into(),
+                language: String::new(),
             }),
             top_kind: Some("artist".into()),
             songs: vec![],
@@ -1589,6 +1625,7 @@ mod tests {
                 count: 5,
                 year: "2025".into(),
                 token: "tok".into(),
+                language: String::new(),
             },
             kind: "single".into(),
         };
@@ -1639,7 +1676,10 @@ mod tests {
         // Upstream reshuffles its ranking between requests, so page 2 built on
         // a different ordering may repeat a few page-1 rows; the contract is
         // that it still advances — most of the page must be new ids.
-        let fresh = second.iter().filter(|t| !seen.contains(t.id.as_str())).count();
+        let fresh = second
+            .iter()
+            .filter(|t| !seen.contains(t.id.as_str()))
+            .count();
         assert!(
             fresh >= second.len() / 2,
             "page 2 must advance, not repeat page 1 (fresh {fresh}/{})",
@@ -1707,6 +1747,8 @@ mod tests {
             "albums carry resolve tokens"
         );
         assert!(feed.artists.len() >= 3, "artist row for Home");
+        assert!(!feed.daily.is_empty(), "daily updates shelf");
+        assert!(feed.playlists.len() >= 12, "more featured playlists");
         assert_eq!(feed.top_tracks.len(), 5, "countdown needs five rows");
         assert!(!feed.top_tracks[0].title.is_empty());
         // Nothing the Home screen renders may still point at a 150px thumb.

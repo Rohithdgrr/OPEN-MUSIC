@@ -46,14 +46,20 @@ npm run tauri build    # release binary + signed installers
                        # -> src-tauri/target/release/bundle/{msi,nsis}/
 ```
 
-There is no separate frontend build. `tauri.conf.json` points `frontendDist`
-straight at `app/src`, and `index.html` loads `main.js` as an ES module. Edit
-the HTML/JS/CSS and reload the window.
+The JS has no build step: `tauri.conf.json` points `frontendDist` straight at
+`app/src`, and `index.html` loads `main.js` as an ES module. Edit the HTML/JS
+and reload the window.
 
-> Tailwind and the icon font are loaded from a **CDN at runtime**. The app needs
-> network access on first paint; `styles.css` re-declares the critical
-> utilities in plain CSS so the layout survives if the CDN is unreachable, but
-> it will not look identical.
+Tailwind CSS is **prebuilt to a static file** (`npm run css` →
+`app/src/tailwind.css`), so styling needs no network at runtime. `tauri dev`
+runs the watcher automatically (`beforeDevCommand`) and `tauri build`
+regenerates it first (`beforeBuildCommand`); run `npm run css` by hand after
+adding or renaming a utility class outside those commands.
+
+> The Material icon font and web fonts still load from Google's CDN. Offline,
+> icons fall back to their ligature text and the type falls back to the system
+> font; layout is unaffected because all Tailwind utilities ship in
+> `tailwind.css`.
 
 ## Tests
 
@@ -78,9 +84,10 @@ still verified by running the app; there is no DOM test harness. See
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ WebView (app/src)                                           │
-│   index.html  — 8 views, one <audio> element, Tailwind CDN  │
+│   index.html  — 8 views, one <audio> element, Tailwind link │
 │   main.js     — ES-module entry: imports 17 feature modules │
-│   styles.css  — vanilla fallback layer + dialog backdrop    │
+│   tailwind.css— prebuilt utilities (`npm run css`)          │
+│   styles.css  — vanilla custom layer + dialog backdrop      │
 └────────────────────────────┬────────────────────────────────┘
                              │ Tauri IPC (invoke)
 ┌────────────────────────────▼────────────────────────────────┐
@@ -167,11 +174,18 @@ This is the part that is not obvious, so it is worth stating plainly:
    `~/Downloads/TRANCE MUSIC`; the Downloads view lists, plays, reveals and
    deletes from there.
 
+6. **Adaptive network mode.** `net.js` probes the CDN (5s while healthy, 2s
+   while down, 2-fail/3-clean hysteresis) and classifies the link as online,
+   degraded or offline: offline skips undownloaded tracks instantly — they
+   stay queued for later — while downloaded tracks keep playing from disk.
+   Settings → General can force the mode (Auto / Online / Offline).
+
 ## Known limitations
 
 - **No front-end DOM tests.** Pure logic is covered by `npm test`; see
   [Tests](#tests). UI-level coverage is the biggest gap.
-- **CDN dependency at runtime** for Tailwind and the Material icon font.
+- **CDN dependency at runtime** for the Material icon font and web fonts only
+  (Tailwind ships as a static `tailwind.css`).
 - **Installers are signed with a self-signed certificate.** Installing locally
   is fine, but other machines show a SmartScreen / unknown-publisher prompt
   until a CA-issued code-signing certificate replaces it.

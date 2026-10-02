@@ -24,13 +24,19 @@ CREATE TABLE IF NOT EXISTS downloads (
     quality       TEXT NOT NULL,
     path          TEXT NOT NULL,
     bytes         INTEGER NOT NULL,
-    at            INTEGER NOT NULL
+    at            INTEGER NOT NULL,
+    sha256        TEXT NOT NULL DEFAULT ''
 );
 ";
 
+/// Every read shares one column list, so `row_to_entry` indices cannot drift
+/// from the SELECTs that feed it.
+const SELECT_COLS: &str =
+    "id, title, artist, album, image, duration_secs, quality, path, bytes, at, sha256";
+
 const INSERT_SQL: &str = "INSERT INTO downloads \
-     (id, title, artist, album, image, duration_secs, quality, path, bytes, at) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
+     (id, title, artist, album, image, duration_secs, quality, path, bytes, at, sha256) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
 
 pub struct VaultDb {
     conn: Mutex<Connection>,
@@ -100,6 +106,20 @@ impl VaultDb {
             .map_err(|e| format!("sync mode: {e}"))?;
         conn.execute_batch(SCHEMA)
             .map_err(|e| format!("schema: {e}"))?;
+        // Databases created before checksums: ADD COLUMN appends sha256 at
+        // the end, which is exactly where `row_to_entry` reads it from.
+        let has_sha256 = conn
+            .prepare("PRAGMA table_info(downloads)")
+            .and_then(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(1))
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<String>>>())
+            })
+            .map(|names| names.iter().any(|name| name == "sha256"))
+            .unwrap_or(false);
+        if !has_sha256 {
+            conn.execute_batch("ALTER TABLE downloads ADD COLUMN sha256 TEXT NOT NULL DEFAULT ''")
+                .map_err(|e| format!("migrate sha256: {e}"))?;
+        }
         // Probe now so a corrupt file fails at boot, not on first use.
         conn.query_row("SELECT count(*) FROM downloads", [], |_| Ok(()))
             .map_err(|e| format!("vault database: {e}"))?;
@@ -126,10 +146,9 @@ impl VaultDb {
     pub fn list(&self) -> Result<Vec<DownloadEntry>, String> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare_cached(
-                "SELECT id, title, artist, album, image, duration_secs, quality, path, bytes, at \
-                 FROM downloads ORDER BY rowid",
-            )
+            .prepare_cached(&format!(
+                "SELECT {SELECT_COLS} FROM downloads ORDER BY rowid"
+            ))
             .map_err(|e| format!("vault list: {e}"))?;
         let rows = stmt
             .query_map([], row_to_entry)
@@ -171,12 +190,22 @@ impl VaultDb {
     /// operation is ever allowed to touch.
     pub fn entry_for_path(&self, path: &str) -> Result<Option<DownloadEntry>, String> {
         let conn = self.lock()?;
-        conn.prepare_cached(
-            "SELECT id, title, artist, album, image, duration_secs, quality, path, bytes, at \
-             FROM downloads WHERE path = ?1",
-        )
+        conn.prepare_cached(&format!(
+            "SELECT {SELECT_COLS} FROM downloads WHERE path = ?1"
+        ))
         .and_then(|mut stmt| stmt.query_row(params![path], row_to_entry).optional())
         .map_err(|e| format!("vault lookup: {e}"))
+    }
+
+    /// The row already holding these exact bytes, if any — content dedupe
+    /// after a download (spec 3.3).
+    pub fn entry_by_sha(&self, sha: &str) -> Result<Option<DownloadEntry>, String> {
+        let conn = self.lock()?;
+        conn.prepare_cached(&format!(
+            "SELECT {SELECT_COLS} FROM downloads WHERE sha256 = ?1"
+        ))
+        .and_then(|mut stmt| stmt.query_row(params![sha], row_to_entry).optional())
+        .map_err(|e| format!("vault sha lookup: {e}"))
     }
 
     /// Remove the row whose path matches (after the file was deleted).
@@ -205,6 +234,7 @@ fn execute_insert(stmt: &mut rusqlite::Statement<'_>, entry: &DownloadEntry) -> 
         entry.path,
         entry.bytes as i64,
         entry.at as i64,
+        entry.sha256,
     ])
     .map(|_| ())
     .map_err(|e| format!("vault insert: {e}"))
@@ -222,6 +252,7 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadEntry> {
         path: row.get(7)?,
         bytes: row.get::<_, i64>(8)? as u64,
         at: row.get::<_, i64>(9)? as u64,
+        sha256: row.get(10)?,
     })
 }
 

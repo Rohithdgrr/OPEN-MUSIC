@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/><meta content="mobile_tab" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{width:100vw;margin:0;padding:0;background-color:#f9f9fb;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "on-secondary": "#ffffff", "inverse-surface": "#2f3132", "error-container": "#ffdad6", "on-primary-fixed": "#1b1b1b", "secondary-fixed": "#e4e1e5", "background": "#f9f9fa", "surface": "#f9f9fb", "surface-bright": "#f9f9fb", "surface-tint": "#5e5e5e", "secondary-fixed-dim": "#c8c6c9", "on-surface": "#1a1c1d", "error": "#ba1a1a", "on-secondary-container": "#656467", "surface-container": "#eeeeef", "surface-container-low": "#f3f3f4", "primary": "#000000", "tertiary-fixed": "#e2e2e2", "on-secondary-fixed": "#1b1b1e", "surface-variant": "#e2e2e3", "surface-container-lowest": "#ffffff", "on-primary-fixed-variant": "#474747", "primary-fixed": "#e2e2e2", "surface-container-highest": "#e2e2e4", "on-secondary-fixed-variant": "#474649", "tertiary": "#000000", "surface-dim": "#dadadb", "on-surface-variant": "#4c4546", "on-tertiary-fixed": "#1b1b1b", "secondary": "#5f5e61", "on-tertiary-container": "#848484", "on-background": "#1a1c1d", "primary-container": "#1b1b1e", "on-error-container": "#93000a", "on-tertiary": "#ffffff", "surface-container-high": "#e8e8e9", "on-primary": "#ffffff", "inverse-primary": "#c6c6c6", "tertiary-container": "#1b1b1b", "on-primary-container": "#858387", "outline": "#77767b", "inverse-on-surface": "#f1f1f1", "primary-fixed-dim": "#c6c6c6", "on-error": "#ffffff", "secondary-container": "#e4e1e5", "on-tertiary-fixed-variant": "#474747", "tertiary-fixed-dim": "#c6c6c6", "outline-variant": "#cfc4c5" }, borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, spacing: { "gutter": "1rem", "space-xl": "2rem", "margin": "1.5rem", "space-xs": "0.25rem", "space-lg": "1.25rem", "space-md": "0.75rem", "space-sm": "0.5rem" }, fontFamily: { "body-lg": ["Geist"], "headline-md": ["Geist"], "label-mono": ["JetBrains Mono"], "label-md": ["Geist"], "body-md": ["Geist"], "body-sm": ["Geist"], "headline-xl": ["Geist"], "label-sm": ["Geist"], "headline-lg": ["Geist"] }, fontSize: { "body-lg": ["15px", { "lineHeight": "22px", "letterSpacing": "-0.01em", "fontWeight": "400" }], "headline-md": ["18px", { "lineHeight": "24px", "letterSpacing": "-0.015em", "fontWeight": "500" }], "label-mono": ["11px", { "lineHeight": "14px", "letterSpacing": "-0.01em", "fontWeight": "400" }], "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.01em", "fontWeight": "500" }], "body-md": ["13px", { "lineHeight": "19px", "letterSpacing": "-0.005em", "fontWeight": "400" }], "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0em", "fontWeight": "400" }], "headline-xl": ["32px", { "lineHeight": "38px", "letterSpacing": "-0.03em", "fontWeight": "600" }], "label-sm": ["11px", { "lineHeight": "14px", "letterSpacing": "0.02em", "fontWeight": "500" }], "headline-lg": ["24px", { "lineHeight": "30px", "letterSpacing": "-0.025em", "fontWeight": "600" }] } } } };</script><style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head><body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased"><header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><span class="font-headline-md text-headline-md font-semibold tracking-widest text-on-surface uppercase">REON</span></div><div class="flex items-center gap-space-xs"><button aria-label="Telemetry and Audio Settings" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">tune</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pb-6 space-y-space-md">
+<!-- Sub-Header & Period Switcher -->
+<div class="flex items-center justify-between pt-space-xs">
+<div class="flex items-center gap-space-xs">
+<button aria-label="Go Back" class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-[18px]">arrow_back</span>
+</button>
+<div>
+<span class="font-label-mono text-label-mono text-secondary tracking-widest uppercase block">Telemetry Bay</span>
+<h1 class="font-headline-md text-headline-md text-on-surface font-semibold tracking-tight">Listening Insights</h1>
+</div>
+</div>
+<div class="flex items-center bg-surface-container rounded-lg p-0.5" id="period-selector">
+<button class="px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm font-medium transition-all shadow-sm" onclick="setPeriod(this)">Week</button>
+<button class="px-2.5 py-1 rounded text-secondary hover:text-on-surface font-label-sm text-label-sm font-medium transition-all" onclick="setPeriod(this)">Month</button>
+<button class="px-2.5 py-1 rounded text-secondary hover:text-on-surface font-label-sm text-label-sm font-medium transition-all" onclick="setPeriod(this)">Year</button>
+</div>
+</div>
+<!-- Section 1: Monitored Listening Overview Card -->
+<section class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Acoustic Exposure</span>
+<span class="inline-flex items-center px-1.5 py-0.5 rounded bg-surface-container font-label-mono text-label-mono text-on-surface text-[10px]">REAL-TIME</span>
+</div>
+<div class="flex items-baseline gap-space-sm mt-0.5">
+<span class="font-headline-xl text-headline-xl text-on-surface font-semibold tracking-tighter">48<span class="text-secondary text-headline-md font-normal">h</span> 12<span class="text-secondary text-headline-md font-normal">m</span></span>
+<span class="flex items-center font-label-mono text-label-mono text-on-surface bg-surface-container-low px-1.5 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px] text-on-surface mr-0.5">trending_up</span>+14%
+          </span>
+</div>
+</div>
+<div class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[20px]">graphic_eq</span>
+</div>
+</div>
+<!-- Master Stream Ratio Multi-segment bar -->
+<div class="space-y-1.5">
+<div class="flex justify-between items-center text-label-mono font-label-mono text-[11px]">
+<span class="text-on-surface font-medium">94% Master Bit-Perfect</span>
+<span class="text-secondary">DSD • FLAC 24-BIT</span>
+</div>
+<div class="h-2 w-full bg-surface-container-highest rounded-full overflow-hidden flex">
+<div class="bg-primary h-full transition-all duration-500" style="width: 68%" title="24-bit FLAC (68%)"></div>
+<div class="bg-secondary h-full transition-all duration-500" style="width: 26%" title="DSD (26%)"></div>
+<div class="bg-surface-dim h-full transition-all duration-500" style="width: 6%" title="Lossless 16-bit (6%)"></div>
+</div>
+<div class="flex items-center justify-between font-label-mono text-[10px] text-secondary pt-0.5">
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary inline-block"></span>
+<span>FLAC 24-bit 68%</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-secondary inline-block"></span>
+<span>DSD 26%</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-surface-dim inline-block"></span>
+<span>16-bit 6%</span>
+</div>
+</div>
+</div>
+<!-- Telemetry Sub-metrics Grid -->
+<div class="grid grid-cols-2 gap-space-sm pt-space-xs">
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col">
+<span class="font-label-mono text-label-mono text-secondary uppercase tracking-wider text-[10px]">Avg Session</span>
+<div class="flex items-baseline gap-1 mt-0.5">
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">1h 24m</span>
+<span class="font-label-mono text-[10px] text-secondary">/ day</span>
+</div>
+<span class="font-label-mono text-[10px] text-on-surface-variant mt-1 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span> Deep Focus State
+        </span>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg flex flex-col">
+<span class="font-label-mono text-label-mono text-secondary uppercase tracking-wider text-[10px]">DAC Passthrough</span>
+<div class="flex items-baseline gap-1 mt-0.5">
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">100%</span>
+<span class="font-label-mono text-[10px] text-on-surface font-medium">B-PERF</span>
+</div>
+<span class="font-label-mono text-[10px] text-secondary mt-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[13px] text-on-surface">verified</span> Hardware Locked
+        </span>
+</div>
+</div>
+</section>
+<!-- Section 2: Daily Listening Rhythm (Minimal Audio Waveform / Bar Chart) -->
+<section class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-center">
+<div>
+<span class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Acoustic Immersion</span>
+<h2 class="font-headline-md text-headline-md text-on-surface font-semibold">Daily Rhythm</h2>
+</div>
+<div class="text-right">
+<span class="font-label-mono text-label-mono text-secondary block uppercase text-[10px]">Peak Session</span>
+<span class="font-label-mono text-label-md text-on-surface font-semibold">Sat • 9.4 hrs</span>
+</div>
+</div>
+<!-- Bar Chart Canvas -->
+<div class="pt-2">
+<div class="h-28 flex items-end justify-between gap-2 px-1">
+<!-- Mon -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">5.2h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 55%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">M</span>
+</div>
+<!-- Tue -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">6.8h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 72%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">T</span>
+</div>
+<!-- Wed -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">4.1h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 43%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">W</span>
+</div>
+<!-- Thu -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">7.5h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 80%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">T</span>
+</div>
+<!-- Fri -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">8.1h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 86%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">F</span>
+</div>
+<!-- Sat (Peak Highlighted) -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-primary font-medium">9.4h</span>
+<div class="w-full bg-primary rounded-t shadow-sm" style="height: 100%;"></div>
+<span class="font-label-mono text-[10px] text-on-surface font-semibold">S</span>
+</div>
+<!-- Sun -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary opacity-0 group-hover:opacity-100 transition-opacity">6.9h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 73%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">S</span>
+</div>
+</div>
+</div>
+<!-- Acoustic Note -->
+<div class="flex items-center justify-between bg-surface-container-low px-space-sm py-2 rounded-lg">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[16px] text-on-surface">surround_sound</span>
+<span class="font-body-sm text-body-sm text-on-surface">Peak session coincided with Binaural Ambient session</span>
+</div>
+<span class="font-label-mono text-[10px] text-secondary">SAT 23:40</span>
+</div>
+</section>
+<!-- Section 3: Format & Resolution Spectrum -->
+<section class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-center">
+<div>
+<span class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Telemetry Spectrum</span>
+<h2 class="font-headline-md text-headline-md text-on-surface font-semibold">Resolution Analysis</h2>
+</div>
+<div class="flex items-center gap-1 bg-surface-container px-2 py-0.5 rounded text-on-surface">
+<span class="material-symbols-outlined text-[14px]">equalizer</span>
+<span class="font-label-mono text-[11px] font-medium">DR14 Master</span>
+</div>
+</div>
+<div class="space-y-space-xs">
+<!-- Format Item 1 -->
+<div class="bg-surface-container-low p-space-sm rounded-lg flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-7 h-7 rounded bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[16px]">waves</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-label-md text-on-surface font-semibold">PCM Studio Master</span>
+<span class="font-label-mono text-[9px] bg-surface-container-highest text-on-surface px-1 py-0.2 rounded font-medium">96-192kHz</span>
+</div>
+<span class="font-label-mono text-[10px] text-secondary">24-bit Precision Stream</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">62%</span>
+<span class="font-label-mono text-[10px] text-secondary block">142 tracks</span>
+</div>
+</div>
+<!-- Format Item 2 -->
+<div class="bg-surface-container-low p-space-sm rounded-lg flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-7 h-7 rounded bg-secondary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-[16px]">radio</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-label-md text-on-surface font-semibold">DSD Direct Stream</span>
+<span class="font-label-mono text-[9px] bg-surface-container-highest text-on-surface px-1 py-0.2 rounded font-medium">DSD64/256</span>
+</div>
+<span class="font-label-mono text-[10px] text-secondary">1-bit • 2.822 - 11.2MHz</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">26%</span>
+<span class="font-label-mono text-[10px] text-secondary block">58 tracks</span>
+</div>
+</div>
+<!-- Format Item 3 -->
+<div class="bg-surface-container-low p-space-sm rounded-lg flex items-center justify-between">
+<div class="flex items-center gap-space-sm">
+<div class="w-7 h-7 rounded bg-surface-dim flex items-center justify-center text-on-surface">
+<span class="material-symbols-outlined text-[16px]">disc_full</span>
+</div>
+<div>
+<div class="flex items-center gap-1.5">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Redbook FLAC</span>
+<span class="font-label-mono text-[9px] bg-surface-container-highest text-on-surface px-1 py-0.2 rounded font-medium">16/44.1</span>
+</div>
+<span class="font-label-mono text-[10px] text-secondary">CD Lossless Standard</span>
+</div>
+</div>
+<div class="text-right">
+<span class="font-headline-md text-headline-md text-on-surface font-semibold">12%</span>
+<span class="font-label-mono text-[10px] text-secondary block">28 tracks</span>
+</div>
+</div>
+</div>
+<!-- Dynamic Range Index Info -->
+<div class="p-space-sm bg-surface-container rounded-lg flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-[18px] text-on-surface">dynamic_feed</span>
+<div>
+<span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary block">Dynamic Range Index</span>
+<span class="font-body-md text-body-md text-on-surface font-medium">DR14 Studio Master Dynamic Profile</span>
+</div>
+</div>
+<span class="font-label-mono text-[11px] font-semibold text-on-surface bg-surface-container-lowest px-2 py-1 rounded">UNCOMPRESSED</span>
+</div>
+</section>
+<!-- Section 4: Top Artists & Master Tracks -->
+<section class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-center">
+<div>
+<span class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Acoustic Residency</span>
+<h2 class="font-headline-md text-headline-md text-on-surface font-semibold">Top Artists &amp; Ensembles</h2>
+</div>
+<button class="font-label-mono text-[11px] text-secondary hover:text-on-surface transition-colors uppercase">All (18)</button>
+</div>
+<div class="space-y-space-xs">
+<!-- Artist 1 -->
+<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="font-label-mono text-label-mono font-semibold text-secondary w-3">01</span>
+<div class="w-10 h-10 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="Minimalist abstract portrait of Nordic electronic ambient duo in high contrast monochromatic lighting with subtle shadows, clean studio portraiture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtTZJNShp5fIR2BSxgatd6K0fnOfKV6R-U8IJBEE8ZBrYZQ0r0dFi9prd4SMYg0ySUCen_-THv-BvePlSiWG5INKrDVWvZ40kwNg39uELaHRBxPkroBtiZGEuQXzGs85m2O8S9lBAZG_VDFRBPY8bQTtuABnYPhxuqMZjj2Vqm2gm-msWLU2zvra93aZNYdiw-ItkosmNcXosWQPEzdtjG7J5WksltSASAhHAc0PenLSOQHE9LzrZw4A"/>
+</div>
+<div class="min-w-0">
+<h3 class="font-body-md text-body-md text-on-surface font-semibold truncate">Solaris &amp; Kaelen</h3>
+<div class="flex items-center gap-1.5">
+<span class="font-label-mono text-[10px] text-secondary truncate">18.4 hrs streamed</span>
+<span class="w-1 h-1 rounded-full bg-secondary"></span>
+<span class="font-label-mono text-[9px] bg-surface-container text-on-surface px-1 rounded">24-BIT MASTER</span>
+</div>
+</div>
+</div>
+<button aria-label="Play Top Artist" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<!-- Artist 2 -->
+<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="font-label-mono text-label-mono font-semibold text-secondary w-3">02</span>
+<div class="w-10 h-10 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="Monochrome photograph of an acoustic laboratory with analog modular synthesizers and acoustic isolation baffles, architectural clean style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDXha57_-yFbLfE2n_Sc09F-K-BzZLwwvWRLsV5LXteti_tpWJAnXn13V13seKyJ_sauZEgkxdOTdGbHHyj-RewJbH9wenatBhv73kJ1LyJ93twqnKpSIwaAFm47ROI0C22uvCbV-eHuX5119gtI4NSIutCPNgeWBtgXtjjd6dIhN9DjIZaLq22Cmgplfepq--kWqEBRd-GbNQLmpUb4JjVo5Fb9X-1Q6Bvts1i2tsSQcWUFAaMEjzzYg"/>
+</div>
+<div class="min-w-0">
+<h3 class="font-body-md text-body-md text-on-surface font-semibold truncate">Aura Sound Lab</h3>
+<div class="flex items-center gap-1.5">
+<span class="font-label-mono text-[10px] text-secondary truncate">12.1 hrs streamed</span>
+<span class="w-1 h-1 rounded-full bg-secondary"></span>
+<span class="font-label-mono text-[9px] bg-surface-container text-on-surface px-1 rounded">DSD 5.6M</span>
+</div>
+</div>
+</div>
+<button aria-label="Play Top Artist" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<!-- Artist 3 -->
+<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="font-label-mono text-label-mono font-semibold text-secondary w-3">03</span>
+<div class="w-10 h-10 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="Minimal architectural concrete brutalist interior with subtle warm directional light, monochrome grayscale high resolution" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDtJpi0DcVcUegAl90_nuRgElfqRzA8jvRAScEO8YeKNaQXvUR4uH5nl5_y8_bKhTWzubrXNp5xlsiyjG-ZS7xi0Ojp_fZDDNMUjw9VFTuzZHJ0eoJ-qNnvq4nBsL8eoJA9vepdkv1ER6RdydTN7AmMIUlnvDf0wWSPj00A_kTekubGJhT2Z_keYCU6Lu2n1wRIr1vr9f_QYfxEgFQPZkOkZGfGAxISF9rneEF0I4aWpf0ZtL8MtZBnbw"/>
+</div>
+<div class="min-w-0">
+<h3 class="font-body-md text-body-md text-on-surface font-semibold truncate">Mirage Architecture</h3>
+<div class="flex items-center gap-1.5">
+<span class="font-label-mono text-[10px] text-secondary truncate">8.6 hrs streamed</span>
+<span class="w-1 h-1 rounded-full bg-secondary"></span>
+<span class="font-label-mono text-[9px] bg-surface-container text-on-surface px-1 rounded">24/192 FLAC</span>
+</div>
+</div>
+</div>
+<button aria-label="Play Top Artist" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+<!-- Artist 4 -->
+<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-space-sm min-w-0">
+<span class="font-label-mono text-label-mono font-semibold text-secondary w-3">04</span>
+<div class="w-10 h-10 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0 relative">
+<img class="w-full h-full object-cover" data-alt="Clean monochrome macro shot of magnetic audio tape spools rotating on a studio master reel-to-reel deck, fine detail" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZws1tcC-GxfpcyVdt85ErrSjUhYF5-q67RdrUFlNOV5TXmGALG7V5p4vmJWSG3iO5seGgcmpBosgFG-8HzCQoSStZhV6_KIwF08VTWCSz5bhR5gQRvr1duGDLLrFumph9aD2s2Ht2QyKAJOH-te-k7IwlmhZiMtmD7lY8a2Enx7ozEIw9JcwvF-YTYzjXjsZXgOTsv9Cq5XP8rPHWQ3gufb9yBAUlUccVxL6ZQ-FzGBYxHy0bYXynew"/>
+</div>
+<div class="min-w-0">
+<h3 class="font-body-md text-body-md text-on-surface font-semibold truncate">Kaelen Solo Archive</h3>
+<div class="flex items-center gap-1.5">
+<span class="font-label-mono text-[10px] text-secondary truncate">5.2 hrs streamed</span>
+<span class="w-1 h-1 rounded-full bg-secondary"></span>
+<span class="font-label-mono text-[9px] bg-surface-container text-on-surface px-1 rounded">WAV 32-BIT</span>
+</div>
+</div>
+</div>
+<button aria-label="Play Top Artist" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Section 5: Acoustic Mood & Sub-Genre Distribution -->
+<section class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-center">
+<div>
+<span class="font-label-mono text-label-mono uppercase tracking-wider text-secondary">Spatial Classification</span>
+<h2 class="font-headline-md text-headline-md text-on-surface font-semibold">Acoustic Mood Spectrum</h2>
+</div>
+<span class="font-label-mono text-label-mono text-secondary">3 SIGNATURES</span>
+</div>
+<!-- Mood Progress Stack -->
+<div class="space-y-space-sm">
+<div>
+<div class="flex justify-between items-center font-label-md text-label-md mb-1">
+<span class="text-on-surface font-medium flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary"></span> Ambient &amp; Deep Spatial
+          </span>
+<span class="font-label-mono text-on-surface font-semibold">45%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 45%;"></div>
+</div>
+<span class="font-label-mono text-[10px] text-secondary mt-0.5 block">21h 40m • Reverberant field density 0.82</span>
+</div>
+<div>
+<div class="flex justify-between items-center font-label-md text-label-md mb-1">
+<span class="text-on-surface font-medium flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> Progressive Modular Electronica
+          </span>
+<span class="font-label-mono text-on-surface font-semibold">35%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-secondary rounded-full" style="width: 35%;"></div>
+</div>
+<span class="font-label-mono text-[10px] text-secondary mt-0.5 block">16h 52m • Fast transient response profile</span>
+</div>
+<div>
+<div class="flex justify-between items-center font-label-md text-label-md mb-1">
+<span class="text-on-surface font-medium flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-surface-tint"></span> Brutalist Minimalist Acoustics
+          </span>
+<span class="font-label-mono text-on-surface font-semibold">20%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-surface-tint rounded-full" style="width: 20%;"></div>
+</div>
+<span class="font-label-mono text-[10px] text-secondary mt-0.5 block">9h 40m • Direct sound field, dry mastered</span>
+</div>
+</div>
+<!-- Export & Share Micro-CTA -->
+<div class="pt-space-xs flex gap-space-sm">
+<button class="flex-1 py-2 px-space-sm bg-surface-container hover:bg-surface-container-high rounded-lg text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[16px]">file_download</span>
+        Export Telemetry Log
+      </button>
+<button aria-label="Share Insights" class="w-10 h-10 bg-surface-container hover:bg-surface-container-high rounded-lg text-on-surface flex items-center justify-center transition-colors flex-shrink-0">
+<span class="material-symbols-outlined text-[18px]">share</span>
+</button>
+</div>
+</section>
+</div>
+<script>
+  function setPeriod(activeBtn) {
+    const parent = document.getElementById('period-selector');
+    if (!parent) return;
+    const buttons = parent.querySelectorAll('button');
+    buttons.forEach(btn => {
+      btn.className = "px-2.5 py-1 rounded text-secondary hover:text-on-surface font-label-sm text-label-sm font-medium transition-all";
+    });
+    activeBtn.className = "px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm font-medium transition-all shadow-sm";
+  }
+</script></main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span><span class="text-secondary text-[8px]">•</span><span class="font-label-mono text-label-mono text-secondary">24-BIT</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a></div></nav>
+</body></html>

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "TRANCE MUSIC",
+        "url": "mobile/index.html",
+        "fullscreen": true,
+        "resizable": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ],
+      "csp": "default-src 'self'; script-src 'self' https://cdn.tailwindcss.com 'sha256-Q2J7SxS7AOiRfhe9vlIMBtufp0sIWQXcIxPzyHdVWgE=' 'sha256-BM+vEPj7dmUmWRqNHvuUltb+6S0o8rOyYYERLAGOauo=' 'sha256-DSfWu9R9cSSqr829tukVPJ+GyycoqsCRqWmJbFmwDFs=' 'sha256-V2gitOYuqY+3vNsinSwyuc7Kw5WvE9FU1Z0GZyYjIts=' 'unsafe-hashes' 'sha256-AfAzzNDbZA4WGpUYz7Tg3UPuBo/Tv5iRmxa5kt+73Wk=' 'sha256-nHkge3a/roMseAE/T2/qQcvO//48FQbqSzHR92kHcC8=' 'sha256-Wn86Z8tIYIptwBk3ZNp00uepZi9e/AU60CIqf9itGuI=' 'sha256-msYHOoZ4U7FIWedLUWxYjDgBlSNwyri3M+BbCU/Gauw=' 'sha256-k9UjO7vkBWJMrGL2hIYZxjuo38yiXRQhZmnyb8vgxaQ=' 'sha256-AFtTg4VHSC4600H1l1Xuv/sTgRmGNb1XRmAOgl2Xajw=' 'sha256-/9mPmsbM7VFBex0EKzaUi+a7TwM156iJgvlNMua1YsU=' 'sha256-6/lskW8ZA4T1DhLd+L4G+Lh7ee40rxlHaQAYcOGvDdg=' 'sha256-LdlORHyUW/rwezK0l13nW+IwcZmi78eWOCBjewMWRr4=' 'sha256-KTXMBhNy3qIvBJpKwkaBmiOWrX2emmL/ABk8QxoE5Os=' 'sha256-LnYzvuxQSzcmvH8hVL4g0vDbZEbX1pWmAb3zH/XrPSM=' 'sha256-VXLmfjGdnBAsaXx85lkwFdITxWFtvmwmGsuXIbH2TaE=' 'sha256-/FM1aQePRjZKtiR1K4MOZ+VlIKqm56Uw8VCYrdFRWRI=' 'sha256-mzUXQIoUCjXL/I4d8qX/8PoZmYSW/1BecLZZGXw7sSk=' 'sha256-66242h97UGzXVFAcC48qahNL8+MjNGMYHd3hmrLFy8o=' 'sha256-aP4zmFAy4vOu4gH6Hwd0uxy1vvut1tuZUi2VXgcYyqA=' 'sha256-NP4VsrBpt5LsURsmDaaWiVzjwMoZ4L6QqF5olQzTojw=' 'sha256-txZIigaBw2yeG0k3I7K1RsiFp4miJcu+b/KLkzIJA50=' 'sha256-Ui0jI+wT5w7f4UQjmDcXlxlOiExzupt8igvhaTB5mJQ=' 'sha256-6WJBzRs1yWOwPaxPkB8smVJbJkBpR6mj3ak5vZhkado=' 'sha256-oMyHMA1VlPrNS2U97Q0fd6irrth05TmLl1xuaMnVtV8=' 'sha256-aH7npPkkA5rybOYzYojNVaMxtGjzao3/RjEm7OhyqmM=' 'sha256-eFTlrJf5OjSSK46b4AksODMZCgoyuECiTnvQ7g7YZU4=' 'sha256-7AuV3A5s013LqRiQiU41/gyvGl8aDBUx++8FOH84x6M=' 'sha256-P1MsgUmL6SZQlkOYJuanyuTQQHqA2uVOzleT4JX+Z4U=' 'sha256-Jhy4Z0X8oa+Rfr+AaPi6kF9SmkCtq/xwi5BSWCsM0+g=' 'sha256-j5w+Ef2Ti/YJYcdRgq3vne7aES+moN8GwCiMLj8N6Xw=' 'sha256-CKkVcVXKDiCuESotIWbABnsFNzQfSB8UcDMUFW6RD50='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.saavncdn.com https://saavncdn.com https://lh3.googleusercontent.com http://127.0.0.1:*; font-src 'self' https://fonts.gstatic.com; media-src 'self' http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://tauri.localhost http://127.0.0.1:*; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

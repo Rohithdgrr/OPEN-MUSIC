@@ -1,8 +1,9 @@
 // shortcuts.js — global shortcut events from the Rust side (Caps Lock Hyper
 // or the Ctrl+Alt fallback), the media keys and the tray menu buttons.
 // Rust emits, this window performs: the same event names work for both.
-import { diag, invoke, showView } from "./core.js";
+import { diag, invoke, showView, toast } from "./core.js";
 import { $ } from "./dom.js";
+import { toggleFavTrack } from "./library.js";
 import { queue, queueIndex, restoredTrack } from "./queue.js";
 import { creditsBtn, step, togglePlay } from "./transport.js";
 import { widgetMode } from "./settings.js";
@@ -44,7 +45,61 @@ const ACTIONS = {
   "media-prev": () => step(-1),
 };
 
+// ---------------------------------------------------- in-app shortcuts -
+// The Caps Hyper chords above are global (they fire when another window has
+// focus); these five need only this window: Space plays/pauses, Ctrl + arrows
+// step the queue, Ctrl + D downloads and L likes the current track. Typing
+// is never hijacked — keydowns in fields, editable regions or an open
+// <dialog> are left alone, and held keys (auto-repeat) don't re-fire.
+function typingTarget(e) {
+  const t = e.target;
+  return (
+    t instanceof HTMLElement &&
+    (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")
+  );
+}
+
+function currentTrack() {
+  return queue[queueIndex]?.track ?? restoredTrack;
+}
+
+function wireInAppKeys() {
+  window.addEventListener("keydown", (e) => {
+    // defaultPrevented: scoped handlers (search rows, the hero) already
+    // claimed this key — Space would otherwise fire twice.
+    if (e.repeat || e.defaultPrevented || document.querySelector("dialog[open]")) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (ctrl && !e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      if (typingTarget(e)) return;
+      e.preventDefault();
+      step(e.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
+    if (ctrl && !e.altKey && e.key.toLowerCase() === "d") {
+      if (typingTarget(e)) return;
+      e.preventDefault();
+      const t = currentTrack();
+      if (t) downloadTrack(t, null);
+      return;
+    }
+    if (!plain || typingTarget(e)) return;
+    if (e.key === " ") {
+      // Space on a focused button/link is that element's own activation —
+      // only a neutral focus target means "toggle playback".
+      if (e.target instanceof HTMLElement && e.target.closest("button, a, summary, label")) return;
+      e.preventDefault();
+      togglePlay();
+    } else if (e.key.toLowerCase() === "l") {
+      const t = currentTrack();
+      if (t) toggleFavTrack(t);
+      else toast("Nothing is playing yet — start a track first.", "info");
+    }
+  });
+}
+
 export function wireShortcuts() {
+  wireInAppKeys();
   const listen = window.__TAURI__?.event?.listen;
   if (!listen) return;
   for (const [event, run] of Object.entries(ACTIONS)) {

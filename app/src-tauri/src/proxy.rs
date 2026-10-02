@@ -10,6 +10,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,21 +41,72 @@ const REPORT_EVERY: u64 = 256 * 1024;
 
 /// Session cache ceilings: every search query is a unique key, so a
 /// long-running session must not grow these maps without bound.
-const RESOLVED_CAP: usize = 400;
-const QUALIFIED_CAP: usize = 800;
-const SEARCH_CAP: usize = 500;
-const LYRICS_CAP: usize = 500;
+///
+/// Cache design: the ceilings stay (they are tuned for this app's traffic),
+/// `moka` adds what the old `HashMap`s lacked — LRU order and TTLs.
+const RESOLVED_CAP: u64 = 400;
+const QUALIFIED_CAP: u64 = 800;
+const SEARCH_CAP: u64 = 500;
+const LYRICS_CAP: u64 = 500;
+const ENTITY_CAP: u64 = 300;
+const SUGGEST_CAP: u64 = 500;
+const TRACKS_CAP: u64 = 300;
+const ARTIST_PAGE_CAP: u64 = 300;
+const OVERVIEW_CAP: u64 = 300;
 
-/// Insert into a session cache, dropping one arbitrary entry when full.
-/// ponytail: arbitrary eviction, no TTL — session-lived maps only need a
-/// ceiling, not an LRU; swap in `moka` if hit rate ever becomes measurable.
-fn put_capped<V>(map: &mut HashMap<String, V>, cap: usize, key: String, val: V) {
-    if map.len() >= cap && !map.contains_key(&key) {
-        if let Some(evictee) = map.keys().next().cloned() {
-            map.remove(&evictee);
-        }
+/// L1: metadata answers live 6 hours (design TTL).
+const L1_TTL: Duration = Duration::from_secs(6 * 60 * 60);
+/// L2: URL-keyed entries expire with the URL — JioSaavn stream links live
+/// ~30 minutes, so probes of them must not outlive that window.
+const L2_TTL: Duration = Duration::from_secs(30 * 60);
+/// L4-RAM: mirrors the 7-day disk TTL so both layers agree on freshness.
+const L4_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// L3-RAM hot layer for art bytes. ponytail: 32 MB, not the design's 100 MB —
+/// the WebView already holds the decoded bitmaps; this layer only spares the
+/// disk read for the working set (~800 covers at saavncdn's 30-60 KB).
+const ART_MEM_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Plain LRU, not moka's default TinyLFU: the design specifies eviction by
+/// last access, and every cache here is small, homogeneous and TTL-bounded,
+/// so TinyLFU's admission step (which withholds brand-new keys until the
+/// frequency sketch decays) would only delay fresh answers being stored.
+fn session_builder<V: Clone + Send + Sync + 'static>(
+    cap: u64,
+) -> moka::future::CacheBuilder<String, V, moka::future::Cache<String, V>> {
+    moka::future::Cache::builder()
+        .max_capacity(cap)
+        .eviction_policy(moka::policy::EvictionPolicy::lru())
+}
+
+/// L1-sized cache: entry cap + TTL.
+fn l1_cache<V: Clone + Send + Sync + 'static>(cap: u64) -> moka::future::Cache<String, V> {
+    session_builder(cap).time_to_live(L1_TTL).build()
+}
+
+/// L2/L4-sized cache with an explicit TTL.
+fn ttl_cache<V: Clone + Send + Sync + 'static>(
+    cap: u64,
+    ttl: Duration,
+) -> moka::future::Cache<String, V> {
+    session_builder(cap).time_to_live(ttl).build()
+}
+
+/// Read through a cache: check, fetch on miss, insert. `key` must carry
+/// every input the answer depends on (see `official::prefs_key`).
+///
+/// Errors are never stored — a provider that was merely down must not be
+/// remembered as an answer (design: "Never cache error responses").
+async fn memo<V: Clone + Send + Sync + 'static>(
+    cache: &moka::future::Cache<String, V>,
+    key: String,
+    fetch: impl std::future::Future<Output = Result<V, String>>,
+) -> Result<V, String> {
+    if let Some(hit) = cache.get(&key).await {
+        return Ok(hit);
     }
-    map.insert(key, val);
+    let val = fetch.await?;
+    cache.insert(key, val.clone()).await;
+    Ok(val)
 }
 
 /// One file in the offline vault, as recorded in `<vault>/index.json`.
@@ -73,6 +125,10 @@ pub struct DownloadEntry {
     pub bytes: u64,
     /// Unix seconds — the vault is sorted by this.
     pub at: u64,
+    /// Lowercase hex SHA-256 of the file bytes: content dedupe + the
+    /// verify button. `""` for rows that predate checksums (verify backfills).
+    #[serde(default)]
+    pub sha256: String,
 }
 
 /// Everything the Downloads screen needs in one round trip.
@@ -83,6 +139,25 @@ pub struct Vault {
     pub entries: Vec<DownloadEntry>,
 }
 
+/// Result of a full vault re-hash (`verify_vault`): report-only — bad rows
+/// are surfaced to the UI, never auto-deleted.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct VerifyReport {
+    pub ok: u32,
+    pub mismatch: u32,
+    pub missing: u32,
+}
+
+/// Result of importing a manifest: entries whose file was found inside the
+/// vault and recorded, vs entries with no file on disk.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ImportReport {
+    pub added: u32,
+    pub missing: u32,
+}
+
 pub struct AppState {
     /// Metadata + probes: total 25 s timeout.
     pub client: reqwest::Client,
@@ -91,14 +166,29 @@ pub struct AppState {
     pub port: u16,
     /// Where downloaded files are kept (`<Downloads>/TRANCE MUSIC`).
     pub vault: std::path::PathBuf,
-    /// song id -> full resolved song (memoised mirror round-trip)
-    pub resolved: tokio::sync::Mutex<HashMap<String, Song>>,
-    /// CDN url -> probe result (memoised qualification)
-    pub qualified: tokio::sync::Mutex<HashMap<String, Probe>>,
-    /// search query -> results (memoised to avoid hammering the mirror)
-    pub search_cache: tokio::sync::Mutex<HashMap<String, SearchPage>>,
-    /// song id -> lyrics (only non-empty answers are stored)
-    pub lyrics_cache: tokio::sync::Mutex<HashMap<String, crate::lyrics::Lyrics>>,
+    /// song id -> full resolved song (L1, 6h TTL)
+    pub resolved: moka::future::Cache<String, Song>,
+    /// CDN url -> probe result (L2: expires with the url it was probed from)
+    pub qualified: moka::future::Cache<String, Probe>,
+    /// search query -> results (L1, memoised to avoid hammering the mirror)
+    pub search_cache: moka::future::Cache<String, SearchPage>,
+    /// song id -> lyrics (L4-RAM; only non-empty answers are stored)
+    pub lyrics_cache: moka::future::Cache<String, crate::lyrics::Lyrics>,
+    /// entity search query -> one page of album/artist/playlist cards (L1)
+    pub entity_cache: moka::future::Cache<String, crate::official::EntityPage>,
+    /// suggestion query -> the search-box dropdown (L1)
+    pub suggest_cache: moka::future::Cache<String, crate::official::Suggestions>,
+    /// playlist/album id -> track list (same shape, one cache) (L1)
+    pub tracks_cache: moka::future::Cache<String, Vec<crate::jiosaavn::Track>>,
+    /// artist token:page -> one page of the artist catalogue (L1)
+    pub artist_pages: moka::future::Cache<String, crate::official::ArtistSongPage>,
+    /// artist token -> header + discography (L1)
+    pub overview_cache: moka::future::Cache<String, crate::official::ArtistOverview>,
+    /// url -> cover bytes (L3-RAM hot layer; L3 disk below)
+    pub art_memory: moka::future::Cache<String, Arc<Vec<u8>>>,
+    /// L3/L4 disk tiers: content-hash keys, atomic writes, byte budget.
+    pub disk: crate::cache::DiskCache,
+    /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
     /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
     /// transaction per mutation. `Err` means the vault is disabled — a
     /// read-only directory surfaces the error on every mutation and lists
@@ -107,7 +197,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(port: u16, vault: std::path::PathBuf) -> Self {
+    pub fn new(port: u16, vault: std::path::PathBuf, cache_dir: std::path::PathBuf) -> Self {
         sweep_partials(&vault);
         let db = crate::db::VaultDb::open(&vault, &vault.join("index.json"), || {
             rebuild_from_dir(&vault)
@@ -117,26 +207,36 @@ impl AppState {
             media: crate::jiosaavn::media_client(),
             port,
             vault,
-            resolved: tokio::sync::Mutex::new(HashMap::new()),
-            qualified: tokio::sync::Mutex::new(HashMap::new()),
-            search_cache: tokio::sync::Mutex::new(HashMap::new()),
-            lyrics_cache: tokio::sync::Mutex::new(HashMap::new()),
+            resolved: l1_cache(RESOLVED_CAP),
+            qualified: ttl_cache(QUALIFIED_CAP, L2_TTL),
+            search_cache: l1_cache(SEARCH_CAP),
+            lyrics_cache: ttl_cache(LYRICS_CAP, L4_TTL),
+            entity_cache: l1_cache(ENTITY_CAP),
+            suggest_cache: l1_cache(SUGGEST_CAP),
+            tracks_cache: l1_cache(TRACKS_CAP),
+            artist_pages: l1_cache(ARTIST_PAGE_CAP),
+            overview_cache: l1_cache(OVERVIEW_CAP),
+            art_memory: moka::future::Cache::builder()
+                .max_capacity(ART_MEM_BYTES)
+                .eviction_policy(moka::policy::EvictionPolicy::lru())
+                .weigher(|_k: &String, v: &Arc<Vec<u8>>| {
+                    // Weights saturate at u32::MAX; a single 10 MB art cap
+                    // (cache.rs) keeps every real value well below that.
+                    v.len().try_into().unwrap_or(u32::MAX)
+                })
+                .build(),
+            disk: crate::cache::DiskCache::new(cache_dir),
             db,
         }
     }
 
-    /// Resolve a song id to its full detail, memoised for the process.
+    /// Resolve a song id to its full detail, memoised (L1, 6h).
     pub async fn cached_song(&self, id: &str) -> Result<Song, String> {
-        if let Some(song) = self.resolved.lock().await.get(id).cloned() {
+        if let Some(song) = self.resolved.get(id).await {
             return Ok(song);
         }
         let song = fetch_song(&self.client, id).await?;
-        put_capped(
-            &mut *self.resolved.lock().await,
-            RESOLVED_CAP,
-            id.to_string(),
-            song.clone(),
-        );
+        self.resolved.insert(id.to_string(), song.clone()).await;
         Ok(song)
     }
 
@@ -148,43 +248,38 @@ impl AppState {
             .ok_or_else(|| "no stream qualities".to_string())
     }
 
-    /// Qualify a CDN url (3 probes), memoised for the process.
+    /// Qualify a CDN url (3 probes), memoised for the url's lifetime (L2).
     pub async fn cached_qualify(&self, url: &str) -> Result<Probe, String> {
-        if let Some(probe) = self.qualified.lock().await.get(url).copied() {
+        if let Some(probe) = self.qualified.get(url).await {
             return Ok(probe);
         }
         let probe = qualify_url(&self.client, url).await?;
-        put_capped(
-            &mut *self.qualified.lock().await,
-            QUALIFIED_CAP,
-            url.to_string(),
-            probe,
-        );
+        self.qualified.insert(url.to_string(), probe).await;
         Ok(probe)
     }
 
-    /// Search the catalog, memoised per query+limit+page to avoid hammering upstream.
+    /// Search the catalog, memoised per query+limit+page+prefs to avoid hammering upstream.
     pub async fn cached_search(
         &self,
         query: &str,
         limit: u32,
         page: u32,
     ) -> Result<SearchPage, String> {
-        let key = format!("{}:{limit}:{page}", query.to_lowercase());
-        if let Some(hit) = self.search_cache.lock().await.get(&key).cloned() {
+        let key = format!(
+            "{}:{limit}:{page}:{}",
+            query.to_lowercase(),
+            crate::official::prefs_key()
+        );
+        if let Some(hit) = self.search_cache.get(&key).await {
             return Ok(hit);
         }
         let result = search_songs(&self.client, query, limit, page).await?;
-        put_capped(
-            &mut *self.search_cache.lock().await,
-            SEARCH_CAP,
-            key,
-            result.clone(),
-        );
+        self.search_cache.insert(key, result.clone()).await;
         Ok(result)
     }
 
-    /// Best available lyrics for a song, memoised per song id.
+    /// Best available lyrics for a song, memoised per song id (L4: RAM
+    /// first, then the 7-day disk tier, then the providers).
     ///
     /// Only answers with content are stored: a provider that was merely down
     /// must not be remembered as "this song has no lyrics".
@@ -196,19 +291,111 @@ impl AppState {
         album: &str,
         duration: u32,
     ) -> Result<crate::lyrics::Lyrics, String> {
-        if let Some(hit) = self.lyrics_cache.lock().await.get(id).cloned() {
+        if let Some(hit) = self.lyrics_cache.get(id).await {
             return Ok(hit);
+        }
+        // L4 disk: content is immutable once fetched, so a fresh file is a
+        // complete answer — no provider round trip.
+        let path = self.disk.lyrics_path(id);
+        if self.disk.enabled() {
+            if let Some(bytes) = self.disk.read_fresh(&path, crate::cache::LYRICS_TTL).await {
+                if let Ok(lyrics) = serde_json::from_slice::<crate::lyrics::Lyrics>(&bytes) {
+                    self.lyrics_cache
+                        .insert(id.to_string(), lyrics.clone())
+                        .await;
+                    return Ok(lyrics);
+                }
+                // Corrupt file: drop it, fall through to the providers.
+                let _ = tokio::fs::remove_file(&path).await;
+            }
         }
         let lyrics = crate::lyrics::fetch(&self.client, id, title, artist, album, duration).await?;
         if lyrics.has_content() {
-            put_capped(
-                &mut *self.lyrics_cache.lock().await,
-                LYRICS_CAP,
-                id.to_string(),
-                lyrics.clone(),
-            );
+            self.lyrics_cache
+                .insert(id.to_string(), lyrics.clone())
+                .await;
+            if self.disk.enabled() {
+                let bytes = serde_json::to_vec(&lyrics).unwrap_or_default();
+                if let Err(e) = self.disk.write_atomic(&path, &bytes).await {
+                    // ENOSPC / read-only: playback is unaffected, skip the write.
+                    eprintln!("[cache] lyrics write skipped: {e}");
+                }
+            }
         }
         Ok(lyrics)
+    }
+
+    /// One page of album/artist/playlist search results, memoised.
+    pub async fn cached_entities(
+        &self,
+        query: &str,
+        kind: &str,
+        limit: u32,
+        page: u32,
+    ) -> Result<crate::official::EntityPage, String> {
+        let key = format!(
+            "{}:{kind}:{limit}:{page}:{}",
+            query.to_lowercase(),
+            crate::official::prefs_key()
+        );
+        memo(&self.entity_cache, key, async {
+            crate::official::search_entities(&self.client, kind, query, limit, page).await
+        })
+        .await
+    }
+
+    /// Search-box dropdown for a query, memoised.
+    pub async fn cached_suggestions(
+        &self,
+        query: &str,
+    ) -> Result<crate::official::Suggestions, String> {
+        let key = format!("{}:{}", query.to_lowercase(), crate::official::prefs_key());
+        memo(&self.suggest_cache, key, async {
+            crate::official::suggestions(&self.client, query).await
+        })
+        .await
+    }
+
+    /// Every track of a playlist or album, memoised per id/token.
+    pub async fn cached_playlist(&self, id: &str) -> Result<Vec<crate::jiosaavn::Track>, String> {
+        let key = format!("playlist:{id}:{}", crate::official::prefs_key());
+        memo(&self.tracks_cache, key, async {
+            crate::official::playlist_tracks(&self.client, id).await
+        })
+        .await
+    }
+
+    pub async fn cached_album(&self, token: &str) -> Result<Vec<crate::jiosaavn::Track>, String> {
+        let key = format!("album:{token}:{}", crate::official::prefs_key());
+        memo(&self.tracks_cache, key, async {
+            crate::official::album_tracks(&self.client, token).await
+        })
+        .await
+    }
+
+    /// One page of an artist's catalogue, memoised per token+page.
+    pub async fn cached_artist_page(
+        &self,
+        token: &str,
+        page: u32,
+    ) -> Result<crate::official::ArtistSongPage, String> {
+        let key = format!("artist:{token}:{page}:{}", crate::official::prefs_key());
+        memo(&self.artist_pages, key, async {
+            crate::official::artist_tracks(&self.client, token, page).await
+        })
+        .await
+    }
+
+    /// Artist header + discography, memoised per token.
+    pub async fn cached_overview(
+        &self,
+        token: &str,
+    ) -> Result<crate::official::ArtistOverview, String> {
+        let key = format!("overview:{token}:{}", crate::official::prefs_key());
+        memo(&self.overview_cache, key, async {
+            crate::official::artist_overview(&self.client, token).await
+        })
+        .await
     }
 
     /// Download a whole media file to `dest`.
@@ -221,13 +408,15 @@ impl AppState {
     /// final name (stale `.part` files are swept at boot).
     ///
     /// `on_progress(received, total)` is called at the start, roughly every
-    /// 256 KB, and once with the final byte count. Returns path + bytes.
+    /// 256 KB, and once with the final byte count. Returns path + bytes +
+    /// the SHA-256 of everything written (streamed into the hasher while the
+    /// file lands — no second read pass).
     pub async fn download_to(
         &self,
         url: &str,
         dest: &Path,
         mut on_progress: impl FnMut(u64, Option<u64>),
-    ) -> Result<(PathBuf, u64), String> {
+    ) -> Result<(PathBuf, u64, String), String> {
         use tokio::io::AsyncWriteExt;
 
         let url = validate_media_url(url)?;
@@ -263,11 +452,13 @@ impl AppState {
             .map_err(|e| format!("create {}: {e}", part.display()))?;
         let mut written: u64 = 0;
         let mut next_report: u64 = REPORT_EVERY;
+        let mut hasher = crate::sha256::Sha256::new();
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
             let chunk =
                 chunk.map_err(|e| format!("download interrupted after {written} bytes: {e}"))?;
             written += chunk.len() as u64;
+            hasher.update(&chunk);
             file.write_all(&chunk)
                 .await
                 .map_err(|e| format!("write {}: {e}", part.display()))?;
@@ -286,7 +477,7 @@ impl AppState {
         tokio::fs::rename(&part, dest)
             .await
             .map_err(|e| format!("commit {}: {e}", dest.display()))?;
-        Ok((dest.to_path_buf(), written))
+        Ok((dest.to_path_buf(), written, hasher.hex()))
     }
 
     // ---------------------------------------------------------------- vault -
@@ -351,6 +542,99 @@ impl AppState {
     pub fn reveal_vault(&self) -> Result<(), String> {
         open_in_folder(&self.vault)
     }
+
+    /// The vault row already holding these exact bytes, if any (content
+    /// dedupe after a download).
+    pub fn entry_by_sha(&self, sha: &str) -> Result<Option<DownloadEntry>, String> {
+        self.db.as_ref().map_err(|e| e.clone())?.entry_by_sha(sha)
+    }
+
+    /// Re-hash every recorded file against its stored checksum. Report-only:
+    /// mismatches are counted for the UI, never deleted here — the user
+    /// decides what to remove. Rows without a checksum yet (pre-upgrade)
+    /// adopt the hash computed now, so the next verify is strict.
+    pub fn verify(&self) -> VerifyReport {
+        let entries = self
+            .db
+            .as_ref()
+            .ok()
+            .and_then(|db| db.list().ok())
+            .unwrap_or_default();
+        let mut rep = VerifyReport {
+            ok: 0,
+            mismatch: 0,
+            missing: 0,
+        };
+        for e in &entries {
+            let path = Path::new(&e.path);
+            if !path.is_file() {
+                rep.missing += 1;
+                continue;
+            }
+            let actual = match crate::sha256::hash_file(path) {
+                Ok(h) => h,
+                Err(_) => {
+                    rep.missing += 1;
+                    continue;
+                }
+            };
+            if e.sha256.is_empty() {
+                if let Ok(db) = self.db.as_ref() {
+                    let mut healed = e.clone();
+                    healed.sha256 = actual;
+                    let _ = db.record(healed);
+                }
+                rep.ok += 1;
+            } else if actual == e.sha256 {
+                rep.ok += 1;
+            } else {
+                rep.mismatch += 1;
+            }
+        }
+        rep
+    }
+
+    /// Import manifest entries (spec 3.3): each one must resolve to a real
+    /// file inside the vault — the absolute path when it already points
+    /// there, else its file name looked up in this vault, so a manifest
+    /// exported on another machine works once its files are copied in.
+    /// Nothing is ever fetched from the network here.
+    pub fn import_entries(&self, entries: &[DownloadEntry]) -> Result<ImportReport, String> {
+        let mut rep = ImportReport {
+            added: 0,
+            missing: 0,
+        };
+        for e in entries {
+            if crate::jiosaavn::check_id(&e.id).is_err() || e.path.is_empty() {
+                rep.missing += 1;
+                continue;
+            }
+            let orig = Path::new(&e.path);
+            let resolved = if orig.starts_with(&self.vault) && orig.is_file() {
+                Some(orig.to_path_buf())
+            } else {
+                // `file_name` strips any directory part — a hostile
+                // `../../` path can never escape the vault root.
+                orig.file_name()
+                    .map(|name| self.vault.join(name))
+                    .filter(|cand| cand.is_file())
+            };
+            let Some(path) = resolved else {
+                rep.missing += 1;
+                continue;
+            };
+            let Ok(meta) = std::fs::metadata(&path) else {
+                rep.missing += 1;
+                continue;
+            };
+            let mut entry = e.clone();
+            entry.path = path.display().to_string();
+            entry.bytes = meta.len();
+            self.record(entry)?;
+            rep.added += 1;
+        }
+        Ok(rep)
+    }
 }
 
 /// Remove `*.part` leftovers — downloads interrupted by a crash. They are
@@ -394,7 +678,9 @@ fn rebuild_from_dir(dir: &Path) -> Vec<DownloadEntry> {
         };
         if !(ext.eq_ignore_ascii_case("m4a")
             || ext.eq_ignore_ascii_case("mp4")
-            || ext.eq_ignore_ascii_case("mp3"))
+            || ext.eq_ignore_ascii_case("mp3")
+            || ext.eq_ignore_ascii_case("opus")
+            || ext.eq_ignore_ascii_case("ogg"))
         {
             continue;
         }
@@ -406,10 +692,7 @@ fn rebuild_from_dir(dir: &Path) -> Vec<DownloadEntry> {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
-        let (artist, title) = match stem.split_once(" - ") {
-            Some((a, t)) => (a.to_string(), t.to_string()),
-            None => (String::new(), stem.clone()),
-        };
+        let (id, artist, title) = parse_vault_stem(&stem);
         let at = meta
             .modified()
             .ok()
@@ -418,7 +701,7 @@ fn rebuild_from_dir(dir: &Path) -> Vec<DownloadEntry> {
             .unwrap_or(now);
         let path_str = file.to_string_lossy().into_owned();
         out.push(DownloadEntry {
-            id: recovered_id(&path_str),
+            id,
             title,
             artist,
             album: String::new(),
@@ -428,11 +711,46 @@ fn rebuild_from_dir(dir: &Path) -> Vec<DownloadEntry> {
             bytes: meta.len(),
             path: path_str,
             at,
+            // No checksum for rebuilt rows: verify_vault backfills one the
+            // first time it runs.
+            sha256: String::new(),
         });
     }
     // Append order of the original manifest was chronological; keep it.
     out.sort_by_key(|e| e.at);
     out
+}
+
+/// Read a vault filename back into (id, artist, title).
+///
+/// Two shapes exist: `{id} - {artist} - {title}` for everything saved today,
+/// and the older `{artist} - {title}` whose id is unrecoverable and gets the
+/// synthetic one. A JioSaavn id is alnum only, so a leading segment without a
+/// space is only ever a real id.
+pub(crate) fn parse_vault_stem(stem: &str) -> (String, String, String) {
+    let mut parts = stem.splitn(3, " - ");
+    let first = parts.next().unwrap_or_default();
+    match (parts.next(), parts.next()) {
+        (Some(artist), Some(title)) if !first.contains(' ') => {
+            // `{id} - {artist} - {title}`: a JioSaavn id is alnum only, so a
+            // space-free first part is the real id.
+            (first.to_string(), artist.to_string(), title.to_string())
+        }
+        (Some(second), Some(third)) => (
+            // A name that itself contains the separator: the leading part is
+            // the artist and the rest belongs to the title.
+            recovered_id(stem),
+            first.to_string(),
+            format!("{second} - {third}"),
+        ),
+        (Some(title), None) => (
+            // `{artist} - {title}`, the shape written before ids led the name.
+            recovered_id(stem),
+            first.to_string(),
+            title.to_string(),
+        ),
+        (None, _) => (recovered_id(stem), String::new(), first.to_string()),
+    }
 }
 
 /// Stable synthetic id for a recovered row: 16 hex chars pass `check_id`
@@ -464,7 +782,14 @@ fn open_in_folder(path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-#[cfg(not(target_os = "windows"))]
+// Android has no xdg-open and the vault sits in app-private storage; say so
+// plainly instead of failing with ENOENT deep in Command::spawn.
+#[cfg(target_os = "android")]
+fn open_in_folder(_path: &Path) -> Result<(), String> {
+    Err("files are kept in app-private storage on Android — nothing to reveal".to_string())
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "android")))]
 fn open_in_folder(path: &Path) -> Result<(), String> {
     let program = if cfg!(target_os = "macos") {
         "open"
@@ -482,6 +807,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/stream", get(stream))
         .route("/file", get(vault_file))
+        .route("/art", get(art))
         .with_state(state)
 }
 
@@ -524,9 +850,8 @@ async fn vault_file(
                 .into_response()
         }
     };
-    let is_mp3 = path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("mp3"));
+    let content_type =
+        crate::transcode::content_type(path.extension().and_then(|ext| ext.to_str()));
 
     let (status, start, end) =
         match slice_range(headers.get("range").and_then(|v| v.to_str().ok()), total) {
@@ -572,10 +897,7 @@ async fn vault_file(
 
     let mut builder = Response::builder()
         .status(status)
-        .header(
-            "content-type",
-            if is_mp3 { "audio/mpeg" } else { "audio/mp4" },
-        )
+        .header("content-type", content_type)
         .header("content-length", span)
         .header("accept-ranges", "bytes");
     if status == 206 {
@@ -683,28 +1005,66 @@ async fn resolve_target(
     Err(bad_request("missing ?u= or ?id="))
 }
 
+/// Open the upstream leg for `target`, forwarding the browser's Range
+/// verbatim. Transport failures come back as a `(status, message)` pair —
+/// the relay's failure shape once converted into a response.
+async fn open_upstream(
+    state: &AppState,
+    target: &str,
+    headers: &HeaderMap,
+) -> Result<reqwest::Response, (StatusCode, String)> {
+    let mut req = state.media.get(target);
+    if let Some(range) = headers.get("range").and_then(|v| v.to_str().ok()) {
+        req = req.header(reqwest::header::RANGE, range);
+    }
+    req.send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")))
+}
+
+/// The design's L2 rule: 403/410 means the resolved stream url is gone
+/// (JioSaavn links expire), not that the song is unavailable.
+fn url_gone(status: StatusCode) -> bool {
+    matches!(status.as_u16(), 403 | 410)
+}
+
 async fn stream(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> Response {
-    let target = match resolve_target(&state, &params).await {
+    let mut target = match resolve_target(&state, &params).await {
         Ok(url) => url,
         Err(resp) => return resp,
     };
-
-    let mut req = state.media.get(&target);
-    if let Some(range) = headers.get("range").and_then(|v| v.to_str().ok()) {
-        // Forward the browser's Range header verbatim.
-        req = req.header(reqwest::header::RANGE, range);
-    }
-
-    let upstream = match req.send().await {
+    let mut upstream = match open_upstream(&state, &target, &headers).await {
         Ok(resp) => resp,
-        Err(e) => {
-            return (StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")).into_response()
-        }
+        Err(e) => return e.into_response(),
     };
+
+    // L2 self-heal: purge the stale resolution and resolve ONCE more for a
+    // fresh url. `?u=` requests carry no id to re-derive from, so they relay
+    // the terminal status (the next play resolves anew through the command
+    // layer). Errors during the retry keep the original 403 — never fail a
+    // recoverable url into a hard error.
+    if url_gone(upstream.status()) {
+        if let Some(id) = params.get("id") {
+            eprintln!(
+                "[cache] stream url gone ({}), re-resolving {id}",
+                upstream.status()
+            );
+            state.resolved.invalidate(id.as_str()).await;
+            state.qualified.invalidate(target.as_str()).await;
+            if let Ok(fresh) = resolve_target(&state, &params).await {
+                if fresh != target {
+                    target = fresh;
+                    if let Ok(retry) = open_upstream(&state, &target, &headers).await {
+                        upstream = retry;
+                    }
+                }
+            }
+        }
+    }
 
     let status =
         StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
@@ -760,10 +1120,179 @@ async fn stream(
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
-/// Convenience used by the Tauri command layer to assemble the DTO.
-pub fn proxy_url_for(port: u16, direct_url: &str) -> String {
+/// Parse + guard an upstream art url: http(s) only and public hosts only.
+/// The relay is a local service, so anything that could reach the machine
+/// itself (localhost, private ranges, link-local) is refused — an SSRF guard
+/// for a route whose query parameter names an arbitrary URL.
+fn art_origin_ok(raw: &str) -> Result<url::Url, String> {
+    let u = url::Url::parse(raw).map_err(|e| format!("invalid art url: {e}"))?;
+    if u.scheme() != "http" && u.scheme() != "https" {
+        return Err(format!("art url must be http(s): {raw}"));
+    }
+    let host = u.host_str().unwrap_or("").to_ascii_lowercase();
+    if host.is_empty() {
+        return Err("art url missing host".into());
+    }
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
+        return Err(format!("art host not allowed: {host}"));
+    }
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = bare.parse::<std::net::Ipv4Addr>() {
+        if ip.is_loopback()
+            || ip.is_private()
+            || ip.is_link_local()
+            || ip.is_unspecified()
+            || ip.is_broadcast()
+        {
+            return Err(format!("art host not allowed: {host}"));
+        }
+    }
+    if let Ok(ip) = bare.parse::<std::net::Ipv6Addr>() {
+        let o = ip.octets();
+        let link_local = o[0] == 0xfe && (o[1] & 0xc0) == 0x80;
+        let unique_local = (o[0] & 0xfe) == 0xfc;
+        let v4_mapped = o[..10] == [0u8; 10] && o[10] == 0xff && o[11] == 0xff;
+        if ip.is_loopback() || link_local || unique_local || o == [0u8; 16] {
+            return Err(format!("art host not allowed: {host}"));
+        }
+        if v4_mapped {
+            let v4 = std::net::Ipv4Addr::new(o[12], o[13], o[14], o[15]);
+            if v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified() {
+                return Err(format!("art host not allowed: {host}"));
+            }
+        }
+    }
+    Ok(u)
+}
+
+/// Magic-byte content type for disk hits (the file stores bytes, not
+/// headers). Unknown shapes fall back to jpeg — every catalog cover is.
+fn sniff_image_mime(b: &[u8]) -> &'static str {
+    if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return "image/jpeg";
+    }
+    if b.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return "image/png";
+    }
+    if b.len() >= 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        return "image/webp";
+    }
+    if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
+        return "image/gif";
+    }
+    if b.len() >= 12 && &b[4..8] == b"ftyp" && (&b[8..12] == b"avif" || &b[8..12] == b"avis") {
+        return "image/avif";
+    }
+    "image/jpeg"
+}
+
+fn image_response(bytes: &[u8], upstream_ct: Option<&str>) -> Response {
+    let mime = match upstream_ct {
+        Some(ct) if ct.starts_with("image/") => {
+            ct.split(';').next().unwrap_or(ct).trim().to_string()
+        }
+        _ => sniff_image_mime(bytes).to_string(),
+    };
+    Response::builder()
+        .header(axum::http::header::CONTENT_TYPE, mime)
+        // The page (https://tauri.localhost) and the relay (127.0.0.1) are
+        // different origins; the media-session artwork compositor draws
+        // /art images onto a canvas, which needs CORS or the canvas is
+        // tainted and unreadable.
+        .header(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+        // The key is the content url: same url -> same bytes, so clients
+        // may keep a day without ever seeing a stale cover.
+        .header(axum::http::header::CACHE_CONTROL, "public, max-age=86400")
+        .body(Body::from(bytes.to_vec()))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// L3: album art through the relay — memory, then disk, then upstream.
+///
+/// Non-image upstream answers are relayed as errors and NEVER cached
+/// (design: "never cache error responses"); oversized bodies are refused
+/// before they can enter either layer.
+async fn art(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let Some(raw) = params.get("u") else {
+        return bad_request("missing ?u=");
+    };
+    let url = match art_origin_ok(raw) {
+        Ok(u) => u,
+        Err(e) => return bad_request(e),
+    };
+    let key = url.to_string();
+
+    // L3-RAM hot layer.
+    if let Some(bytes) = state.art_memory.get(&key).await {
+        return image_response(&bytes, None);
+    }
+    // L3-disk: content-hash file, touched on read so the budget pass sees
+    // real recency.
+    let path = state.disk.art_path(&key);
+    if state.disk.enabled() {
+        if let Some(bytes) = state.disk.read_touch(&path).await {
+            let arc = Arc::new(bytes);
+            state.art_memory.insert(key, arc.clone()).await;
+            return image_response(&arc, None);
+        }
+    }
+    // Upstream.
+    let resp = match state.client.get(url.as_str()).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return (StatusCode::BAD_GATEWAY, format!("art fetch failed: {e}")).into_response()
+        }
+    };
+    if !resp.status().is_success() {
+        // Relay the upstream status verbatim (the <img> onerror chain in
+        // art.js handles 404s); cached nowhere.
+        return StatusCode::from_u16(resp.status().as_u16())
+            .unwrap_or(StatusCode::BAD_GATEWAY)
+            .into_response();
+    }
+    let ct = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if !ct.starts_with("image/") {
+        return (
+            StatusCode::BAD_GATEWAY,
+            format!("upstream sent {ct} instead of art"),
+        )
+            .into_response();
+    }
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    };
+    if bytes.len() as u64 > crate::cache::MAX_ART_BYTES {
+        return (
+            StatusCode::BAD_GATEWAY,
+            format!("art too large: {} bytes", bytes.len()),
+        )
+            .into_response();
+    }
+    if state.disk.enabled() {
+        if let Err(e) = state.disk.write_atomic(&path, &bytes).await {
+            // ENOSPC / read-only: serve anyway, playback unaffected.
+            eprintln!("[cache] art write skipped: {e}");
+        }
+    }
+    let arc = Arc::new(bytes.to_vec());
+    state.art_memory.insert(key, arc.clone()).await;
+    image_response(&arc, Some(&ct))
+}
+
+/// Playable stream url for a song id: id-keyed so the relay can purge and
+/// re-resolve it when the CDN retires the old link (design L2 / 403 rule).
+pub fn proxy_url_for(port: u16, id: &str) -> String {
     let encoded = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("u", direct_url)
+        .append_pair("id", id)
         .finish();
     format!("http://127.0.0.1:{port}/stream?{encoded}")
 }
@@ -772,6 +1301,37 @@ pub fn proxy_url_for(port: u16, direct_url: &str) -> String {
 mod tests {
     use super::*;
     use crate::jiosaavn::{api_client, search_songs};
+
+    /// Both vault filename shapes must survive a rebuild: the id-prefixed one
+    /// written today keeps its real song id, the older `artist - title` one
+    /// falls back to a synthetic id without losing either name.
+    #[test]
+    fn vault_stems_parse_back_into_id_artist_title() {
+        let (id, artist, title) = parse_vault_stem("4Yc1J3xyzAB - Daft Punk - Get Lucky");
+        assert_eq!(
+            (id.as_str(), artist.as_str(), title.as_str()),
+            ("4Yc1J3xyzAB", "Daft Punk", "Get Lucky")
+        );
+
+        let (legacy_id, legacy_artist, legacy_title) = parse_vault_stem("Daft Punk - Get Lucky");
+        assert_eq!(legacy_id.len(), 16, "synthetic id, not the artist");
+        assert_ne!(legacy_id, "Daft Punk");
+        assert_eq!(
+            (legacy_artist.as_str(), legacy_title.as_str()),
+            ("Daft Punk", "Get Lucky")
+        );
+
+        let (bare_id, bare_artist, bare_title) = parse_vault_stem("Track");
+        assert!(bare_artist.is_empty());
+        assert_eq!(bare_title, "Track");
+        assert!(!bare_id.is_empty());
+    }
+
+    /// Temp cache dir shared by test states (art/lyrics files stay out of
+    /// the real app cache).
+    fn test_cache_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("trance-cache-{}", std::process::id()))
+    }
 
     /// Boot the real router on an ephemeral port, return base URL + state.
     async fn boot() -> (String, Arc<AppState>) {
@@ -782,12 +1342,42 @@ mod tests {
         let state = Arc::new(AppState::new(
             port,
             std::env::temp_dir().join(format!("trance-vault-{port}")),
+            std::env::temp_dir().join(format!("trance-cache-{port}")),
         ));
         let app = router(state.clone());
         tokio::spawn(async move {
             let _ = axum::serve(listener, app).await;
         });
         (format!("http://127.0.0.1:{port}"), state)
+    }
+
+    /// A hit must not re-run the fetch future; a different key must; an
+    /// error must not be remembered at all.
+    #[tokio::test]
+    async fn memo_fetches_once_per_key() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let cache: moka::future::Cache<String, String> = ttl_cache(4, Duration::from_secs(60));
+        let calls = AtomicUsize::new(0);
+        let fetch = || async {
+            calls.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, String>(calls.load(Ordering::SeqCst).to_string())
+        };
+        memo(&cache, "a".into(), fetch()).await.unwrap();
+        memo(&cache, "a".into(), fetch()).await.unwrap();
+        memo(&cache, "b".into(), fetch()).await.unwrap();
+        cache.run_pending_tasks().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2); // second "a" was a cache hit
+        assert_eq!(cache.entry_count(), 2);
+
+        let down = memo(&cache, "bad".into(), async {
+            Err::<String, _>("down".into())
+        })
+        .await;
+        assert!(down.is_err());
+        assert!(
+            cache.get("bad").await.is_none(),
+            "provider errors are never cached"
+        );
     }
 
     /// A known-good song id, discovered live so the test never depends on a
@@ -929,10 +1519,16 @@ mod tests {
         let _ = std::fs::remove_file(&dest);
 
         let mut reports = 0u32;
-        let (path, written) = state
+        let (path, written, sha) = state
             .download_to(&chosen.url, &dest, |_, _| reports += 1)
             .await
             .expect("download");
+        assert_eq!(sha.len(), 64, "checksum is 64 hex chars");
+        assert_eq!(
+            sha,
+            crate::sha256::hash_file(&path).expect("hash written file"),
+            "streamed hash matches the bytes on disk"
+        );
         let on_disk = std::fs::metadata(&path).expect("file must exist").len();
         assert_eq!(on_disk, written, "file size must match the byte counter");
         assert!(
@@ -993,7 +1589,7 @@ mod tests {
         let dest =
             std::env::temp_dir().join(format!("trance-full-flow-{}.mp4", std::process::id()));
         let _ = std::fs::remove_file(&dest);
-        let (path, written) = state
+        let (path, written, _sha) = state
             .download_to(&target, &dest, |_, _| {})
             .await
             .expect("download");
@@ -1028,6 +1624,7 @@ mod tests {
                 path: path.display().to_string(),
                 bytes: payload.len() as u64,
                 at: 0,
+                sha256: String::new(),
             })
             .expect("record");
 
@@ -1155,7 +1752,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("trance-vault-case-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("vault dir");
-        let state = AppState::new(0, dir.clone());
+        let state = AppState::new(0, dir.clone(), test_cache_dir());
 
         let file = dir.join("Trance - Anthem.m4a");
         std::fs::write(&file, b"abc").expect("write file");
@@ -1171,6 +1768,7 @@ mod tests {
                 path: file.display().to_string(),
                 bytes: 3,
                 at: 0,
+                sha256: "00".repeat(32),
             })
             .expect("record");
 
@@ -1185,6 +1783,19 @@ mod tests {
         assert_eq!(vault.entries.len(), 1, "one song stays one row");
         assert_eq!(vault.entries[0].bytes, 4);
         assert_eq!(vault.entries[0].title, "Anthem");
+        assert_eq!(
+            vault.entries[0].sha256,
+            "00".repeat(32),
+            "checksum round-trips through the ledger"
+        );
+        assert!(
+            state
+                .entry_by_sha(&"00".repeat(32))
+                .expect("sha lookup")
+                .map(|e| e.id == "x1")
+                == Some(true),
+            "content dedupe finds the row by checksum"
+        );
 
         // a path we never wrote is refused outright
         assert!(state.remove("/etc/passwd").is_err());
@@ -1196,15 +1807,164 @@ mod tests {
     }
 
     /// A full cache evicts instead of growing forever: every search query
-    /// is a unique key, so the maps need a hard ceiling.
-    #[test]
-    fn caches_evict_once_full() {
-        let mut map = HashMap::new();
-        for i in 0..5 {
-            put_capped(&mut map, 3, format!("k{i}"), i);
+    /// is a unique key, so the ceiling must hold while the newest keys win.
+    #[tokio::test]
+    async fn caches_evict_once_full() {
+        let cache = l1_cache::<u64>(3);
+        for i in 0..5u64 {
+            cache.insert(format!("k{i}"), i).await;
+            // Flush after each insert: moka's capacity bookkeeping runs on
+            // maintenance, not inline.
+            cache.run_pending_tasks().await;
         }
-        assert_eq!(map.len(), 3, "cache stays at its ceiling");
-        assert_eq!(map.get("k4"), Some(&4), "the newest key survives");
+        assert!(cache.entry_count() <= 3, "cache stays at its ceiling");
+        assert!(cache.get("k4").await.is_some(), "the newest key survives");
+    }
+
+    /// L3 magic-byte sniffing: disk hits carry bytes, not headers.
+    #[test]
+    fn sniff_recognizes_catalog_formats() {
+        assert_eq!(sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0]), "image/jpeg");
+        assert_eq!(sniff_image_mime(b"\x89PNG\r\n\x1a\n"), "image/png");
+        assert_eq!(
+            sniff_image_mime(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
+            "image/webp"
+        );
+        assert_eq!(sniff_image_mime(b"GIF89a\x00"), "image/gif");
+        assert_eq!(
+            sniff_image_mime(b"not an image"),
+            "image/jpeg",
+            "unknown bytes fall back to the only format covers ever use"
+        );
+    }
+
+    /// L3 disk tier through the real router: a seeded file serves without
+    /// any upstream round trip (the origin below is deliberately
+    /// unreachable, so 200 proves the disk path), with the type sniffed
+    /// from bytes and a client cache lifetime attached.
+    #[tokio::test]
+    async fn art_serves_disk_hits_without_upstream() {
+        let (base, state) = boot().await;
+        let origin = "https://example.com/cover.png";
+        let bytes = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3];
+        state
+            .disk
+            .write_atomic(&state.disk.art_path(origin), &bytes)
+            .await
+            .expect("seed disk tier");
+        let q = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("u", origin)
+            .finish();
+        let resp = reqwest::get(format!("{base}/art?{q}")).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("content-type").unwrap(),
+            "image/png",
+            "magic bytes decide the type on disk hits"
+        );
+        assert_eq!(
+            resp.headers().get("cache-control").unwrap(),
+            "public, max-age=86400",
+            "immutable key -> long client cache"
+        );
+        let body = resp.bytes().await.unwrap();
+        assert_eq!(&body[..], &bytes);
+        // Again: this time the RAM layer answers, same bytes.
+        let again = reqwest::get(format!("{base}/art?{q}")).await.unwrap();
+        assert_eq!(again.status(), 200);
+        assert_eq!(&again.bytes().await.unwrap()[..], &bytes);
+    }
+
+    /// L3 guard: /art fetches what the page points at, so the origin is
+    /// checked before any request leaves — localhost, private ranges and
+    /// non-http schemes are refused outright.
+    #[tokio::test]
+    async fn art_refuses_local_and_non_http_origins() {
+        let (base, _state) = boot().await;
+        let bad = [
+            "http://localhost/x.png",
+            "http://127.0.0.1:65534/x.png",
+            "http://10.0.0.8/x.png",
+            "http://169.254.169.254/latest/meta.png",
+            "http://[::1]/x.png",
+            "file:///C:/Windows/win.ini",
+            "ftp://example.com/x.png",
+        ];
+        for origin in bad {
+            let q = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("u", origin)
+                .finish();
+            let resp = reqwest::get(format!("{base}/art?{q}")).await.unwrap();
+            assert_eq!(resp.status().as_u16(), 400, "refused: {origin}");
+        }
+        let resp = reqwest::get(format!("{base}/art")).await.unwrap();
+        assert_eq!(resp.status().as_u16(), 400, "missing ?u=");
+    }
+
+    /// L2 self-heal: a 403 from the CDN drops the stale resolution and the
+    /// stale probe for the id, while the terminal status still reaches the
+    /// player (the re-resolve fails for this bogus id — a recoverable url
+    /// must never turn into a hard error).
+    #[tokio::test]
+    async fn stream_purges_stale_resolution_on_403() {
+        use crate::jiosaavn::{QualityUrl, RangeStatus, Track};
+        let (base, state) = boot().await;
+        let mock = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(wiremock::ResponseTemplate::new(403))
+            .mount(&mock)
+            .await;
+        let id = "zzzzzzzz"; // valid shape, not a real song: re-resolve fails
+        let stale = format!("{}/expired.mp3", mock.uri());
+        let song = Song {
+            track: Track {
+                id: id.into(),
+                title: "Gone".into(),
+                artist: "A".into(),
+                album: "B".into(),
+                duration_secs: 0,
+                duration: "0:00".into(),
+                image: String::new(),
+                page_url: String::new(),
+                hq: false,
+                plays: 0,
+                has_lyrics: None,
+                artist_ids: vec![],
+                album_id: String::new(),
+                year: String::new(),
+                label: String::new(),
+                language: String::new(),
+                explicit: false,
+            },
+            qualities: vec![QualityUrl {
+                quality: "320kbps".into(),
+                url: stale.clone(),
+            }],
+        };
+        state.resolved.insert(id.into(), song).await;
+        state
+            .qualified
+            .insert(
+                stale.clone(),
+                Probe {
+                    range_status: RangeStatus::Unrestricted,
+                    content_length: None,
+                },
+            )
+            .await;
+
+        let resp = reqwest::get(format!("{base}/stream?id={id}"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 403, "terminal status relayed");
+        assert!(
+            state.resolved.get(id).await.is_none(),
+            "stale resolution purged"
+        );
+        assert!(
+            state.qualified.get(&stale).await.is_none(),
+            "stale probe purged"
+        );
     }
 
     /// A corrupted legacy manifest or database must not orphan the audio
@@ -1220,7 +1980,7 @@ mod tests {
         std::fs::write(&file, b"0123456789").expect("write file");
         std::fs::write(dir.join("index.json"), b"{ this is not json").expect("corrupt manifest");
 
-        let state = AppState::new(0, dir.clone());
+        let state = AppState::new(0, dir.clone(), test_cache_dir());
         let entries = state.vault().entries;
         assert_eq!(entries.len(), 1, "the file on disk keeps its row");
         let entry = &entries[0];
@@ -1234,7 +1994,9 @@ mod tests {
 
         // Recovery persisted: a second boot reads the healed database
         // instead of scanning the directory again.
-        let again = AppState::new(0, dir.clone()).vault().entries;
+        let again = AppState::new(0, dir.clone(), test_cache_dir())
+            .vault()
+            .entries;
         assert_eq!(again.len(), 1, "recovery persists to the ledger");
         assert_eq!(again[0].id, entry.id, "and keeps the same recovered id");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1261,6 +2023,7 @@ mod tests {
             path: file.display().to_string(),
             bytes: 3,
             at: 42,
+            sha256: String::new(),
         };
         std::fs::write(
             dir.join("index.json"),
@@ -1268,7 +2031,9 @@ mod tests {
         )
         .expect("write legacy manifest");
 
-        let entries = AppState::new(0, dir.clone()).vault().entries;
+        let entries = AppState::new(0, dir.clone(), test_cache_dir())
+            .vault()
+            .entries;
         assert_eq!(entries.len(), 1, "legacy row imported");
         assert_eq!(entries[0].id, "legacyid12345", "real id survives migration");
         assert_eq!(entries[0].at, 42, "timestamp survives migration");
@@ -1282,7 +2047,9 @@ mod tests {
         );
 
         // Second boot reads from the database, not the retired file.
-        let again = AppState::new(0, dir.clone()).vault().entries;
+        let again = AppState::new(0, dir.clone(), test_cache_dir())
+            .vault()
+            .entries;
         assert_eq!(again.len(), 1);
         assert_eq!(again[0].id, "legacyid12345");
         let _ = std::fs::remove_dir_all(&dir);
@@ -1299,10 +2066,14 @@ mod tests {
         std::fs::write(&file, b"0123456789").expect("write file");
         std::fs::write(dir.join("downloads.db"), b"this is not sqlite").expect("corrupt db");
 
-        let entries = AppState::new(0, dir.clone()).vault().entries;
+        let entries = AppState::new(0, dir.clone(), test_cache_dir())
+            .vault()
+            .entries;
         assert_eq!(entries.len(), 1, "row rebuilt after corruption");
         assert_eq!(entries[0].artist, "Daft Punk");
-        let again = AppState::new(0, dir.clone()).vault().entries;
+        let again = AppState::new(0, dir.clone(), test_cache_dir())
+            .vault()
+            .entries;
         assert_eq!(again.len(), 1, "fresh database boots cleanly");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1318,7 +2089,7 @@ mod tests {
         let blocked = dir.join("vault-is-a-file");
         std::fs::write(&blocked, b"not a directory").expect("blocker");
 
-        let state = AppState::new(0, blocked.clone());
+        let state = AppState::new(0, blocked.clone(), test_cache_dir());
         assert!(
             state.vault().entries.is_empty(),
             "listing degrades to empty"
@@ -1334,6 +2105,7 @@ mod tests {
             path: blocked.display().to_string(),
             bytes: 1,
             at: 0,
+            sha256: String::new(),
         };
         let err = state.record(entry).expect_err("mutation must fail loudly");
         assert!(!err.is_empty(), "error carries a message the UI can show");
@@ -1351,7 +2123,7 @@ mod tests {
         std::fs::write(&stale, b"garbage").expect("stale part");
         std::fs::write(&kept, b"song").expect("song");
 
-        let _ = AppState::new(0, dir.clone());
+        let _ = AppState::new(0, dir.clone(), test_cache_dir());
 
         assert!(!stale.exists(), "crash leftovers are swept");
         assert!(kept.exists(), "real files are untouched");
@@ -1365,7 +2137,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("trance-race-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("vault dir");
-        let state = Arc::new(AppState::new(0, dir.clone()));
+        let state = Arc::new(AppState::new(0, dir.clone(), test_cache_dir()));
 
         let handles: Vec<_> = (0..4u64)
             .map(|i| {
@@ -1385,6 +2157,7 @@ mod tests {
                             path: file.display().to_string(),
                             bytes: 1,
                             at: i,
+                            sha256: String::new(),
                         })
                         .expect("record");
                 })
@@ -1466,7 +2239,7 @@ mod tests {
             long.len()
         );
 
-        let state = AppState::new(0, dir.clone());
+        let state = AppState::new(0, dir.clone(), test_cache_dir());
         state
             .record(DownloadEntry {
                 id: "longpathid001".into(),
@@ -1479,11 +2252,201 @@ mod tests {
                 path: long.clone(),
                 bytes: 1,
                 at: 0,
+                sha256: String::new(),
             })
             .expect("record long path");
         assert_eq!(state.vault().entries.len(), 1, "listed despite length");
         state.remove(&long).expect("remove long path");
         assert!(!file.exists(), "file deleted");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A database created before checksums gains the sha256 column on open
+    /// (ALTER, index 10) instead of failing every query — pre-upgrade rows
+    /// keep working with an empty hash until verify backfills them.
+    #[test]
+    fn pre_sha256_database_migrates_on_open() {
+        let dir = std::env::temp_dir().join(format!("trance-shamigrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("vault dir");
+        let file = dir.join("Old - Song.m4a");
+        std::fs::write(&file, b"old").expect("write old file");
+        {
+            let conn = rusqlite::Connection::open(dir.join("downloads.db")).expect("open raw db");
+            conn.execute_batch(
+                "CREATE TABLE downloads (
+                    id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL,
+                    album TEXT NOT NULL, image TEXT NOT NULL, duration_secs INTEGER NOT NULL,
+                    quality TEXT NOT NULL, path TEXT NOT NULL, bytes INTEGER NOT NULL,
+                    at INTEGER NOT NULL);",
+            )
+            .expect("pre-upgrade schema");
+            conn.execute(
+                "INSERT INTO downloads \
+                 (id, title, artist, album, image, duration_secs, quality, path, bytes, at) \
+                 VALUES (?1, 'Old', 'A', '', '', 1, 'x', ?2, 3, 5)",
+                rusqlite::params!["oldid12345", file.display().to_string()],
+            )
+            .expect("pre-upgrade row");
+        }
+
+        let state = AppState::new(0, dir.clone(), test_cache_dir());
+        let entries = state.vault().entries;
+        assert_eq!(entries.len(), 1, "pre-upgrade row survives the migration");
+        assert_eq!(entries[0].id, "oldid12345");
+        assert_eq!(entries[0].sha256, "", "new column defaults to empty");
+        state
+            .record(DownloadEntry {
+                sha256: "ab".repeat(32),
+                ..entries[0].clone()
+            })
+            .expect("inserts must include the migrated column");
+        assert!(
+            state
+                .entry_by_sha(&"ab".repeat(32))
+                .expect("sha lookup")
+                .is_some(),
+            "sha index works after migration"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// verify() is report-only: good files count ok, a flipped byte counts
+    /// mismatch, a vanished file counts missing, and a pre-upgrade row with
+    /// no hash gets backfilled with the hash of what is actually on disk.
+    #[test]
+    fn verify_counts_ok_mismatch_missing_and_backfills() {
+        let dir = std::env::temp_dir().join(format!("trance-verify-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("vault dir");
+        let state = AppState::new(0, dir.clone(), test_cache_dir());
+        let mk = |id: &str, path: String, sha: String| DownloadEntry {
+            id: id.into(),
+            title: "T".into(),
+            artist: "A".into(),
+            album: String::new(),
+            image: String::new(),
+            duration_secs: 1,
+            quality: "x".into(),
+            path,
+            bytes: 1,
+            at: 0,
+            sha256: sha,
+        };
+
+        let good = dir.join("Good - Song.m4a");
+        std::fs::write(&good, b"hello").expect("write good");
+        let good_sha = crate::sha256::hash_file(&good).expect("hash good");
+        state
+            .record(mk("goodid000001", good.display().to_string(), good_sha))
+            .expect("record good");
+
+        let bad = dir.join("Bad - Song.m4a");
+        std::fs::write(&bad, b"tampered!!").expect("write bad");
+        state
+            .record(mk(
+                "badid0000001",
+                bad.display().to_string(),
+                "00".repeat(32),
+            ))
+            .expect("record bad");
+
+        state
+            .record(mk(
+                "goneid0000001",
+                dir.join("vanished.m4a").display().to_string(),
+                "11".repeat(32),
+            ))
+            .expect("record gone");
+
+        let legacy = dir.join("Legacy - Song.m4a");
+        std::fs::write(&legacy, b"legacy").expect("write legacy");
+        state
+            .record(mk(
+                "legacyid00001",
+                legacy.display().to_string(),
+                String::new(),
+            ))
+            .expect("record legacy");
+
+        let rep = state.verify();
+        assert_eq!(
+            (rep.ok, rep.mismatch, rep.missing),
+            (2, 1, 1),
+            "good + backfilled ok, one tampered, one vanished"
+        );
+        assert!(
+            state
+                .entry_by_sha(&crate::sha256::hash_file(&legacy).expect("hash legacy"))
+                .expect("lookup")
+                .is_some(),
+            "legacy row was backfilled with its real hash"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Import resolves files only inside the vault: exact path, or file
+    /// name looked up in the vault (manifest from another machine). Missing
+    /// files and hostile `../` paths are reported, never touched.
+    #[test]
+    fn import_entries_resolve_inside_vault_only() {
+        let dir = std::env::temp_dir().join(format!("trance-mimport-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("vault dir");
+        let state = AppState::new(0, dir.clone(), test_cache_dir());
+        let mk = |id: &str, path: String| DownloadEntry {
+            id: id.into(),
+            title: "T".into(),
+            artist: "A".into(),
+            album: String::new(),
+            image: String::new(),
+            duration_secs: 1,
+            quality: "x".into(),
+            path,
+            bytes: 0,
+            at: 0,
+            sha256: String::new(),
+        };
+
+        let direct = dir.join("Trance - Anthem.m4a");
+        std::fs::write(&direct, b"abc").expect("write direct");
+        let foreign_named = dir.join("Other - B.m4a");
+        std::fs::write(&foreign_named, b"defg").expect("write foreign-named");
+        // A real file OUTSIDE the vault whose name a hostile manifest points at.
+        let outside = std::env::temp_dir().join(format!("escape-{}.mp4", std::process::id()));
+        std::fs::write(&outside, b"do not touch").expect("write outside");
+
+        let rep = state
+            .import_entries(&[
+                mk("importid00001", direct.display().to_string()),
+                mk(
+                    "importid00002",
+                    "/some/other/machine/Other - B.m4a".to_string(),
+                ),
+                mk("importid00003", "/nowhere/Gone - Track.m4a".to_string()),
+                mk("not a valid id", direct.display().to_string()),
+                mk(
+                    "importid00004",
+                    format!("../escape-{}.mp4", std::process::id()),
+                ),
+            ])
+            .expect("import");
+        assert_eq!(rep.added, 2, "direct hit + basename fallback");
+        assert_eq!(rep.missing, 3, "gone file + invalid id + hostile path");
+
+        let vault = state.vault();
+        assert_eq!(vault.entries.len(), 2, "nothing else was recorded");
+        for e in &vault.entries {
+            assert!(
+                std::path::Path::new(&e.path).starts_with(&dir),
+                "recorded paths stay inside the vault"
+            );
+        }
+        assert!(
+            outside.exists(),
+            "a ../ manifest path must never touch the file outside the vault"
+        );
+        let _ = std::fs::remove_file(&outside);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

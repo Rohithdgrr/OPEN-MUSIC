@@ -4,17 +4,36 @@
 //! port binding). Nothing here talks HTTP directly — that is `jiosaavn.rs`
 //! (catalog) and `proxy.rs` (media relay) territory.
 
+mod cache;
 mod db;
+mod gdrive;
 mod jiosaavn;
 mod lyrics;
 mod official;
 mod proxy;
-mod shortcuts;
+mod sha256;
+mod transcode;
+mod update;
 mod widget;
+
+// Global shortcuts are a desktop concept: the plugin's Rust API does not
+// exist on mobile, so Android gets a no-op stand-in with the same surface.
+#[cfg(desktop)]
+mod shortcuts;
+
+#[cfg(mobile)]
+mod shortcuts {
+    pub fn register(_app: &tauri::AppHandle) {}
+    #[tauri::command]
+    pub fn get_shortcut_mode() -> String {
+        "default".to_string()
+    }
+}
 
 use std::sync::Arc;
 
 use serde::Serialize;
+#[cfg(desktop)]
 use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
@@ -36,6 +55,18 @@ pub struct DownloadProgress {
     pub received: u64,
     pub total: Option<u64>,
     pub done: bool,
+}
+
+/// What `download_song` hands back: the saved path + its SHA-256, and — when
+/// the identical bytes were already in the vault — which entry holds them
+/// (the fresh copy is dropped, nothing is recorded twice).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct DownloadOutcome {
+    pub path: String,
+    pub sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duplicate_of: Option<String>,
 }
 
 /// Free-text queries end up as cache keys and upstream params — cap them so a
@@ -76,14 +107,10 @@ async fn search_entities(
     page: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<official::EntityPage, String> {
-    official::search_entities(
-        &state.client,
-        &kind,
-        &clamp_query(query),
-        limit.unwrap_or(20),
-        page.unwrap_or(1),
-    )
-    .await
+    let query = clamp_query(query);
+    state
+        .cached_entities(&query, &kind, limit.unwrap_or(20), page.unwrap_or(1))
+        .await
 }
 
 /// Inline suggestions for the search box: the top match plus a few songs,
@@ -93,7 +120,7 @@ async fn search_suggestions(
     query: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<official::Suggestions, String> {
-    official::suggestions(&state.client, &clamp_query(query)).await
+    state.cached_suggestions(&clamp_query(query)).await
 }
 
 /// Endless playback's feed: continue a JioSaavn radio station, or seed a new
@@ -148,12 +175,15 @@ async fn resolve_song(
         .and_then(|u| u.host_str().map(str::to_string))
         .unwrap_or_default();
 
+    // Id-keyed so the relay can purge + re-resolve when the CDN retires the
+    // link (design L2); computed before the DTO moves `id`.
+    let proxy_url = proxy_url_for(state.port, &id);
     Ok(PlayableAudio {
         id,
         title: song.track.title,
         artist: song.track.artist,
         direct_url: chosen.url.clone(),
-        proxy_url: proxy_url_for(state.port, &chosen.url),
+        proxy_url,
         qualities: song.qualities,
         chosen_quality: chosen.quality,
         content_length: probe.content_length,
@@ -173,6 +203,80 @@ async fn qualify_url(url: String, state: State<'_, Arc<AppState>>) -> Result<Ran
 #[tauri::command]
 fn proxy_base(state: State<'_, Arc<AppState>>) -> String {
     format!("http://127.0.0.1:{}", state.port)
+}
+
+/// Bytes currently in the vault (its own ledger, not the cache tree).
+fn vault_used(state: &AppState) -> u64 {
+    state.vault().entries.iter().map(|e| e.bytes).sum()
+}
+
+/// Settings / Storage: usage for every tier plus the active budget.
+#[tauri::command]
+async fn cache_stats(state: State<'_, Arc<AppState>>) -> Result<cache::CacheStats, String> {
+    Ok(state.disk.stats(vault_used(&state)))
+}
+
+/// Settings / Storage: cache size knob (design range 100 MB … 5 GB).
+/// Enforced immediately so the number on screen matches reality.
+#[tauri::command]
+async fn cache_set_budget(
+    mb: u64,
+    state: State<'_, Arc<AppState>>,
+) -> Result<cache::CacheStats, String> {
+    let bytes = mb
+        .saturating_mul(1024 * 1024)
+        .clamp(cache::MIN_BUDGET, cache::MAX_BUDGET);
+    state.disk.set_budget(bytes);
+    state.disk.enforce_budget();
+    Ok(state.disk.stats(vault_used(&state)))
+}
+
+/// Clear-cache button: drops L1/L2/L4-RAM and the L3/L4 disk trees. The
+/// vault lives under Downloads with its own ledger, so it is never touched.
+#[tauri::command]
+async fn cache_clear(state: State<'_, Arc<AppState>>) -> Result<cache::CacheStats, String> {
+    state.resolved.invalidate_all();
+    state.qualified.invalidate_all();
+    state.search_cache.invalidate_all();
+    state.lyrics_cache.invalidate_all();
+    state.entity_cache.invalidate_all();
+    state.suggest_cache.invalidate_all();
+    state.tracks_cache.invalidate_all();
+    state.artist_pages.invalidate_all();
+    state.overview_cache.invalidate_all();
+    state.art_memory.invalidate_all();
+    state.disk.clear();
+    Ok(state.disk.stats(vault_used(&state)))
+}
+
+/// L5 prefetch: warm the resolve + qualification for the next few tracks so
+/// `next()` starts from a cache hit instead of a mirror round trip (design
+/// §Audio Buffer — the vault prefetch in `vault.js` already covers the
+/// "already downloaded" case on its own). Failures are ignored: the play
+/// path resolves again on demand and errors are never cached.
+#[tauri::command]
+async fn prefetch_next(ids: Vec<String>, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let st = state.inner().clone();
+    let jobs = ids
+        .into_iter()
+        .filter(|id| check_id(id).is_ok())
+        .take(4)
+        .map(|id| {
+            let st = st.clone();
+            async move {
+                // Vaulted tracks play from disk — nothing to warm.
+                if st.vault().entries.iter().any(|e| e.id == id) {
+                    return;
+                }
+                if let Ok(song) = st.cached_song(&id).await {
+                    if let Some(q) = best_quality(&song.qualities, "320kbps") {
+                        let _ = st.cached_qualify(&q.url).await;
+                    }
+                }
+            }
+        });
+    futures::future::join_all(jobs).await;
+    Ok(())
 }
 
 /// IPC contract version. The frontend checks it once at boot, so a renamed
@@ -212,7 +316,7 @@ async fn playlist_tracks(
     id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<Track>, String> {
-    official::playlist_tracks(&state.client, &id).await
+    state.cached_playlist(&id).await
 }
 
 /// Every track of an album (album token = last segment of its page url).
@@ -221,7 +325,7 @@ async fn album_tracks(
     token: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<Track>, String> {
-    official::album_tracks(&state.client, &token).await
+    state.cached_album(&token).await
 }
 
 /// One page of an artist's catalogue (artist token = last segment of its page
@@ -232,7 +336,7 @@ async fn artist_tracks(
     page: Option<u32>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<official::ArtistSongPage, String> {
-    official::artist_tracks(&state.client, &token, page.unwrap_or(0)).await
+    state.cached_artist_page(&token, page.unwrap_or(0)).await
 }
 
 /// Artist header + the complete discography the artist screen renders under
@@ -242,7 +346,7 @@ async fn artist_overview(
     token: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<official::ArtistOverview, String> {
-    official::artist_overview(&state.client, &token).await
+    state.cached_overview(&token).await
 }
 
 /// Best lyrics for a track: LRCLIB time-coded, else JioSaavn text, else
@@ -304,39 +408,130 @@ fn safe_file_name(s: &str) -> String {
     }
 }
 
+/// Vault filename stem: `{id} - {artist} - {title}`.
+///
+/// The id leads because it is the only guaranteed-unique part; the rest keeps
+/// the file readable in Explorer. `rebuild_from_dir` parses this shape back.
+fn vault_stem(id: &str, artist: &str, title: &str) -> String {
+    format!(
+        "{} - {} - {}",
+        safe_file_name(id),
+        safe_file_name(artist),
+        safe_file_name(title)
+    )
+}
+
+/// Encoded bitrate for a quality preference. Understands the stored labels
+/// (`"96kbps"`, `"opus96"`) and bare numbers; unknown values land on 96, the
+/// size/quality sweet spot.
+fn target_kbps(quality: Option<&str>) -> u32 {
+    let digits: String = quality
+        .unwrap_or("96")
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
+        .collect();
+    match digits.parse::<u32>() {
+        Ok(0) | Err(_) => 96,
+        Ok(kbps) => kbps,
+    }
+}
+
 /// Save a complete song to the user's offline vault.
 ///
-/// Progress streams over the caller's scoped `on_progress` channel while the
-/// body downloads (review 4.4: Channel instead of broadcast events), and the
-/// file is recorded in the vault when the byte count matches what the CDN
-/// declared. Returns the path of the finished file.
+/// With ffmpeg present the best source rendition is downloaded and encoded to
+/// Opus at the requested bitrate, normalized to -16 LUFS (EBU R128); the
+/// source is kept as-is when no encoder exists. Progress streams over the
+/// caller's scoped `on_progress` channel (review 4.4), and the file is recorded
+/// only once its byte count matches what the CDN declared. Returns the path,
+/// the SHA-256, and a `duplicate_of` id when the same bytes were already saved
+/// under another entry (spec 3.3 dedupe).
 #[tauri::command]
 async fn download_song(
     id: String,
     quality: Option<String>,
     on_progress: tauri::ipc::Channel<DownloadProgress>,
     state: State<'_, Arc<AppState>>,
-) -> Result<String, String> {
+) -> Result<DownloadOutcome, String> {
+    save_to_vault(
+        &state,
+        &id,
+        target_kbps(quality.as_deref()),
+        Some(&on_progress),
+    )
+    .await
+}
+
+/// The two-tier vault: a saved song the user favorites is re-saved at the
+/// premium bitrate. Returns whether anything was upgraded — a song that is not
+/// in the vault, is already at (or above) the premium bitrate, or has no
+/// encoder to work with is left exactly as it is.
+#[tauri::command]
+async fn promote_song(id: String, state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     check_id(&id)?;
-    let prefer = quality.unwrap_or_else(|| "320kbps".to_string());
-    let song = state.cached_song(&id).await?;
+    const PREMIUM_KBPS: u32 = 128;
+    let Some(entry) = state.vault().entries.into_iter().find(|e| e.id == id) else {
+        return Ok(false);
+    };
+    // Native renditions are already the source of truth: without an encoder
+    // there is nothing to re-encode, and re-encoding 64k into 128k would only
+    // invent detail that is not there.
+    if !transcode::available() || stored_kbps(&entry.quality) >= PREMIUM_KBPS {
+        return Ok(false);
+    }
+    // The old copy has to go before the rewrite so it cannot resolve as the
+    // playable vault file while its bytes are being replaced.
+    let previous = entry.path.clone();
+    match save_to_vault(&state, &id, PREMIUM_KBPS, None).await {
+        Ok(_) => {
+            if !previous.is_empty() {
+                let _ = std::fs::remove_file(previous);
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            eprintln!("[TRANCE MUSIC] promote {id} failed: {e}");
+            // Put the old row back so the vault keeps playing what it had.
+            let _ = state.record(entry);
+            Err(e)
+        }
+    }
+}
+
+/// Bitrate a stored quality label represents: `opus128` and `128kbps` are
+/// both 128. Unparseable labels (`unknown`, empty) fall back to 96, which
+/// still reads as "below premium" and so stays promotable.
+fn stored_kbps(quality: &str) -> u32 {
+    target_kbps(Some(quality.trim_start_matches("opus")))
+}
+
+/// Download, encode, dedupe and record one song — the whole vault write path,
+/// shared by `download_song` and `promote_song`.
+async fn save_to_vault(
+    state: &AppState,
+    id: &str,
+    target: u32,
+    progress: Option<&tauri::ipc::Channel<DownloadProgress>>,
+) -> Result<DownloadOutcome, String> {
+    check_id(id)?;
+    let encode = transcode::available();
+    let prefer = transcode::source_rendition(target, encode).to_string();
+    let song = state.cached_song(id).await?;
     let chosen =
         best_quality(&song.qualities, &prefer).ok_or_else(|| "no stream qualities".to_string())?;
 
     // Stop the old copy resolving while its file is being rewritten.
-    state.forget(&id)?;
+    state.forget(id)?;
 
     std::fs::create_dir_all(&state.vault)
         .map_err(|e| format!("create {}: {e}", state.vault.display()))?;
-    let file_name = format!(
-        "{} - {}.m4a",
-        safe_file_name(&song.track.artist),
-        safe_file_name(&song.track.title)
-    );
-    let dest = state.vault.join(&file_name);
+    // The song id leads the name: it is the only part guaranteed unique, so two
+    // songs sharing an artist and title no longer overwrite each other.
+    let stem = vault_stem(id, &song.track.artist, &song.track.title);
+    let dest = state.vault.join(format!("{stem}.m4a"));
 
-    let progress = DownloadProgress {
-        id: id.clone(),
+    let note = DownloadProgress {
+        id: id.to_string(),
         title: song.track.title.clone(),
         artist: song.track.artist.clone(),
         album: song.track.album.clone(),
@@ -346,38 +541,124 @@ async fn download_song(
         total: None,
         done: false,
     };
-    let (path, written) = state
+    let (path, written, sha) = state
         .download_to(&chosen.url, &dest, |received, total| {
-            let mut msg = progress.clone();
-            msg.received = received;
-            msg.total = total;
-            let _ = on_progress.send(msg);
+            if let Some(channel) = progress {
+                let mut msg = note.clone();
+                msg.received = received;
+                msg.total = total;
+                let _ = channel.send(msg);
+            }
         })
         .await?;
 
+    // Encode to Opus when an encoder is around. The source is only deleted
+    // once the encode lands, so a failure keeps a playable copy instead of
+    // losing the download.
+    let (path, written, sha, quality) = if encode {
+        if let Some(channel) = progress {
+            let msg = DownloadProgress {
+                quality: "ENCODING".into(),
+                received: written,
+                ..note.clone()
+            };
+            let _ = channel.send(msg);
+        }
+        let opus = path.with_extension("opus");
+        match transcode::encode_opus(&path, &opus, target).await {
+            Ok(bytes) => {
+                let sha = crate::sha256::hash_file(&opus).map_err(|e| e.to_string())?;
+                let _ = tokio::fs::remove_file(&path).await;
+                (opus, bytes, sha, format!("opus{target}"))
+            }
+            Err(e) => {
+                eprintln!("[TRANCE MUSIC] keeping the source rendition: {e}");
+                (path, written, sha, chosen.quality.clone())
+            }
+        }
+    } else {
+        (path, written, sha, chosen.quality.clone())
+    };
+
+    // Content dedupe (spec 3.3): identical bytes already recorded under a
+    // different entry. Drop the redundant copy (unless it IS the recorded
+    // file — same stem rewritten in place), keep the existing row, and tell
+    // the UI which entry holds the song.
+    if let Some(dup) = state.entry_by_sha(&sha)? {
+        if !dup.path.eq_ignore_ascii_case(&path.display().to_string()) {
+            let _ = std::fs::remove_file(&path);
+        }
+        let mut msg = note;
+        msg.received = written;
+        msg.done = true;
+        if let Some(channel) = progress {
+            let _ = channel.send(msg);
+        }
+        eprintln!("[TRANCE MUSIC] {id} dedupes to vault entry {}", dup.id);
+        return Ok(DownloadOutcome {
+            path: dup.path,
+            sha256: sha,
+            duplicate_of: Some(dup.id),
+        });
+    }
+
     state.record(DownloadEntry {
-        id,
-        title: song.track.title,
-        artist: song.track.artist,
-        album: song.track.album,
-        image: song.track.image,
+        id: id.to_string(),
+        title: song.track.title.clone(),
+        artist: song.track.artist.clone(),
+        album: song.track.album.clone(),
+        image: song.track.image.clone(),
         duration_secs: song.track.duration_secs,
-        quality: chosen.quality,
+        quality: quality.clone(),
         path: path.display().to_string(),
         bytes: written,
         at: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0),
+        sha256: sha.clone(),
     })?;
 
-    let mut msg = progress;
+    let mut msg = note;
     msg.received = written;
     msg.done = true;
-    let _ = on_progress.send(msg);
+    // The card ends on what is actually in the vault, not on the rendition the
+    // encode started from.
+    msg.quality = quality;
+    if let Some(channel) = progress {
+        let _ = channel.send(msg);
+    }
 
     eprintln!("[TRANCE MUSIC] saved {written} bytes to {}", path.display());
-    Ok(path.display().to_string())
+    Ok(DownloadOutcome {
+        path: path.display().to_string(),
+        sha256: sha,
+        duplicate_of: None,
+    })
+}
+
+/// Re-hash every vault file against its recorded SHA-256 (Verify button).
+/// Runs on a worker thread: hashing a multi-GB vault must not stall IPC.
+#[tauri::command]
+async fn verify_vault(
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::proxy::VerifyReport, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<crate::proxy::VerifyReport, String> {
+        Ok(state.verify())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Import a manifest exported elsewhere: each entry must resolve to a file
+/// already inside the vault; missing files are reported, never fetched.
+#[tauri::command]
+async fn import_manifest(
+    entries: Vec<DownloadEntry>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<crate::proxy::ImportReport, String> {
+    state.import_entries(&entries)
 }
 
 /// Everything currently in the offline vault, newest first.
@@ -402,6 +683,68 @@ fn reveal_download(path: String, state: State<'_, Arc<AppState>>) -> Result<(), 
 #[tauri::command]
 fn reveal_vault(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.reveal_vault()
+}
+
+/// Phase 1 backup/restore: write text through the native Save dialog.
+/// Cancellation is an Err the frontend treats as silent; the Ok holds the
+/// path that was written, for the confirmation toast.
+#[tauri::command]
+fn export_file(
+    app: tauri::AppHandle,
+    content: String,
+    suggested_name: String,
+    filter_label: String,
+    extensions: Vec<String>,
+) -> Result<String, String> {
+    // Android would need the Storage Access Framework; a desktop save
+    // dialog has no meaning there, so say so instead of failing oddly.
+    if cfg!(mobile) {
+        return Err("file export is not supported on Android yet".to_string());
+    }
+    use tauri_plugin_dialog::DialogExt;
+    let exts: Vec<&str> = extensions.iter().map(|s| s.as_str()).collect();
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter(filter_label, &exts)
+        .set_file_name(suggested_name)
+        .blocking_save_file();
+    let path = picked
+        .as_ref()
+        .and_then(|fp| fp.as_path())
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "export cancelled".to_string())?;
+    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Phase 1 restore: read a backup file through the native Open dialog.
+/// Files over MAX_IMPORT_BYTES (mirrored in sync.js) are refused before
+/// reading; the frontend still validates the parsed shape.
+#[tauri::command]
+fn read_import_file(app: tauri::AppHandle) -> Result<String, String> {
+    if cfg!(mobile) {
+        return Err("file import is not supported on Android yet".to_string());
+    }
+    use tauri_plugin_dialog::DialogExt;
+    const MAX_IMPORT_BYTES: u64 = 8 * 1024 * 1024;
+    let picked = app
+        .dialog()
+        .file()
+        .add_filter("TRANCE MUSIC backup", &["json"])
+        .blocking_pick_file();
+    let path = picked
+        .as_ref()
+        .and_then(|fp| fp.as_path())
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "import cancelled".to_string())?;
+    let size = std::fs::metadata(&path)
+        .map_err(|e| format!("stat {}: {e}", path.display()))?
+        .len();
+    if size > MAX_IMPORT_BYTES {
+        return Err(format!("backup too large: {size} bytes (max {MAX_IMPORT_BYTES})"));
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))
 }
 
 // ------------------------------------------------------------- desktop card
@@ -551,7 +894,19 @@ fn widget_resize(win: tauri::WebviewWindow, w: u32, h: u32) -> Result<(), String
 /// Begin an OS drag of the frameless card from its header.
 #[tauri::command]
 fn widget_start_drag(win: tauri::WebviewWindow) -> Result<(), String> {
+    start_drag(&win)
+}
+
+/// `start_dragging` is desktop-only; the widget it serves does not exist on
+/// mobile, so Android returns success without doing anything.
+#[cfg(desktop)]
+fn start_drag(win: &tauri::WebviewWindow) -> Result<(), String> {
     win.start_dragging().map_err(|e| e.to_string())
+}
+
+#[cfg(mobile)]
+fn start_drag(_win: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
 }
 
 /// `CREATE_NO_WINDOW` on a console child (`reg`, ...). The release build is a
@@ -570,20 +925,39 @@ pub(crate) fn hide_console(cmd: &mut std::process::Command) -> &mut std::process
 
 /// Focus the main window: shortcut actions, tray "Show Window" and the
 /// single-instance callback all route through here.
+#[cfg_attr(mobile, allow(dead_code))]
 pub(crate) fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.unminimize();
+        unminimize(&w);
         let _ = w.show();
         let _ = w.set_focus();
     }
 }
 
+/// `unminimize` does not exist on mobile windows (they are never minimized).
+#[cfg(desktop)]
+fn unminimize(win: &tauri::WebviewWindow) {
+    let _ = win.unminimize();
+}
+
+#[cfg_attr(mobile, allow(dead_code))]
+#[cfg(mobile)]
+fn unminimize(_win: &tauri::WebviewWindow) {}
+
 /// Open a link outside the app (Settings → shortcuts). Scheme-allowlisted so
 /// the command cannot be pointed at `file:` or anything else local.
 #[tauri::command]
 fn open_external(url: String) -> Result<(), String> {
-    if !(url.starts_with("https://") || url.starts_with("http://") || url.starts_with("powertoys://")) {
+    if !(url.starts_with("https://")
+        || url.starts_with("http://")
+        || url.starts_with("powertoys://"))
+    {
         return Err("unsupported URL scheme".to_string());
+    }
+    // Android would need an Intent (or tauri-plugin-opener); spawning xdg-open
+    // just fails with ENOENT, so say what is missing instead.
+    if cfg!(mobile) {
+        return Err("opening links outside the app is not supported on Android yet".to_string());
     }
     #[cfg(windows)]
     let mut cmd = {
@@ -593,7 +967,11 @@ fn open_external(url: String) -> Result<(), String> {
     };
     #[cfg(not(windows))]
     let mut cmd = {
-        let mut c = std::process::Command::new(if cfg!(target_os = "macos") { "open" } else { "xdg-open" });
+        let mut c = std::process::Command::new(if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        });
         c.arg(&url);
         c
     };
@@ -604,25 +982,75 @@ fn open_external(url: String) -> Result<(), String> {
 /// Open at startup: the HKCU Run key is Windows' own autostart list - no
 /// elevation, no scheduled task, no plugin. `reg delete` exits non-zero when
 /// the value is already gone, which is the state we just asked for.
+///
+/// Elsewhere the desktop's own mechanism does the same job without one:
+/// an autostart `.desktop` entry on Linux, a LaunchAgent on macOS.
 #[tauri::command]
 fn autostart_set(on: bool) -> Result<(), String> {
+    // Android owns autostart (battery optimizations / OEM launchers); writing
+    // a ~/.config autostart entry here would be a lie the OS never reads.
+    if cfg!(mobile) {
+        let _ = on;
+        return Err("autostart is controlled by Android's system settings".to_string());
+    }
     let exe = std::env::current_exe().map_err(|e| format!("locate exe: {e}"))?;
-    const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-    const NAME: &str = "TRANCE MUSIC";
-    let value = format!("\"{}\"", exe.display());
-    let mut cmd = std::process::Command::new("reg");
-    if on {
-        cmd.args(["add", KEY, "/v", NAME, "/d", value.as_str(), "/f"]);
-    } else {
-        cmd.args(["delete", KEY, "/v", NAME, "/f"]);
+
+    #[cfg(windows)]
+    {
+        const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+        const NAME: &str = "TRANCE MUSIC";
+        let value = format!("\"{}\"", exe.display());
+        let mut cmd = std::process::Command::new("reg");
+        if on {
+            cmd.args(["add", KEY, "/v", NAME, "/d", value.as_str(), "/f"]);
+        } else {
+            cmd.args(["delete", KEY, "/v", NAME, "/f"]);
+        }
+        let out = hide_console(&mut cmd)
+            .output()
+            .map_err(|e| format!("reg: {e}"))?;
+        if on && !out.status.success() {
+            return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+        }
+        Ok(())
     }
-    let out = hide_console(&mut cmd)
-        .output()
-        .map_err(|e| format!("reg: {e}"))?;
-    if on && !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+
+    #[cfg(not(windows))]
+    {
+        use std::path::PathBuf;
+        let home = std::env::var_os("HOME").ok_or_else(|| "no HOME".to_string())?;
+        #[cfg(target_os = "macos")]
+        let (file, body) = (
+            PathBuf::from(&home).join("Library/LaunchAgents/com.openmusic.trancemusic.plist"),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.openmusic.trancemusic</string>
+  <key>ProgramArguments</key><array><string>{}</string></array>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+"#,
+                exe.display()
+            ),
+        );
+        #[cfg(not(target_os = "macos"))]
+        let (file, body) = (
+            PathBuf::from(&home).join(".config/autostart/trance-music.desktop"),
+            format!(
+                "[Desktop Entry]\nType=Application\nName=TRANCE MUSIC\nExec={}\n",
+                exe.display()
+            ),
+        );
+        if on {
+            if let Some(dir) = file.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&file, body).map_err(|e| e.to_string())
+        } else {
+            std::fs::remove_file(&file).map_err(|e| e.to_string())
+        }
     }
-    Ok(())
 }
 
 /// Language + region every catalog request is built with (Settings -> prefs).
@@ -634,6 +1062,8 @@ fn content_prefs_set(lang: String, country: String) -> Result<(), String> {
 
 /// Tray menu: media controls + Show/Quit, so closing to tray is still a
 /// reachable app. Built best-effort — no icon, no tray, boot continues.
+/// Desktop only: `tauri::tray`/`tauri::menu` do not exist on Android.
+#[cfg(desktop)]
 fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -671,14 +1101,64 @@ fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
 
 /// Process entry: the only place a startup failure may be fatal (review 5.6
 /// — everything inside `run` returns `Result` instead of panicking).
+/// One-time move of a pre-0.2 vault (it lived in the user's Downloads) into
+/// the app's own data folder. Rename first — same volume, no copying — then
+/// fall back to a recursive copy when the volumes differ. A no-op when the
+/// new vault already holds a ledger, when there is no legacy vault, or when
+/// the legacy one is empty.
+fn migrate_vault(legacy: &std::path::Path, vault: &std::path::Path) {
+    let has_ledger = |dir: &std::path::Path| {
+        dir.join("downloads.db").exists() || dir.join("index.json").exists()
+    };
+    if has_ledger(vault) || !has_ledger(legacy) || !legacy.is_dir() || legacy == vault {
+        return;
+    }
+    if let Some(parent) = vault.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if std::fs::rename(legacy, vault).is_ok() {
+        return;
+    }
+    if let Err(e) = copy_dir(legacy, vault) {
+        eprintln!("vault migration failed: {e}");
+    }
+}
+
+/// Recursive copy, for the cross-volume rename fallback above.
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let dst = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &dst)?;
+        } else {
+            std::fs::copy(entry.path(), &dst)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
-    tauri::Builder::default()
-        // First plugin: a second launch focuses the running instance.
+    let builder = tauri::Builder::default();
+    // First plugin: a second launch focuses the running instance. Both this
+    // and the shortcut plugin are desktop-only — their Rust API does not
+    // exist on mobile (Android gets single-task semantics from the OS and
+    // has no global shortcuts).
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    builder
+        // Signed updates: pubkey + manifest endpoint live in tauri.conf.json.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Native Save/Open dialogs for backup export/import. Driven from
+        // Rust, so no frontend capability entries are needed.
+        .plugin(tauri_plugin_dialog::init())
         .on_window_event(widget::handle_window_event)
         .setup(|app| {
             // Ephemeral port, bound BEFORE the window loads: no hardcoded
@@ -689,16 +1169,46 @@ pub fn run() {
             std_listener.set_nonblocking(true)?;
             let port = std_listener.local_addr()?.port();
 
-            // Offline vault lives beside the user's other downloads.
+            // Offline vault lives in the app's own data folder — Windows'
+            // %LOCALAPPDATA%, ~/.local/share, ~/Library/Application Support —
+            // so nothing the app saves lands in the user's downloads. A vault
+            // from an older build (it lived in Downloads) is moved across
+            // once, on the way in.
             let vault = app
                 .path()
-                .download_dir()
+                .app_local_data_dir()
                 .unwrap_or_else(|_| std::env::temp_dir())
                 .join("TRANCE MUSIC");
+            if let Ok(legacy) = app.path().download_dir() {
+                migrate_vault(&legacy.join("TRANCE MUSIC"), &vault);
+            }
             let _ = std::fs::create_dir_all(&vault);
 
-            let state = Arc::new(AppState::new(port, vault));
+            // Cache tree (L3/L4 files) lives in the app's own cache dir —
+            // separate from the vault, so "clear cache" can never touch
+            // saved songs.
+            let cache_dir = app
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("trance-cache"));
+
+            let state = Arc::new(AppState::new(port, vault, cache_dir));
             app.manage(state.clone());
+            // Optional Google Drive sync (Phase 2): dormant until sign-in.
+            app.manage(crate::gdrive::GDriveState::new());
+
+            // Design: enforce the disk budget at boot (first tick fires
+            // immediately) and every 10 minutes after that.
+            {
+                let state = state.clone();
+                tauri::async_runtime::spawn(async move {
+                    let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+                    loop {
+                        tick.tick().await;
+                        state.disk.enforce_budget();
+                    }
+                });
+            }
 
             let router = proxy::router(state);
             tauri::async_runtime::spawn(async move {
@@ -713,6 +1223,7 @@ pub fn run() {
             // Shortcuts and tray are log-only: a registration conflict must
             // never abort startup.
             shortcuts::register(app.handle());
+            #[cfg(desktop)]
             if let Err(e) = build_tray(app) {
                 eprintln!("tray build failed: {e}");
             }
@@ -736,10 +1247,20 @@ pub fn run() {
             artist_overview,
             get_lyrics,
             download_song,
+            promote_song,
             list_downloads,
             remove_download,
+            verify_vault,
+            import_manifest,
             reveal_download,
             reveal_vault,
+            export_file,
+            read_import_file,
+            gdrive::gdrive_status,
+            gdrive::gdrive_sign_in,
+            gdrive::gdrive_sign_out,
+            gdrive::gdrive_push,
+            gdrive::gdrive_pull,
             widget_show,
             widget_embed,
             widget_set_position,
@@ -750,7 +1271,14 @@ pub fn run() {
             shortcuts::get_shortcut_mode,
             open_external,
             autostart_set,
-            content_prefs_set
+            content_prefs_set,
+            cache_stats,
+            cache_set_budget,
+            cache_clear,
+            prefetch_next,
+            update::update_check,
+            update::update_install,
+            update::update_rollback
         ])
         .run(tauri::generate_context!())
         .expect("error while running TRANCE MUSIC");
@@ -758,13 +1286,40 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_query, safe_file_name};
+    use super::{clamp_query, safe_file_name, stored_kbps, target_kbps, vault_stem};
 
     #[test]
     fn queries_over_200_chars_are_clamped_on_a_char_boundary() {
         assert_eq!(clamp_query("a".repeat(500)).len(), 200);
         assert_eq!(clamp_query("short".into()), "short");
         assert_eq!(clamp_query("Ac".repeat(300)).chars().count(), 200);
+    }
+
+    /// The vault stem has to round-trip: what `parse_vault_stem` reads back is
+    /// the real song id, which is what keeps two same-titled songs apart.
+    #[test]
+    fn the_vault_stem_leads_with_the_song_id() {
+        let stem = vault_stem("4Yc1J3xyzAB", "Arma\u{e9}", "Bang Bang");
+        assert_eq!(stem, "4Yc1J3xyzAB - Arma\u{e9} - Bang Bang");
+        let (id, artist, title) = crate::proxy::parse_vault_stem(&stem);
+        assert_eq!(id, "4Yc1J3xyzAB");
+        assert_eq!(artist, "Arma\u{e9}");
+        assert_eq!(title, "Bang Bang");
+    }
+
+    /// Both the old `320kbps` labels and the new `opus96` ones land on the
+    /// number the promotion check compares.
+    #[test]
+    fn stored_labels_read_back_as_bitrates() {
+        assert_eq!(target_kbps(Some("128kbps")), 128);
+        assert_eq!(target_kbps(Some("opus128")), 128);
+        assert_eq!(target_kbps(Some("96")), 96);
+        assert_eq!(target_kbps(None), 96);
+        assert_eq!(target_kbps(Some("opus")), 96, "junk falls back");
+        assert_eq!(stored_kbps("opus128"), 128);
+        assert_eq!(stored_kbps("320kbps"), 320);
+        assert_eq!(stored_kbps("unknown"), 96, "junk stays promotable");
+        assert!(stored_kbps("unknown") < 128);
     }
 
     /// Vault filenames must be creatable on every desktop OS (review 5.2):

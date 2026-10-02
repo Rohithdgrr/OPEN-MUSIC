@@ -4,11 +4,13 @@ import { art } from "./art.js";
 import { clearError, diag, esc, invoke, showError, showView, toast } from "./core.js";
 import { $, $$, errorEl } from "./dom.js";
 import { fuzzyScore, querySim } from "./fuzzy.js";
+import { didYouMean, matchesFilters, parseQuery, rankTracks } from "./query.js";
 import { loadHistory, pushHistory } from "./history.js";
-import { ddCard, favFill, openDetail, openPlaylist, plCard, playTracksAt, toggleFavTrack } from "./library.js";
+import { loadFavs, ddCard, favFill, openDetail, openPlaylist, plCard, playTracksAt, toggleFavTrack } from "./library.js";
+import { loadPlays } from "./home.js";
 import { playQueueItem } from "./playback.js";
-import { enqueue, queue, queueIndex, renderQueue, setQueueTab } from "./queue.js";
-import { filterLang } from "./settings.js";
+import { enqueue, insertNext, queue, queueIndex, renderQueue, setQueueTab } from "./queue.js";
+import { filterLang, prefCountry } from "./settings.js";
 import { metaLinks } from "./util.js";
 import { downloadTrack } from "./vault.js";
 
@@ -52,7 +54,7 @@ export function trackRow(t, i, isCurrent, variant = "search") {
           : `<span class="text-[12px] font-mono text-on-surface-variant">${String(i + 1).padStart(2, "0")}</span>`
       }
     </div>
-    <div class="${list ? "col-span-5" : "col-span-6"} flex items-center gap-4 min-w-0">
+    <div class="col-span-5 flex items-center gap-4 min-w-0">
       <div class="relative w-24 h-24 rounded-lg overflow-hidden shrink-0 shadow-sm bg-surface-container">
         <img loading="lazy" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform" ${art(t.image)} />
       </div>
@@ -62,7 +64,13 @@ export function trackRow(t, i, isCurrent, variant = "search") {
       </div>
     </div>
     ${cells}
-    <div class="${list ? "col-span-2" : "col-span-1"} flex items-center justify-end gap-1">
+    <div class="col-span-2 flex items-center justify-end gap-1">
+      <button type="button" data-row-action="next" title="Play next" class="w-6 h-6 rounded-full hover:bg-surface-container flex items-center justify-center transition-colors">
+        <span class="material-symbols-outlined text-[17px] text-on-surface">skip_next</span>
+      </button>
+      <button type="button" data-row-action="queue" title="Add to queue" class="w-6 h-6 rounded-full hover:bg-surface-container flex items-center justify-center transition-colors">
+        <span class="material-symbols-outlined text-[17px] text-on-surface">queue_music</span>
+      </button>
       <button type="button" data-row-action="fav" title="Favorite this track" class="w-7 h-7 rounded-full hover:bg-surface-container flex items-center justify-center transition-colors">
         <span class="material-symbols-outlined text-[18px] text-on-surface" data-fav-icon="${esc(t.id)}"${favFill(t.id)}>favorite</span>
       </button>
@@ -115,6 +123,19 @@ resultsEl.addEventListener("click", (e) => {
     toggleFavTrack(t);
     return;
   }
+  if (action === "queue" || action === "next") {
+    e.stopPropagation();
+    const where = action === "next" ? insertNext(t) : enqueue(t);
+    toast(
+      action === "next"
+        ? `"${t.title}" plays next.`
+        : `"${t.title}" queued at position ${where + 1}.`,
+      "success",
+      2200,
+    );
+    diag("queue", null, `${action}: ${t.title}`);
+    return;
+  }
   playTrack(t);
 });
 resultsEl.addEventListener("keydown", (e) => {
@@ -146,6 +167,9 @@ export const SORTS = [
 ];
 /// Which chip is active: "tracks" (the table) or a key of KIND_SPEC.
 export let activeFilter = "tracks";
+/// The parsed form of `searchQuery`: which filters the user typed, and the
+/// text that is left to send upstream. `null` before the first search.
+export let parsed = null;
 export let sortIndex = 0;
 export let searchPage = 1;
 export let searchQuery = "";
@@ -156,16 +180,57 @@ export let searchExhausted = false;
 export let searchSeq = 0;
 export let featuredPage = 0;
 
+// ----------------------------------------------------- boot search snapshot -
+// Last launch's first page, so the search screen the app opens on has rows
+// before the network answers. Revalidated by the in-flight doSearch below.
+const SEARCH_SNAP_KEY = "tm-search";
+function searchSnapshot(q) {
+  try {
+    const s = JSON.parse(localStorage.getItem(SEARCH_SNAP_KEY) || "null");
+    return s && s.q === q && s.f === activeFilter && Array.isArray(s.tracks) ? s : null;
+  } catch {
+    return null;
+  }
+}
+function saveSearchSnapshot(q, tracks) {
+  try {
+    localStorage.setItem(SEARCH_SNAP_KEY, JSON.stringify({ q, f: activeFilter, tracks }));
+  } catch {} // quota — a nicety, never an error
+}
+
 // Per-query client-side filters (review 3.1): text within results plus
-// year / language / duration selects. They narrow `currentView()` only,
-// never the stored `lastResults`, so pagination dedupe stays intact.
+// year / language / duration / artist / album / mood selects. They narrow
+// `currentView()` only, never the stored `lastResults`, so pagination
+// dedupe stays intact.
 export let withinQuery = "";
 export let yearFilter = "";
 export let langFilter = "";
 export let durFilter = "";
+export let artistFilter = "";
+export let albumFilter = "";
+export let moodFilter = "";
 
 export const filtersActive = () =>
-  !!(withinQuery || yearFilter || langFilter || durFilter);
+  !!(withinQuery || yearFilter || langFilter || durFilter || artistFilter || albumFilter || moodFilter);
+
+// ponytail: the catalog carries no mood metadata, so mood is derived from
+// title/album keywords — the honest ceiling for this dataset.
+const MOOD_KEYWORDS = {
+  chill: ["chill", "relax", "ambient", "calm", "downtempo", "lofi", "lo-fi", "sleep", "dreamy"],
+  party: ["party", "dance", "club", "remix", "edm", "festival", "hype"],
+  energy: ["workout", "gym", "energy", "power", "run", "pump", "beast"],
+  focus: ["focus", "study", "concentrate", "instrumental", "piano"],
+  romantic: ["love", "romantic", "romance", "pyaar", "ishq", "crush", "heart"],
+  sad: ["sad", "heartbreak", "breakup", "blue", "lonely", "miss you", "dard"],
+};
+
+export function moodOf(t) {
+  const hay = `${t.title || ""} ${t.album || ""}`.toLowerCase();
+  for (const [mood, words] of Object.entries(MOOD_KEYWORDS)) {
+    if (words.some((w) => hay.includes(w))) return mood;
+  }
+  return "";
+}
 
 function passesFilters(t) {
   if (withinQuery) {
@@ -190,6 +255,9 @@ function passesFilters(t) {
     if (durFilter === "mid" && !(s >= 180 && s <= 300)) return false;
     if (durFilter === "long" && !(s > 300)) return false;
   }
+  if (artistFilter && (t.artist || "").toLowerCase() !== artistFilter) return false;
+  if (albumFilter && (t.album || "").toLowerCase() !== albumFilter) return false;
+  if (moodFilter && moodOf(t) !== moodFilter) return false;
   return true;
 }
 
@@ -210,22 +278,63 @@ export function refreshLangOptions() {
   sel.disabled = langs.length === 0;
 }
 
+/// Artist + album selects rebuilt from the same page of results, keeping
+/// the user's pick when it still exists (mirrors refreshLangOptions).
+export function refreshFacetOptions() {
+  for (const [selId, values, state] of [
+    ["#filter-artist", [...new Set(lastResults.map((t) => (t.artist || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), "artistFilter"],
+    ["#filter-album", [...new Set(lastResults.map((t) => (t.album || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), "albumFilter"],
+  ]) {
+    const sel = $(selId);
+    if (!sel) continue;
+    const label = state === "artistFilter" ? "Any artist" : "Any album";
+    const keep = state === "artistFilter" ? artistFilter : albumFilter;
+    const lower = values.map((v) => v.toLowerCase());
+    sel.innerHTML =
+      `<option value="">${label}</option>` +
+      values.map((v, i) => `<option value="${esc(lower[i])}">${esc(v)}</option>`).join("");
+    const still = lower.includes(keep) ? keep : "";
+    if (state === "artistFilter") artistFilter = still;
+    else albumFilter = still;
+    sel.value = still;
+    sel.disabled = values.length === 0;
+  }
+}
+
 export const isTracks = () => activeFilter === "tracks";
 /// Rows behind the active chip — the table and the card grid both page these.
 export const currentItems = () => (isTracks() ? lastResults : lastCards);
 
+/// Taste signals for the relevance boost, read once per repaint rather than
+/// once per row: what this listener played, what they hearted, and how often
+/// each artist shows up. ponytail: no negative signal yet — there is no
+/// "dislike" store to read, and inventing one here would be a lie.
+function tasteContext() {
+  const played = new Set();
+  const artistPlays = new Map();
+  for (const p of loadPlays()) {
+    played.add(p.id);
+    if (p.artist) artistPlays.set(p.artist, (artistPlays.get(p.artist) || 0) + 1);
+  }
+  return { played, liked: new Set(loadFavs().map((f) => f.id)), artistPlays, region: prefCountry(), moodOf };
+}
+
 /// The tracks the table and the featured cards show right now:
-/// filtered by the attribute selects, then ordered by the active sort
-/// (relevance ranks by fuzzy score against the live query).
+/// filtered by the attribute selects *and* by whatever the query itself
+/// asked for ("kesariya 2022"), then ordered by the active sort — relevance
+/// being fuzzy text score plus the query's own filters and this listener's
+/// taste.
 export function currentView() {
   const list = lastResults.filter(passesFilters);
   const by = SORTS[sortIndex].key;
   if (by === "relevance") {
     if (!searchQuery.trim()) return list;
-    return list
-      .map((t, i) => ({ t, i, s: fuzzyScore(searchQuery, t.title, t.artist, t.album) }))
-      .sort((a, b) => b.s - a.s || a.i - b.i)
-      .map((x) => x.t);
+    const q = parsed || parseQuery(searchQuery);
+    const opts = tasteContext();
+    const scored = list.filter((t) => matchesFilters(t, q));
+    // The query's filters can empty the page (a language nothing speaks).
+    // Falling back beats showing the user nothing.
+    return rankTracks(scored.length ? scored : list, q, textScoreFor(q), opts);
   }
   return list.sort((a, b) => {
     if (by === "bitrate") {
@@ -237,11 +346,17 @@ export function currentView() {
   });
 }
 
+/// The text-score function query.js ranks with, bound to one parsed query.
+function textScoreFor(q) {
+  return (t) => fuzzyScore(q.text || q.raw, t.title, t.artist, t.album);
+}
+
 export function refreshResults() {
   if (!isTracks()) return; // a chip switch raced this repaint
   const list = currentView();
   renderResults(list);
   refreshLangOptions();
+  refreshFacetOptions();
   if (!lastResults.length) {
     resultsSub.textContent = searchQuery
       ? `No track results for "${searchQuery}".`
@@ -251,6 +366,25 @@ export function refreshResults() {
   resultsSub.textContent = filtersActive() && list.length !== lastResults.length
     ? `Showing ${list.length} of ${lastResults.length} results for "${searchQuery}"`
     : `Showing ${list.length} results for "${searchQuery}"`;
+  // A query filter that matched nothing must be said out loud rather than
+  // silently dropped: the rows on screen are unfiltered, so claiming
+  // "filtered by punjabi" would be a lie.
+  const asked = parsed && (parsed.languages.length || parsed.year || parsed.decade || parsed.yearRange);
+  if (asked && list.length === lastResults.length && queryFilterKeptNothing()) {
+    const want = parsed.languages.length
+      ? parsed.languages.join(" / ")
+      : parsed.yearRange
+        ? parsed.yearRange.join("–")
+        : parsed.year || `${parsed.decade}s`;
+    resultsSub.textContent = `No "${searchQuery}" results match ${want} — showing everything instead.`;
+  }
+}
+
+/// Did the query's own filters reject every row? Kept separate from
+/// `filtersActive()`, which is about the attribute selects, not the query.
+function queryFilterKeptNothing() {
+  if (!parsed) return false;
+  return lastResults.length > 0 && !lastResults.some((t) => matchesFilters(t, parsed));
 }
 
 /// Table chrome only means anything for songs; chips swap it for a card grid.
@@ -260,7 +394,6 @@ export function paintResultsMode() {
   $("#play-all")?.classList.toggle("hidden", cards);
   $("#sort-wrap")?.classList.toggle("hidden", cards);
   $("#filter-attrs")?.classList.toggle("hidden", cards);
-  if (cards) $("#grouped-results")?.classList.add("hidden");
   resultsEl.className = cards ? "grid grid-cols-2 sm:grid-cols-4 gap-4" : "flex flex-col gap-2";
 }
 
@@ -607,35 +740,66 @@ export async function doSearch(opts = {}) {
     featuredPage = 0;
     searchExhausted = false;
     hideDidYouMean();
-    $("#grouped-results")?.classList.add("hidden");
   }
   clearError();
   updateLoadMore();
   searchQuery = q;
+  // Understand the query before anything is sent: "arijit singh punjabi 2022"
+  // is a search for "arijit singh" *plus* two filters, and forwarding the
+  // whole string upstream returns nothing at all.
+  parsed = parseQuery(q);
+  const upstream = parsed.text;
+  if (parsed.wantsEntity && parsed.wantsEntity !== "tracks") {
+    const kind = KIND_SPEC[parsed.wantsEntity]?.kind;
+    if (kind && activeFilter !== parsed.wantsEntity) {
+      activeFilter = parsed.wantsEntity;
+      paintChips();
+    }
+  }
   const navInput = $("#nav-search-input");
   if (navInput) navInput.value = q;
-  if (!silent) {
+  // Fresh searches navigate to the view (top of results). Appends stay
+  // exactly where the user clicked Load more — showView() would toTop().
+  if (!silent && !append) {
     pushHistory(q);
     showView("search");
   }
+  // Tell the user what was understood, so a stripped filter is visible rather
+  // than silently applied.
+  const understood = [];
+  if (parsed.languages.length) understood.push(parsed.languages.join(" / "));
+  if (parsed.year) understood.push(String(parsed.year));
+  if (parsed.decade) understood.push(`${parsed.decade}s`);
+  if (parsed.yearRange) understood.push(parsed.yearRange.join("–"));
+  if (parsed.region) understood.push(parsed.region);
+  if (parsed.artist) understood.push(`@${parsed.artist}`);
+  if (parsed.album) understood.push(`#${parsed.album}`);
+  if (parsed.mood) understood.push(`${parsed.mood} mood`);
   resultsSub.textContent = append
     ? `Loading page ${searchPage + 1} for "${q}"…`
-    : `Searching for "${q}"…`;
+    : understood.length
+      ? `Searching for "${upstream}" — filtered by ${understood.join(", ")}`
+      : `Searching for "${q}"…`;
 
   // Capture the scope before awaiting: a chip click mid-flight must not
   // route entity rows into the track table (or vice versa).
   const cards = !isTracks();
   const kind = cards ? KIND_SPEC[activeFilter].kind : null;
   const seq = ++searchSeq;
-  // Grouped-results suggestions ride along with the first song page.
-  const sugP = !cards && !append
-    ? invoke("search_suggestions", { query: q }).catch(() => null)
-    : Promise.resolve(null);
+  // Instant first paint: last launch's rows go up now; the fetch below
+  // supersedes them through the searchSeq guard above.
+  if (!append && !cards && !lastResults.length) {
+    const snap = searchSnapshot(q);
+    if (snap) {
+      lastResults = snap.tracks;
+      refreshResults();
+    }
+  }
   let payload;
   try {
     payload = cards
-      ? await invoke("search_entities", { query: q, kind, limit: PAGE_SIZE, page: append ? searchPage + 1 : 1 })
-      : await invoke("search_songs", { query: q, limit: PAGE_SIZE, page: append ? searchPage + 1 : 1 });
+      ? await invoke("search_entities", { query: upstream, kind, limit: PAGE_SIZE, page: append ? searchPage + 1 : 1 })
+      : await invoke("search_songs", { query: upstream, limit: PAGE_SIZE, page: append ? searchPage + 1 : 1 });
   } catch (err) {
     loadingMore = false;
     updateLoadMore();
@@ -658,8 +822,6 @@ export async function doSearch(opts = {}) {
   const tracks = (payload && payload.tracks) || [];
 
   if (!append) {
-    const sug = await sugP;
-    if (seq !== searchSeq) return;
     searchPage = 1;
     // Backend collapses upstream repeats, but a stale page can still hand
     // us dupes — dedupe defensively before first paint.
@@ -673,7 +835,6 @@ export async function doSearch(opts = {}) {
       updateLoadMore();
       resultsSub.textContent = `No tracks found for "${q}".`;
       showErrorRetry(`No tracks found for "${q}".`, () => doSearch({ query: q }));
-      renderGrouped(null);
       showDidYouMean(q, seq);
       return;
     }
@@ -682,8 +843,8 @@ export async function doSearch(opts = {}) {
       true,
       `${lastResults.length} tracks${clean.removed ? ` (${clean.removed} dupes removed)` : ""}`,
     );
-    renderGrouped(sug);
     refreshResults();
+    saveSearchSnapshot(q, lastResults);
     return;
   }
 
@@ -767,8 +928,10 @@ export function hideDidYouMean() {
   $("#did-you-mean")?.classList.add("hidden");
 }
 
-/// Typo recovery: when a query returns nothing, ask the autocomplete
-/// endpoint for nearby titles and offer the closest as a one-tap re-search.
+/// Typo recovery: when a query returns nothing, ask the autocomplete endpoint
+/// for nearby titles and offer the closest as a one-tap re-search. The
+/// listener's own earlier queries are a second source — they cost nothing and
+/// are the likeliest thing they meant to type.
 export async function showDidYouMean(q, seq) {
   let s;
   try {
@@ -777,13 +940,10 @@ export async function showDidYouMean(q, seq) {
     return;
   }
   if (seq !== searchSeq || lastResults.length) return;
-  const cands = [s?.top, ...(s?.songs || [])]
-    .map((x) => x && x.title)
-    .filter(Boolean)
-    .map((title) => ({ title, sim: querySim(q, title) }))
-    .filter((c) => c.title.toLowerCase() !== q.toLowerCase() && c.sim >= 0.55)
-    .sort((a, b) => b.sim - a.sim)
-    .slice(0, 2);
+  const remote = [s?.top, ...(s?.songs || [])].filter(Boolean);
+  const cands = didYouMean(q, [...remote, ...loadHistory().map((t) => ({ title: t }))], (a, b) =>
+    querySim(a, b),
+  );
   const box = $("#did-you-mean");
   if (!box || !cands.length) return;
   box.innerHTML =
@@ -801,39 +961,8 @@ $("#did-you-mean")?.addEventListener("click", (e) => {
   doSearch();
 });
 
-/// Grouped results (review 3.1): the top hit plus albums/artists/playlists
-/// for the same query, painted above the flat song table. `s` is the
-/// search_suggestions payload — same shape the dropdown already uses.
-export function renderGrouped(s) {
-  const box = $("#grouped-results");
-  if (!box) return;
-  const albums = (s && s.albums) || [];
-  const artists = (s && s.artists) || [];
-  const playlists = (s && s.playlists) || [];
-  const top = s && s.top;
-  const empty = !top && !albums.length && !artists.length && !playlists.length;
-  if (!searchQuery || !isTracks() || empty) {
-    box.classList.add("hidden");
-    return;
-  }
-  const col = (label, items, kind) =>
-    items.length
-      ? `<div class="flex flex-col gap-1.5 min-w-0">
-          <div class="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider">${esc(label)}</div>
-          <div class="flex flex-col rounded-lg overflow-hidden border border-surface-container-high">${items.slice(0, 3).map((it) => suggestRow(it, kind)).join("")}</div>
-        </div>`
-      : "";
-  $("#grouped-top").innerHTML = top
-    ? `<div class="font-label-mono text-label-mono text-on-surface-variant uppercase tracking-wider mb-1.5">Top result</div>
-       <div class="rounded-xl border border-surface-container-high overflow-hidden max-w-md">${suggestRow(top, (s && s.top_kind) || "song")}</div>`
-    : "";
-  $("#grouped-cols").innerHTML =
-    col("Albums", albums, "album") + col("Artists", artists, "artist") + col("Playlists", playlists, "playlist");
-  box.classList.remove("hidden");
-}
-
-/// Open whichever entity a grouped/suggested row stands for — shared by
-/// the dropdown and the grouped section.
+/// Open whichever entity a suggestion row stands for — shared by the
+/// dropdown's keyboard/click handlers.
 export function activateSuggestion(kind, item) {
   hideSuggest();
   if (kind === "song") playTracksAt([{ ...item, artist: item.subtitle, album: "", duration: 0 }], 0);
@@ -841,18 +970,6 @@ export function activateSuggestion(kind, item) {
   else openDetail(kind, item);
   diag("suggest pick", null, `${kind}: ${item.title}`);
 }
-
-$("#grouped-results")?.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-sug-kind]");
-  if (!btn) return;
-  activateSuggestion(btn.dataset.sugKind, {
-    id: btn.dataset.sugId,
-    token: btn.dataset.sugToken,
-    title: btn.dataset.sugTitle,
-    subtitle: btn.dataset.sugSub,
-    image: btn.dataset.sugImg,
-  });
-});
 
 // ---------------------------------------------------- inline suggestions -
 export const suggestEl = $("#search-suggest");
@@ -887,14 +1004,28 @@ export function suggestRow(it, kind) {
 
 export function suggestHtml(s) {
   const parts = [];
-  if (s.top) parts.push(sugLabel("Top result"), suggestRow(s.top, s.top_kind || "song"));
+  // The standalone "Top result" header is gone; its row is folded into the
+  // group it belongs to instead of being dropped, so the best match is still
+  // listed first — just without its own section, and never twice.
+  const groups = {
+    songs: [...((s && s.songs) || [])],
+    albums: [...((s && s.albums) || [])],
+    artists: [...((s && s.artists) || [])],
+    playlists: [...((s && s.playlists) || [])],
+  };
+  const top = s && s.top;
+  if (top) {
+    const key = `${(s && s.top_kind) || "song"}s`;
+    const bucket = groups[key] || groups.songs;
+    if (bucket && !bucket.some((it) => it.id === top.id)) bucket.unshift(top);
+  }
   for (const [key, label] of [
     ["songs", "Songs"],
     ["albums", "Albums"],
     ["artists", "Artists"],
     ["playlists", "Playlists"],
   ]) {
-    const items = s[key] || [];
+    const items = groups[key];
     if (!items.length) continue;
     const kind = key.slice(0, -1);
     parts.push(sugLabel(label), items.map((it) => suggestRow(it, kind)).join(""));
@@ -1057,6 +1188,18 @@ $("#filter-lang")?.addEventListener("change", (e) => {
 });
 $("#filter-dur")?.addEventListener("change", (e) => {
   durFilter = e.target.value;
+  refreshResults();
+});
+$("#filter-artist")?.addEventListener("change", (e) => {
+  artistFilter = e.target.value;
+  refreshResults();
+});
+$("#filter-album")?.addEventListener("change", (e) => {
+  albumFilter = e.target.value;
+  refreshResults();
+});
+$("#filter-mood")?.addEventListener("change", (e) => {
+  moodFilter = e.target.value;
   refreshResults();
 });
 

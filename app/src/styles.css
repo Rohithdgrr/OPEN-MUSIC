@@ -33,12 +33,60 @@
   display: none;
 }
 
-/* Lyrics: active line emphasis (JS toggles text colour classes). */
+/* Lyrics: active line emphasis (JS toggles lyric-active / lyric-past). */
+
+/* Karaoke: each word's fill sweeps with --progress (set from playback time). */
+.lyric-word {
+  background-image: linear-gradient(
+    90deg,
+    #18181b 0%,
+    #18181b var(--progress, 0%),
+    #d4d4d8 var(--progress, 0%),
+    #d4d4d8 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Playhead emphasis: active line grows and thickens, past lines shrink away. */
+.lyric-text {
+  transition: font-size 0.25s ease, font-weight 0.25s ease, color 0.25s ease;
+}
 .lyric-line {
   border-left: 2px solid transparent;
 }
-.lyric-line.text-on-surface {
-  border-left-color: #18181b;
+.lyric-active {
+  border-left: 3px solid #18181b;
+  background: rgba(24, 24, 27, 0.04);
+  border-radius: 8px;
+}
+.lyric-active .lyric-text {
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.lyric-past .lyric-text {
+  font-size: 13px;
+  color: #d4d4d8;
+}
+.lyric-past .lyric-word {
+  background-image: linear-gradient(90deg, #d4d4d8, #d4d4d8);
+}
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text {
+  color: #a1a1aa;
+}
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word {
+  background-image: linear-gradient(90deg, #a1a1aa, #a1a1aa);
+}
+
+/* Instrumental gap marker. */
+.lyric-break {
+  animation: lyric-pulse 1.6s ease-in-out infinite;
+}
+@keyframes lyric-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.9; }
 }
 
 /* Queue count badge floor. */

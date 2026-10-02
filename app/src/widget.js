@@ -16,6 +16,20 @@ const OFF_KEY = "tm-desk-widget";
 const card = document.getElementById("wg-card");
 const win = window.__TAURI__?.window?.getCurrentWindow?.();
 
+// L3: the same /art cache the main window uses. The widget window doesn't
+// run main.js, so it fetches the relay base itself; until it resolves,
+// images point straight at the CDN (allowed by the CSP either way).
+let artBase = "";
+if (invoke) {
+  try {
+    artBase = await invoke("proxy_base");
+  } catch {}
+}
+function artUrl(url) {
+  if (!artBase || !url) return url;
+  return `${artBase}/art?u=${encodeURIComponent(url)}`;
+}
+
 // Two window sizes: the wide compact card and the icon it becomes while the
 // user is in another application.
 const FULL = { w: 380, h: 190 };
@@ -29,15 +43,24 @@ function setText(id, text) {
   if (node && node.textContent !== text) node.textContent = text;
 }
 
+const LOGO = "logo.png"; // platform logo — a local file, so it works offline
+
 function setImage(id, src) {
   const img = el(id);
   if (!img) return;
   if (src) {
+    img.onerror = () => {
+      // Artwork 404/offline → platform logo, then stop listening so the
+      // logo itself can never loop. The next render retries the real URL.
+      img.onerror = null;
+      if (!img.src.endsWith(LOGO)) img.src = LOGO;
+    };
     if (img.getAttribute("src") !== src) img.src = src;
     img.style.display = "";
-  } else if (img.hasAttribute("src")) {
-    img.removeAttribute("src");
-    img.style.display = "none";
+  } else if (img.getAttribute("src") !== LOGO) {
+    // No artwork: the platform logo instead of a blank slot.
+    img.src = LOGO;
+    img.style.display = "";
   }
 }
 
@@ -69,10 +92,11 @@ function render(s) {
   );
 
   const art = el("wg-art");
-  if (art) art.style.backgroundImage = s.image ? `url("${s.image}")` : "";
-  setImage("wg-cover", s.image);
+  const cover = artUrl(s.image);
+  if (art) art.style.backgroundImage = cover ? `url("${cover}")` : "";
+  setImage("wg-cover", cover);
   const miniBtn = el("wg-mini");
-  if (miniBtn) miniBtn.style.backgroundImage = s.image ? `url("${s.image}")` : "";
+  if (miniBtn) miniBtn.style.backgroundImage = cover ? `url("${cover}")` : "";
 
   const badge = el("wg-badge");
   if (badge) {
@@ -102,7 +126,7 @@ function render(s) {
   const next = s.next;
   setText("wg-nexttitle", next ? next.title : "Nothing queued");
   setText("wg-nextsub", next ? next.sub : "Add songs to the queue");
-  setImage("wg-nextcover", next ? next.image : "");
+  setImage("wg-nextcover", next ? artUrl(next.image) : "");
 }
 
 function fire(event, payload) {

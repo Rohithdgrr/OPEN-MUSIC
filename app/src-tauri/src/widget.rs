@@ -51,7 +51,19 @@ pub fn set_widget_click_through(app: tauri::AppHandle, enabled: bool) -> Result<
     let win = app
         .get_webview_window("widget")
         .ok_or_else(|| "desktop widget window is missing".to_string())?;
-    win.set_ignore_cursor_events(enabled).map_err(|e| e.to_string())
+    set_ignore_cursor(&win, enabled)
+}
+
+/// `set_ignore_cursor_events` is desktop-only (no widget window on mobile).
+#[cfg(desktop)]
+fn set_ignore_cursor(win: &tauri::WebviewWindow, enabled: bool) -> Result<(), String> {
+    win.set_ignore_cursor_events(enabled)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(mobile)]
+fn set_ignore_cursor(_win: &tauri::WebviewWindow, _enabled: bool) -> Result<(), String> {
+    Ok(())
 }
 
 /// Tauri 2 has no monitor-removed event, so the orphaned card is rescued on
@@ -80,11 +92,20 @@ fn rescue_orphaned_monitor(win: &tauri::WebviewWindow) {
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
-/// Shared window-event handling: close hides to tray (shortcuts keep
-/// working), monitor loss rescues the card.
+/// Shared window-event handling: close hides to tray in release (shortcuts
+/// keep working); in debug the main window quits for real so a dev session
+/// never stacks a tray zombie that swallows the next `tauri dev` run via the
+/// single-instance plugin. Monitor loss rescues the card.
 pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     match event {
         tauri::WindowEvent::CloseRequested { api, .. } => {
+            if cfg!(debug_assertions) && window.label() != "widget" {
+                api.prevent_close();
+                // exit(0) — not "let the window close": the hidden widget
+                // window would otherwise keep the process alive anyway.
+                window.app_handle().exit(0);
+                return;
+            }
             api.prevent_close();
             let _ = window.hide();
         }

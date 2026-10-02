@@ -16,6 +16,6 @@ export default [
     },
   },
   {
-    ignores: ["node_modules/**"],
+    ignores: ["node_modules/**", "src/mobile/screens/**"],
   },
 ];

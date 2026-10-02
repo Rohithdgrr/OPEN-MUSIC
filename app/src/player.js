@@ -41,7 +41,11 @@ for (const ev of ["playing", "pause", "waiting", "ended"]) {
   });
 }
 
-audio.addEventListener("timeupdate", () => {
+/// Repaint the playhead everywhere it is shown. Split out of the `timeupdate`
+/// listener because a seek (resume after a restart, a lyric tap, a widget
+/// scrub) does not always come with a timeupdate tick — without this the bar
+/// sits at the old position until playback ticks again.
+function paintProgress() {
   const d = audio.duration;
   const ratio = Number.isFinite(d) && d > 0 ? audio.currentTime / d : 0;
   bar.fill.style.width = `${(ratio * 100).toFixed(1)}%`;
@@ -54,7 +58,13 @@ audio.addEventListener("timeupdate", () => {
   emitState();
   npText("lyric-live-time", fmtTime(audio.currentTime));
   syncLyrics();
-});
+}
+
+audio.addEventListener("timeupdate", paintProgress);
+audio.addEventListener("seeked", paintProgress);
+// `loadedmetadata` carries the total time and, right after a resume, the
+// position the playhead was put back to.
+audio.addEventListener("loadedmetadata", paintProgress);
 
 audio.addEventListener("progress", () => {
   try {

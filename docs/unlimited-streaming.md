@@ -230,7 +230,7 @@ That is the entire new dependency surface. No new runtime language, no framework
 | `url` | 2 | query encoding, host allow-listing |
 | `futures` | 0.3 | streaming body relay |
 
-Frontend stays **vanilla ES modules + Tailwind CDN** — zero build step.
+Frontend stays **vanilla ES modules + prebuilt Tailwind CSS** — no runtime JS build step.
 
 ### Research / verification tooling (not shipped)
 

@@ -1,0 +1,110 @@
+name: Release
+
+# Tag-driven release: build the installers on Windows, Linux and macOS in
+# parallel, let `tauri build` sign the updater packages with the keypair in
+# secrets, then merge the three jobs' outputs into one latest.json (the
+# manifest every platform's updater reads) and attach everything to the tag's
+# GitHub release.
+#
+# Secrets to configure once (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY          — contents of the private key file
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty (the key has no password)
+#
+# The installers get the updater signature above. Authenticode / SmartScreen
+# signing additionally needs the certificate imported on the runner — the
+# config's certificateThumbprint is nulled out here so the build skips it
+# until that is set up.
+
+on:
+  push:
+    tags: ["v*", "V*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            bundles: msi,nsis
+            artifact: windows
+          - os: ubuntu-latest
+            bundles: deb,appimage
+            artifact: linux
+          - os: macos-latest
+            bundles: app,dmg
+            artifact: macos
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install Linux system deps (webkitgtk, appindicator)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            libayatana-appindicator3-dev patchelf
+      - name: Install frontend deps
+        run: npm ci
+      - name: Build installers (updater signature)
+        run: npx tauri build --bundles ${{ matrix.bundles }} --config '{"bundle":{"windows":{"certificateThumbprint":null,"timestampUrl":null}}}'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.artifact }}
+          path: app/src-tauri/target/release/bundle
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Assemble manifests and publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download every OS's bundle
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          path: app/src-tauri/target/release/bundle
+      - name: Assemble latest.json + update.json
+        run: node scripts/make-update-json.mjs ${{ github.ref_name }} app/src-tauri/target/release/bundle
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TRANCE MUSIC ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            app/src-tauri/target/release/bundle/**/*.msi
+            app/src-tauri/target/release/bundle/**/*.msi.zip
+            app/src-tauri/target/release/bundle/**/*.msi.zip.sig
+            app/src-tauri/target/release/bundle/**/*.exe
+            app/src-tauri/target/release/bundle/**/*.nsis.zip
+            app/src-tauri/target/release/bundle/**/*.nsis.zip.sig
+            app/src-tauri/target/release/bundle/**/*.deb
+            app/src-tauri/target/release/bundle/**/*.AppImage
+            app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz
+            app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz.sig
+            app/src-tauri/target/release/bundle/**/*.dmg
+            app/src-tauri/target/release/bundle/**/*.app.tar.gz
+            app/src-tauri/target/release/bundle/**/*.app.tar.gz.sig
+            app/src-tauri/target/release/bundle/latest.json
+            app/src-tauri/target/release/bundle/update.json

@@ -4,9 +4,21 @@ import { art } from "./art.js";
 import { Channel, diag, esc, invoke, showError, toast } from "./core.js";
 import { $, $$ } from "./dom.js";
 import { playTrack, resultsSub, uniqById } from "./search.js";
+import { queue, queueIndex } from "./queue.js";
 import { fmtBytes, fmtTime } from "./util.js";
 
 // ---------------------------------------------------------------- download -
+/// Vault download bitrate. Owned here so vault never imports settings —
+/// settings already reaches vault through home, the reverse edge would cycle.
+export const DL_QUALITY_KEY = "tm-dl-quality";
+export function prefDlQuality() {
+  try {
+    return localStorage.getItem(DL_QUALITY_KEY) || "96kbps";
+  } catch {
+    return "96kbps";
+  }
+}
+
 /// `quiet` batches: no per-track toast/icon dance — the caller owns the button
 /// and reports the summary; failures are rethrown so the batch can count them.
 export async function downloadTrack(track, btn, quiet = false) {
@@ -45,14 +57,27 @@ export async function downloadTrack(track, btn, quiet = false) {
       }
       renderActive();
     };
-    const path = await invoke("download_song", {
+    const out = await invoke("download_song", {
       id: track.id,
+      quality: prefDlQuality(),
       onProgress: progress,
     });
-    diag(`download ${track.id}`, true, path);
+    const path = out && out.path ? out.path : String(out);
+    diag(`download ${track.id}`, true, out && out.duplicate_of ? `identical to ${out.duplicate_of}` : path);
     activeDownloads.delete(track.id);
     renderActive();
     refreshVault();
+    if (out && out.duplicate_of) {
+      // Content dedupe (SHA-256): an identical file already sits in the vault.
+      if (quiet) return path;
+      if (icon) icon.textContent = "check";
+      toast(`"${track.title}" was already in the vault (identical file).`, "info", 3500);
+      setTimeout(() => {
+        if (icon) icon.textContent = original;
+        if (btn) btn.disabled = false;
+      }, 3500);
+      return;
+    }
     if (quiet) return path;
     if (icon) icon.textContent = "check";
     toast(`Saved "${track.title}" to the offline vault.`, "success");
@@ -144,6 +169,19 @@ export const activeDownloads = new Map();
 export let vaultEntries = [];
 export let vaultQuality = "all";
 export let vaultQuery = "";
+/// Fast membership check for the offline gate and the queue's ⬇ badges.
+export const isDownloaded = (id) => vaultEntries.some((e) => e.id === id);
+
+/// Bitrate a stored label carries, whatever the codec: `opus128` and
+/// `128kbps` both read as 128, `unknown` as 0.
+const kbpsOf = (quality) => Number(String(quality || "").replace(/\D/g, "")) || 0;
+
+/// What the badge shows: an encoded file says Opus, a source rendition keeps
+/// its own label.
+const qualityLabel = (quality) => {
+  const q = String(quality || "");
+  return /^opus\d/.test(q) ? `Opus ${kbpsOf(q)} kbps` : q;
+};
 
 export function entryTrack(e) {
   return {
@@ -154,7 +192,7 @@ export function entryTrack(e) {
     image: e.image,
     duration: fmtTime(e.duration_secs || 0),
     duration_secs: e.duration_secs || 0,
-    hq: e.quality === "320kbps",
+    hq: kbpsOf(e.quality) >= 320,
   };
 }
 
@@ -173,7 +211,7 @@ export function activeCard(p) {
     <div class="flex items-start gap-4">
       <div class="relative w-24 h-24 rounded-lg overflow-hidden shrink-0 bg-surface-container">
         <img class="w-full h-full object-cover" ${art(p.image)} alt="" />
-        <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-primary/80 backdrop-blur-md text-on-primary font-label-mono text-[9px] uppercase tracking-wider">${esc(p.quality)}</div>
+        <div class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-primary/80 backdrop-blur-md text-on-primary font-label-mono text-[9px] uppercase tracking-wider">${esc(qualityLabel(p.quality))}</div>
       </div>
       <div class="flex flex-col flex-1 min-w-0">
         <div class="flex items-start justify-between gap-2">
@@ -226,8 +264,9 @@ export function renderActive() {
 
 export function visibleVault() {
   return vaultEntries.filter((e) => {
-    if (vaultQuality === "320kbps" && e.quality !== "320kbps") return false;
-    if (vaultQuality === "other" && e.quality === "320kbps") return false;
+    const full = kbpsOf(e.quality) >= 320;
+    if (vaultQuality === "320kbps" && !full) return false;
+    if (vaultQuality === "other" && full) return false;
     if (!vaultQuery) return true;
     return [e.title, e.artist, e.album].join(" ").toLowerCase().includes(vaultQuery);
   });
@@ -246,7 +285,7 @@ export function vaultRow(e) {
       <div class="flex flex-col min-w-0">
         <div class="flex items-center gap-2">
           <span class="font-headline-md text-body-lg font-medium text-on-surface truncate" dir="auto">${esc(e.title)}</span>
-          <span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface shrink-0">${esc(e.quality)}</span>
+          <span class="font-label-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-on-surface shrink-0">${esc(qualityLabel(e.quality))}</span>
         </div>
         <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([e.artist, e.album].filter(Boolean).join(" • "))}</p>
       </div>
@@ -280,9 +319,12 @@ export function renderStorage() {
   if (alloc) alloc.textContent = `${total ? fmtBytes(total) : "0 B"} vaulted`;
   const bar = $("#dl-bar");
   if (bar) {
-    // ponytail: 100 GB ceiling is a display constant, not an enforced quota
-    const pct = Math.min(100, (total / (100 * 1024 * 1024 * 1024)) * 100);
+    // Bar fills against the enforced quota when one is set, else the display ceiling.
+    const cap = vaultQuotaBytes();
+    const base = cap || 100 * 1024 * 1024 * 1024;
+    const pct = Math.min(100, (total / base) * 100);
     bar.style.width = `${Math.max(total ? 1 : 0, pct)}%`;
+    bar.classList.toggle("bg-error", !!cap && total > cap);
   }
 }
 
@@ -313,10 +355,91 @@ export async function refreshVault() {
     if (dir) dir.textContent = (vault && vault.dir) || "—";
     renderVault();
     diag("vault", true, `${vaultEntries.length} saved`);
+    await enforceQuota();
   } catch (err) {
     diag("vault", false, String(err));
     showError(`Could not read the downloads vault: ${err}`);
   }
+}
+
+// ------------------------------------------------------------ quota & LRU -
+export function vaultQuotaBytes() {
+  const gb = Number(localStorage.getItem("tm-vault-quota") || 0);
+  return gb > 0 ? gb * 1024 * 1024 * 1024 : 0;
+}
+
+/// Last-played timestamp per id (most recent first), read straight from the
+/// plays ledger so this module stays import-cycle free.
+function lastPlayedMap() {
+  const map = new Map();
+  try {
+    for (const t of JSON.parse(localStorage.getItem("tm-plays") || "[]")) {
+      if (t && t.id && !map.has(t.id)) map.set(t.id, t.ts || 0);
+    }
+  } catch {}
+  return map;
+}
+
+let enforcing = false;
+/// Over quota → evict least-recently-played tracks (oldest added as the
+/// tie-break) until back under, never touching the track playing now.
+async function enforceQuota() {
+  const cap = vaultQuotaBytes();
+  if (!cap || enforcing || !vaultEntries.length) return;
+  let total = vaultEntries.reduce((n, e) => n + (e.bytes || 0), 0);
+  if (total <= cap) return;
+  enforcing = true;
+  try {
+    const played = lastPlayedMap();
+    const currentId = queue[queueIndex] && queue[queueIndex].track ? queue[queueIndex].track.id : null;
+    const victims = vaultEntries
+      .filter((e) => e.id !== currentId && !activeDownloads.has(e.id))
+      .map((e) => ({ e, t: played.get(e.id) || e.at || 0 }))
+      .sort((a, b) => a.t - b.t);
+    let evicted = 0;
+    for (const { e } of victims) {
+      if (total <= cap) break;
+      try {
+        await invoke("remove_download", { path: e.path });
+        total -= e.bytes || 0;
+        evicted += 1;
+      } catch (err) {
+        diag("quota", false, String(err));
+      }
+    }
+    if (evicted) {
+      toast(
+        `Vault over quota: evicted ${evicted} least-recently played track${evicted === 1 ? "" : "s"}.`,
+        "info",
+        4500,
+      );
+      diag("quota", true, `evicted ${evicted} for space`);
+      await refreshVault();
+    }
+  } finally {
+    enforcing = false;
+  }
+}
+
+// ------------------------------------------------------- predictive prefetch -
+/// Spec 3.3: start pulling the next queued track while the current one
+/// plays. Quiet by design — failures stay invisible.
+export function prefetchTrack(track) {
+  if (!track || !track.id) return;
+  if (localStorage.getItem("tm-prefetch") === "0") return;
+  if (vaultEntries.some((e) => e.id === track.id) || activeDownloads.has(track.id)) return;
+  diag("prefetch", null, track.title);
+  downloadTrack(track, null, true).catch(() => {});
+}
+
+/// Design L5: warm the backend's resolve + stream-url probe for the next
+/// few queued tracks so play/next starts from a cache hit instead of a
+/// mirror round trip. Metadata only — it complements prefetchTrack above
+/// (which saves bytes to the vault) and never touches the prefs toggle.
+export function prefetchNext(tracks) {
+  const ids = (tracks || []).map((t) => t && t.id).filter(Boolean).slice(0, 4);
+  if (!ids.length) return;
+  invoke("prefetch_next", { ids }).catch((err) => diag("prefetch-next", false, String(err)));
 }
 
 $("#dl-vault")?.addEventListener("click", async (e) => {
@@ -383,6 +506,114 @@ $("#dl-search")?.addEventListener("input", () => {
 });
 
 $("#dl-refresh")?.addEventListener("click", refreshVault);
+
+// Vault option widgets: quota select + prefetch toggle (spec 3.3).
+const quotaSel = $("#dl-quota");
+if (quotaSel) {
+  quotaSel.value = localStorage.getItem("tm-vault-quota") || "";
+  quotaSel.addEventListener("change", () => {
+    localStorage.setItem("tm-vault-quota", quotaSel.value);
+    toast(
+      quotaSel.value
+        ? `Vault quota set to ${quotaSel.value} GB — least-recently played tracks evict first.`
+        : "Vault quota off.",
+      "info",
+      3500,
+    );
+    renderStorage();
+    enforceQuota();
+  });
+}
+const prefetchBox = $("#dl-prefetch");
+if (prefetchBox) {
+  prefetchBox.checked = localStorage.getItem("tm-prefetch") !== "0";
+  prefetchBox.addEventListener("change", () => {
+    localStorage.setItem("tm-prefetch", prefetchBox.checked ? "1" : "0");
+    toast(prefetchBox.checked ? "Prefetch on — the next queued track downloads while you listen." : "Prefetch off.", "info", 3000);
+  });
+}
+
+// ------------------------------------------- manifest export / import / verify -
+/// Spec 3.3: the vault index (with SHA-256 checksums) as portable JSON.
+$("#dl-export")?.addEventListener("click", () => {
+  if (!vaultEntries.length) {
+    toast("The vault is empty — nothing to export.", "info");
+    return;
+  }
+  const manifest = JSON.stringify(
+    {
+      app: "TRANCE MUSIC",
+      kind: "vault-manifest",
+      version: 1,
+      exported_at: Math.floor(Date.now() / 1000),
+      entries: vaultEntries,
+    },
+    null,
+    2,
+  );
+  const url = URL.createObjectURL(new Blob([manifest], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "trance-vault-manifest.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  toast(`Exported ${vaultEntries.length} entries.`, "success");
+  diag("manifest", true, `exported ${vaultEntries.length}`);
+});
+
+$("#dl-import")?.addEventListener("click", () => $("#dl-import-file")?.click());
+$("#dl-import-file")?.addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    const entries = Array.isArray(data) ? data : data.entries;
+    if (!Array.isArray(entries) || !entries.length) {
+      toast("That file has no manifest entries.", "error");
+      return;
+    }
+    const rep = await invoke("import_manifest", { entries });
+    await refreshVault();
+    toast(
+      `Imported ${rep.added} track${rep.added === 1 ? "" : "s"} (${rep.missing} file${rep.missing === 1 ? "" : "s"} missing on disk).`,
+      rep.added ? "success" : "info",
+      5000,
+    );
+    diag("manifest", rep.added > 0, `+${rep.added}/${entries.length}`);
+  } catch (err) {
+    showError(`Import failed: ${String(err).slice(0, 140)}`);
+  }
+});
+
+/// Spec 3.3: re-hash every file against its recorded SHA-256 checksum.
+$("#dl-verify")?.addEventListener("click", async () => {
+  if (!vaultEntries.length) {
+    toast("The vault is empty.", "info");
+    return;
+  }
+  const btn = $("#dl-verify");
+  if (btn) btn.disabled = true;
+  try {
+    const rep = await invoke("verify_vault");
+    diag("verify", !rep.mismatch, `${rep.ok} ok · ${rep.mismatch} bad · ${rep.missing} missing`);
+    if (rep.mismatch) {
+      toast(
+        `${rep.ok} verified · ${rep.mismatch} CHECKSUM MISMATCH · ${rep.missing} missing — delete and re-download the bad ones.`,
+        "error",
+        7000,
+      );
+    } else if (rep.missing) {
+      toast(`${rep.ok} verified · ${rep.missing} file${rep.missing === 1 ? "" : "s"} missing on disk.`, "info", 5000);
+    } else {
+      toast(`All ${rep.ok} files verified (SHA-256).`, "success", 3500);
+    }
+    await refreshVault();
+  } catch (err) {
+    showError(`Verify failed: ${String(err).slice(0, 140)}`);
+  }
+  if (btn) btn.disabled = false;
+});
 
 $("#dl-open-vault")?.addEventListener("click", async () => {
   try {

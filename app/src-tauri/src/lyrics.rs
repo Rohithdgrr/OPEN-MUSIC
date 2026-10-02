@@ -12,7 +12,7 @@
 //!
 //! All calls leave from Rust, so the WebView CSP is untouched.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::jiosaavn::{check_id, html_unescape};
@@ -20,8 +20,9 @@ use crate::jiosaavn::{check_id, html_unescape};
 /// Base url of the community lyrics database.
 const LRCLIB: &str = "https://lrclib.net/api";
 
-/// One answer for the lyrics stage.
-#[derive(Clone, Debug, Default, Serialize)]
+/// One answer for the lyrics stage. `Deserialize` carries the L4 disk tier:
+/// entries are written as JSON and read back by `proxy::cached_lyrics`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Lyrics {
     /// `"lrclib"` | `"jiosaavn"` | `"none"`.

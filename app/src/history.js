@@ -42,6 +42,28 @@ export function renderHistory() {
     wrap.append(b, x);
     historyEl.appendChild(wrap);
   }
+  // Home's strip shows the same queries, so one refresh covers both screens.
+  renderRecent();
+}
+/// Home's top strip: the last five searches where the static vibe pills used
+/// to sit. They are plain `[data-query]` buttons, so home.js's delegated
+/// click handler runs them exactly like the old hardcoded ones.
+export function renderRecent() {
+  const strip = $("#home-recent");
+  if (!strip) return;
+  const recent = [...new Set(loadHistory())].slice(0, 5);
+  strip.classList.toggle("hidden", !recent.length);
+  strip.classList.toggle("flex", recent.length > 0);
+  strip.innerHTML = "";
+  for (const q of recent) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.dataset.query = q;
+    b.className =
+      "px-space-md py-1.5 rounded bg-surface-container-lowest text-on-surface font-label-md text-label-md shrink-0 shadow-sm hover:bg-surface-container-high transition-colors";
+    b.textContent = q;
+    strip.appendChild(b);
+  }
 }
 export function pushHistory(q) {
   const h = [q, ...loadHistory().filter((x) => x !== q)].slice(0, 8);
