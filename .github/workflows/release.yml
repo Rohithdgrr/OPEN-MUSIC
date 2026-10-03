@@ -107,14 +107,10 @@ jobs:
             app/src-tauri/target/release/bundle/**/*.deb
             app/src-tauri/target/release/bundle/**/*.AppImage
             app/src-tauri/target/release/bundle/**/*.dmg
-      - name: Verify manifest URLs resolve
-        # Runs after the installers are live: GitHub rewrites asset names
-        # (spaces -> dots) and a wrong name only surfaces as a 404 when the
-        # app tries to update. Fail here, before attaching the manifests.
-        run: node app/scripts/verify-update-json.mjs app/src-tauri/target/release/bundle/latest.json
-      - name: Publish updater artifacts and manifests
+      - name: Publish updater artifacts
         # Optional by nature: .zip/.sig naming changed across Tauri versions
-        # and the manifests only exist when the build was signed.
+        # and the sigs only exist when the build was signed. Includes
+        # .app.tar.gz because the manifest points at it.
         uses: softprops/action-gh-release@v2
         with:
           fail_on_unmatched_files: false
@@ -128,5 +124,17 @@ jobs:
             app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz.sig
             app/src-tauri/target/release/bundle/**/*.app.tar.gz
             app/src-tauri/target/release/bundle/**/*.app.tar.gz.sig
+      - name: Verify manifest URLs resolve
+        # Runs after every binary is live: GitHub rewrites asset names
+        # (spaces -> dots) and a wrong name only surfaces as a 404 when the
+        # app tries to update. Fail here, before attaching the manifests.
+        run: node app/scripts/verify-update-json.mjs app/src-tauri/target/release/bundle/latest.json
+      - name: Publish manifests
+        # Attached last so a manifest whose URLs do not resolve never ships.
+        # Unmatched is fine: unsigned builds produce no manifests.
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: false
+          files: |
             app/src-tauri/target/release/bundle/latest.json
             app/src-tauri/target/release/bundle/update.json
