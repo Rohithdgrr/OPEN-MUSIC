@@ -37,8 +37,14 @@ jobs:
 
       - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.app
+          # Don't hardcode a version: the runner image decides which
+          # /Applications/Xcode*.app exists, and a missing path fails the job.
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE" ]; then
+            sudo xcode-select -s "$XCODE"
+          fi
           xcodebuild -version
+          xcode-select -p
 
       - uses: actions/setup-node@v4
         with:
