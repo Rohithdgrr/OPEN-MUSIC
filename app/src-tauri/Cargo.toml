@@ -24,7 +24,7 @@ axum = "0.8"
 url = "2"
 futures = "0.3"
 # JioSaavn encrypts `encrypted_media_url` with DES-ECB before base64.
-des = "0.8"
+des = "0.9"
 base64 = "0.22"
 # Cache layers L1/L2/L4-RAM: concurrent TTL + size-aware LRU (design §TL;DR 2).
 moka = { version = "0.12", features = ["future"] }
