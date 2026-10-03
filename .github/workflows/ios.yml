@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   ios:
@@ -100,14 +101,30 @@ jobs:
             || npx tauri ios build --target aarch64-apple-ios-sim 2>&1 | tee ios-build.log \
             || npx tauri ios build 2>&1 | tee ios-build.log
 
-      - name: Upload build log (diagnostics)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-build-log
-          path: app/ios-build.log
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Report the failure where it can be read
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Artifacts and job logs both need an authenticated API call to read
+          # back; an issue comment is public, so paste the tail there.
+          {
+            echo "### iOS build failure (\`${TAG}\`)"
+            echo
+            echo '```'
+            tail -n 120 app/ios-build.log 2>/dev/null || echo "no build log was produced"
+            echo '```'
+          } > /tmp/report.md
+          NUM=$(gh issue list --search "iOS build log in:title" --state all \
+            --json number -q '.[0].number' 2>/dev/null || true)
+          if [ -z "$NUM" ]; then
+            gh issue create --title "iOS build log" \
+              --body "Automated iOS build reports land here." >/dev/null
+            NUM=$(gh issue list --search "iOS build log in:title" --state all \
+              --json number -q '.[0].number')
+          fi
+          gh issue comment "$NUM" --body-file /tmp/report.md || true
 
       - name: Upload the iOS archive
         uses: actions/upload-artifact@v4
