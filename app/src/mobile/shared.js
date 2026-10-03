@@ -382,42 +382,42 @@ document.addEventListener(
 );
 
 export function rowHTML(name, i, t) {
-  return `<div data-list="${name}" data-idx="${i}" class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container transition-colors cursor-pointer active:bg-surface-container-high">
-    <div class="flex items-center gap-space-md min-w-0 flex-1">
-      <div class="relative w-10 h-10 rounded bg-surface-container-highest overflow-hidden flex-shrink-0"><img alt="" class="w-full h-full object-cover" ${art(t.image)}></div>
+  return `<div data-list="${name}" data-idx="${i}" class="group flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container/60 transition-all cursor-pointer active:scale-[0.99] active:bg-surface-container-high/80 border border-transparent hover:border-surface-container-high/40">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="relative w-11 h-11 rounded-lg bg-surface-container-highest overflow-hidden flex-shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover" ${art(t.image)}></div>
       <div class="flex flex-col min-w-0">
-        <span class="text-body-md font-medium text-on-surface truncate">${esc(t.title || "")}</span>
-        <span class="text-body-sm text-secondary truncate" data-entity-name data-entity-kind="artist">${esc(t.artist || t.subtitle || "")}</span>
+        <span class="text-body-md font-medium text-on-surface truncate tracking-tight text-[13.5px]">${esc(t.title || "")}</span>
+        <span class="text-body-sm text-secondary truncate text-[11.5px] mt-0.5" data-entity-name data-entity-kind="artist">${esc(t.artist || t.subtitle || "")}</span>
       </div>
     </div>
-    <div class="flex items-center gap-space-sm flex-shrink-0">
-      <span class="font-label-mono text-label-sm text-secondary">${esc(t.duration || (t.duration_secs ? fmtTime(t.duration_secs) : ""))}</span>
-      <button type="button" data-fav aria-label="Favorite" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]" data-fav-icon="${esc(t.id || "")}">favorite_border</span></button>
-      <button type="button" data-dl aria-label="Download" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">download</span></button>
-      <button type="button" data-menu-list="${name}" data-menu-idx="${i}" aria-label="More options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+    <div class="flex items-center gap-1 flex-shrink-0">
+      <span class="font-label-mono text-label-sm text-secondary text-[11px] mr-1">${esc(t.duration || (t.duration_secs ? fmtTime(t.duration_secs) : ""))}</span>
+      <button type="button" data-fav aria-label="Favorite" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[18px]" data-fav-icon="${esc(t.id || "")}">favorite_border</span></button>
+      <button type="button" data-dl aria-label="Download" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[18px]">download</span></button>
+      <button type="button" data-menu-list="${name}" data-menu-idx="${i}" aria-label="More options" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
     </div>
   </div>`;
 }
 
 export function plCardHTML(p, i, nav) {
-  return `<div data-nav="${esc(nav)}" data-pl-idx="${i}" class="w-52 flex-shrink-0 bg-surface-container-lowest border border-surface-container rounded-lg p-space-sm shadow-sm flex flex-col space-y-2 cursor-pointer active:opacity-80 transition-opacity">
-    <div class="relative w-full aspect-square rounded-md overflow-hidden bg-surface-container-highest"><img alt="" class="w-full h-full object-cover" ${art(p.image)}></div>
+  return `<div data-nav="${esc(nav)}" data-pl-idx="${i}" class="w-48 flex-shrink-0 bg-surface-container-lowest border border-surface-container-high/70 rounded-2xl p-2.5 shadow-sm hover:shadow-md flex flex-col space-y-2 cursor-pointer active:scale-[0.98] transition-all group">
+    <div class="relative w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(p.image)}></div>
     <div class="flex flex-col pt-0.5 min-w-0">
-      <span class="font-label-md text-label-md text-on-surface font-semibold truncate">${esc(p.title || "")}</span>
-      <span class="font-body-sm text-[12px] text-secondary truncate mt-0.5">${esc(p.subtitle || "")}</span>
+      <span class="font-label-md text-label-md text-on-surface font-semibold truncate tracking-tight text-[13px]">${esc(p.title || "")}</span>
+      <span class="font-body-sm text-[11.5px] text-secondary truncate mt-0.5">${esc(p.subtitle || "")}</span>
       <div class="flex items-center gap-1.5 mt-1 text-on-surface-variant">
-        <span class="font-label-mono text-[10px]">${p.count ? `${p.count} TRACKS` : p.year || ""}</span>
+        <span class="px-1.5 py-0.5 rounded bg-surface-container-low font-label-mono text-[9.5px] font-medium text-secondary uppercase tracking-wider">${p.count ? `${p.count} TRACKS` : p.year || ""}</span>
       </div>
     </div>
   </div>`;
 }
 
 export function artistCardHTML(a, i, nav) {
-  return `<div data-nav="${esc(nav)}" data-pl-idx="${i}" class="w-60 flex-shrink-0 bg-surface-container-lowest border border-surface-container rounded-xl p-space-md shadow-sm flex flex-col justify-between space-y-3 cursor-pointer active:opacity-80 transition-opacity">
-    <div class="flex items-center gap-space-md min-w-0">
-      <div class="w-14 h-14 rounded-full overflow-hidden bg-surface-container-highest flex-shrink-0"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
+  return `<div data-nav="${esc(nav)}" data-pl-idx="${i}" class="w-56 flex-shrink-0 bg-surface-container-lowest border border-surface-container-high/70 rounded-2xl p-3 shadow-sm hover:shadow-md flex flex-col justify-between space-y-2.5 cursor-pointer active:scale-[0.98] transition-all group">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-14 h-14 rounded-full overflow-hidden bg-surface-container-highest ring-2 ring-surface-container-high flex-shrink-0 shadow-sm"><img alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(a.image)}></div>
       <div class="flex flex-col min-w-0 flex-1">
-        <span class="font-label-md text-label-md font-semibold text-on-surface truncate">${esc(a.title || "")}</span>
+        <span class="font-label-md text-label-md font-semibold text-on-surface truncate tracking-tight text-[13px]">${esc(a.title || "")}</span>
         <span class="font-body-sm text-[11px] text-secondary truncate">${esc(a.subtitle || "")}</span>
         ${a.count ? `<span class="font-label-mono text-[9px] text-on-surface-variant mt-0.5">${a.count} Releases</span>` : ""}
       </div>

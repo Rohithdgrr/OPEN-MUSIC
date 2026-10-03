@@ -89,7 +89,7 @@
   function navHTML(key) {
     var active = TAB_OF[key] || "";
     return (
-      '<nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]"><div class="h-16 px-space-sm flex items-center justify-around">' +
+      '<nav class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/85 backdrop-blur-2xl border-t border-surface-container-high/60 shadow-[0_-8px_24px_rgba(0,0,0,0.03)]"><div class="h-16 px-gutter flex items-center justify-around max-w-lg mx-auto">' +
       TABS.map(function (t) {
         var on = t.path === active;
         return (
@@ -97,11 +97,19 @@
           t.path +
           '"' +
           (on ? ' aria-current="page"' : "") +
-          ' class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 transition-colors ' +
-          (on ? "text-primary font-medium" : "text-secondary hover:text-on-surface") +
-          '"><span class="material-symbols-outlined text-[20px]">' +
+          ' class="group flex flex-col items-center justify-center w-20 h-12 gap-1 rounded-2xl transition-all duration-200 active:scale-95 ' +
+          (on ? "text-on-surface font-semibold" : "text-secondary hover:text-on-surface") +
+          '"><div class="relative flex items-center justify-center w-12 h-7 rounded-full transition-all duration-200 ' +
+          (on ? "bg-surface-container-high/80 text-primary" : "group-hover:bg-surface-container-low text-secondary") +
+          '"><span class="material-symbols-outlined text-[21px] transition-transform duration-200 ' +
+          (on ? "scale-105" : "") +
+          '"' +
+          (on ? " style=\"font-variation-settings: 'FILL' 1;\"" : "") +
+          ">" +
           t.icon +
-          '</span><span class="font-label-sm text-label-sm">' +
+          '</span></div><span class="font-label-sm text-[11px] tracking-tight leading-none ' +
+          (on ? "text-on-surface font-semibold" : "text-secondary") +
+          '">' +
           esc(t.label) +
           "</span></a>"
         );

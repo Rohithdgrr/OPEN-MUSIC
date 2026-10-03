@@ -13,24 +13,49 @@
 <script src="tailwind-config.js"></script>
 <style>
 @layer base {
-  html, body { width: 100vw; margin: 0; padding: 0; background-color: #f9f9fb; }
-  body { overscroll-behavior: none; min-height: max(884px, 100dvh); }
+  html, body {
+    width: 100vw;
+    margin: 0;
+    padding: 0;
+    background-color: #f9f9fb;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    overscroll-behavior-y: none;
+    min-height: max(884px, 100dvh);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  input, textarea {
+    user-select: text;
+    -webkit-user-select: text;
+  }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
   .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
   main > :first-child { margin-top: 0 !important; }
   main > :last-child { margin-bottom: 0 !important; }
 }
+
 /* Screens' fixed headers carry .pt-safe, so <main>'s top offset must add the
    same status-bar inset — a bare pt-14/pt-16 left the first row (the search
    field) sitting under the header on devices with a cutout. */
 main.pt-14 { padding-top: calc(3.5rem + env(safe-area-inset-top, 0px)); }
 main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
 ::-webkit-scrollbar { display: none; }
+* { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* Lyrics karaoke — port of the desktop's styles.css (mobile loads no
    styles.css, so the .lyric-* rules live here). JS toggles lyric-active /
    lyric-past and drives each word's fill through --progress. */
-.lyric-line { border-left: 2px solid transparent; }
+.lyric-line {
+  border-left: 3px solid transparent;
+  padding-left: 6px;
+  border-radius: 4px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
 .lyric-word {
   background-image: linear-gradient(90deg, #18181b 0%, #18181b var(--progress, 0%), #d4d4d8 var(--progress, 0%), #d4d4d8 100%);
   -webkit-background-clip: text;
@@ -38,7 +63,10 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
   color: transparent;
 }
 .lyric-text { transition: font-size 0.25s ease, font-weight 0.25s ease, color 0.25s ease; }
-.lyric-active { border-left: 3px solid #18181b; background: rgba(24, 24, 27, 0.05); }
+.lyric-active {
+  border-left: 3px solid #18181b;
+  background: rgba(24, 24, 27, 0.05);
+}
 .lyric-active .lyric-text { font-size: 15px; font-weight: 700; line-height: 1.4; color: #18181b; }
 .lyric-past .lyric-text { font-size: 13px; color: #d4d4d8; }
 .lyric-past .lyric-word { background-image: linear-gradient(90deg, #d4d4d8, #d4d4d8); }
@@ -49,17 +77,21 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
    to a fixed overlay with stage-sized type; auto-scroll keeps working. */
 .tm-lyrics-full {
   position: fixed;
-  left: 0.5rem;
-  right: 0.5rem;
+  left: 0.75rem;
+  right: 0.75rem;
   top: calc(3.75rem + env(safe-area-inset-top, 0px));
   bottom: 4.5rem;
   z-index: 65;
   margin: 0 !important;
-  background: #f9f9fb;
-  border: 1px solid #e8e8e9;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  background: rgba(249, 249, 251, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(232, 232, 234, 0.8);
+  border-radius: 1.25rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 .tm-lyrics-full [data-lyrics] { flex: 1 1 auto; max-height: none !important; }
 .tm-lyrics-full .lyric-text { font-size: 17px !important; }
@@ -70,60 +102,64 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
    which this shell never loads. Stacks up to 4, click to dismiss. */
 #tm-toast-stack {
   position: fixed;
-  top: calc(4rem + env(safe-area-inset-top, 0px));
+  top: calc(3.75rem + env(safe-area-inset-top, 0px));
   left: 0;
   right: 0;
-  z-index: 60;
+  z-index: 70;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   padding: 0 1rem;
   pointer-events: none;
 }
 .tm-toast {
   pointer-events: auto;
   display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  max-width: 100%;
-  background: #1b1b1e;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 92%;
+  background: rgba(27, 27, 30, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   color: #f0f0f2;
-  border-radius: 0.5rem;
-  padding: 0.5rem 0.7rem;
-  font-size: 12px;
-  line-height: 1.35;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  cursor: pointer;
-  animation: tm-toast-in 0.18s ease-out;
-}
-.tm-toast .tm-dot {
-  width: 0.5rem;
-  height: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
-  margin-top: 0.3rem;
+  padding: 0.55rem 1rem;
+  font-size: 12.5px;
+  line-height: 1.35;
+  box-shadow: 0 10px 30px -4px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  animation: tm-toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.tm-toast:active { transform: scale(0.97); }
+.tm-toast .tm-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 9999px;
   flex-shrink: 0;
   background: #a1a1aa;
 }
-.tm-toast > span:not(.tm-dot) { min-width: 0; overflow-wrap: anywhere; }
+.tm-toast > span:not(.tm-dot) { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 .tm-toast-action {
-  margin-left: auto;
+  margin-left: 0.4rem;
   flex-shrink: 0;
-  padding: 0.1rem 0.5rem;
+  padding: 0.15rem 0.55rem;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.12);
-  color: #a1a1aa;
+  background: rgba(255, 255, 255, 0.15);
+  color: #f0f0f2;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
-.tm-toast-action:active { background: rgba(255, 255, 255, 0.2); }
-.tm-toast[data-kind="success"] .tm-dot { background: #22c55e; }
-.tm-toast[data-kind="error"] .tm-dot { background: #ef4444; }
-.tm-toast.tm-out { opacity: 0; transform: translateY(4px); transition: opacity 0.2s, transform 0.2s; }
+.tm-toast-action:active { background: rgba(255, 255, 255, 0.28); }
+.tm-toast[data-kind="success"] .tm-dot { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.6); }
+.tm-toast[data-kind="error"] .tm-dot { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); }
+.tm-toast.tm-out { opacity: 0; transform: translateY(-4px) scale(0.95); transition: opacity 0.2s, transform 0.2s; }
 @keyframes tm-toast-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
   to { opacity: 1; transform: none; }
 }
 </style>

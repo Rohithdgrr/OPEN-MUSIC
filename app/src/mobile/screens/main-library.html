@@ -1,261 +1,116 @@
-<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface">Library</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Telemetry and Audio Settings" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">tune</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full">
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-sm transition-all"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface">Library</h1></div><div class="flex items-center gap-1"><button data-nav="settings" aria-label="Settings" class="w-10 h-10 flex items-center justify-center rounded-full text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><div data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary font-label-sm font-semibold ml-1 cursor-pointer active:scale-90 hover:opacity-90 transition-all shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pt-2">
 <!-- Sub-header & Action Utilities -->
-<div class="flex items-center justify-between py-space-sm mb-space-md">
+<div class="flex items-center justify-between py-2 mb-3">
 <div class="flex items-center gap-space-xs">
-<span class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Your Library</span>
+<span class="font-headline-lg text-[22px] font-bold text-on-surface tracking-tight">Your Library</span>
 </div>
-<div class="flex items-center gap-space-xs">
-<button aria-label="Search within library" class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors" onclick="toggleLibrarySearch()">
+<div class="flex items-center gap-1">
+<button aria-label="Search within library" class="w-9 h-9 rounded-full bg-surface-container-low border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all" onclick="toggleLibrarySearch()">
 <span class="material-symbols-outlined text-[19px]">search</span>
 </button>
-<button aria-label="Create playlist" class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors" onclick="promptCreatePlaylist()">
+<button aria-label="Create playlist" class="w-9 h-9 rounded-full bg-surface-container-low border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all" onclick="promptCreatePlaylist()">
 <span class="material-symbols-outlined text-[20px]">add</span>
 </button>
-<button aria-label="Sort and view settings" class="w-9 h-9 rounded-full bg-surface-container flex items-center justify-center text-on-surface hover:bg-surface-container-high transition-colors" onclick="cycleSort()">
+<button aria-label="Sort and view settings" class="w-9 h-9 rounded-full bg-surface-container-low border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all" onclick="cycleSort()">
 <span class="material-symbols-outlined text-[19px]">swap_vert</span>
 </button>
 </div>
 </div>
 <!-- Search Input Bar (Expandable Micro-interaction) -->
-<div class="hidden w-full mb-space-md" id="librarySearchBar">
-<div class="relative w-full flex items-center">
-<span class="material-symbols-outlined absolute left-space-sm text-secondary text-[18px]">search</span>
-<input class="w-full h-9 pl-9 pr-space-md bg-surface-container-lowest text-on-surface font-body-md text-body-md rounded-lg placeholder-secondary focus:outline-none shadow-sm" id="filterInput" oninput="filterLibraryList(this.value)" placeholder="Find in Playlists, Artists, Albums..." type="text"/>
-<button class="absolute right-space-sm text-secondary hover:text-on-surface" onclick="clearLibrarySearch()">
+<div class="hidden w-full mb-3" id="librarySearchBar">
+<div class="relative w-full flex items-center bg-surface-container-lowest border border-surface-container-high/80 rounded-2xl px-3.5 py-1 shadow-sm focus-within:border-primary/40 focus-within:shadow-md transition-all">
+<span class="material-symbols-outlined text-secondary text-[19px] mr-2">search</span>
+<input class="w-full h-9 bg-transparent text-on-surface font-body-md text-body-md placeholder-secondary focus:outline-none" id="filterInput" oninput="filterLibraryList(this.value)" placeholder="Find in Playlists, Artists, Albums..." type="text"/>
+<button class="text-secondary hover:text-on-surface w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container active:scale-90" onclick="clearLibrarySearch()">
 <span class="material-symbols-outlined text-[16px]">close</span>
 </button>
 </div>
 </div>
 <!-- Horizontal Filter Chips -->
-<div class="w-full overflow-x-auto no-scrollbar -mx-gutter px-gutter mb-space-lg flex items-center gap-space-xs">
-<button class="filter-chip px-3.5 h-7 rounded-full bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1.5 flex-shrink-0 transition-transform active:scale-95" onclick="setActiveFilter(this, 'all')">
+<div class="w-full overflow-x-auto no-scrollbar -mx-gutter px-gutter mb-4 flex items-center gap-2">
+<button class="filter-chip px-4 h-8 rounded-full bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1.5 flex-shrink-0 transition-transform active:scale-95 shadow-sm font-semibold" onclick="setActiveFilter(this, 'all')">
 <span>Playlists</span>
 </button>
-<button class="filter-chip px-3.5 h-7 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md flex items-center gap-1.5 flex-shrink-0 hover:bg-surface-container-high transition-transform active:scale-95" onclick="setActiveFilter(this, 'downloaded')">
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1.5 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'downloaded')">
 <span class="material-symbols-outlined text-[14px]">arrow_downward</span>
 <span>Downloaded</span>
 </button>
-<button class="filter-chip px-3.5 h-7 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container-high transition-transform active:scale-95" onclick="setActiveFilter(this, 'albums')">
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'albums')">
 <span>Albums</span>
 </button>
-<button class="filter-chip px-3.5 h-7 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container-high transition-transform active:scale-95" onclick="setActiveFilter(this, 'artists')">
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'artists')">
 <span>Artists</span>
 </button>
-<button class="filter-chip px-3.5 h-7 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container-high transition-transform active:scale-95" onclick="setActiveFilter(this, 'podcasts')">
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'podcasts')">
 <span>Podcasts</span>
 </button>
 </div>
 <!-- Quick Pinned Modules (Liked Songs & Offline Cache) -->
-<div class="grid grid-cols-2 gap-space-sm mb-space-lg">
+<div class="grid grid-cols-2 gap-3 mb-5">
 <!-- Pinned Card: Liked Songs -->
-<div class="relative overflow-hidden bg-primary text-on-primary rounded-xl p-space-md flex flex-col justify-between h-28 shadow-sm group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="relative overflow-hidden bg-primary text-on-primary rounded-2xl p-4 flex flex-col justify-between h-32 shadow-sm group active:scale-[0.98] transition-transform cursor-pointer">
 <div class="flex items-center justify-between w-full">
-<div class="w-8 h-8 rounded-lg bg-surface-container-lowest/15 backdrop-blur flex items-center justify-center text-on-primary">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+<div class="w-9 h-9 rounded-xl bg-surface-container-lowest/15 backdrop-blur flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[19px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
 </div>
 <div class="flex items-center gap-0.5 text-on-primary/75">
-<span class="material-symbols-outlined text-[15px]" title="Auto-synced offline">offline_pin</span>
+<span class="material-symbols-outlined text-[16px]" title="Auto-synced offline">offline_pin</span>
 </div>
 </div>
 <div>
-<h3 class="font-headline-md text-headline-md tracking-tight leading-tight text-on-primary">Liked Songs</h3>
-<span class="font-body-sm text-body-sm text-on-primary/70">148 tracks</span>
+<h3 class="font-headline-md text-[16px] font-bold tracking-tight leading-tight text-on-primary">Liked Songs</h3>
+<span class="font-body-sm text-[12px] text-on-primary/75 mt-0.5">148 tracks</span>
 </div>
-<!-- Subtle ambient visual accent -->
-<div class="absolute -right-3 -bottom-4 w-16 h-16 rounded-full bg-surface-container-lowest/5 blur-xl pointer-events-none"></div>
+<div class="absolute -right-3 -bottom-4 w-20 h-20 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
 </div>
 <!-- Pinned Card: Downloaded Music Hub -->
-<div class="relative overflow-hidden bg-surface-container-lowest text-on-surface rounded-xl p-space-md flex flex-col justify-between h-28 shadow-sm active:scale-[0.98] transition-transform cursor-pointer">
+<div class="relative overflow-hidden bg-surface-container-lowest text-on-surface border border-surface-container-high/70 rounded-2xl p-4 flex flex-col justify-between h-32 shadow-sm active:scale-[0.98] transition-all cursor-pointer hover:shadow-md">
 <div class="flex items-center justify-between w-full">
-<div class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center text-on-surface">
-<span class="material-symbols-outlined text-[18px]">download_for_offline</span>
+<div class="w-9 h-9 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface shadow-sm">
+<span class="material-symbols-outlined text-[19px]">download_for_offline</span>
 </div>
-<span class="font-label-mono text-label-mono text-secondary">1.8 GB</span>
+<span class="font-label-mono text-[11px] text-secondary font-semibold">1.8 GB</span>
 </div>
 <div>
-<h3 class="font-headline-md text-headline-md tracking-tight leading-tight text-on-surface">Downloaded</h3>
-<span class="font-body-sm text-body-sm text-secondary">42 songs stored</span>
+<h3 class="font-headline-md text-[16px] font-bold tracking-tight leading-tight text-on-surface">Downloaded</h3>
+<span class="font-body-sm text-[12px] text-secondary mt-0.5">42 songs stored</span>
 </div>
 </div>
 </div>
 <!-- Sorting & View Bar -->
-<div class="flex items-center justify-between mb-space-sm">
-<button class="flex items-center gap-1.5 py-1 px-1.5 -ml-1.5 text-on-surface hover:text-primary transition-colors group" id="sortToggleBtn" onclick="toggleSortMode()">
-<span class="material-symbols-outlined text-[16px] text-secondary group-hover:text-primary transition-colors">import_export</span>
-<span class="font-label-md text-label-md" id="currentSortLabel">Recently played</span>
+<div class="flex items-center justify-between mb-2">
+<button class="flex items-center gap-1.5 py-1 px-2 -ml-1 text-on-surface hover:text-primary transition-colors group active:scale-95" id="sortToggleBtn" onclick="toggleSortMode()">
+<span class="material-symbols-outlined text-[17px] text-secondary group-hover:text-primary transition-colors">import_export</span>
+<span class="font-label-md text-label-md font-semibold" id="currentSortLabel">Recently played</span>
 </button>
-<div class="flex items-center gap-space-xs text-secondary">
-<button aria-label="Grid view" class="w-7 h-7 flex items-center justify-center rounded hover:text-on-surface text-secondary" id="viewGridBtn" onclick="setViewMode('grid')">
-<span class="material-symbols-outlined text-[18px]">grid_view</span>
+<div class="flex items-center gap-1 text-secondary">
+<button aria-label="Grid view" class="w-8 h-8 flex items-center justify-center rounded-lg hover:text-on-surface hover:bg-surface-container/60 active:scale-90 text-secondary transition-all" id="viewGridBtn" onclick="setViewMode('grid')">
+<span class="material-symbols-outlined text-[19px]">grid_view</span>
 </button>
-<button aria-label="List view" class="w-7 h-7 flex items-center justify-center rounded text-primary bg-surface-container" id="viewListBtn" onclick="setViewMode('list')">
-<span class="material-symbols-outlined text-[18px]">view_agenda</span>
+<button aria-label="List view" class="w-8 h-8 flex items-center justify-center rounded-lg text-primary bg-surface-container active:scale-90 transition-all" id="viewListBtn" onclick="setViewMode('list')">
+<span class="material-symbols-outlined text-[19px]">view_agenda</span>
 </button>
 </div>
 </div>
 <!-- Library Items Container -->
-<div class="flex flex-col gap-space-xs transition-all duration-200" id="libraryContainer">
-<!-- Item 1: Late Night Resonance -->
-<div class="library-item flex items-center justify-between p-space-xs rounded-xl bg-surface-container-lowest shadow-sm hover:bg-surface-container-low transition-colors group cursor-pointer" data-category="playlists" data-downloaded="false" data-title="Late Night Resonance">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover" data-alt="Scandinavian minimalist architecture poster with clean monochrome geometric shapes and warm soft light, fine studio grain, gallery style photograph" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCm0YE0oyzeTDc-FrZxvcL8KoTCy3RzxMcQ88j_A2drUks9CWIcnD_ZTPAyVh0I4fF0TGhA3Pr8KOhgE0LzTu2AJJkqysB6rPW7C4s7SxrH0GkitIiB35a01hcS1sRdwwIjYOeMJvrSRT9zpcTnHZEb9jkhH0BwYV7ZNqUUHkxPJCbX9Afpw2Raa6-PNQVlY3y6fXEEDAnAXwqXIjfoX0Zba_sPtP14PIyCY9Haz2ljgve8E7EM3CG9g"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-headline-md tracking-tight text-on-surface truncate group-hover:text-primary">Late Night Resonance</span>
-<div class="flex items-center gap-1.5 text-secondary">
-<span class="font-body-sm text-body-sm">Playlist</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">24 tracks</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm truncate">By You</span>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm">
-<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface transition-colors" onclick="openItemMenu(event, 'Late Night Resonance')">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Item 2: Monolith Sessions -->
-<div class="library-item flex items-center justify-between p-space-xs rounded-xl bg-surface-container-lowest shadow-sm hover:bg-surface-container-low transition-colors group cursor-pointer" data-category="albums" data-downloaded="true" data-title="Monolith Sessions">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover" data-alt="A dark matte monolithic stone sculpture bathed in soft cinematic ambient Nordic light, ultra high fidelity, subtle depth of field and graphite textures" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDhAQ1C2u9KL-1ixHly-NZ_ak7v19S7gUR_QjdxAN5jbyhFng7T4CKWjFyHvjcFdMWifFc_wfzmpiKmiz6UmunaQNN72ksaVa5Dvryby7HHmfCE2OHbTIFnUEtTZFeacAiLLSiial4pGpBYShOULeFeNfxlpdnA8HSKXgXyp2Sy16UxWdIWLS_f795AUZu_poq8v0bJTvjYWN6mDLDJ8Z6edhlmLT4b7AvKbN1mBXKg4daWx32Lb3-mhg"/>
-</div>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5 min-w-0">
-<span class="font-headline-md text-headline-md tracking-tight text-on-surface truncate group-hover:text-primary">Monolith Sessions</span>
-<span class="material-symbols-outlined text-[14px] text-primary flex-shrink-0" title="Downloaded offline">check_circle</span>
-</div>
-<div class="flex items-center gap-1.5 text-secondary">
-<span class="font-body-sm text-body-sm">Album</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm truncate">Solaris & Kaelen</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">12 tracks</span>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm">
-<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface transition-colors" onclick="openItemMenu(event, 'Monolith Sessions')">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Item 3: Atmospheric Chill -->
-<div class="library-item flex items-center justify-between p-space-xs rounded-xl bg-surface-container-lowest shadow-sm hover:bg-surface-container-low transition-colors group cursor-pointer" data-category="playlists" data-downloaded="false" data-title="Atmospheric Chill">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover" data-alt="Minimalist fog-draped pine forest with serene misty tones, tranquil ethereal Scandinavian dawn, cinematic monochrome photography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzNxLlgLb6UoNaU2qOiwnIMFSKHcu62obyr_oRGMomQvREF89pDmST76Kz9n9tBIqpm33Bjz6X-g9uIraEKg1il0m2DUPzr7eVPQikeOyj33SRAM4qNdTcfU2NmwsaoywiqX_FifH1VkUkcWHvvSOK81705bU4XZUR_ioin-zsnCupbUlFYTLkEd1srcd0GYksBC4ouv7mtYuTuAZnSOPsHaVBFcURUITiXoUKaE-a99ZWcytYmOvIVw"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-headline-md tracking-tight text-on-surface truncate group-hover:text-primary">Atmospheric Chill</span>
-<div class="flex items-center gap-1.5 text-secondary">
-<span class="font-body-sm text-body-sm">Playlist</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">Curated</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">45 tracks</span>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm">
-<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface transition-colors" onclick="openItemMenu(event, 'Atmospheric Chill')">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Item 4: Aura Sound (Artist Profile) -->
-<div class="library-item flex items-center justify-between p-space-xs rounded-xl bg-surface-container-lowest shadow-sm hover:bg-surface-container-low transition-colors group cursor-pointer" data-category="artists" data-downloaded="false" data-title="Aura Sound">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-12 h-12 rounded-full overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover" data-alt="Minimalist portrait of an electronic sound producer bathed in moody dim side-lighting, clean modern studio silhouette, high contrast monochrome style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuCX4-iwXTcVoyDoBGtw8bUurYxfjAUKtczAvcBap8BWkl_062KcBR9hxO4Z9_S_hfkUrzxGR2UHxyu7it-dNDMu5vExH6uAIBL7ys6dkg7aul0OHegHUfhqyGuQu7aKuyRLFN_j1s7lTc7QjFelEvktQOgasXO0qPeW46dW4qvvs_VxHfBvqn79YqA4lU5CsVTUqgCXndateozQg5BPXGUPNLzjq8LU5WCvscxpCH_zMaiO0wLZ5b3g"/>
-</div>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5 min-w-0">
-<span class="font-headline-md text-headline-md tracking-tight text-on-surface truncate group-hover:text-primary">Aura Sound</span>
-<span class="px-1.5 py-0.2 bg-surface-container text-on-surface-variant font-label-mono text-[9px] rounded uppercase tracking-wider">Followed</span>
-</div>
-<div class="flex items-center gap-1.5 text-secondary">
-<span class="font-body-sm text-body-sm">Artist</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">1.2M monthly listeners</span>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm">
-<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface transition-colors" onclick="openItemMenu(event, 'Aura Sound')">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Item 5: Nocturne Trance Sessions -->
-<div class="library-item flex items-center justify-between p-space-xs rounded-xl bg-surface-container-lowest shadow-sm hover:bg-surface-container-low transition-colors group cursor-pointer" data-category="albums" data-downloaded="true" data-title="Nocturne Trance Sessions">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover" data-alt="Abstract curved brushed aluminium wave sculpture reflecting soft ambient studio light, sleek architectural product design photograph" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBye5L7Xkqu6quEZlBE_H5bTaj1EBS-DtCyQWMcFRrfl00V_rr5kAOGbCDJCuliW6xBzp9lrwr5YPTQF18SydOQGR1AxXRz4Z7MqGw_pUbtiMUN3eKoIGSBt26_H1rBrSSKjuRhX1z40MwiSzXGuz2wWMJVR_foqVjfcRBFPobSyXap_Dlr9TnqQhE8DpeqMSNqdb5wFBbJXijgU2825n4SBVY4BbuWBKOl0cNOUzGG4QoNe5hNmEbM2w"/>
-</div>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5 min-w-0">
-<span class="font-headline-md text-headline-md tracking-tight text-on-surface truncate group-hover:text-primary">Nocturne Trance Sessions</span>
-<span class="material-symbols-outlined text-[14px] text-primary flex-shrink-0" title="Downloaded offline">check_circle</span>
-</div>
-<div class="flex items-center gap-1.5 text-secondary">
-<span class="font-body-sm text-body-sm">Album</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm truncate">Kaelen</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">8 tracks</span>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm">
-<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface transition-colors" onclick="openItemMenu(event, 'Nocturne Trance Sessions')">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Item 6: Deep Focus & Work -->
-<div class="library-item flex items-center justify-between p-space-xs rounded-xl bg-surface-container-lowest shadow-sm hover:bg-surface-container-low transition-colors group cursor-pointer" data-category="playlists" data-downloaded="false" data-title="Deep Focus & Work">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover" data-alt="Minimalist desktop still life featuring a precision mechanical watch and smooth river stones on a white ash wood desk surface, high key clean light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCs5wndhOEtlvj6YHpbYupZ8cLDA6nPRC4kljzcAkSzmNlokslble8ZZjxOYEIodx3TGnoPitlb5GX88YK3oWrxIppOfBzlhRiRyCh0h-hZ5VN-U0vwAJCHrdW6psaWdSATwklrw7TCfGXnjSAsU5XVWL2yOxbLzeFfpEAmIsqa9RyT7r3QT2s1XIVGk6CHQbzi046goIzUM_4xKSoM_Wkmuk4KTnlF2HqFMCwv7Vf08o-c9TyH3zMZGQ"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-headline-md tracking-tight text-on-surface truncate group-hover:text-primary">Deep Focus & Work</span>
-<div class="flex items-center gap-1.5 text-secondary">
-<span class="font-body-sm text-body-sm">Playlist</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">68 tracks</span>
-<span class="text-[8px] leading-none">•</span>
-<span class="font-body-sm text-body-sm">By REON</span>
-</div>
-</div>
-</div>
-<div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm">
-<button aria-label="More options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface transition-colors" onclick="openItemMenu(event, 'Deep Focus & Work')">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
+<div class="flex flex-col gap-1 transition-all duration-200" id="libraryContainer">
+<!-- Items dynamically rendered by binders.js -->
 </div>
 <!-- Empty State Placeholder when filtering returns no matches -->
-<div class="hidden flex-col items-center justify-center py-space-xl text-center" id="libraryEmptyState">
-<div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center text-secondary mb-space-sm">
-<span class="material-symbols-outlined text-[24px]">library_music</span>
+<div class="hidden flex-col items-center justify-center py-12 text-center" id="libraryEmptyState">
+<div class="w-14 h-14 rounded-2xl bg-surface-container-low flex items-center justify-center text-secondary mb-3 shadow-sm">
+<span class="material-symbols-outlined text-[26px]">library_music</span>
 </div>
-<h4 class="font-headline-md text-headline-md text-on-surface mb-1">No items found</h4>
-<p class="font-body-sm text-body-sm text-secondary max-w-[220px]">Try clearing search or filters to see all music in your collection.</p>
+<h4 class="font-headline-md text-[16px] font-bold text-on-surface mb-1">No items found</h4>
+<p class="font-body-sm text-body-sm text-secondary max-w-[240px]">Try clearing search or filters to see all music in your collection.</p>
 </div>
 
 <!-- Toast Notification Feedback -->
 <div class="fixed top-16 inset-x-gutter z-50 pointer-events-none transform -translate-y-4 opacity-0 transition-all duration-300 flex justify-center" id="toastNotification">
-<div class="bg-primary text-on-primary font-label-md text-label-md px-space-md py-space-xs rounded-lg shadow-md flex items-center gap-2">
+<div class="bg-primary text-on-primary font-label-md text-label-md px-4 py-2 rounded-full shadow-md flex items-center gap-2">
 <span class="material-symbols-outlined text-[16px] text-on-primary">check</span>
 <span id="toastMessage">Playlist created</span>
 </div>
 </div>
 </div>
-</main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a aria-current="page" class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 transition-colors text-primary font-medium" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[20px]">person</span><span class="font-label-sm text-label-sm">Profile</span></a></div></nav>
+</main>

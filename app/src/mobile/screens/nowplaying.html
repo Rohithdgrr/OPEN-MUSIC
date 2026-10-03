@@ -1,74 +1,74 @@
 
 <!-- TOP HEADER -->
-<header class="sticky top-0 w-full z-50 bg-surface/90 backdrop-blur-md border-b border-surface-container-high/60 pt-safe transition-all"><div class="h-14 px-margin flex items-center justify-between"><button aria-label="Collapse" class="w-10 h-10 -ml-2 flex items-center justify-center text-on-surface hover:opacity-70 active:scale-95 transition-all" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">keyboard_arrow_down</span></button><div class="flex flex-col items-center justify-center text-center"><span class="font-label-mono text-[10px] uppercase tracking-[0.14em] text-on-surface-variant font-medium">Playing from Playlist</span><span class="font-body-md text-[14px] font-semibold text-on-surface tracking-tight mt-0.5">Late Night Resonance</span></div><div class="flex items-center gap-0.5 -mr-2"><button aria-label="More Options" class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-colors" id="more-options-btn"><span class="material-symbols-outlined text-[20px]">more_horiz</span></button></div></div></header>
-<main class="flex flex-col w-full bg-surface pb-safe"><div class="flex flex-col w-full text-on-surface select-none pb-8">
+<header class="sticky top-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-b border-surface-container-high/50 pt-safe transition-all"><div class="h-14 px-margin flex items-center justify-between"><button aria-label="Collapse" class="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">keyboard_arrow_down</span></button><div class="flex flex-col items-center justify-center text-center"><span class="font-label-mono text-[10px] uppercase tracking-[0.14em] text-on-surface-variant font-semibold">Playing from Playlist</span><span class="font-body-md text-[13.5px] font-semibold text-on-surface tracking-tight mt-0.5">Late Night Resonance</span></div><div class="flex items-center gap-0.5 -mr-2"><button aria-label="More Options" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all" id="more-options-btn"><span class="material-symbols-outlined text-[20px]">more_horiz</span></button></div></div></header>
+<main class="flex flex-col w-full bg-surface pb-safe"><div class="flex flex-col w-full text-on-surface select-none pb-10">
 <!-- ALBUM ARTWORK -->
 <div class="px-margin pt-4 pb-2 flex justify-center items-center">
-<div class="relative w-full aspect-square max-w-[320px] rounded-xl overflow-hidden shadow-[0_12px_28px_rgba(0,0,0,0.08)] bg-surface-container-high border border-black/5">
+<div class="relative w-full aspect-square max-w-[320px] rounded-2xl overflow-hidden shadow-[0_18px_44px_rgba(0,0,0,0.12),0_4px_12px_rgba(0,0,0,0.06)] bg-surface-container-high border border-black/5 ring-1 ring-inset ring-black/5 transition-transform duration-300">
 <img alt="Midnight City Lights - Nocturne Trance Sessions" class="w-full h-full object-cover select-none" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUZnq5OK4osL7GZOzNKJhvk3Gdg8LBWd4g9870SzuysjcR0wErVAh6Yqis7kqV-HSwXwTRBo5eb1fQhF3i6w2l9j3rSpaHGLLcDE-G4ZGQ3BJisajVnxKgP9-PKVfh46yt54LCOb72VRbyBONXs2Rns2egSxoQk6ayclftMEP3DZQmPB4qefUo8QGVJaMTCI5nDh-z9oRipCgwbxDBBvntgDcVnNnkHgOE75B9dM0q2bUsjCtDlHTDAA">
-<div class="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-xl pointer-events-none"></div>
+<div class="absolute inset-0 ring-1 ring-inset ring-black/5 rounded-2xl pointer-events-none"></div>
 </div>
 </div>
 <!-- TRACK HEADER & CORE ACTIONS -->
 <div class="px-margin mt-4 flex items-center justify-between">
 <div class="flex flex-col min-w-0 pr-3">
-<h1 class="font-headline-lg text-[21px] font-semibold tracking-tight text-on-surface truncate">Midnight City Lights</h1>
+<h1 class="font-headline-lg text-[22px] font-bold tracking-tight text-on-surface truncate">Midnight City Lights</h1>
 <div class="flex items-center gap-2 mt-1">
-<p class="font-body-md text-[14px] text-on-surface-variant truncate">Solaris &amp; Kaelen</p>
+<p class="font-body-md text-[14px] font-medium text-on-surface-variant truncate">Solaris &amp; Kaelen</p>
 <span class="text-outline-variant text-[10px]">•</span>
-<span data-badge class="px-1.5 py-[2px] rounded bg-surface-container border border-outline-variant/40 font-label-mono text-[10px] text-on-surface-variant font-medium uppercase tracking-wide">Standard</span>
+<span data-badge class="px-2 py-0.5 rounded-full bg-surface-container border border-outline-variant/30 font-label-mono text-[10px] text-on-surface-variant font-semibold uppercase tracking-wider">Standard</span>
 </div>
 </div>
 <div class="flex items-center gap-1 shrink-0">
-<button aria-label="Favorite" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all" id="favorite-btn">
-<span class="material-symbols-outlined text-[23px]" id="favorite-icon">favorite_border</span>
+<button aria-label="Favorite" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:text-primary hover:bg-surface-container/60 active:scale-90 transition-all" id="favorite-btn">
+<span class="material-symbols-outlined text-[24px]" id="favorite-icon">favorite_border</span>
 </button>
-<button aria-label="Add to Playlist" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all" id="playlist-add-btn">
-<span class="material-symbols-outlined text-[23px]">bookmark_add</span>
+<button aria-label="Add to Playlist" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:text-primary hover:bg-surface-container/60 active:scale-90 transition-all" id="playlist-add-btn">
+<span class="material-symbols-outlined text-[24px]">bookmark_add</span>
 </button>
 </div>
 </div>
 <!-- SEEK / PROGRESS BAR -->
 <div class="px-margin mt-4 flex flex-col gap-1.5">
-<div class="relative w-full py-2.5 cursor-pointer touch-none" id="scrubber-container">
-<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
+<div class="relative w-full py-3 cursor-pointer touch-none" id="scrubber-container">
+<div class="w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden shadow-inner">
 <div class="h-full bg-primary rounded-full transition-[width] duration-75" id="scrubber-bar" style="width: 40.7%;"></div>
 </div>
-<div class="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-primary rounded-full shadow-sm ring-2 ring-surface transition-[left] duration-75 pointer-events-none" id="scrubber-needle" style="left: calc(40.7% - 7px);"></div>
+<div class="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-primary rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.25)] ring-2 ring-surface transition-[left] duration-75 pointer-events-none" id="scrubber-needle" style="left: calc(40.7% - 8px);"></div>
 </div>
-<div class="flex items-center justify-between font-label-mono text-[11px] text-secondary">
-<span class="text-on-surface font-medium" id="elapsed-time">1:45</span>
+<div class="flex items-center justify-between font-label-mono text-[11px] text-secondary font-medium">
+<span class="text-on-surface font-semibold" id="elapsed-time">1:45</span>
 <span class="" id="remaining-time">-2:33</span>
 </div>
 </div>
 <!-- TRANSPORT PLAYBACK CONTROLS -->
-<div class="px-margin mt-2 flex items-center justify-between max-w-[360px] mx-auto w-full">
-<button aria-label="Shuffle" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all" id="shuffle-btn">
-<span class="material-symbols-outlined text-[20px]">shuffle</span>
+<div class="px-margin mt-3 flex items-center justify-between max-w-[360px] mx-auto w-full">
+<button aria-label="Shuffle" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all" id="shuffle-btn">
+<span class="material-symbols-outlined text-[22px]">shuffle</span>
 </button>
-<button aria-label="Previous" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all">
-<span class="material-symbols-outlined text-[30px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+<button aria-label="Previous" class="w-12 h-12 rounded-full flex items-center justify-center text-on-surface hover:text-primary hover:bg-surface-container/60 active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
 </button>
-<button aria-label="Play / Pause" class="w-14 h-14 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-95 transition-transform shadow-md" id="master-play-pause">
-<span class="material-symbols-outlined text-[30px] leading-none" id="play-pause-icon" style="font-variation-settings: 'FILL' 1;">pause</span>
+<button aria-label="Play / Pause" class="w-16 h-16 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-[0_8px_24px_rgba(0,0,0,0.18)] hover:shadow-lg" id="master-play-pause">
+<span class="material-symbols-outlined text-[32px] leading-none" id="play-pause-icon" style="font-variation-settings: 'FILL' 1;">pause</span>
 </button>
-<button aria-label="Next" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all">
-<span class="material-symbols-outlined text-[30px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+<button aria-label="Next" class="w-12 h-12 rounded-full flex items-center justify-center text-on-surface hover:text-primary hover:bg-surface-container/60 active:scale-90 transition-all">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
 </button>
-<button aria-label="Repeat" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all" id="repeat-btn">
-<span class="material-symbols-outlined text-[20px]">repeat</span>
+<button aria-label="Repeat" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all" id="repeat-btn">
+<span class="material-symbols-outlined text-[22px]">repeat</span>
 </button>
 </div>
 <!-- AUDIO OUTPUT & UTILITY BAR -->
 <div class="px-margin mt-5">
-<div class="bg-surface-container-low border border-surface-container-high/80 px-3 py-2 rounded-xl flex items-center justify-between shadow-[0_1px_3px_rgba(0,0,0,0.02)]"><button class="flex items-center gap-2 text-on-surface hover:opacity-80 transition-opacity text-left" id="device-route-btn"><span class="material-symbols-outlined text-[18px] text-on-surface">airplay</span><span class="font-body-sm text-[12px] font-medium text-on-surface">AirPlay / Speaker</span></button><div class="flex items-center gap-0.5"><button aria-label="Download" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="download-btn" title="Download Track"><span class="material-symbols-outlined text-[18px]">download</span></button><button aria-label="Radio" id="radio-btn" aria-pressed="false" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" title="Endless radio"><span class="material-symbols-outlined text-[17px]">settings_input_antenna</span></button><button aria-label="Queue" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" title="Queue"><span class="material-symbols-outlined text-[17px]">queue_music</span></button><button aria-label="Share" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="share-utility-btn" title="Share"><span class="material-symbols-outlined text-[17px]">ios_share</span></button></div></div>
+<div class="bg-surface-container-low/90 backdrop-blur-md border border-surface-container-high/80 px-3.5 py-2.5 rounded-2xl flex items-center justify-between shadow-sm"><button class="flex items-center gap-2 text-on-surface hover:opacity-80 active:scale-95 transition-all text-left" id="device-route-btn"><span class="material-symbols-outlined text-[19px] text-on-surface">airplay</span><span class="font-body-sm text-[12px] font-medium text-on-surface">AirPlay / Speaker</span></button><div class="flex items-center gap-1"><button aria-label="Download" class="w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-90 active:bg-surface-container transition-all" id="download-btn" title="Download Track"><span class="material-symbols-outlined text-[19px]">download</span></button><button aria-label="Radio" id="radio-btn" aria-pressed="false" class="w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-90 active:bg-surface-container transition-all" title="Endless radio"><span class="material-symbols-outlined text-[18px]">settings_input_antenna</span></button><button aria-label="Queue" class="w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-90 active:bg-surface-container transition-all" title="Queue"><span class="material-symbols-outlined text-[18px]">queue_music</span></button><button aria-label="Share" class="w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-90 active:bg-surface-container transition-all" id="share-utility-btn" title="Share"><span class="material-symbols-outlined text-[18px]">ios_share</span></button></div></div>
 </div>
 <!-- LYRICS PREVIEW CARD -->
 <div class="px-margin mt-5">
-<div class="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high/80 flex flex-col gap-2">
+<div class="p-4 rounded-2xl bg-surface-container-low/90 backdrop-blur-md border border-surface-container-high/80 shadow-sm flex flex-col gap-2.5">
 <div class="flex items-center justify-between">
 <span class="font-label-mono text-[10px] tracking-wider uppercase font-semibold text-secondary">Lyrics</span>
-<button class="font-label-mono text-[11px] text-on-surface hover:underline font-medium" data-lyrics-full>Full View</button>
+<button class="px-2.5 py-1 rounded-full bg-surface-container hover:bg-surface-container-high font-label-mono text-[11px] text-on-surface font-semibold transition-colors active:scale-95" data-lyrics-full>Full View</button>
 </div>
 <div data-lyrics class="flex flex-col gap-1 py-1 max-h-[108px] overflow-y-auto overscroll-contain">
 <p class="font-body-md text-[13px] text-secondary/60 select-none">Static humming across the skyline</p>
@@ -77,66 +77,66 @@
 </div>
 </div>
 </div>
-<!-- UP NEXT QUEUE (3 items) -->
+<!-- UP NEXT QUEUE -->
 <div class="px-margin mt-5 flex flex-col gap-2.5">
 <div class="flex items-center justify-between">
-<div class="flex items-center gap-1.5">
-<span class="font-body-md text-[14px] font-semibold text-on-surface">Up Next</span>
-<span data-queue-count class="px-1.5 py-0.5 rounded-full bg-surface-container font-label-mono text-[10px] text-on-surface-variant font-medium">3</span>
+<div class="flex items-center gap-2">
+<span class="font-body-md text-[14.5px] font-semibold text-on-surface tracking-tight">Up Next</span>
+<span data-queue-count class="px-2 py-0.5 rounded-full bg-surface-container font-label-mono text-[10px] text-on-surface-variant font-semibold">3</span>
 </div>
-<button data-queue-scroll class="font-label-mono text-[11px] text-secondary hover:text-on-surface font-medium transition-colors">View Queue</button>
+<button data-queue-scroll class="font-label-mono text-[11px] text-secondary hover:text-on-surface font-semibold transition-colors">View Queue</button>
 </div>
 <div class="flex flex-col gap-1.5">
 <!-- Item 1 -->
-<div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:bg-surface-container-low transition-colors">
+<div class="p-2.5 rounded-2xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:scale-[0.99] active:bg-surface-container-low transition-all shadow-sm">
 <div class="flex items-center gap-3 min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 border border-black/5">
+<div class="w-10 h-10 rounded-xl bg-surface-container-highest overflow-hidden shrink-0 ring-1 ring-black/5">
 <img alt="Neon Horizons" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBliIRjJBfKDvkI2k4pzq8SsngDz8CxQngwnRi42qboOb0s4NlDXO2gp_VG9371fZ1iDI5ft7pjBxlXpUvPbFwYgxT7H1rsNQS_mycHt9ofd8lQCRrYsYJTEBcc-L0ltnConhD9yxUIJqF1TZvg3GqSVP4oHIRtb7jGj64GxvAu2OMiE97-uix6iXn86dYEgVNMJVQ_A1HRH1qvsVTkFK1EHxknffWiYlYgY0zPn1zkJCD1rQyxrE95FA">
 </div>
 <div class="flex flex-col min-w-0">
-<span class="font-body-md text-[13px] font-medium text-on-surface truncate">Neon Horizons</span>
-<span class="font-body-sm text-[11px] text-secondary truncate">Aura Sound</span>
+<span class="font-body-md text-[13px] font-semibold text-on-surface truncate">Neon Horizons</span>
+<span class="font-body-sm text-[11px] text-secondary truncate mt-0.5">Aura Sound</span>
 </div>
 </div>
 <div class="flex items-center gap-2 shrink-0">
-<span class="font-label-mono text-[11px] text-secondary">5:14</span>
-<button aria-label="Reorder" class="w-7 h-7 flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
+<span class="font-label-mono text-[11px] text-secondary font-medium">5:14</span>
+<button aria-label="Reorder" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
 <span class="material-symbols-outlined text-[18px]">drag_handle</span>
 </button>
 </div>
 </div>
 <!-- Item 2 -->
-<div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:bg-surface-container-low transition-colors">
+<div class="p-2.5 rounded-2xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:scale-[0.99] active:bg-surface-container-low transition-all shadow-sm">
 <div class="flex items-center gap-3 min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 border border-black/5">
+<div class="w-10 h-10 rounded-xl bg-surface-container-highest overflow-hidden shrink-0 ring-1 ring-black/5">
 <img alt="Subtle Echoes" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaHrODJkVBUihd_MJRWTPIDrQP1tn3VPYfjT3l4CvyhI3jYMf_dn9V2mgnoB46hEESBScTgxFd0KSbLVTpJEEb7pWLnxgckUfkORbbx9Zmwp7y1h4p0KxbEsn1s9tiPI9qe8suYhS0ZA8fYm1eXT6vUDJ6peHF7_yKJb5XY3b0XlcoWVfg6aMM2FrmKJT2XnKPNDhdZiLcEWiHHawUa_rXqSW_vciOsuQurPydXzZiDwzesVXHAWUYgw">
 </div>
 <div class="flex flex-col min-w-0">
-<span class="font-body-md text-[13px] font-medium text-on-surface truncate">Subtle Echoes</span>
-<span class="font-body-sm text-[11px] text-secondary truncate">Mirage Architecture</span>
+<span class="font-body-md text-[13px] font-semibold text-on-surface truncate">Subtle Echoes</span>
+<span class="font-body-sm text-[11px] text-secondary truncate mt-0.5">Mirage Architecture</span>
 </div>
 </div>
 <div class="flex items-center gap-2 shrink-0">
-<span class="font-label-mono text-[11px] text-secondary">3:52</span>
-<button aria-label="Reorder" class="w-7 h-7 flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
+<span class="font-label-mono text-[11px] text-secondary font-medium">3:52</span>
+<button aria-label="Reorder" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
 <span class="material-symbols-outlined text-[18px]">drag_handle</span>
 </button>
 </div>
 </div>
 <!-- Item 3 -->
-<div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:bg-surface-container-low transition-colors">
+<div class="p-2.5 rounded-2xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:scale-[0.99] active:bg-surface-container-low transition-all shadow-sm">
 <div class="flex items-center gap-3 min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 border border-black/5">
+<div class="w-10 h-10 rounded-xl bg-surface-container-highest overflow-hidden shrink-0 ring-1 ring-black/5">
 <img alt="Crystalline Dispersion" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4aIE7Jec9BWRaMxBFtPrzjgeyccZ3Oz1R_gmlHQBI7isETiIon3ssaSYLGXAJJCftFjyfNohKTDHLMKgWUtIml_Qdo0r7lkReodXH5sFaKus-J_Hghn_1piRkefAPW7VCRLQh1NIlEUq38dnvkLXIaeHI2UGGFU2BIvlXc1sJEsUC9NWnILUuggmiJcWm_oLKsJ1T1-OTo6dWmiizoegHwCVRFl1F-5zy69Mfg3wV0QdLJ9Iy1TpD5A">
 </div>
 <div class="flex flex-col min-w-0">
-<span class="font-body-md text-[13px] font-medium text-on-surface truncate">Crystalline Dispersion</span>
-<span class="font-body-sm text-[11px] text-secondary truncate">Kaelen Solo Archive</span>
+<span class="font-body-md text-[13px] font-semibold text-on-surface truncate">Crystalline Dispersion</span>
+<span class="font-body-sm text-[11px] text-secondary truncate mt-0.5">Kaelen Solo Archive</span>
 </div>
 </div>
 <div class="flex items-center gap-2 shrink-0">
-<span class="font-label-mono text-[11px] text-secondary">4:47</span>
-<button aria-label="Reorder" class="w-7 h-7 flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
+<span class="font-label-mono text-[11px] text-secondary font-medium">4:47</span>
+<button aria-label="Reorder" class="w-8 h-8 rounded-lg flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
 <span class="material-symbols-outlined text-[18px]">drag_handle</span>
 </button>
 </div>

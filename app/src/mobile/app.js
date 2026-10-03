@@ -202,21 +202,21 @@ function ensureWidget() {
   hide.textContent = `#screen [class*="fixed bottom-16"]{display:none!important}`;
   document.head.appendChild(hide);
   const host = document.createElement("div");
-  host.innerHTML = `<div id="tm-widget" class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe hidden">
-    <div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-xl overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
-      <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" class="h-1 bg-surface-container-high cursor-pointer"><div id="tm-w-fill" class="h-full bg-primary rounded-full" style="width:0%"></div></div>
-      <div class="flex items-center gap-space-sm p-space-sm">
-        <div class="w-11 h-11 rounded-lg bg-surface-container-highest flex-shrink-0 overflow-hidden"><img id="tm-w-art" alt="" class="w-full h-full object-cover"></div>
-        <div class="flex flex-col min-w-0 flex-1 cursor-pointer" data-w-open>
-          <span id="tm-w-title" class="font-label-md text-label-md text-on-surface font-medium truncate">Nothing playing</span>
-          <span id="tm-w-artist" class="font-label-sm text-label-sm text-secondary truncate"></span>
+  host.innerHTML = `<div id="tm-widget" class="fixed bottom-[70px] inset-x-2.5 sm:inset-x-4 z-40 pointer-events-none pb-safe hidden max-w-lg mx-auto">
+    <div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-2xl rounded-2xl overflow-hidden shadow-[0_12px_36px_-6px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.04)] border border-surface-container-high/80">
+      <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" class="h-1 bg-surface-container-high/70 cursor-pointer"><div id="tm-w-fill" class="h-full bg-primary rounded-full transition-all duration-75" style="width:0%"></div></div>
+      <div class="flex items-center gap-2.5 px-3 py-2">
+        <div class="w-11 h-11 rounded-xl bg-surface-container-highest flex-shrink-0 overflow-hidden shadow-sm ring-1 ring-black/5" data-w-open><img id="tm-w-art" alt="" class="w-full h-full object-cover"></div>
+        <div class="flex flex-col min-w-0 flex-1 cursor-pointer select-none" data-w-open>
+          <span id="tm-w-title" class="font-body-md text-[13px] text-on-surface font-semibold tracking-tight truncate leading-tight">Nothing playing</span>
+          <span id="tm-w-artist" class="font-body-sm text-[11px] text-secondary truncate mt-0.5 leading-tight"></span>
         </div>
-        <div class="flex items-center flex-shrink-0">
-          <button type="button" data-w-fav aria-label="Favorite" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]" data-fav-icon></span></button>
-          <button type="button" data-w-prev aria-label="Previous" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">skip_previous</span></button>
-          <button type="button" data-w-toggle aria-label="Play" class="w-11 h-11 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-95 transition-transform"><span id="tm-w-playicon" class="material-symbols-outlined text-[22px]">play_arrow</span></button>
-          <button type="button" data-w-next aria-label="Next" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">skip_next</span></button>
-          <button type="button" data-w-repeat aria-label="Repeat" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span id="tm-w-repeaticon" class="material-symbols-outlined text-[18px]">repeat</span></button>
+        <div class="flex items-center gap-0.5 flex-shrink-0">
+          <button type="button" data-w-fav aria-label="Favorite" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[19px]" data-fav-icon></span></button>
+          <button type="button" data-w-prev aria-label="Previous" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">skip_previous</span></button>
+          <button type="button" data-w-toggle aria-label="Play" class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-sm"><span id="tm-w-playicon" class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
+          <button type="button" data-w-next aria-label="Next" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">skip_next</span></button>
+          <button type="button" data-w-repeat aria-label="Repeat" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span id="tm-w-repeaticon" class="material-symbols-outlined text-[18px]">repeat</span></button>
         </div>
       </div>
     </div>

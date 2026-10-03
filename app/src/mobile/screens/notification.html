@@ -1,236 +1,68 @@
-<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-xs"><button aria-label="Go back" class="w-11 h-11 -ml-space-xs flex items-center justify-center text-on-surface hover:text-primary transition-colors" onclick="history.back()"><span class="material-symbols-outlined text-[22px]">arrow_back</span></button><h1 class="font-headline-md text-headline-md font-medium tracking-tight text-on-surface">Notifications</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Clear all notifications" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">done_all</span></button><button aria-label="Notification Settings" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">settings</span></button></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pb-6">
-<!-- Dynamic Acoustic Status Strip (Scandinavian Technical Touch) -->
-<div class="w-full bg-surface-container-low px-space-md py-space-sm rounded-lg mb-space-md flex items-center justify-between shadow-sm">
-<div class="flex items-center gap-space-sm min-w-0">
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-xs"><button aria-label="Go back" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">arrow_back</span></button><h1 class="font-headline-md text-headline-md font-semibold tracking-tight text-on-surface">Notifications</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Clear all notifications" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">clear_all</span></button><button aria-label="Notification Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">settings</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pb-6">
+<!-- Dynamic Acoustic Status Strip -->
+<div class="w-full bg-surface-container-low/80 border border-surface-container-high/60 px-space-md py-2.5 rounded-2xl mb-space-sm flex items-center justify-between shadow-xs">
+<div class="flex items-center gap-2 min-w-0">
 <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-<span class="font-label-mono text-label-mono text-on-surface truncate">EVENT FEED: 0 LOGGED</span>
+<span class="font-label-mono text-[11px] text-on-surface font-medium truncate">EVENT FEED: 0 LOGGED</span>
 </div>
-<span class="font-label-mono text-label-mono text-secondary flex-shrink-0">6 EVENTS</span>
+<span class="font-label-mono text-[11px] text-secondary font-medium flex-shrink-0">0 EVENTS</span>
 </div>
 <!-- Filter Pills Bar -->
-<div class="flex items-center gap-space-xs overflow-x-auto no-scrollbar -mx-gutter px-gutter mb-space-sm">
-<button class="filter-pill active-pill h-7 px-space-md rounded-full bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1.5 transition-colors whitespace-nowrap shadow-sm" data-category="all">
+<div class="flex items-center gap-space-xs overflow-x-auto no-scrollbar -mx-gutter px-gutter mb-space-sm py-1">
+<button class="filter-pill active-pill h-8 px-3.5 rounded-full bg-primary text-on-primary font-label-md text-[12px] font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shadow-xs" data-category="all">
 <span>All</span>
-<span class="font-label-mono text-label-mono text-surface-container-low opacity-90">6</span>
+<span class="font-label-mono text-[10px] text-surface-container-low opacity-90">0</span>
 </button>
-<button class="filter-pill h-7 px-space-md rounded-full bg-surface-container-low text-on-surface hover:bg-surface-container-high font-label-md text-label-md flex items-center gap-1.5 transition-colors whitespace-nowrap" data-category="releases">
-<span>Releases</span>
-<span class="font-label-mono text-label-mono text-secondary">3</span>
+<button class="filter-pill h-8 px-3.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap active:scale-95" data-category="update">
+<span>Updates</span>
+<span class="font-label-mono text-[10px] text-secondary">0</span>
 </button>
-<button class="filter-pill h-7 px-space-md rounded-full bg-surface-container-low text-on-surface hover:bg-surface-container-high font-label-md text-label-md flex items-center gap-1.5 transition-colors whitespace-nowrap" data-category="drops">
-<span>Drops</span>
-<span class="font-label-mono text-label-mono text-secondary">2</span>
+<button class="filter-pill h-8 px-3.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap active:scale-95" data-category="downloads">
+<span>Downloads</span>
+<span class="font-label-mono text-[10px] text-secondary">0</span>
 </button>
-<button class="filter-pill h-7 px-space-md rounded-full bg-surface-container-low text-on-surface hover:bg-surface-container-high font-label-md text-label-md flex items-center gap-1.5 transition-colors whitespace-nowrap" data-category="system">
+<button class="filter-pill h-8 px-3.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap active:scale-95" data-category="system">
 <span>System</span>
-<span class="font-label-mono text-label-mono text-secondary">1</span>
+<span class="font-label-mono text-[10px] text-secondary">0</span>
 </button>
 </div>
 <!-- Quick Action Strip -->
-<div class="flex items-center justify-between py-space-xs mb-space-sm">
-<span class="font-label-mono text-label-mono text-secondary uppercase tracking-wider">Queue Priority: Recency</span>
-<button class="flex items-center gap-1 text-secondary hover:text-primary transition-colors py-1 px-2 -mr-2 rounded" id="markAllReadBtn">
+<div class="flex items-center justify-between py-space-xs mb-space-sm px-1">
+<span class="font-label-mono text-[10px] text-secondary uppercase tracking-wider font-medium">Queue Priority: Recency</span>
+<button class="flex items-center gap-1 text-secondary hover:text-primary transition-colors py-1 px-2.5 rounded-full hover:bg-surface-container-low active:scale-95" id="markAllReadBtn">
 <span class="material-symbols-outlined text-[16px]">done_all</span>
-<span class="font-label-md text-label-md">Mark all read</span>
+<span class="font-label-sm text-[12px] font-medium">Mark all read</span>
 </button>
 </div>
 <!-- Notification Stream -->
 <div class="flex flex-col gap-space-lg" id="notificationStream">
-<!-- Group: Today -->
-<section class="notification-group flex flex-col gap-space-xs" data-group="today">
-<div class="flex items-center justify-between pb-space-xs">
-<span class="font-label-mono text-label-mono text-secondary uppercase tracking-widest">Today</span>
-<span class="font-label-mono text-label-mono text-secondary">2 UNREAD</span>
+<div class="flex flex-col items-center justify-center gap-3 py-20 text-center">
+<div class="w-14 h-14 rounded-full bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-[32px] text-secondary">notifications_off</span>
 </div>
-<!-- Item 1: New Master Release -->
-<article class="notification-card group bg-surface-container-lowest hover:bg-surface-container-low/80 p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="releases">
-<div class="flex items-start gap-space-md">
-<!-- Thumbnail with Spec Tag -->
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover grayscale brightness-95 contrast-125" data-alt="Monochrome minimalist album art with fluid abstract organic waveforms and sharp typography, studio photography Scandinavian aesthetic dark metallic contrast" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaSbYPcxivyK0lhIP2ZqiadunGabiEKztBGBH5hLFzPv35Ow8rB3Q-4yRm3hik3lilN6TmiXOi0ZRgq-7bUc8dbLutsGj8L6-mxwTTySvc1vRyNwopZA3hQpqiMFdXCNwRFnkIDg49hmL5PsAbCa7IRSrYuNVRKX3M04mDgh7nO1Rmy-iU7CnXStFUMHYKxYgPusOzBjm_nk7v25Iy0Q0qWI8OAgOIVvnE6AJmv_f4Q2B5wnn4iWQVGQ"/>
-</div>
-<!-- Content Block -->
-<div class="flex-1 min-w-0 flex flex-col gap-1">
-<div class="flex items-baseline justify-between gap-space-xs">
-<h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Solaris &amp; Kaelen released a master</h2>
-<div class="flex items-center gap-1.5 flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">12m</span>
-<span class="status-dot w-1.5 h-1.5 rounded-full bg-primary"></span>
+<div class="font-body-md text-body-md text-on-surface font-semibold">You're all caught up</div>
+<div class="font-body-sm text-[13px] text-secondary max-w-[16rem]">Download results, update notices and backup events land here.</div>
 </div>
 </div>
-<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2 leading-snug">
-              Album “Sub-Zero Resonance” is now streaming.
-            </p>
-<div class="flex items-center justify-between pt-space-xs mt-1">
-<button aria-label="Play Master" class="h-8 px-space-md rounded bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1.5 active:scale-95 transition-transform">
-<span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
-<span>Play Master</span>
-</button>
-</div>
-</div>
-</div>
-</article>
-<!-- Item 2: Vault Drop -->
-<article class="notification-card group bg-surface-container-lowest hover:bg-surface-container-low/80 p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="drops">
-<div class="flex items-start gap-space-md">
-<!-- Geometric Graphic Container -->
-<div class="relative w-12 h-12 rounded-lg bg-inverse-surface text-inverse-on-surface flex flex-col items-center justify-center flex-shrink-0 p-1">
-<span class="material-symbols-outlined text-[20px] text-surface-bright">folder_zip</span>
-</div>
-<!-- Content Block -->
-<div class="flex-1 min-w-0 flex flex-col gap-1">
-<div class="flex items-baseline justify-between gap-space-xs">
-<h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Offline Vault Drop</h2>
-<div class="flex items-center gap-1.5 flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">2h</span>
-<span class="status-dot w-1.5 h-1.5 rounded-full bg-primary"></span>
-</div>
-</div>
-<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2 leading-snug">
-              Curated compilation “Architectural Lows: Volume II” has been synced to your offline telemetry vault.
-            </p>
-<div class="flex items-center justify-between pt-space-xs mt-1">
-<div class="flex items-center gap-space-xs">
-<span class="bg-surface-container px-1.5 py-0.5 rounded font-label-mono text-label-mono text-secondary">1.8 GB</span>
-</div>
-<button aria-label="Save to local memory" class="w-8 h-8 rounded bg-surface-container hover:bg-surface-container-high text-on-surface flex items-center justify-center transition-colors">
-<span class="material-symbols-outlined text-[18px]">download</span>
-</button>
-</div>
-</div>
-</div>
-</article>
-</section>
-<!-- Group: Yesterday -->
-<section class="notification-group flex flex-col gap-space-xs" data-group="yesterday">
-<div class="flex items-center justify-between pb-space-xs">
-<span class="font-label-mono text-label-mono text-secondary uppercase tracking-widest">Yesterday</span>
-<span class="font-label-mono text-label-mono text-secondary">ARCHIVED</span>
-</div>
-<!-- Item 3: Sound Lab Live -->
-<article class="notification-card group bg-surface-container-lowest hover:bg-surface-container-low/80 p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="drops">
-<div class="flex items-start gap-space-md">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover grayscale contrast-125" data-alt="Brutalist architectural recording studio interior with acoustic baffles, modular synthesizer racks, dim moody atmospheric linear lighting monochrome" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQH9NKX5M3ziP5KuDHeUqqaG7r1jU4BUB_Zd4pbgdNBi4gT3qS_UwFVyq-wrF50ucMz6x21-FleXxsfy8BAlD-L-KsmDZNAnOC-Ari0-EcGlfIAqTjCikC_OQrGVyJSmi4zDgyzbP0kB5kMWSJMGvfc8HKDOYGYtIyirqYeJU2ckkuMzaK7xtSOVBv-nFLnxvHqyJvCV4LZRPBxvjXk5b9QhndIj3_b8GHFxiWfZsCgGhI5dr-UImzzQ"/>
-<div class="absolute top-1 left-1 flex items-center gap-0.5 bg-primary/80 backdrop-blur-sm px-1 py-0.2 rounded">
-<span class="w-1.5 h-1.5 rounded-full bg-error animate-ping"></span>
-<span class="text-[7px] font-label-mono text-on-primary">LIVE</span>
-</div>
-</div>
-<div class="flex-1 min-w-0 flex flex-col gap-1">
-<div class="flex items-baseline justify-between gap-space-xs">
-<h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Aura Sound Lab is Live</h2>
-<span class="font-label-mono text-label-mono text-secondary flex-shrink-0">1d</span>
-</div>
-<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2 leading-snug">
-              Studio transmission streaming live from Stockholm.
-            </p>
-<div class="flex items-center justify-between pt-space-xs mt-1">
-<span class="font-label-mono text-label-mono text-secondary">REON CORE LIVE STREAM</span>
-<button aria-label="Tune into Sound Lab" class="h-8 px-space-md rounded bg-surface-container-high hover:bg-surface-container-highest text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors">
-<span class="material-symbols-outlined text-[16px]">sensors</span>
-<span>Tune In</span>
-</button>
-</div>
-</div>
-</div>
-</article>
-<!-- Item 4: Firmware CoreAudio -->
-<article class="notification-card group bg-surface-container-lowest hover:bg-surface-container-low/80 p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="system">
-<div class="flex items-start gap-space-md">
-<div class="w-12 h-12 rounded-lg bg-surface-container-low flex flex-col items-center justify-center flex-shrink-0 text-on-surface">
-<span class="material-symbols-outlined text-[20px]">memory</span>
-<span class="font-label-mono text-[8px] text-secondary">DSP</span>
-</div>
-<div class="flex-1 min-w-0 flex flex-col gap-1">
-<div class="flex items-baseline justify-between gap-space-xs">
-<h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Firmware &amp; DAC Engine Sync</h2>
-<span class="font-label-mono text-label-mono text-secondary flex-shrink-0">1d</span>
-</div>
-<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2 leading-snug">
-              REON CoreAudio Engine upgraded to v3.4.1. Ultra-low jitter passthrough active.
-            </p>
-<div class="flex items-center gap-space-xs pt-space-xs mt-1">
-<span class="bg-surface-container px-1.5 py-0.5 rounded font-label-mono text-label-mono text-secondary">v3.4.1 PATCH</span>
-</div>
-</div>
-</div>
-</article>
-</section>
-<!-- Group: Earlier this week -->
-<section class="notification-group flex flex-col gap-space-xs" data-group="earlier">
-<div class="flex items-center justify-between pb-space-xs">
-<span class="font-label-mono text-label-mono text-secondary uppercase tracking-widest">Earlier This Week</span>
-<span class="font-label-mono text-label-mono text-secondary">VERIFIED</span>
-</div>
-<!-- Item 5: Pre-save Monolith -->
-<article class="notification-card group bg-surface-container-lowest hover:bg-surface-container-low/80 p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="releases">
-<div class="flex items-start gap-space-md">
-<div class="relative w-12 h-12 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0">
-<img class="w-full h-full object-cover grayscale contrast-150" data-alt="Minimalist architectural concrete monolith block under cold dramatic morning directional light, raw texture stark geometry monochromatic photography" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWXBZl_y_ZN9RSxXmUXoUhVlMqB3iyLw18rZGHj4xSB9r6K8D68Pk41geuhuoAZzxbrKzg069OknmgdcvRNDEDLb8hnh3MKQ-sUEi6nWz5Mt0Ox4YAzBYJWDjYDTLEtsE9DHtdop-k_Lg2Liik4Z8Y82qeAQtQG-IkoKYlxCRbn5xD3Ldlro88LNw6GCJxA_TzA5jOD-vgtf_lqDt9k0vRsuAuKDdDf4uxrF624vEDau4y15ncg0YADA"/>
-<span class="absolute bottom-0 inset-x-0 bg-inverse-surface text-inverse-on-surface text-[8px] font-label-mono text-center py-0.2">OCT 28</span>
-</div>
-<div class="flex-1 min-w-0 flex flex-col gap-1">
-<div class="flex items-baseline justify-between gap-space-xs">
-<h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">New Album Pre-save Available</h2>
-<span class="font-label-mono text-label-mono text-secondary flex-shrink-0">3d</span>
-</div>
-<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2 leading-snug">
-              Mirage Architecture — “Monolith Variations Pt. III” releases Oct 28 in Master Quality.
-            </p>
-<div class="flex items-center justify-between pt-space-xs mt-1">
-<span class="font-label-mono text-label-mono text-secondary">PRE-ALLOCATE CACHE</span>
-<button aria-label="Pre-save album" class="h-8 px-space-md rounded bg-surface-container-low hover:bg-surface-container-high text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors">
-<span class="material-symbols-outlined text-[16px]">bookmark_add</span>
-<span>Pre-save</span>
-</button>
-</div>
-</div>
-</div>
-</article>
-<!-- Item 6: Storage Optimization -->
-<article class="notification-card group bg-surface-container-lowest hover:bg-surface-container-low/80 p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="system">
-<div class="flex items-start gap-space-md">
-<div class="w-12 h-12 rounded-lg bg-surface-container-low flex flex-col items-center justify-center flex-shrink-0 text-on-surface">
-<span class="material-symbols-outlined text-[20px]">disc_full</span>
-<span class="font-label-mono text-[8px] text-secondary">CACHE</span>
-</div>
-<div class="flex-1 min-w-0 flex flex-col gap-1">
-<div class="flex items-baseline justify-between gap-space-xs">
-<h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Storage Allocation Synced</h2>
-<span class="font-label-mono text-label-mono text-secondary flex-shrink-0">5d</span>
-</div>
-<p class="font-body-md text-body-md text-on-surface-variant line-clamp-2 leading-snug">
-              14 files cached locally (4.2 GB). Offline vault primed.
-            </p>
-<div class="flex items-center gap-space-xs pt-space-xs mt-1">
-<span class="bg-surface-container px-1.5 py-0.5 rounded font-label-mono text-label-mono text-secondary">4.2 GB / 128 GB</span>
-<span class="bg-surface-container px-1.5 py-0.5 rounded font-label-mono text-label-mono text-secondary">INTERNAL NVME</span>
-</div>
-</div>
-</div>
-</article>
-</section>
-</div>
-<!-- Interactive Telemetry Preferences Card -->
-<section class="mt-space-lg bg-surface-container-lowest p-space-md rounded-xl shadow-sm">
+<!-- Preferences Card -->
+<section class="mt-space-lg bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 p-space-md rounded-2xl shadow-sm">
 <div class="flex items-start justify-between gap-space-md">
-<div class="flex items-start gap-space-md min-w-0">
-<div class="w-9 h-9 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface flex-shrink-0">
+<div class="flex items-start gap-3 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface flex-shrink-0 shadow-xs">
 <span class="material-symbols-outlined text-[20px]">tune</span>
 </div>
 <div class="flex flex-col min-w-0">
-<h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate">Telemetry &amp; Signal Settings</h3>
-<p class="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
-            Configure bit-depth threshold notifications, studio transmissions, and master drop alerts.
+<h3 class="font-headline-md text-body-lg font-semibold text-on-surface truncate">Telemetry &amp; Signal Settings</h3>
+<p class="font-body-sm text-[12px] text-secondary mt-0.5 leading-snug">
+            Configure system updates, download alerts, and backup notifications.
           </p>
 </div>
 </div>
-<button aria-label="Configure alerts" class="h-9 px-space-md rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors flex-shrink-0">
+<button aria-label="Configure alerts" class="h-9 px-3.5 rounded-full bg-surface-container-low border border-surface-container-high/80 hover:bg-surface-container text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1 active:scale-95 transition-all flex-shrink-0">
 <span>Manage</span>
-<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="material-symbols-outlined text-[15px]">chevron_right</span>
 </button>
 </div>
 </section>
 </div>
-</main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="reon-listening-analytics" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a></div></nav>
+</main>

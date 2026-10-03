@@ -1,204 +1,321 @@
+<hr>
+
+<div align="center">
+
+<img src="app/src/logo.png" alt="TRANCE MUSIC logo" width="112" />
+
 # TRANCE MUSIC
 
-A desktop music player for Windows, built on [Tauri 2](https://tauri.app) with a
-Rust core and a no-build-step vanilla-JS front end. It streams from JioSaavn,
-keeps an offline vault on disk, and plays back through a local byte-range relay
-so the WebView never talks to a third-party CDN directly.
+**A bit-perfect streaming music player for Windows, Linux and macOS — Tauri 2 shell, Rust core, zero-build vanilla-JS front end.**
 
-> **Status: v0.1.0 released.** Signed MSI and NSIS installers are attached to
-> the [GitHub release](https://github.com/Rohithdgrr/OPEN-MUSIC/releases), or
-> build them yourself from source (see [Running it](#running-it)).
+[![Release](https://img.shields.io/github/v/release/Rohithdgrr/OPEN-MUSIC?sort=semver)](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/Rohithdgrr/OPEN-MUSIC/ci.yml?branch=main)](https://github.com/Rohithdgrr/OPEN-MUSIC/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/Rohithdgrr/OPEN-MUSIC)](LICENSE)
+[![Desktop](https://img.shields.io/badge/desktop-Windows%20%7C%20Linux%20%7C%20macOS-2b2b2b)](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest)
+[![Best Practices from SLIM](https://img.shields.io/badge/Best%20Practices%20from-SLIM-blue)](https://nasa-ammos.github.io/slim/)
+
+[Releases](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest) · [Changelog](CHANGELOG.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Issues](https://github.com/Rohithdgrr/OPEN-MUSIC/issues)
+
+</div>
 
 ---
+
+## Video tour
+
+<video src="docs/media/trance-music-tour.mp4" poster="docs/media/trance-music-tour-poster.jpg" controls width="100%"></video>
+
+*A 60-second tour of the v0.3.0 Windows build — Home, search, live playback with
+synced lyrics, Library, charts, album and artist pages, and the offline vault.*
+
+![TRANCE MUSIC home screen](docs/screenshots/01-home.png)
+
+## What this is
+
+TRANCE MUSIC is a desktop music player that streams from JioSaavn through a
+local relay, keeps an offline vault on disk, and ships as one signed,
+self-updating package for Windows, Linux and macOS.
+
+The interesting part is not the chrome — it is what happens underneath:
+
+- **Media never touches a third-party CDN from the WebView.** The Rust core
+  decrypts and qualifies every stream URL, then serves it from an ephemeral
+  `127.0.0.1` byte-range relay. The front end is sandboxed to `default-src 'self'`.
+- **Playback is proven before it is promised.** A three-probe range
+  qualification runs before a track starts, which is what earns the
+  *Bit-Perfect Verified* badge in the UI.
+- **Updates are verified twice.** The updater package is signed with the
+  project's release key (public key pinned in `tauri.conf.json`) and checked
+  before a single byte runs. Any release can also be reverted to in place.
+- **No front-end build step.** `tauri.conf.json` points `frontendDist` straight
+  at `app/src`; edit the HTML or JS, reload the window.
+
+## Features
+
+- **Search that keeps up** — songs, albums and artists with instant inline
+  suggestions, powered by JioSaavn's first-party API plus five community
+  mirrors as fallback.
+- **Five quality tiers** — 96 kbps to 320 kbps FLAC/DSD paths; every track
+  resolves to a complete file, never a preview.
+- **Offline vault** — save anything to `~/Downloads/TRANCE MUSIC` and play it
+  with the network off; the Downloads view filters, searches, reveals and
+  deletes.
+- **Synced lyrics** — LRCLIB first, JioSaavn second, with auto-scroll, manual
+  offset and click-to-seek.
+- **Now Playing that means it** — queue with play-next, add-to-queue and
+  per-track actions, crossfade, repeat/shuffle, and a bitrate/bit-depth badge.
+- **Desktop widget** — a separate always-on-top window (below) that shares the
+  same player state as the main window, so the two can never disagree.
+- **Library, playlists, history, charts** — saved collections, favourites,
+  listening history and the platform's chart playlists.
+- **Adaptive network mode** — probes CDN health and classifies the link as
+  online, degraded or offline; offline mode queues undownloaded tracks and
+  keeps local files playing.
+- **Self-updating** — `Settings → Updates` checks GitHub once a day, installs
+  the signed package with a live progress bar, and can revert to any earlier
+  release.
+- **Android shell** — the mobile front end lives in `app/src/mobile` and builds
+  with the Tauri Android toolchain; desktop remains the primary target.
 
 ## Contents
 
-- [Requirements](#requirements)
-- [Running it](#running-it)
-- [Tests](#tests)
+- [Video tour](#video-tour)
+- [Screenshots](#screenshots)
+- [Quick Start](#quick-start)
 - [Architecture](#architecture)
-- [Repository layout](#repository-layout)
-- [How streaming actually works](#how-streaming-actually-works)
-- [Known limitations](#known-limitations)
+- [How streaming works](#how-streaming-works)
+- [Changelog](#changelog)
+- [Frequently Asked Questions](#frequently-asked-questions)
+- [Contributing](#contributing)
 - [License](#license)
+- [Support](#support)
 
----
+## Screenshots
 
-## Requirements
+All screenshots below are from the v0.3.0 Windows build, captured
+automatically from the running app.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/02-search.png" alt="Search with instant suggestions"></td>
+<td width="50%"><img src="docs/screenshots/03-now-playing.png" alt="Now Playing with lyrics"></td>
+</tr>
+<tr>
+<td align="center"><em>Search — songs, albums, artists</em></td>
+<td align="center"><em>Now Playing — lyrics, bit-perfect badge</em></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/04-library.png" alt="Library with saved playlists and albums"></td>
+<td><img src="docs/screenshots/05-downloads.png" alt="Downloads and offline vault"></td>
+</tr>
+<tr>
+<td align="center"><em>Library — saved playlists, albums</em></td>
+<td align="center"><em>Downloads — offline vault on disk</em></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/06-charts.png" alt="Charts filtered in Playlists"></td>
+<td><img src="docs/screenshots/07-album.png" alt="Album detail with track list"></td>
+</tr>
+<tr>
+<td align="center"><em>Charts — the platform's chart playlists</em></td>
+<td align="center"><em>Album — track list, download all</em></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/08-artist.png" alt="Artist detail with catalogue"></td>
+<td><img src="docs/screenshots/09-widget.png" alt="Floating desktop widget" width="380"></td>
+</tr>
+<tr>
+<td align="center"><em>Artist — verified badge, catalogue</em></td>
+<td align="center"><em>Desktop widget — always on top</em></td>
+</tr>
+</table>
+
+## Quick Start
+
+### Requirements
+
+To **install a release** you only need the target OS:
+
+| Platform | Requirement |
+| --- | --- |
+| Windows | Windows 10/11 x64 with WebView2 (preinstalled on Windows 11) |
+| Linux | x86_64 with glibc 2.31+; AppImage needs FUSE |
+| macOS | macOS 13+ on Apple Silicon |
+
+To **build from source**:
 
 | Tool | Version | Notes |
 | --- | --- | --- |
-| Rust | **1.77+** | `rust-version` in `Cargo.toml`. Verified on 1.98.1. |
-| Node.js | **18+** | Only used to invoke the Tauri CLI. |
-| MSVC build tools | — | Windows: `x86_64-pc-windows-msvc` toolchain + WebView2 runtime (preinstalled on Win 10/11). |
+| Rust | 1.77+ | Verified on 1.98.1 |
+| Node.js | 18+ | Only used to drive the Tauri CLI |
+| Platform toolchain | — | MSVC build tools on Windows, `webkit2gtk` on Linux, Xcode CLT on macOS |
 
-The app is Windows-first. The Rust side is written to keep compiling on other
-targets, but there is no macOS/Linux packaging configured and it has not been
-tested there.
+### Setup
 
-## Running it
+1. Grab the installer for your platform from the
+   [latest release](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest):
+
+   | File | Size | Best for |
+   | --- | --- | --- |
+   | `TRANCE.MUSIC_0.3.0_x64-setup.exe` | ~5.5 MB | Double-click install with Start-menu shortcuts |
+   | `TRANCE.MUSIC_0.3.0_x64_en-US.msi` | ~7.9 MB | Group Policy / silent installs |
+   | `TRANCE.MUSIC_0.3.0_amd64.deb` | ~7.9 MB | Debian / Ubuntu |
+   | `TRANCE.MUSIC_0.3.0_amd64.AppImage` | ~83 MB | Run anywhere, no install |
+   | `TRANCE.MUSIC_0.3.0_aarch64.dmg` | ~6.8 MB | Drag to Applications (Apple Silicon) |
+
+   Existing installs upgrade in place — the identifier
+   `com.openmusic.trancemusic` never changes, and your vault in
+   `~/Downloads/TRANCE MUSIC` is never touched by installing or updating.
+
+2. Launch it. Home loads the curated feed, charts and your playlists; the
+   header search is one click (or `Ctrl+K`) away.
+
+> **SmartScreen:** the update package is signed with the project's release key
+> and verified by the app before anything runs, but CI-built installers are not
+> yet Authenticode-signed — the certificate lives on the maintainer's machine,
+> not the runner. Windows may show *"Windows protected your PC"*; choose
+> **More info → Run anyway**.
+
+### Usage
+
+- **Play something** — click any row, or press `Space` for play/pause and
+  `Ctrl+←/→` to skip.
+- **Save it offline** — use the download icon on a row, or *Download all* on an
+  album/artist/playlist page.
+- **Keep an eye on it** — enable the desktop widget in
+  `Settings → Desktop Widget`.
+- **Stay current** — `Settings → Updates` checks once a day, installs the signed
+  update in place and can revert to any earlier release.
+- **Keyboard** — the full list lives in `docs/shortcuts.md` and in the app under
+  `Settings → Shortcuts`.
+
+### Build from source
 
 ```bash
-cd app
+git clone https://github.com/Rohithdgrr/OPEN-MUSIC.git
+cd OPEN-MUSIC/app
 npm install
+
 npm run tauri dev      # hot-reloading dev window
-npm run tauri build    # release binary + signed installers
-                       # -> src-tauri/target/release/bundle/{msi,nsis}/
+npm run tauri build    # release binary + installers per OS
+                        # -> app/src-tauri/target/release/bundle/{nsis,msi,deb,appimage,dmg}/
 ```
 
-The JS has no build step: `tauri.conf.json` points `frontendDist` straight at
-`app/src`, and `index.html` loads `main.js` as an ES module. Edit the HTML/JS
-and reload the window.
+Tailwind is prebuilt to a static file (`npm run css` → `app/src/tailwind.css`);
+`tauri dev` runs the watcher and `tauri build` regenerates it first. Run
+`npm run css` by hand after adding utility classes outside those commands.
 
-Tailwind CSS is **prebuilt to a static file** (`npm run css` →
-`app/src/tailwind.css`), so styling needs no network at runtime. `tauri dev`
-runs the watcher automatically (`beforeDevCommand`) and `tauri build`
-regenerates it first (`beforeBuildCommand`); run `npm run css` by hand after
-adding or renaming a utility class outside those commands.
-
-> The Material icon font and web fonts still load from Google's CDN. Offline,
-> icons fall back to their ligature text and the type falls back to the system
-> font; layout is unaffected because all Tailwind utilities ship in
-> `tailwind.css`.
-
-## Tests
+### Tests
 
 ```bash
+# Rust — 138 offline tests, exactly what CI gates on
 cd app/src-tauri
-cargo test                  # full suite (68 tests, incl. live network ones)
-OP_OFFLINE=1 cargo test     # offline subset only — what CI runs
-cargo check                 # fast type/borrow check
+OP_OFFLINE=1 cargo test
+cargo test                  # adds the live-network tests
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo audit
+
+# Frontend — 58 tests, lint, syntax check
+cd .. && npm test && npm run lint
 ```
-
-The Rust suite is the primary automated coverage — it covers JSON
-parsing, DES-ECB media-url decryption, quality selection, range qualification,
-the proxy's byte handling, and the lyrics source order.
-
-The front end has unit tests for its pure logic (`cd app && npm test` —
-escape/fuzz/network state machine, node's built-in runner). UI behaviour is
-still verified by running the app; there is no DOM test harness. See
-[Known limitations](#known-limitations).
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ WebView (app/src)                                           │
-│   index.html  — 8 views, one <audio> element, Tailwind link │
-│   main.js     — ES-module entry: imports 17 feature modules │
+│   index.html  — 8 views, one <audio>, Tailwind link         │
+│   main.js     — ES-module entry importing the feature set   │
+│   mobile/     — the Android shell (same Rust core)          │
 │   tailwind.css— prebuilt utilities (`npm run css`)          │
-│   styles.css  — vanilla custom layer + dialog backdrop      │
 └────────────────────────────┬────────────────────────────────┘
-                             │ Tauri IPC (invoke)
+                             │ Tauri IPC — 40 command handlers
 ┌────────────────────────────▼────────────────────────────────┐
 │ Rust core (app/src-tauri/src)                               │
-│                                                             │
-│  lib.rs      — command surface + window/proxy lifecycle     │
-│  official.rs — JioSaavn first-party adapter (primary)       │
-│  jiosaavn.rs — community mirrors (fallback) + parsing       │
-│  proxy.rs    — axum range relay on 127.0.0.1 + offline vault│
-│  lyrics.rs   — LRCLIB, then JioSaavn, then LRCLIB search    │
+│   official.rs / jiosaavn.rs — catalog adapters              │
+│   proxy.rs    — axum byte-range relay + offline vault       │
+│   lyrics.rs   — LRCLIB, then JioSaavn, then LRCLIB search   │
+│   update.rs   — GitHub release checks (desktop + Android)   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 **One rule the modules enforce on themselves:** nothing but `proxy.rs` knows
-about HTTP servers, and nothing but `official.rs`/`jiosaavn.rs` knows about
-catalog endpoints. Each file states this in its module doc comment.
+about HTTP servers, and nothing but the catalog adapters know about catalog
+endpoints. Each file states this in its module doc comment, and
+[docs/architecture.md](docs/architecture.md) is the reference the Rust source
+cites by section.
 
-**24 Tauri commands** connect the two halves: `search_songs`,
-`search_entities`, `search_suggestions`, `recommend_songs`, `resolve_song`,
-`qualify_url`, `proxy_base`, `home_feed`, `playlist_tracks`, `album_tracks`,
-`artist_tracks`, `artist_overview`, `get_lyrics`, `download_song`,
-`list_downloads`, `remove_download`, `reveal_download`, `reveal_vault`,
-`widget_show`, `widget_embed`, `widget_set_position`, `widget_start_drag`,
-`autostart_set`, `content_prefs_set`.
+## How streaming works
 
-### The eight views
-
-`home` · `search` · `downloads` · `now-playing` · `playlists` · `library` ·
-`history` · `detail` (album / artist / playlist screens)
-
-## Repository layout
-
-```
-.
-├── app/                    ← the application (this is the product)
-│   ├── src/                front end: index.html, main.js + feature modules, styles.css
-│   └── src-tauri/          Rust core: src/*.rs, Cargo.toml, tauri.conf.json
-├── docs/                   product + architecture documentation
-│   ├── architecture.md     ← read this first
-│   ├── PRD.md
-│   ├── ui.md
-│   ├── wireframes.md
-│   ├── task.md
-│   └── unlimited-streaming.md
-├── design/                 Stitch design exports (tracked)
-│   ├── screens/            per-screen DESIGN.md + code.html + screen.png
-│   └── reference/          static HTML reference snapshots
-├── archives/               original .zip downloads (git-ignored)
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── LICENSE
-└── README.md
-```
-
-`docs/architecture.md` is the reference for the streaming design, the two-client
-rule, and the ephemeral proxy port. The Rust source cites it by section.
-
-## How streaming actually works
-
-This is the part that is not obvious, so it is worth stating plainly:
-
-1. **Catalog.** `official.rs` calls `www.jiosaavn.com/api.php` — the same API
+1. **Catalog** — `official.rs` calls the same `jiosaavn.com/api.php` endpoint
    JioSaavn's own web player uses, so there is no community rate limit and real
-   pagination. Five community mirrors are tried in order if it fails
-   (`jiosaavn.rs`).
+   pagination. Five community mirrors are tried in order if it fails.
+2. **Encrypted media URLs** — `encrypted_media_url` is base64 over DES-ECB with
+   a fixed 8-byte key; decrypting yields the CDN path of the 96 kbps rendition
+   and the other qualities come from a suffix swap. Every track resolves to a
+   complete file, not a preview.
+3. **A local relay** — `proxy.rs` binds an ephemeral port on `127.0.0.1`
+   *before the window loads* and forwards `Range` headers verbatim, relaying
+   upstream status codes unchanged. No hardcoded port, no startup race.
+4. **Qualification** — before playback is offered, `qualify_url` runs a
+   three-probe range check. Passing is what lights up *Bit-Perfect Verified*.
+5. **Self-healing** — on a 403/410 from the CDN the stale entry is purged and
+   one fresh resolution is attempted, so a dead link does not end the session.
+   Artwork goes through the same relay's `/art` route with an origin guard
+   (http/https only, private networks refused) and a 10 MB cap.
+6. **The vault** — `download_song` writes into `~/Downloads/TRANCE MUSIC`;
+   downloaded tracks keep playing when the network mode flips to offline.
 
-2. **Media URLs arrive encrypted.** `encrypted_media_url` is base64 over
-   DES-ECB with a fixed 8-byte key. Decrypting yields the CDN path of the
-   **96 kbps** rendition; the other four qualities are derived by suffix swap.
-   So every track resolves to a complete file, not a preview.
+## Changelog
 
-3. **Playback goes through a local relay.** `proxy.rs` binds an ephemeral port
-   on `127.0.0.1` *before the window loads* — no hardcoded port, no collision,
-   no startup race — and forwards `Range` headers verbatim. The WebView
-   therefore only ever fetches from localhost, and upstream status codes
-   (including failures) are relayed unchanged. The relay is a pass-through, not
-   a policy engine.
+Detailed history lives in [CHANGELOG.md](CHANGELOG.md) (Keep a Changelog
+format); versioned releases and their assets are on the
+[releases page](https://github.com/Rohithdgrr/OPEN-MUSIC/releases).
 
-4. **The honesty badge is earned, not decorative.** `qualify_url` runs a
-   three-probe range qualification before playback is promised, which is what
-   lets the UI claim bit-perfect delivery.
+## Frequently Asked Questions
 
-5. **Offline vault.** `download_song` writes into
-   `~/Downloads/TRANCE MUSIC`; the Downloads view lists, plays, reveals and
-   deletes from there.
+**Why does Windows say "unknown publisher"?**
+CI-built installers are not Authenticode-signed yet — the certificate is on the
+maintainer's machine, not the runner. The *update* package is signed with the
+project release key and the app verifies it before running anything.
 
-6. **Adaptive network mode.** `net.js` probes the CDN (5s while healthy, 2s
-   while down, 2-fail/3-clean hysteresis) and classifies the link as online,
-   degraded or offline: offline skips undownloaded tracks instantly — they
-   stay queued for later — while downloaded tracks keep playing from disk.
-   Settings → General can force the mode (Auto / Online / Offline).
+**Where do my downloads live?**
+`~/Downloads/TRANCE MUSIC`. The Downloads view lists them, plays them with no
+network at all, and can reveal or delete them.
 
-## Known limitations
+**Does the WebView ever talk to a music CDN directly?**
+No. Media streams only through the local `127.0.0.1` relay; artwork goes
+through the relay's `/art` route, which refuses private-network origins. The
+CSP is `default-src 'self'` with `frame-src 'none'`.
 
-- **No front-end DOM tests.** Pure logic is covered by `npm test`; see
-  [Tests](#tests). UI-level coverage is the biggest gap.
-- **CDN dependency at runtime** for the Material icon font and web fonts only
-  (Tailwind ships as a static `tailwind.css`).
-- **Installers are signed with a self-signed certificate.** Installing locally
-  is fine, but other machines show a SmartScreen / unknown-publisher prompt
-  until a CA-issued code-signing certificate replaces it.
-- **Not a "bit-perfect" claim in the strict audiophile sense.** The badge means
-  the range probe passed; it is not a measurement of the output device.
-- **The radio / endless-playback backend (`recommend_songs`) is wired in.**
-  `radio.js` calls it from the UI (library radio / endless playback).
-- **Not verified on macOS or Linux.** The code keeps compiling (target-gated
-  dependencies), but there is no packaging for those platforms.
-- Some sections of the UI are still Stitch placeholders (telemetry counts,
-  "master stream" copy) rather than live data.
+**What does "Bit-Perfect Verified" actually mean?**
+The resolved URL passed a three-probe range qualification before playback was
+offered. It is not a measurement of your output device.
+
+**Is iOS or Android supported?**
+Desktop is the shipped product. The Android shell lives in `app/src/mobile` and
+builds with `tauri android build`; the iOS workflow is manual and
+simulator-only and is never part of a release.
+
+**Do I need to be online?**
+Only for streaming. Anything saved to the vault plays offline, and offline mode
+queues undownloaded tracks instead of stalling.
+
+## Contributing
+
+Issues and pull requests are welcome — start with
+[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, code conventions and the
+checks CI runs (fmt, clippy, `cargo audit`, ESLint, tests).
+
+Security reports should go through [SECURITY.md](SECURITY.md) rather than a
+public issue.
 
 ## License
 
-[MIT](LICENSE) — see the file. If you intend a different license, change it
-before publishing; the copyright line is a placeholder.
+[MIT](LICENSE) — see the file for the full text.
+
+## Support
+
+- Bug reports and feature requests:
+  [GitHub Issues](https://github.com/Rohithdgrr/OPEN-MUSIC/issues)
+- Maintainer: [@Rohithdgrr](https://github.com/Rohithdgrr)

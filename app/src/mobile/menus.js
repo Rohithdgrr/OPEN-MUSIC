@@ -42,18 +42,18 @@ function ensureSheet() {
   root.className =
     "fixed inset-0 z-[70] transition-opacity duration-200 flex flex-col justify-end pointer-events-none opacity-0";
   root.innerHTML = `
-    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-tm-dismiss></div>
-    <div class="relative bg-surface-container-lowest border-t border-surface-container-high/80 rounded-t-xl max-w-lg mx-auto w-full px-5 pt-3 pb-8 shadow-xl transform transition-transform duration-200 flex flex-col gap-3 translate-y-full" data-tm-content>
-      <div class="w-10 h-1 bg-surface-container-highest rounded-full mx-auto mb-1"></div>
-      <div class="flex items-center gap-3 pb-3 border-b border-surface-container-high/60">
-        <div class="w-11 h-11 rounded-lg bg-surface-container-high overflow-hidden shrink-0 border border-black/5"><img alt="" class="w-full h-full object-cover hidden" data-tm-art></div>
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-md transition-opacity duration-200" data-tm-dismiss></div>
+    <div class="relative bg-surface-container-lowest/98 backdrop-blur-2xl border-t border-surface-container-high/80 rounded-t-[28px] max-w-lg mx-auto w-full px-5 pt-3 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] transform transition-transform duration-250 ease-out flex flex-col gap-3 translate-y-full" data-tm-content>
+      <div class="w-12 h-1.5 bg-surface-container-highest rounded-full mx-auto mb-1.5 opacity-80"></div>
+      <div class="flex items-center gap-3.5 pb-3 border-b border-surface-container-high/60">
+        <div class="w-12 h-12 rounded-xl bg-surface-container-high overflow-hidden shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover hidden" data-tm-art></div>
         <div class="flex flex-col min-w-0">
-          <h3 class="font-headline-md text-[14px] font-semibold text-on-surface truncate" data-tm-title></h3>
-          <p class="font-body-sm text-[12px] text-on-surface-variant truncate" data-tm-sub></p>
+          <h3 class="font-headline-md text-[15px] font-semibold tracking-tight text-on-surface truncate" data-tm-title></h3>
+          <p class="font-body-sm text-[12px] text-on-surface-variant truncate mt-0.5" data-tm-sub></p>
         </div>
       </div>
-      <div class="flex flex-col gap-1 overflow-y-auto max-h-[55vh]" data-tm-list></div>
-      <button class="w-full py-3 rounded-lg bg-surface-container text-on-surface font-body-md text-[14px] font-medium hover:bg-surface-container-high transition-colors" data-tm-dismiss>Close</button>
+      <div class="flex flex-col gap-0.5 overflow-y-auto max-h-[55vh]" data-tm-list></div>
+      <button class="w-full py-3.5 rounded-xl bg-surface-container text-on-surface font-body-md text-[14px] font-semibold hover:bg-surface-container-high active:scale-[0.98] transition-all mt-1" data-tm-dismiss>Close</button>
     </div>`;
   document.body.appendChild(root);
   content = root.querySelector("[data-tm-content]");
@@ -91,19 +91,19 @@ function openSheet({ title, sub, image, items = [], rows = [] }) {
   const html = [];
   for (const r of rows) {
     html.push(
-      `<div class="flex items-start justify-between gap-3 px-3 py-2 rounded-lg">
-        <span class="font-body-sm text-[12px] text-on-surface-variant shrink-0">${esc(r[0])}</span>
+      `<div class="flex items-start justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-surface-container-low/50">
+        <span class="font-body-sm text-[12px] text-on-surface-variant shrink-0 font-medium">${esc(r[0])}</span>
         <span class="font-body-md text-[13px] text-on-surface text-right min-w-0 break-words">${esc(r[1] || "—")}</span>
       </div>`,
     );
   }
   for (const it of items) {
     html.push(
-      `<button type="button" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors active:scale-95 ${
-        it.danger ? "text-error hover:bg-error-container" : "text-on-surface hover:bg-surface-container"
-      }" data-tm-item><span class="material-symbols-outlined text-[20px] ${
+      `<button type="button" class="w-full flex items-center gap-3.5 px-3.5 py-3 rounded-xl text-left transition-all active:scale-[0.98] ${
+        it.danger ? "text-error hover:bg-error-container/60 active:bg-error-container" : "text-on-surface hover:bg-surface-container/70 active:bg-surface-container-high"
+      }" data-tm-item><span class="material-symbols-outlined text-[21px] ${
         it.danger ? "text-error" : "text-on-surface-variant"
-      }">${esc(it.icon || "more_horiz")}</span><span class="font-body-md text-[14px] font-medium">${esc(
+      }">${esc(it.icon || "more_horiz")}</span><span class="font-body-md text-[14px] font-medium tracking-tight">${esc(
         it.label,
       )}</span></button>`,
     );

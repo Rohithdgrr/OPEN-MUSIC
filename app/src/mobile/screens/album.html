@@ -1,50 +1,50 @@
-<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface">Library</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Telemetry and Audio Settings" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">tune</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full">
-<!-- Nav Bar Controls / Action Bar -->
-<div class="flex items-center justify-between pb-space-md">
-<button aria-label="Go Back" class="w-9 h-9 rounded flex items-center justify-center bg-surface-container-low text-on-surface hover:bg-surface-container active:scale-95 transition-all">
-<span class="material-symbols-outlined text-[20px]">chevron_left</span>
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Album</h1></div><div class="flex items-center gap-space-xs"><button data-nav="analytics" aria-label="Telemetry and Audio Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface active:scale-95 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><button data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs active:scale-95 transition-transform shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- Action Bar -->
+<div class="flex items-center justify-between pb-space-sm">
+<button aria-label="Go Back" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[22px]">chevron_left</span>
 </button>
 <div class="flex items-center gap-space-xs">
-<button aria-label="Download Playlist" class="w-9 h-9 rounded flex items-center justify-center bg-surface-container-low text-secondary hover:text-on-surface transition-colors active:scale-95" id="download-toggle">
-<span class="material-symbols-outlined text-[19px]">download_for_offline</span>
+<button aria-label="Download Playlist" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface transition-all active:scale-90 shadow-sm" id="download-toggle">
+<span class="material-symbols-outlined text-[20px]">download_for_offline</span>
 </button>
-<button data-menu-entity="album" aria-label="Playlist Options" class="w-9 h-9 rounded flex items-center justify-center bg-surface-container-low text-secondary hover:text-on-surface transition-colors active:scale-95">
-<span class="material-symbols-outlined text-[19px]">more_horiz</span>
+<button data-menu-entity="album" aria-label="Playlist Options" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface transition-all active:scale-90 shadow-sm">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
 </button>
 </div>
 </div>
-<!-- Hero Playlist Card -->
-<section class="flex flex-col items-center text-center pt-space-xs pb-space-lg">
-<div class="relative w-48 h-48 rounded-xl overflow-hidden shadow-md bg-surface-container-highest flex-shrink-0 group">
-<img class="w-full h-full object-cover select-none" data-alt="Monochromatic architectural photograph of modern brutalist concrete structures illuminated by subtle midnight light beams, serene Scandinavian minimalist mood, misty atmosphere, rich deep grayscale contrast" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCpJUTSoe6Peo-vDfskdbBgVmjR-h_h3dby0SnrUl0lQqv_43a6msDzqkWzOOIy76FKq96dQSMY8T3z3C_amDxQZiidkhBY1EUcl7YGOabZX7QTCLXoLxOCGiaawE7JjkPxSoLeWUzMXuGTSHFBYyxqlq7qpGSHsN2ojnAfQZRzHiJjqWt-fuutjfGqBpoQw6rIsWvUkl8Jj1slwfpvvcYUtOkmKv_H6kc2c9mOAtV7mOne8ao_zcs4Jw"/>
-<div class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-80"></div>
+<!-- Hero Album Card -->
+<section class="flex flex-col items-center text-center pt-space-xs pb-space-md">
+<div class="relative w-52 h-52 rounded-2xl overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.14)] ring-1 ring-black/5 bg-surface-container-highest flex-shrink-0 group">
+<img class="w-full h-full object-cover select-none group-hover:scale-105 transition-transform duration-500" data-alt="Monochromatic architectural photograph of modern brutalist concrete structures illuminated by subtle midnight light beams, serene Scandinavian minimalist mood, misty atmosphere, rich deep grayscale contrast" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCpJUTSoe6Peo-vDfskdbBgVmjR-h_h3dby0SnrUl0lQqv_43a6msDzqkWzOOIy76FKq96dQSMY8T3z3C_amDxQZiidkhBY1EUcl7YGOabZX7QTCLXoLxOCGiaawE7JjkPxSoLeWUzMXuGTSHFBYyxqlq7qpGSHsN2ojnAfQZRzHiJjqWt-fuutjfGqBpoQw6rIsWvUkl8Jj1slwfpvvcYUtOkmKv_H6kc2c9mOAtV7mOne8ao_zcs4Jw"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60"></div>
 </div>
 <!-- Title & Metadata -->
-<div class="mt-space-md flex flex-col items-center max-w-sm">
-<div class="flex items-center gap-space-xs mb-1">
-<span class="px-1.5 py-0.5 rounded bg-surface-container text-secondary font-label-sm text-label-sm tracking-wide uppercase">Private</span>
+<div class="mt-space-md flex flex-col items-center max-w-sm px-2">
+<div class="flex items-center gap-space-xs mb-1.5">
+<span class="px-2.5 py-0.5 rounded-full bg-surface-container-high text-secondary font-label-mono text-[10px] tracking-wider uppercase font-medium">Private</span>
 <span class="text-secondary font-label-mono text-label-mono">•</span>
-<span class="font-label-mono text-label-mono text-secondary">REON CURATION</span>
+<span class="font-label-mono text-label-mono text-secondary tracking-wider font-medium">REON CURATION</span>
 </div>
-<h2 class="font-headline-lg text-headline-lg tracking-tight text-on-surface">Late Night Resonance</h2>
+<h2 class="font-headline-lg text-headline-lg tracking-tight text-on-surface font-bold text-center">Late Night Resonance</h2>
 <p class="font-body-sm text-body-sm text-secondary mt-1">By You • 24 tracks • 1 hr 48 min</p>
-<p class="font-body-md text-body-md text-on-surface-variant mt-2 px-space-sm leading-relaxed">
+<p class="font-body-md text-body-md text-on-surface-variant mt-2 px-space-sm leading-relaxed text-center">
         Deep atmospheric synths, midnight downtempo, and hypnotic progressive grooves for late night sessions.
       </p>
 </div>
 <!-- Main Action Buttons -->
 <div class="flex items-center justify-center gap-space-sm mt-space-md w-full max-w-xs">
-<button class="flex-1 h-10 px-space-md rounded bg-primary text-on-primary font-label-md text-label-md flex items-center justify-center gap-space-xs hover:bg-primary-container active:scale-[0.98] transition-all">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+<button class="flex-1 h-11 px-space-md rounded-full bg-primary text-on-primary font-label-md text-label-md font-semibold flex items-center justify-center gap-2 hover:bg-primary-container active:scale-95 shadow-md transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
 <span>Play</span>
 </button>
-<button aria-label="Shuffle" class="h-10 px-space-md rounded bg-surface-container text-on-surface font-label-md text-label-md flex items-center justify-center gap-space-xs hover:bg-surface-container-high active:scale-[0.98] transition-all">
-<span class="material-symbols-outlined text-[18px]">shuffle</span>
-<span class="hidden sm:inline">Shuffle</span>
+<button aria-label="Shuffle" class="h-11 px-5 rounded-full bg-surface-container-low border border-surface-container-high/80 text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5 hover:bg-surface-container active:scale-95 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[19px]">shuffle</span>
+<span>Shuffle</span>
 </button>
 
-<button aria-label="Share Playlist" class="w-10 h-10 rounded bg-surface-container text-secondary flex items-center justify-center hover:text-on-surface active:scale-95 transition-all">
-<span class="material-symbols-outlined text-[19px]">ios_share</span>
+<button aria-label="Share Playlist" class="w-11 h-11 rounded-full bg-surface-container-low border border-surface-container-high/80 text-secondary hover:text-on-surface flex items-center justify-center active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">ios_share</span>
 </button>
 </div>
 </section>
@@ -52,22 +52,22 @@
 <section class="flex items-center justify-between py-space-sm mb-space-xs">
 <div class="flex items-center gap-space-xs">
 <div class="relative flex items-center">
-<span class="material-symbols-outlined absolute left-2 text-secondary text-[16px] pointer-events-none">search</span>
-<input class="h-8 pl-7 pr-space-sm w-36 sm:w-48 bg-surface-container-lowest text-on-surface font-body-sm text-body-sm rounded focus:outline-none focus:bg-surface-container-low transition-all placeholder:text-secondary" placeholder="Filter in playlist..." type="text"/>
+<span class="material-symbols-outlined absolute left-2.5 text-secondary text-[16px] pointer-events-none">search</span>
+<input class="h-9 pl-8 pr-space-sm w-36 sm:w-48 bg-surface-container-lowest border border-surface-container-high/70 text-on-surface font-body-sm text-body-sm rounded-full focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all placeholder:text-secondary" placeholder="Filter in playlist..." type="text"/>
 </div>
 <span class="font-label-mono text-label-mono text-secondary px-1 hidden xs:inline">24 TRACKS</span>
 </div>
-<button class="h-8 px-space-sm rounded bg-surface-container-lowest text-on-surface font-label-sm text-label-sm flex items-center gap-1 hover:bg-surface-container-low transition-colors">
-<span class="material-symbols-outlined text-[15px] text-secondary">sort</span>
-<span>Custom order</span>
+<button class="h-9 px-space-sm rounded-full bg-surface-container-lowest border border-surface-container-high/60 text-on-surface font-label-sm text-label-sm flex items-center gap-1.5 hover:bg-surface-container-low active:scale-95 transition-all">
+<span class="material-symbols-outlined text-[16px] text-secondary">sort</span>
+<span class="font-medium">Custom order</span>
 </button>
 </section>
 <!-- Tracklist Section -->
-<section class="flex flex-col gap-0.5 pb-space-lg">
+<section class="flex flex-col gap-1 pb-space-lg">
 <!-- Track 1 (Active/Playing) -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="relative w-10 h-10 rounded bg-surface-container-highest flex-shrink-0 overflow-hidden flex items-center justify-center">
+<div class="group flex items-center justify-between p-2 rounded-xl bg-surface-container-lowest border border-surface-container/60 hover:bg-surface-container-low/60 transition-all">
+<div class="flex items-center gap-3 min-w-0 flex-1">
+<div class="relative w-11 h-11 rounded-lg bg-surface-container-highest flex-shrink-0 overflow-hidden flex items-center justify-center shadow-xs">
 <img class="w-full h-full object-cover" data-alt="Album cover minimalist graphic monochromatic art featuring sharp geometric lines in midnight black and foggy white" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAcKZJzER7JL8dMNY-fpx_CmgYAaSfDmjDdwYZg0vAcI5AQutKmFUvr3CxaTFcu0YvghYOmn6k4TGRAO0n5_SwvHF8qjffHzpw9F6pq3FzpPVEwUtqGYPJZlvVAbGbPpZWOLz3axrut8ThgLLP0RrYvqjD9K0YACcWSYWMOnB9TSNGCPdVPn38naV5bNf3Tz6fmoSmjYzDs6yDmd3rb_wY3LTVvHjl3hY5t7F1zPX9mYIw7bb3XpAKmGg"/>
 <div class="absolute inset-0 bg-primary/40 flex items-center justify-center">
 <span class="material-symbols-outlined text-on-primary text-[18px] animate-pulse" style="font-variation-settings: 'FILL' 1;">volume_up</span>
@@ -75,147 +75,73 @@
 </div>
 <div class="flex flex-col min-w-0">
 <div class="flex items-center gap-space-xs">
-<span class="font-headline-md text-body-lg text-primary font-medium truncate">Midnight City Lights</span>
-<span class="px-1 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-mono text-[9px] uppercase tracking-wider">Hi-Res</span>
+<span class="font-body-md text-body-md text-primary font-semibold truncate">Midnight City Lights</span>
+<span class="px-1.5 py-0.2 rounded bg-surface-container text-on-surface-variant font-label-mono text-[9px] uppercase tracking-wider font-medium">Hi-Res</span>
 </div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen</span>
+<span class="font-body-sm text-[12px] text-secondary truncate mt-0.5">Solaris &amp; Kaelen</span>
 </div>
 </div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-primary font-medium">4:18</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="font-label-mono text-[12px] text-primary font-semibold mr-1">4:18</span>
+<button aria-label="Track Options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high/60 active:scale-90 transition-all">
 <span class="material-symbols-outlined text-[18px]">more_vert</span>
 </button>
 </div>
 </div>
 <!-- Track 2 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
+<div class="group flex items-center justify-between p-2 rounded-xl hover:bg-surface-container-lowest transition-all">
+<div class="flex items-center gap-3 min-w-0 flex-1">
+<div class="w-11 h-11 rounded-lg bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden shadow-xs">
 <img class="w-full h-full object-cover" data-alt="Dark abstract architectural grid visual in grayscale minimalist modern aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuARKd03zp3_4CEBcmi2dccvygZI2HDm6eDo86_Wc7CSzXrXINh131w2UEBiwf5At-5eqLX6jsUzFtFbEG_HbmAAfkiyFIUXvlD-WQwBUHoRX7CsWf7CbHw4UWyR-yW_l3oUK8CiKrHRak-HHHR64hGM5V4df87rxbAO4J6i6f1xWfKVmG6-ltcKLcsZQg4PzWfSx64Q0mLGRifsFBXnHMYkwaGGXTs695YsJ02icWwlKK3O4QKczs8zzA"/>
 </div>
 <div class="flex flex-col min-w-0">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Neon Horizons</span>
-<span class="font-body-sm text-body-sm text-secondary truncate">Aura Sound</span>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Neon Horizons</span>
+<span class="font-body-sm text-[12px] text-secondary truncate mt-0.5">Aura Sound</span>
 </div>
 </div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">5:14</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="font-label-mono text-[12px] text-secondary mr-1">5:14</span>
+<button aria-label="Track Options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high/60 active:scale-90 transition-all">
 <span class="material-symbols-outlined text-[18px]">more_vert</span>
 </button>
 </div>
 </div>
 <!-- Track 3 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
+<div class="group flex items-center justify-between p-2 rounded-xl hover:bg-surface-container-lowest transition-all">
+<div class="flex items-center gap-3 min-w-0 flex-1">
+<div class="w-11 h-11 rounded-lg bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden shadow-xs">
 <img class="w-full h-full object-cover" data-alt="Monochrome textured surface with smooth gradients and tactile matte finish" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEAiOmU0iQcUB27VSDd3CYkb8mi0n3eA2hDU9bOTlKuXq9O84XBs2Bnn7Boost7RMKOxHe3qY7i3d8JPeHIBqculF0OdIJWsCdel7QhojYqHKSDodajiUCQiM5UcnHQqy2NyLyfdvh--pFo5t0FWvnz-xYpCk0lY3NsvPGBuFXy7hlx03uGw42QGzeXOmgUAY6TRTIgwdczSe3-FJjR2nrQQL0aeFlgxERzTdIXbNO3er9FdRbTVGfRg"/>
 </div>
 <div class="flex flex-col min-w-0">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Subtle Echoes</span>
-<span class="font-body-sm text-body-sm text-secondary truncate">Mirage Architecture</span>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Subtle Echoes</span>
+<span class="font-body-sm text-[12px] text-secondary truncate mt-0.5">Mirage Architecture</span>
 </div>
 </div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">3:52</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="font-label-mono text-[12px] text-secondary mr-1">3:52</span>
+<button aria-label="Track Options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high/60 active:scale-90 transition-all">
 <span class="material-symbols-outlined text-[18px]">more_vert</span>
 </button>
 </div>
 </div>
 <!-- Track 4 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
+<div class="group flex items-center justify-between p-2 rounded-xl hover:bg-surface-container-lowest transition-all">
+<div class="flex items-center gap-3 min-w-0 flex-1">
+<div class="w-11 h-11 rounded-lg bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden shadow-xs">
 <img class="w-full h-full object-cover" data-alt="Fine art black and white quartz crystal dispersion pattern with high key lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDrcm4vDpksP6oaa5L3TCl4nA2y9BrGUCdtgRW-wVWih6In7PAaCaMdC7iVNeXFnfIMPDWNBmiduDMYTYUZp-vvqdBmXWHwuVh9vSVkn4OgLB1lPRm5zRKQtG16iaLMS8hP-o1l1BKgCfqwhppFG-CVpmqHQ8sXonKqhgbrIARxqeC0ctocP1XO94jsY1qh8yZHwrT-Df19xFbkdX8HnvVTukwWFxPet2VdFMUI0_zEKJAkirV3i-Gjfg"/>
 </div>
 <div class="flex flex-col min-w-0">
-<div class="flex items-center gap-space-xs">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Crystalline Dispersion</span>
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Kaelen Solo Archive</span>
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Crystalline Dispersion</span>
+<span class="font-body-sm text-[12px] text-secondary truncate mt-0.5">Kaelen Solo Archive</span>
 </div>
 </div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">4:47</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 5 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="Moody obsidian black wave texture reflecting subtle dim light minimal design" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCtsRtYHDwyOm-Xf6LSSi_vLcRYBUcw823zh3hBgyQz-0oz-qbn0hjS25kkid1aO6_OpFPLv8kQJZPCfzND-UL1GI7LV5b_4LVlsVpZmiAd96CdZohTRL8iqSEvo7ES37WzyA4fC4G1_pgJ733l9PkvRyUg-5YuW8--IV27QldFatf5YcSVfTacShpAMdTmCNt15bKIzbAC7cE9Nr9Ebum5dTVeb8KnR1YjIDrtlSt3i2w_VAOywrIpgw"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Obsidian Echoes</span>
-<span class="font-body-sm text-body-sm text-secondary truncate">Solaris</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">3:40</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 6 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="Subtle dark tonal gradient sphere floating against pale gray background scandinavian elegance" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBJN4lUqsIgB_WmYH2YIS3c_U28w3ZJ5amP35_xopdy6sckbdNe9DNEHNFN3TfuKMmAjx7Qw__9tCRBGyvMAMbX6IlGX50_k7qnK7Kxgd9Ubt_8hI4MHRK4yitxQH1ka2vODPwMpJvndHsXreR6UNtwJJ6HeQN872DKJgZudcnWf_OPHz1X6pRzpdFKhJF7ixTKGqBw2kRWYm9Qpn6J7PR8iFfq222KneIt1NhVWGF72k7nbDkT0aR30g"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Nocturne Trance Vol. IV</span>
-<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen feat. Aura</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">6:12</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 7 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="Monolithic architectural shadow study modern Nordic museum facade grayscale" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDp_DM2-a9exQ3QAf-Z4Iw9Gj-ym0oXsuABzRPlgAHBGkOJX7-IYAOEMIooSJX74xV75Mi00-h6xRU5L4IKJ2xCbZPnJe2P4ugEtAWKZI0abvcn9KdvLtjtW5xlZErf4u7guiPG2o4P6IZPGI8gfPfhWEF0bFjJTflwh2-z9Slzu8DY7a6wNHG5W7anmXK3SE9ydA-vJD9BP7H-ZIT8aKaHjrNfFJA3p2oVrJjVO5UTZ-XJDEtVr6mP1g"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Architectural Lows</span>
-<span class="font-body-sm text-body-sm text-secondary truncate">Deep Architecture</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">5:08</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 8 -->
-<div class="group flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-lowest transition-all">
-<div class="flex items-center gap-space-md min-w-0 flex-1">
-<div class="w-10 h-10 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
-<img class="w-full h-full object-cover" data-alt="Abstract minimal lines representing frequency waveforms in calm muted tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrPiLmZ7rCAw1erOX2faV7VPi3fqizmDGeu-mNd7k0mU0MBRu0PfN2QWBksawbBLqIt09SB7GMCOn-uln351sX-pPKz6Byg05ItePV6nBjSUvdkzhoB7p9yxKShrk23C9t30kegHzrtA_81Naac4SSiZafysprqF5lShO5ZszCA_fRp9YC0s0qkqCG9npqL8Itk9vEji9tU7Iuo7xGETy6SLOpu2vSoHzcCwM2EuQBtf5FQnbmYku6bw"/>
-</div>
-<div class="flex flex-col min-w-0">
-<span class="font-headline-md text-body-lg text-on-surface truncate">Subatomic Drift</span>
-<span class="font-body-sm text-body-sm text-secondary truncate">Mirage</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">4:35</span>
-<button aria-label="Track Options" class="w-8 h-8 rounded flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="font-label-mono text-[12px] text-secondary mr-1">4:47</span>
+<button aria-label="Track Options" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container-high/60 active:scale-90 transition-all">
 <span class="material-symbols-outlined text-[18px]">more_vert</span>
 </button>
 </div>
 </div>
 </section>
 </div>
-</main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[20px]">person</span><span class="font-label-sm text-label-sm">Profile</span></a></div></nav>
+</main>

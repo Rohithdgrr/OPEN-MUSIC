@@ -1,306 +1,91 @@
-<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl pt-safe shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface">Library</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Telemetry and Audio Settings" class="w-11 h-11 flex items-center justify-center text-on-surface hover:text-primary transition-colors"><span class="material-symbols-outlined text-[20px]">tune</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full gap-space-lg">
-<!-- Top Context & Action Bar -->
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Favorites</h1></div><div class="flex items-center gap-space-xs"><button data-nav="analytics" aria-label="Telemetry and Audio Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface active:scale-95 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><button data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs active:scale-95 transition-transform shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full gap-space-md">
+<!-- Top Action Bar -->
 <div class="flex items-center justify-between pt-space-xs">
-<button aria-label="Go Back" class="w-9 h-9 -ml-1 rounded flex items-center justify-center bg-surface-container-low text-on-surface hover:bg-surface-container active:scale-95 transition-all">
+<button aria-label="Go Back" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
 <span class="material-symbols-outlined text-[20px]">arrow_back</span>
 </button>
 <div class="flex items-center gap-space-xs">
-<button aria-label="Download All Vault Tracks" class="h-8 px-space-sm bg-surface-container-low text-on-surface hover:bg-surface-container rounded flex items-center gap-1.5 transition-colors" id="dl-toggle">
-<span class="material-symbols-outlined text-[16px]">download</span>
-<span class="font-label-mono text-label-mono">OFFLINE</span>
+<button aria-label="Download All Vault Tracks" class="h-9 px-3.5 bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container rounded-full flex items-center gap-1.5 active:scale-95 shadow-sm transition-all" id="dl-toggle">
+<span class="material-symbols-outlined text-[17px] text-primary">download</span>
+<span class="font-label-mono text-[11px] font-semibold tracking-wider">OFFLINE</span>
 </button>
-<button data-menu-entity="liked" aria-label="Options" class="w-9 h-9 rounded flex items-center justify-center bg-surface-container-low text-on-surface hover:bg-surface-container transition-colors">
+<button data-menu-entity="liked" aria-label="Options" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
 <span class="material-symbols-outlined text-[20px]">more_horiz</span>
 </button>
 </div>
 </div>
 <!-- Hero Header Section -->
-<div class="flex flex-col gap-space-md">
-<div class="flex gap-space-md items-start">
+<div class="flex flex-col gap-space-md bg-surface-container-lowest/80 border border-surface-container/60 p-space-md rounded-2xl shadow-sm">
+<div class="flex gap-space-md items-center">
 <!-- High-Contrast Audiophile Badge Artwork -->
-<div class="w-24 h-24 sm:w-28 sm:h-28 bg-primary rounded flex-shrink-0 relative overflow-hidden flex flex-col justify-between p-space-sm shadow-sm">
+<div class="w-24 h-24 sm:w-28 sm:h-28 bg-gradient-to-br from-primary to-surface-tint rounded-2xl flex-shrink-0 relative overflow-hidden flex flex-col justify-between p-3 shadow-md ring-1 ring-black/5">
 <div class="flex justify-between items-start">
-<span class="font-label-mono text-[9px] text-surface-dim tracking-widest uppercase">VAULT 01</span>
-<span class="w-1.5 h-1.5 rounded-full bg-surface-container-lowest"></span>
+<span class="font-label-mono text-[9px] text-surface-container-lowest/90 tracking-widest uppercase font-semibold">VAULT 01</span>
+<span class="w-1.5 h-1.5 rounded-full bg-surface-container-lowest animate-pulse"></span>
 </div>
 <div class="flex items-center justify-center py-1">
-<span class="material-symbols-outlined text-surface-container-lowest text-[34px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+<span class="material-symbols-outlined text-surface-container-lowest text-[36px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
 </div>
-
+<span class="font-label-mono text-[8px] text-surface-container-lowest/80 uppercase tracking-widest text-right">MASTER REC</span>
 </div>
-<!-- Hero Metadata & Telemetry -->
-<div class="flex flex-col justify-between min-w-0 flex-1 py-0.5">
-<div class="flex flex-col">
-
-<h2 class="font-headline-lg text-headline-lg tracking-tight text-on-surface mt-0.5">Liked Songs</h2>
-<p class="font-body-sm text-body-sm text-secondary truncate mt-0.5">Your curated master recordings</p>
-</div>
-<div class="flex items-center gap-2 mt-2 pt-1.5 border-t border-surface-container-highest">
-<span class="font-label-mono text-label-mono text-on-surface font-medium">148 TRACKS</span>
-<span class="text-secondary text-[10px]">•</span>
-<span class="font-label-mono text-label-mono text-secondary">9H 42M</span>
-
+<!-- Hero Metadata -->
+<div class="flex flex-col justify-center min-w-0 flex-1 py-0.5">
+<span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary font-medium">CURATED COLLECTION</span>
+<h2 class="font-headline-lg text-headline-lg tracking-tight text-on-surface font-bold mt-0.5">Liked Songs</h2>
+<div class="flex items-center gap-2 mt-1.5">
+<span class="font-body-sm text-[13px] text-secondary">0 songs</span>
+<span class="text-secondary">•</span>
+<span class="font-label-mono text-label-sm text-secondary">0m</span>
 </div>
 </div>
 </div>
-<!-- Primary Transport & Fast Search Action Row -->
-<div class="flex flex-col gap-space-sm pt-1">
-<div class="flex items-center gap-space-sm">
-<button class="flex-1 h-9 bg-primary text-on-primary rounded flex items-center justify-center gap-2 px-space-md hover:bg-on-surface active:scale-[0.99] transition-all">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
-<span class="font-label-md text-label-md uppercase tracking-wider">Play All</span>
-</button>
-<button class="flex-1 h-9 bg-surface-container-low text-on-surface hover:bg-surface-container rounded flex items-center justify-center gap-2 px-space-md active:scale-[0.99] transition-all">
-<span class="material-symbols-outlined text-[18px]">shuffle</span>
-<span class="font-label-md text-label-md uppercase tracking-wider">Shuffle</span>
-</button>
-</div>
-<!-- Utilitarian In-Vault Search -->
-<div class="relative w-full">
-<span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-secondary text-[17px]">search</span>
-<input class="w-full h-8 pl-8 pr-3 bg-surface-container-lowest text-on-surface rounded text-body-sm placeholder:text-secondary focus:outline-none focus:ring-1 focus:ring-primary transition-all" placeholder="Find in Liked Songs (title, artist, format)..." type="text"/>
-</div>
-</div>
-</div>
-<!-- Filters & Sorting Header Bar -->
-<div class="flex flex-col gap-space-xs pt-1">
-<div class="flex items-center justify-between">
-<!-- Horizontal Filter Pills -->
-<div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 pr-2">
-<button class="h-6 px-2.5 rounded-full bg-primary text-on-primary font-label-sm text-label-sm whitespace-nowrap flex-shrink-0">
-          All (148)
-        </button>
-<button class="h-6 px-2.5 rounded-full bg-surface-container-low hover:bg-surface-container text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap flex-shrink-0 transition-colors">
-          Downloaded
-        </button>
-
-<button class="h-6 px-2.5 rounded-full bg-surface-container-low hover:bg-surface-container text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap flex-shrink-0 transition-colors">
-          Recently Added
-        </button>
-</div>
-<!-- Sorting Pill -->
-<button class="h-6 px-2 rounded bg-surface-container-low hover:bg-surface-container flex items-center gap-1 text-on-surface-variant flex-shrink-0 transition-colors">
-<span class="font-label-mono text-[10px] uppercase">Date Added</span>
-<span class="material-symbols-outlined text-[13px]">arrow_downward</span>
-</button>
-</div>
-</div>
-<!-- Precision Calibrated Tracklist -->
-<div class="flex flex-col bg-surface-container-lowest rounded p-space-xs">
-<!-- Track 01 (Active Playback State with Equalizer Bar Animation) -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<!-- Frequency Bars Visualizer -->
-<div class="w-6 h-6 flex items-center justify-center flex-shrink-0">
-<div class="flex items-end gap-[2px] h-3.5">
-<span class="w-[2px] bg-primary animate-pulse h-3"></span>
-<span class="w-[2px] bg-primary animate-pulse h-1.5" style="animation-delay: 150ms"></span>
-<span class="w-[2px] bg-primary animate-pulse h-3.5" style="animation-delay: 300ms"></span>
-<span class="w-[2px] bg-primary animate-pulse h-2" style="animation-delay: 75ms"></span>
-</div>
-</div>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface font-medium truncate">Midnight City Lights</span>
-<span class="px-1 py-[1px] rounded bg-primary text-on-primary font-label-mono text-[9px] tracking-wider font-semibold">HI-RES</span>
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-on-surface">4:18</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 02 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">02</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Neon Horizons</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Aura Sound</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">5:14</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 03 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">03</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Subtle Echoes</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Mirage Architecture</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">3:52</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 04 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">04</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Obsidian Echoes</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">3:40</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 05 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">05</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Crystalline Dispersion</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Kaelen Solo Archive</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">4:47</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 06 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">06</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Nocturne Trance Vol. IV</span>
-<span class="px-1 py-[1px] rounded bg-primary text-on-primary font-label-mono text-[9px]">HI-RES</span>
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen feat. Aura</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">6:12</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 07 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">07</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Architectural Lows</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Deep Architecture</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">5:08</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 08 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">08</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Velvet Cascade</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Aura &amp; The Chamber Ensemble</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">4:20</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-<!-- Track 09 -->
-<div class="flex items-center justify-between py-2 px-space-sm rounded hover:bg-surface-container-low transition-colors group">
-<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
-<span class="w-6 font-label-mono text-label-mono text-secondary text-center flex-shrink-0">09</span>
-<div class="flex flex-col min-w-0">
-<div class="flex items-center gap-1.5">
-<span class="font-label-md text-label-md text-on-surface truncate">Subatomic Drift</span>
-
-</div>
-<span class="font-body-sm text-body-sm text-secondary truncate">Mirage</span>
-</div>
-</div>
-<div class="flex items-center gap-space-sm flex-shrink-0">
-<span class="font-label-mono text-label-mono text-secondary">4:35</span>
-<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
-<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
-</button>
-<button aria-label="Track Context Menu" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors">
-<span class="material-symbols-outlined text-[18px]">more_vert</span>
-</button>
-</div>
-</div>
-</div>
-<!-- End of Repository Acoustic Status -->
-<div class="py-space-md flex flex-col items-center justify-center gap-1 opacity-70">
+<!-- Transport & Fast Search -->
+<div class="flex flex-col gap-2 pt-1 border-t border-surface-container/40">
 <div class="flex items-center gap-2">
-<span class="w-1.5 h-1.5 bg-secondary rounded-full"></span>
-<span class="font-label-mono text-label-mono text-secondary uppercase tracking-widest">End of Local Cache</span>
+<button class="flex-1 h-11 bg-primary text-on-primary rounded-full flex items-center justify-center gap-2 px-space-md hover:bg-primary-container active:scale-95 shadow-md transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+<span class="font-label-md text-label-md uppercase tracking-wider font-semibold">Play All</span>
+</button>
+<button aria-label="Shuffle" class="flex-1 h-11 bg-surface-container-low border border-surface-container-high/80 text-on-surface hover:bg-surface-container rounded-full flex items-center justify-center gap-2 px-space-md active:scale-95 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[19px]">shuffle</span>
+<span class="font-label-md text-label-md uppercase tracking-wider font-medium">Shuffle</span>
+</button>
 </div>
-
+<!-- In-Vault Search -->
+<div class="relative w-full mt-1">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[17px]">search</span>
+<input class="w-full h-9 pl-9 pr-3 bg-surface-container-low/70 border border-surface-container-high/60 text-on-surface rounded-full text-body-sm placeholder:text-secondary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" placeholder="Find in Liked Songs..." type="text"/>
 </div>
 </div>
-</main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[20px]">person</span><span class="font-label-sm text-label-sm">Profile</span></a></div></nav>
+</div>
+<!-- Precision Tracklist Container -->
+<div class="flex flex-col bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-2xl p-space-xs shadow-sm divide-y divide-surface-container/40">
+<!-- Initial / Fallback Track Row for binders query -->
+<div class="flex items-center justify-between py-2 px-space-sm rounded-xl hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
+<div class="w-6 h-6 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-secondary text-[18px]">music_note</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Midnight City Lights</span>
+<span class="font-body-sm text-[12px] text-secondary truncate">Solaris &amp; Kaelen</span>
+</div>
+</div>
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="font-label-mono text-[12px] text-secondary mr-1">4:18</span>
+<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Empty state / End of Cache -->
+<div class="py-space-xl flex flex-col items-center justify-center gap-2 opacity-70">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[24px]">favorite_border</span>
+</div>
+<span class="font-body-sm text-secondary font-medium">No liked tracks yet</span>
+<span class="font-label-mono text-[11px] text-secondary/80">Tap the heart icon on any song to save it here</span>
+</div>
+</div>
+</main>
