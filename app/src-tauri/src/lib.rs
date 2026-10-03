@@ -797,6 +797,10 @@ fn open_bluetooth_settings() -> Result<(), String> {
 /// Phase 1 backup/restore: write text through the native Save dialog.
 /// Cancellation is an Err the frontend treats as silent; the Ok holds the
 /// path that was written, for the confirmation toast.
+///
+/// Desktop-only: the dialog plugin has no mobile build, so the command itself
+/// is compiled out for Android/iOS rather than only its handler entry.
+#[cfg(desktop)]
 #[tauri::command]
 fn export_file(
     app: tauri::AppHandle,
@@ -830,11 +834,11 @@ fn export_file(
 /// Phase 1 restore: read a backup file through the native Open dialog.
 /// Files over MAX_IMPORT_BYTES (mirrored in sync.js) are refused before
 /// reading; the frontend still validates the parsed shape.
+///
+/// Desktop-only, like `export_file` — the dialog plugin has no mobile build.
+#[cfg(desktop)]
 #[tauri::command]
 fn read_import_file(app: tauri::AppHandle) -> Result<String, String> {
-    if cfg!(mobile) {
-        return Err("file import is not supported on Android yet".to_string());
-    }
     use tauri_plugin_dialog::DialogExt;
     const MAX_IMPORT_BYTES: u64 = 8 * 1024 * 1024;
     let picked = app
