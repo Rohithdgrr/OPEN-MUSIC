@@ -30,7 +30,7 @@ base64 = "0.22"
 moka = { version = "0.12", features = ["future"] }
 # Vault ledger (review 4.5): WAL-mode SQLite, bundled so no system SQLite
 # is required on user machines.
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # Desktop-only plugins. None of them has a mobile implementation, and pulling
 # them into the iOS/Android targets fails the mobile build, so they live here
