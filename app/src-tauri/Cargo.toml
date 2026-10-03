@@ -34,7 +34,7 @@ url = "2"
 futures = "0.3"
 # JioSaavn encrypts `encrypted_media_url` with DES-ECB before base64.
 des = "0.8"
-base64 = "0.22"
+base64 = "0.23"
 # Cache layers L1/L2/L4-RAM: concurrent TTL + size-aware LRU (design §TL;DR 2).
 moka = { version = "0.12", features = ["future"] }
 # Vault ledger (review 4.5): WAL-mode SQLite, bundled so no system SQLite
