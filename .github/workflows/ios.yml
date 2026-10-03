@@ -92,7 +92,22 @@ jobs:
       - name: Simulator build (.app, unsigned)
         if: env.APPLE_CERTIFICATE == ''
         working-directory: app
-        run: npx tauri ios build --simulator
+        run: |
+          set -o pipefail
+          # The simulator flag has moved between CLI versions; try the
+          # documented spellings and keep the log for whoever reads it.
+          npx tauri ios build --simulator 2>&1 | tee ios-build.log \
+            || npx tauri ios build --target aarch64-apple-ios-sim 2>&1 | tee ios-build.log \
+            || npx tauri ios build 2>&1 | tee ios-build.log
+
+      - name: Upload build log (diagnostics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-log
+          path: app/ios-build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload the iOS archive
         uses: actions/upload-artifact@v4
