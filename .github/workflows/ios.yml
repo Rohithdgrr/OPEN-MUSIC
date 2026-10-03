@@ -90,7 +90,7 @@ jobs:
           export APPLE_SIGNING_IDENTITY="Developer: ${APPLE_TEAM_ID}"
           npx tauri ios build --ipa
 
-- name: Simulator build (.app, unsigned)
+      - name: Simulator build (.app, unsigned)
         if: env.APPLE_CERTIFICATE == ''
         working-directory: app
         run: |
