@@ -95,10 +95,6 @@ jobs:
         # manifest step below is optional for exactly that case.
         continue-on-error: true
         run: node app/scripts/make-update-json.mjs ${{ github.ref_name }} app/src-tauri/target/release/bundle
-      - name: Verify manifest URLs resolve
-        # GitHub rewrites asset names (spaces -> dots); a wrong name only
-        # surfaces as a 404 when the app tries to update. Fail here instead.
-        run: node app/scripts/verify-update-json.mjs app/src-tauri/target/release/bundle/latest.json
       - name: Publish installers
         uses: softprops/action-gh-release@v2
         with:
@@ -111,6 +107,11 @@ jobs:
             app/src-tauri/target/release/bundle/**/*.deb
             app/src-tauri/target/release/bundle/**/*.AppImage
             app/src-tauri/target/release/bundle/**/*.dmg
+      - name: Verify manifest URLs resolve
+        # Runs after the installers are live: GitHub rewrites asset names
+        # (spaces -> dots) and a wrong name only surfaces as a 404 when the
+        # app tries to update. Fail here, before attaching the manifests.
+        run: node app/scripts/verify-update-json.mjs app/src-tauri/target/release/bundle/latest.json
       - name: Publish updater artifacts and manifests
         # Optional by nature: .zip/.sig naming changed across Tauri versions
         # and the manifests only exist when the build was signed.
