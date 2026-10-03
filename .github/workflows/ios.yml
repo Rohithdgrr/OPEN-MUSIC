@@ -95,14 +95,27 @@ jobs:
         working-directory: app
         run: |
           set -o pipefail
-          # The generated project demands a development team even for the
-          # simulator SDK ("Signing for trance-music_iOS requires a development
-          # team"). For an unsigned CI artifact, switch signing off through
-          # the xcodebuild overrides Tauri forwards after `--`.
-          npx tauri ios build --ci --verbose -- \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" 2>&1 | tee ios-build.log
+          # The generated Xcode project hard-codes a signing identity, so an
+          # unsigned CI build fails with "requires a development team".
+          # xcodebuild ignores team-less signing for the simulator SDK, but
+          # only when the identity is emptied: strip the signing settings from
+          # the project before the Tauri CLI drives the build (it must stay the
+          # driver - the project has a build phase that reads
+          # .tauri/cli-options-server.json, which exists only while it runs).
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path("src-tauri/gen/apple/trance-music.xcodeproj/project.pbxproj")
+          s = p.read_text(encoding="utf-8")
+          # Empty identity + no team => simulator SDK needs no identity.
+          s = re.sub(r"CODE_SIGN_IDENTITY = [^;]+;", 'CODE_SIGN_IDENTITY = "";', s)
+          s = re.sub(r"CODE_SIGN_STYLE = [^;]+;", 'CODE_SIGN_STYLE = Manual;', s)
+          s = re.sub(r"DEVELOPMENT_TEAM = [^;]+;", 'DEVELOPMENT_TEAM = "";', s)
+          s = re.sub(r"CODE_SIGNING_REQUIRED = [^;]+;", 'CODE_SIGNING_REQUIRED = NO;', s)
+          s = re.sub(r"CODE_SIGNING_ALLOWED = [^;]+;", 'CODE_SIGNING_ALLOWED = NO;', s)
+          p.write_text(s, encoding="utf-8")
+          print("neutralized iOS signing settings")
+          PY
+          npx tauri ios build --ci --verbose 2>&1 | tee ios-build.log
 
       - name: Report the failure where it can be read
         if: failure()
