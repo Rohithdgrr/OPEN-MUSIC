@@ -90,13 +90,13 @@ jobs:
           export APPLE_SIGNING_IDENTITY="Developer: ${APPLE_TEAM_ID}"
           npx tauri ios build --ipa
 
-      - name: Simulator build (.app, unsigned)
+- name: Simulator build (.app, unsigned)
         if: env.APPLE_CERTIFICATE == ''
         working-directory: app
         run: |
           set -o pipefail
-          # The generated Xcode project hard-codes a signing identity, so an
-          # unsigned CI build fails with "requires a development team".
+          # The generated project hard-codes a signing identity, so an unsigned
+          # CI build fails with "requires a development team".
           # xcodebuild ignores team-less signing for the simulator SDK, but
           # only when the identity is emptied: strip the signing settings from
           # the project before the Tauri CLI drives the build (it must stay the
@@ -115,7 +115,10 @@ jobs:
           p.write_text(s, encoding="utf-8")
           print("neutralized iOS signing settings")
           PY
-          npx tauri ios build --ci --verbose 2>&1 | tee ios-build.log
+          # `--simulator` targets the simulator SDK and skips the archive
+          # export entirely - a device build tries to export an .ipa and dies
+          # with "exportArchive No Team Found in Archive" when unsigned.
+          npx tauri ios build --ci --simulator --verbose 2>&1 | tee ios-build.log
 
       - name: Report the failure where it can be read
         if: failure()
