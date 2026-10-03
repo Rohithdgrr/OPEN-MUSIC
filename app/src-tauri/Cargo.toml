@@ -14,17 +14,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
-# Phase 1 backup/restore: native Save/Open dialogs, driven from Rust so no
-# extra frontend capability entries are needed.
-tauri-plugin-dialog = "2"
 # Phase 2 Google Drive sync: OS-random PKCE verifiers / OAuth state.
 getrandom = "0.2"
-# Phase 2: the Drive refresh token lives in the OS credential store
-# (Windows Credential Manager), never in a file or localStorage.
-keyring = "3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -40,6 +31,23 @@ moka = { version = "0.12", features = ["future"] }
 # Vault ledger (review 4.5): WAL-mode SQLite, bundled so no system SQLite
 # is required on user machines.
 rusqlite = { version = "0.37", features = ["bundled"] }
+
+# Desktop-only plugins. None of them has a mobile implementation, and pulling
+# them into the iOS/Android targets fails the mobile build, so they live here
+# rather than in [dependencies].
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+# Global hotkeys + single-instance focus: desktop-only concepts, and pulling
+# them into a mobile target fails the build.
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+# Signed in-app updates: pubkey + manifest endpoint live in tauri.conf.json.
+tauri-plugin-updater = "2"
+# Phase 1 backup/restore: native Save/Open dialogs, driven from Rust so no
+# extra frontend capability entries are needed.
+tauri-plugin-dialog = "2"
+# Phase 2: the Drive refresh token lives in the OS credential store, never in
+# a file or localStorage.
+keyring = "3"
 
 # reqwest's default TLS (native-tls) drags openssl-sys in on Android, where
 # there is no system OpenSSL to link against. Desktop keeps the default

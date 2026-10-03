@@ -15,6 +15,7 @@ mod sha256;
 #[allow(dead_code)] // parked with its commands (see generate_handler)
 mod sysvol;
 mod transcode;
+#[cfg(desktop)]
 mod update;
 mod widget;
 
@@ -1260,13 +1261,15 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
-    builder
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // Signed updates: pubkey + manifest endpoint live in tauri.conf.json.
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Native Save/Open dialogs for backup export/import. Driven from
         // Rust, so no frontend capability entries are needed.
-        .plugin(tauri_plugin_dialog::init())
+        // Both plugins are desktop-only: neither has a mobile implementation,
+        // and compiling them into the iOS target fails the build.
+        .plugin(tauri_plugin_dialog::init());
+    builder
         .on_window_event(widget::handle_window_event)
         .setup(|app| {
             // Ephemeral port, bound BEFORE the window loads: no hardcoded
@@ -1370,7 +1373,9 @@ pub fn run() {
 // element volume stays as it was. Uncomment to drive Windows' mixer.
 // sysvol::system_volume,
 // sysvol::set_system_volume,
+            #[cfg(desktop)]
             export_file,
+            #[cfg(desktop)]
             read_import_file,
             gdrive::gdrive_status,
             gdrive::gdrive_sign_in,
@@ -1392,8 +1397,11 @@ pub fn run() {
             cache_set_budget,
             cache_clear,
             prefetch_next,
+            #[cfg(desktop)]
             update::update_check,
+            #[cfg(desktop)]
             update::update_install,
+            #[cfg(desktop)]
             update::update_rollback
         ])
         .run(tauri::generate_context!())
