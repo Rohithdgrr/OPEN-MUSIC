@@ -95,19 +95,14 @@ jobs:
         working-directory: app
         run: |
           set -o pipefail
-          # The CLI's simulator flags have moved between versions and the plain
-          # `tauri ios build` defaults to a *device* build (-sdk iphoneos),
-          # which needs signing. Building the generated Xcode workspace against
-          # the simulator SDK directly needs neither a signing identity nor a
-          # flag whose name we would have to guess.
-          SCHEME=trance-music_iOS
-          xcodebuild \
-            -workspace src-tauri/gen/apple/trance-music.xcodeproj/project.xcworkspace \
-            -scheme "$SCHEME" \
-            -sdk iphonesimulator \
-            -configuration Release \
-            -derivedDataPath src-tauri/gen/apple/build/DD \
-            build 2>&1 | tee ios-build.log
+          # The generated project demands a development team even for the
+          # simulator SDK ("Signing for trance-music_iOS requires a development
+          # team"). For an unsigned CI artifact, switch signing off through
+          # the xcodebuild overrides Tauri forwards after `--`.
+          npx tauri ios build --ci --verbose -- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" 2>&1 | tee ios-build.log
 
       - name: Report the failure where it can be read
         if: failure()
