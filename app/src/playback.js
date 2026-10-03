@@ -338,7 +338,7 @@ async function startFade(nextIndex, xf, remain) {
 async function finishFade(f) {
   if (fade !== f) return;
   if (queue[f.nextIndex] !== f.item) {
-    // Queue mutated in the last tick � cancel so the ended path re-picks.
+    // Queue mutated in the last tick — cancel so the ended path re-picks.
     cancelFade();
     return;
   }
@@ -356,7 +356,7 @@ async function finishFade(f) {
   setCurrent(info);
   pushPlay(track);
   setBadge(info.range_status, info);
-  diag(`play ${track.id}`, true, `crossfade handover � ${info.range_status}`);
+  diag(`play ${track.id}`, true, `crossfade handover — ${info.range_status}`);
   streamRetries = 0;
   const pos = audio2.currentTime;
   audio.src = info.proxy_url;

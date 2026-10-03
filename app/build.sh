@@ -4,7 +4,7 @@
 #
 #   ./build.sh            verify + every target available here
 #   ./build.sh check      lint + css + tests only
-#   ./build.sh android    release APK (x86_64; DEBUG=1 for a debug APK)
+#   ./build.sh android    release APKs, split per ABI (aarch64 + x86_64)
 #   ./build.sh linux      .deb + .AppImage (Linux only)
 #   ./build.sh windows    MSI + NSIS (delegates to build-windows.ps1)
 #   ./build.sh macos      .app + .dmg (macOS only)
@@ -63,8 +63,9 @@ ensure_linux_deps() {
 cmd_check()  { npm_run lint; npm_run css; npm_run test; echo "check: OK"; }
 
 cmd_android() {
-  local args=(android build --target x86_64 --apk --ci)
-  [[ "${DEBUG:-0}" == 1 ]] && args+=(--debug)
+  # Release only, split per ABI: one APK per architecture instead of a fat
+  # APK carrying every target's .so.
+  local args=(android build --target aarch64 x86_64 --split-per-abi --apk --ci)
   tauri_android "${args[@]}"
 }
 

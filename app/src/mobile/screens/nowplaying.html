@@ -15,8 +15,8 @@
 <h1 class="font-headline-lg text-[21px] font-semibold tracking-tight text-on-surface truncate">Midnight City Lights</h1>
 <div class="flex items-center gap-2 mt-1">
 <p class="font-body-md text-[14px] text-on-surface-variant truncate">Solaris &amp; Kaelen</p>
-<span class="text-outline-variant text-[10px]">â€¢</span>
-<span data-badge class="px-1.5 py-[2px] rounded bg-surface-container border border-outline-variant/40 font-label-mono text-[10px] text-on-surface-variant font-medium uppercase tracking-wide">Lossless 24-bit</span>
+<span class="text-outline-variant text-[10px]">•</span>
+<span data-badge class="px-1.5 py-[2px] rounded bg-surface-container border border-outline-variant/40 font-label-mono text-[10px] text-on-surface-variant font-medium uppercase tracking-wide">Standard</span>
 </div>
 </div>
 <div class="flex items-center gap-1 shrink-0">
@@ -61,14 +61,14 @@
 </div>
 <!-- AUDIO OUTPUT & UTILITY BAR -->
 <div class="px-margin mt-5">
-<div class="bg-surface-container-low border border-surface-container-high/80 px-3 py-2 rounded-xl flex items-center justify-between shadow-[0_1px_3px_rgba(0,0,0,0.02)]"><button class="flex items-center gap-2 text-on-surface hover:opacity-80 transition-opacity text-left" id="device-route-btn"><span class="material-symbols-outlined text-[18px] text-on-surface">airplay</span><span class="font-body-sm text-[12px] font-medium text-on-surface">AirPlay / Speaker</span></button><div class="flex items-center gap-0.5"><button aria-label="Download" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="download-btn" title="Download Track"><span class="material-symbols-outlined text-[18px]">download</span></button><button aria-label="Queue" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" title="Queue"><span class="material-symbols-outlined text-[17px]">queue_music</span></button><button aria-label="Share" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="share-utility-btn" title="Share"><span class="material-symbols-outlined text-[17px]">ios_share</span></button></div></div>
+<div class="bg-surface-container-low border border-surface-container-high/80 px-3 py-2 rounded-xl flex items-center justify-between shadow-[0_1px_3px_rgba(0,0,0,0.02)]"><button class="flex items-center gap-2 text-on-surface hover:opacity-80 transition-opacity text-left" id="device-route-btn"><span class="material-symbols-outlined text-[18px] text-on-surface">airplay</span><span class="font-body-sm text-[12px] font-medium text-on-surface">AirPlay / Speaker</span></button><div class="flex items-center gap-0.5"><button aria-label="Download" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="download-btn" title="Download Track"><span class="material-symbols-outlined text-[18px]">download</span></button><button aria-label="Radio" id="radio-btn" aria-pressed="false" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" title="Endless radio"><span class="material-symbols-outlined text-[17px]">settings_input_antenna</span></button><button aria-label="Queue" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" title="Queue"><span class="material-symbols-outlined text-[17px]">queue_music</span></button><button aria-label="Share" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="share-utility-btn" title="Share"><span class="material-symbols-outlined text-[17px]">ios_share</span></button></div></div>
 </div>
 <!-- LYRICS PREVIEW CARD -->
 <div class="px-margin mt-5">
 <div class="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high/80 flex flex-col gap-2">
 <div class="flex items-center justify-between">
 <span class="font-label-mono text-[10px] tracking-wider uppercase font-semibold text-secondary">Lyrics</span>
-<button class="font-label-mono text-[11px] text-on-surface hover:underline font-medium">Full View</button>
+<button class="font-label-mono text-[11px] text-on-surface hover:underline font-medium" data-lyrics-full>Full View</button>
 </div>
 <div data-lyrics class="flex flex-col gap-1 py-1 max-h-44 overflow-y-auto overscroll-contain">
 <p class="font-body-md text-[13px] text-secondary/60 select-none">Static humming across the skyline</p>

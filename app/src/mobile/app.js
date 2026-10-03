@@ -1,6 +1,7 @@
-// app.js — boot + global click delegation + mini-player paint for the mobile shell.
-import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, badgeLabel, HISTORY_KEY, checkForUpdates, AUTOUPDATE_KEY } from "./shared.js";
-import { playList, playPlaylist, toggle, onPaint, playerState } from "./player.js";
+// app.js — boot + global click delegation + widget player paint for the mobile shell.
+import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, HISTORY_KEY, checkForUpdates, AUTOUPDATE_KEY, pushEvent, refreshVault } from "./shared.js";
+import { playList, playPlaylist, toggle, onPaint, playerState, prev, next, seek, cycleRepeat, repaint } from "./player.js";
+import { startNet, netMode } from "./net.js";
 import { MOUNT, openLib, entityNav } from "./binders.js";
 import { isMenuTrigger, handleMenuTrigger } from "./menus.js";
 
@@ -29,6 +30,7 @@ async function resolveEntity(kind, name) {
     go(entityNav(kind, hit));
   } catch (e) {
     console.error(e);
+    if (netMode() === "offline") return toast("You're offline — that lookup needs a network", 4000, "error");
     toast(`Could not look up that ${kind}`, 4000, "error");
   }
 }
@@ -37,6 +39,7 @@ async function removeDownload(path) {
   if (!invoke || !path) return;
   try {
     await invoke("remove_download", { path });
+    refreshVault(); // an evicted file must leave the offline gate immediately
     toast("Removed from vault", 3200, "success");
     hooks.repaintDownload?.();
   } catch (e) {
@@ -76,6 +79,47 @@ document.addEventListener("click", (e) => {
   }
   const miniO = el("[data-mini-open]");
   if (miniO) {
+    go("nowplaying");
+    return;
+  }
+  // ---- persistent widget player (the desktop card, ported to Android) ----
+  const wToggle = el("[data-w-toggle]");
+  if (wToggle) {
+    toggle();
+    return;
+  }
+  const wPrev = el("[data-w-prev]");
+  if (wPrev) {
+    prev();
+    return;
+  }
+  const wNext = el("[data-w-next]");
+  if (wNext) {
+    next();
+    return;
+  }
+  const wRepeat = el("[data-w-repeat]");
+  if (wRepeat) {
+    cycleRepeat();
+    return;
+  }
+  const wFav = el("[data-w-fav]");
+  if (wFav) {
+    const tr = playerState().track;
+    if (tr) toggleFav(tr);
+    return;
+  }
+  const wSeek = el("[data-w-seek]");
+  if (wSeek) {
+    const st = playerState();
+    if (st.dur > 0) {
+      const r = wSeek.getBoundingClientRect();
+      if (r.width > 0) seek(((e.clientX - r.left) / r.width) * st.dur);
+    }
+    return;
+  }
+  const wOpen = el("[data-w-open]");
+  if (wOpen) {
     go("nowplaying");
     return;
   }
@@ -146,38 +190,68 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// ---------------------------------------------------------------- widget player
+// The desktop floating card (widget.html) rebuilt as an Android always-on
+// control: art, title/artist, prev/play/next/repeat/fav + a click-to-seek
+// rail. The design's per-screen mini-player markup is hidden — one player,
+// on every screen, like the desktop footer bar.
+function ensureWidget() {
+  if (document.getElementById("tm-widget")) return;
+  const hide = document.createElement("style");
+  hide.textContent = `#screen [class*="fixed bottom-16"]{display:none!important}`;
+  document.head.appendChild(hide);
+  const host = document.createElement("div");
+  host.innerHTML = `<div id="tm-widget" class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe hidden">
+    <div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-xl overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
+      <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" class="h-1 bg-surface-container-high cursor-pointer"><div id="tm-w-fill" class="h-full bg-primary rounded-full" style="width:0%"></div></div>
+      <div class="flex items-center gap-space-sm p-space-sm">
+        <div class="w-11 h-11 rounded-lg bg-surface-container-highest flex-shrink-0 overflow-hidden"><img id="tm-w-art" alt="" class="w-full h-full object-cover"></div>
+        <div class="flex flex-col min-w-0 flex-1 cursor-pointer" data-w-open>
+          <span id="tm-w-title" class="font-label-md text-label-md text-on-surface font-medium truncate">Nothing playing</span>
+          <span id="tm-w-artist" class="font-label-sm text-label-sm text-secondary truncate"></span>
+        </div>
+        <div class="flex items-center flex-shrink-0">
+          <button type="button" data-w-fav aria-label="Favorite" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]" data-fav-icon></span></button>
+          <button type="button" data-w-prev aria-label="Previous" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">skip_previous</span></button>
+          <button type="button" data-w-toggle aria-label="Play" class="w-11 h-11 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-95 transition-transform"><span id="tm-w-playicon" class="material-symbols-outlined text-[22px]">play_arrow</span></button>
+          <button type="button" data-w-next aria-label="Next" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">skip_next</span></button>
+          <button type="button" data-w-repeat aria-label="Repeat" class="w-9 h-9 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span id="tm-w-repeaticon" class="material-symbols-outlined text-[18px]">repeat</span></button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(host.firstElementChild);
+}
+ensureWidget();
+
 onPaint((st) => {
-  const mini = document.querySelector('#screen [class*="fixed bottom-16"]');
-  if (!mini) return;
+  const w = document.getElementById("tm-widget");
+  if (!w) return;
+  w.classList.toggle("hidden", !st.track);
+  if (!st.track) return;
   const t = st.track;
-  // The design mini-player titles use font-label-md on some screens and
-  // font-headline-md on others; match either.
-  const title = mini.querySelector("span.font-label-md, span.font-headline-md");
-  if (title && t && t.title) title.textContent = t.title;
-  const artist = mini.querySelector("span.font-body-sm");
-  if (artist && t && t.artist) artist.textContent = t.artist;
-  const img = mini.querySelector("img");
-  if (img && t && t.image) paintArt(img, t.image);
-  const bd = mini.querySelector("span.font-label-mono");
-  if (bd) {
-    if (bd.dataset.badgeIdle === undefined) bd.dataset.badgeIdle = bd.textContent;
-    bd.textContent = badgeLabel(st.badge, bd.dataset.badgeIdle);
+  const title = w.querySelector("#tm-w-title");
+  if (title && t.title) title.textContent = t.title;
+  const artist = w.querySelector("#tm-w-artist");
+  if (artist) artist.textContent = t.artist || "";
+  const img = w.querySelector("#tm-w-art");
+  if (img && t.image) paintArt(img, t.image);
+  const fill = w.querySelector("#tm-w-fill");
+  if (fill) fill.style.width = `${st.dur > 0 ? Math.min(100, (st.pos / st.dur) * 100) : 0}%`;
+  const seekEl = w.querySelector("[data-w-seek]");
+  if (seekEl) seekEl.setAttribute("aria-valuenow", String(st.dur > 0 ? Math.round((st.pos / st.dur) * 100) : 0));
+  const icon = w.querySelector("#tm-w-playicon");
+  if (icon) icon.textContent = st.paused ? "play_arrow" : "pause";
+  const btn = w.querySelector("[data-w-toggle]");
+  if (btn) btn.setAttribute("aria-label", st.paused ? "Play" : "Pause");
+  const rep = w.querySelector("#tm-w-repeaticon");
+  if (rep) {
+    rep.textContent = st.repeat === 2 ? "repeat_one" : "repeat";
+    rep.style.fontVariationSettings = `'FILL' ${st.repeat ? 1 : 0}`;
+    rep.classList.toggle("text-primary", !!st.repeat);
   }
-  const btn = mini.querySelector('[aria-label="Pause"], [aria-label="Play"]');
-  if (btn) {
-    btn.dataset.miniToggle = "1";
-    const icon = btn.querySelector(".material-symbols-outlined");
-    if (icon) icon.textContent = st.paused ? "play_arrow" : "pause";
-    btn.setAttribute("aria-label", st.paused ? "Play" : "Pause");
-  }
-  const fav = mini.querySelector('[aria-label="Favorite"]');
-  if (fav && t) {
-    fav.dataset.miniFav = "1";
-    const icon = fav.querySelector(".material-symbols-outlined");
-    if (icon) icon.dataset.favIcon = t.id || "";
-  }
-  const open = mini.querySelector(".cursor-pointer");
-  if (open) open.dataset.miniOpen = "1";
+  const fav = w.querySelector("[data-w-fav] .material-symbols-outlined");
+  if (fav) fav.dataset.favIcon = t.id || "";
   paintFavs();
 });
 
@@ -187,6 +261,16 @@ if (invoke) {
       window.__tmBase = typeof base === "string" ? base : "";
     })
     .catch(() => {});
+  // Warm the vault ledger for the offline gate (cached ids answer instantly
+  // on a no-network boot; this refreshes them from the local SQLite file).
+  refreshVault();
+  // Connection state machine: probes via net_ping, drives the banner, the
+  // offline skip-gate and the "Back online" toasts.
+  startNet({
+    invoke,
+    toast,
+    onMode: () => repaint(),
+  });
 } else {
   console.warn("Tauri IPC unavailable — mobile backend disabled");
 }
@@ -195,4 +279,10 @@ if (invoke && String(load(AUTOUPDATE_KEY, "1")) === "1") {
   // Fire-and-forget on boot: daily cadence lives inside checkForUpdates, and a
   // failed check must never hold up first paint.
   checkForUpdates(true).catch(() => {});
+}
+
+// Seed the Notifications feed once so it is not an empty box on first run.
+if (!load("tm-welcomed", 0)) {
+  save("tm-welcomed", 1);
+  pushEvent("system", "Welcome to REON", "Download results, update notices and backup events appear in Notifications.");
 }

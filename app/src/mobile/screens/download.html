@@ -6,7 +6,7 @@
 <span class="font-label-mono text-label-mono text-secondary px-1.5 py-0.5 bg-surface-container rounded">NVMe</span>
 </div>
 <div class="flex items-center gap-space-xs">
-<button aria-label="Check for Sync" class="w-9 h-9 flex items-center justify-center rounded bg-surface-container-low hover:bg-surface-container text-on-surface transition-colors" id="refreshSyncBtn">
+<button aria-label="Refresh downloads" class="w-9 h-9 flex items-center justify-center rounded bg-surface-container-low hover:bg-surface-container text-on-surface transition-colors" id="refreshSyncBtn">
 <span class="material-symbols-outlined text-[18px] transition-transform duration-700" id="syncIcon">sync</span>
 </button>
 <button aria-label="Storage Settings" class="w-9 h-9 flex items-center justify-center rounded bg-surface-container-low hover:bg-surface-container text-on-surface transition-colors">
@@ -18,10 +18,6 @@
 <div class="w-full bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-4">
 <div class="flex items-start justify-between">
 <div>
-<div class="flex items-center gap-space-xs">
-<span class="w-2 h-2 rounded-full bg-primary inline-block"></span>
-<span class="font-label-mono text-label-mono text-secondary uppercase">Bit-Perfect Storage Bay</span>
-</div>
 <div class="mt-1 flex items-baseline gap-1.5">
 <span class="font-headline-lg text-headline-lg text-on-surface font-semibold tracking-tight">1.42 GB</span>
 <span class="font-body-sm text-body-sm text-secondary">of 128 GB Free</span>
@@ -40,10 +36,6 @@
 </div>
 <div class="flex items-center justify-between font-label-mono text-label-mono text-secondary pt-0.5">
 <div class="flex items-center gap-1.5">
-<span class="w-1.5 h-1.5 rounded-full bg-primary inline-block"></span>
-<span>DSD/FLAC (1.1 GB)</span>
-</div>
-<div class="flex items-center gap-1.5">
 <span class="w-1.5 h-1.5 rounded-full bg-secondary inline-block"></span>
 <span>Cache (320 MB)</span>
 </div>
@@ -52,10 +44,6 @@
 </div>
 <!-- Telemetry Toggles / Tags -->
 <div class="grid grid-cols-2 gap-space-sm pt-1">
-<div class="flex items-center gap-space-xs px-2.5 py-1.5 rounded bg-surface-container-low">
-<span class="material-symbols-outlined text-[16px] text-primary" style="font-variation-settings: 'FILL' 1;">verified</span>
-<span class="font-label-sm text-label-sm text-on-surface truncate">Lossless Verified</span>
-</div>
 <div class="flex items-center gap-space-xs px-2.5 py-1.5 rounded bg-surface-container-low">
 <span class="material-symbols-outlined text-[16px] text-primary">sync_saved_locally</span>
 <span class="font-label-sm text-label-sm text-on-surface truncate">Smart Sync On</span>
@@ -104,7 +92,7 @@
 <div class="h-full bg-primary rounded-full transition-all duration-300" style="width: 72%;"></div>
 </div>
 <div class="flex items-center justify-between font-label-mono text-label-mono text-secondary">
-<span>24-BIT / 96kHz FLAC • 63.4/88.0 MB</span>
+<span>63.4/88.0 MB</span>
 <span class="text-on-surface">6.8 MB/s • 3s</span>
 </div>
 </div>
@@ -136,7 +124,7 @@
 <div class="h-full bg-primary rounded-full transition-all duration-300" style="width: 45%;"></div>
 </div>
 <div class="flex items-center justify-between font-label-mono text-label-mono text-secondary">
-<span>DSD 11.2M (DSD256) • 123.3/274.0 MB</span>
+<span>123.3/274.0 MB</span>
 <span class="text-on-surface">4.2 MB/s • 18s</span>
 </div>
 </div>
@@ -161,12 +149,6 @@
         All (42)
       </button>
 <button class="filter-pill px-3 py-1 rounded bg-surface-container-low text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap transition-colors">
-        Masters (24-bit)
-      </button>
-<button class="filter-pill px-3 py-1 rounded bg-surface-container-low text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap transition-colors">
-        DSD / DXD
-      </button>
-<button class="filter-pill px-3 py-1 rounded bg-surface-container-low text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap transition-colors">
         Playlists
       </button>
 <button class="filter-pill px-3 py-1 rounded bg-surface-container-low text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap transition-colors">
@@ -188,8 +170,6 @@
 <span class="font-body-md text-body-md text-on-surface font-medium truncate">Monolith Sessions</span>
 <span class="font-body-sm text-body-sm text-secondary truncate">Solaris &amp; Kaelen • 12 Tracks</span>
 <div class="flex items-center gap-space-xs mt-0.5">
-<span class="font-label-mono text-label-mono text-on-surface-variant font-medium">FLAC 96kHz</span>
-<span class="text-secondary text-[8px]">•</span>
 <span class="font-label-mono text-label-mono text-secondary">642 MB</span>
 </div>
 </div>
@@ -216,8 +196,6 @@
 <span class="font-body-md text-body-md text-on-surface font-medium truncate">Late Night Resonance</span>
 <span class="font-body-sm text-body-sm text-secondary truncate">Curated Vault • 24 Tracks</span>
 <div class="flex items-center gap-space-xs mt-0.5">
-<span class="font-label-mono text-label-mono text-on-surface-variant font-medium">BIT-PERFECT</span>
-<span class="text-secondary text-[8px]">•</span>
 <span class="font-label-mono text-label-mono text-secondary">1.1 GB</span>
 </div>
 </div>
@@ -244,8 +222,6 @@
 <span class="font-body-md text-body-md text-on-surface font-medium truncate">Subtle Echoes</span>
 <span class="font-body-sm text-body-sm text-secondary truncate">Mirage Architecture</span>
 <div class="flex items-center gap-space-xs mt-0.5">
-<span class="font-label-mono text-label-mono text-on-surface-variant font-medium">FLAC 192k/24b</span>
-<span class="text-secondary text-[8px]">•</span>
 <span class="font-label-mono text-label-mono text-secondary">48.2 MB</span>
 </div>
 </div>
@@ -259,7 +235,7 @@
 </button>
 </div>
 </div>
-<!-- Item 4: Track (DSD) -->
+<!-- Item 4: Track -->
 <div class="flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-low transition-colors group">
 <div class="flex items-center gap-space-sm min-w-0 flex-1">
 <div class="relative w-12 h-12 rounded bg-surface-container flex-shrink-0 flex items-center justify-center overflow-hidden">
@@ -272,8 +248,6 @@
 <span class="font-body-md text-body-md text-on-surface font-medium truncate">Velvet Cascade</span>
 <span class="font-body-sm text-body-sm text-secondary truncate">Aura &amp; The Chamber Ensemble</span>
 <div class="flex items-center gap-space-xs mt-0.5">
-<span class="font-label-mono text-label-mono text-on-surface-variant font-medium">DSD 5.6MHz (128)</span>
-<span class="text-secondary text-[8px]">•</span>
 <span class="font-label-mono text-label-mono text-secondary">124.0 MB</span>
 </div>
 </div>
@@ -317,42 +291,6 @@
 </div>
 </div>
 </div>
-<!-- Quick Storage & Audio Settings Card -->
-<div class="w-full bg-surface-container-lowest rounded-xl p-space-md shadow-sm space-y-3.5">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-space-xs">
-<span class="material-symbols-outlined text-[18px] text-primary">tune</span>
-<span class="font-label-md text-label-md text-on-surface font-medium uppercase tracking-wider">Vault Settings</span>
+
 </div>
-<span class="font-label-mono text-label-mono text-secondary">PRESET #01</span>
-</div>
-<!-- Quality Selector Row -->
-<div class="flex items-center justify-between py-1">
-<div class="flex flex-col">
-<span class="font-body-md text-body-md text-on-surface font-medium">Master Download Quality</span>
-<span class="font-label-mono text-label-mono text-secondary">DIRECT MASTER (FLAC 24/96)</span>
-</div>
-<button class="px-2.5 py-1 rounded bg-surface-container-low text-on-surface font-label-sm text-label-sm hover:bg-surface-container transition-colors">
-        Change
-      </button>
-</div>
-<div class="h-[1px] w-full bg-surface-container"></div>
-<!-- Wi-Fi Only Toggle -->
-<div class="flex items-center justify-between py-1">
-<div class="flex flex-col">
-<span class="font-body-md text-body-md text-on-surface font-medium">Download via Wi-Fi only</span>
-<span class="font-body-sm text-body-sm text-secondary">Conserve cellular bandwidth</span>
-</div>
-<!-- Tactile Toggle Switch -->
-<button aria-checked="true" class="w-11 h-6 bg-primary rounded-full p-0.5 flex items-center transition-colors" id="wifiToggle" role="switch">
-<div class="w-5 h-5 bg-surface rounded-full shadow-sm transform translate-x-5 transition-transform duration-200" id="wifiToggleThumb"></div>
-</button>
-</div>
-<!-- Link / Button to Detailed Formats -->
-<button class="w-full py-2.5 mt-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface font-label-md text-label-md flex items-center justify-center gap-space-xs transition-colors">
-<span>Audio Formats &amp; Codec Priority</span>
-<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
-</button>
-</div>
-</div>
-</main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span><span class="text-secondary text-[8px]">•</span><span class="font-label-mono text-label-mono text-secondary">24-BIT</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[20px]">person</span><span class="font-label-sm text-label-sm">Profile</span></a></div></nav>
+</main><div class="fixed bottom-16 inset-x-0 z-40 px-gutter pointer-events-none pb-safe"><div class="pointer-events-auto bg-surface-container-lowest/95 backdrop-blur-xl rounded-lg p-space-sm shadow-[0_4px_20px_rgba(0,0,0,0.06)] flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md min-w-0 flex-1"><div class="w-10 h-10 bg-surface-container-highest flex-shrink-0 flex items-center justify-center rounded"><span class="material-symbols-outlined text-on-surface-variant text-[20px]">graphic_eq</span></div><div class="flex flex-col min-w-0"><span class="font-label-md text-label-md text-on-surface truncate font-medium">Midnight City Lights</span><div class="flex items-center gap-space-xs"><span class="font-label-mono text-label-mono text-secondary truncate">REON ACOUSTICS</span></div></div></div><div class="flex items-center gap-space-xs flex-shrink-0"><button aria-label="Favorite" class="w-11 h-11 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[20px]">favorite</span></button><button aria-label="Pause" class="w-11 h-11 flex items-center justify-center text-primary transition-colors"><span class="material-symbols-outlined text-[22px]">pause</span></button></div></div></div><nav class="fixed bottom-0 w-full z-50 pb-safe bg-surface/90 backdrop-blur-xl shadow-[0_-1px_8px_rgba(0,0,0,0.03)]" data-active-classes="text-primary font-medium"><div class="h-16 px-space-sm flex items-center justify-around"><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="home" href="#"><span class="material-symbols-outlined text-[20px]">grid_view</span><span class="font-label-sm text-label-sm">Home</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="search" href="#"><span class="material-symbols-outlined text-[20px]">search</span><span class="font-label-sm text-label-sm">Search</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="library" href="#"><span class="material-symbols-outlined text-[20px]">library_music</span><span class="font-label-sm text-label-sm">Library</span></a><a class="flex flex-col items-center justify-center w-16 h-12 gap-0.5 text-secondary hover:text-on-surface transition-colors" data-path="profile" href="#"><span class="material-symbols-outlined text-[20px]">person</span><span class="font-label-sm text-label-sm">Profile</span></a></div></nav>

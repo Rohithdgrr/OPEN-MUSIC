@@ -101,8 +101,6 @@ export function fmtDur(secs) {
 // player actually has something to say.
 export function badgeLabel(badge, fallback = "") {
   switch (String(badge || "").toUpperCase()) {
-    case "LOSSLESS":
-      return "LOSSLESS 24-BIT";
     case "RESOLVING":
       return "RESOLVING…";
     case "RETRYING":
@@ -119,8 +117,9 @@ export function badgeLabel(badge, fallback = "") {
 
 // One stacked node per message (max 4), a colored dot per kind, tap to
 // dismiss. `ms` stays the second argument so every existing caller holds.
+// `action` ({ label, fn }) appends a tappable shortcut — "added to X → Open".
 let toastStack = null;
-export function toast(msg, ms = 3200, kind = "info") {
+export function toast(msg, ms = 3200, kind = "info", action = null) {
   if (!toastStack) {
     toastStack = document.createElement("div");
     toastStack.id = "tm-toast-stack";
@@ -136,6 +135,20 @@ export function toast(msg, ms = 3200, kind = "info") {
   const text = document.createElement("span");
   text.textContent = String(msg);
   el.append(dot, text);
+  if (action && action.label && typeof action.fn === "function") {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tm-toast-action";
+    btn.textContent = String(action.label);
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dismiss();
+      try {
+        action.fn();
+      } catch {}
+    });
+    el.appendChild(btn);
+  }
   toastStack.appendChild(el);
   while (toastStack.children.length > 4) toastStack.firstElementChild.remove();
   const timer = setTimeout(dismiss, ms);
@@ -147,8 +160,51 @@ export function toast(msg, ms = 3200, kind = "info") {
   el.addEventListener("click", dismiss);
 }
 
+/// Web Share API with a clipboard fallback: one path for every Share entry
+/// point (menus, detail headers, NowPlaying, analytics).
+export async function shareThing({ title, text, url }) {
+  const payload = {};
+  if (title) payload.title = title;
+  if (text) payload.text = text;
+  if (url) payload.url = url;
+  if (navigator.share) {
+    try {
+      await navigator.share(payload);
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return; // user dismissed the sheet
+    }
+  }
+  const line = [title, text, url].filter(Boolean).join(" — ");
+  try {
+    await navigator.clipboard.writeText(line);
+    toast("Share text copied");
+  } catch {
+    toast("Sharing is unavailable here");
+  }
+}
+
+/// Favourites are re-read on every media event (paintFavs runs 3× per event
+/// cycle), so parse the raw blob only when it actually changed.
+let favRaw = "__unset__"; // never equals a real getItem() result
+let favIds = null;
+function favSet() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(FAVS_KEY);
+  } catch {}
+  if (raw !== favRaw) {
+    favRaw = raw;
+    favIds = new Set();
+    try {
+      (JSON.parse(raw) || []).forEach((t) => t && t.id && favIds.add(t.id));
+    } catch {}
+  }
+  return favIds;
+}
+
 export function isFav(id) {
-  return load(FAVS_KEY, []).some((t) => t.id === id);
+  return favSet().has(id);
 }
 
 export function toggleFav(track) {
@@ -157,16 +213,19 @@ export function toggleFav(track) {
   if (i >= 0) list.splice(i, 1);
   else list.unshift({ ...track });
   save(FAVS_KEY, list);
+  favRaw = null; // force a re-read on the next paint
   paintFavs();
   return i < 0;
 }
 
 export function paintFavs() {
+  const on = favSet();
   document.querySelectorAll("[data-fav-icon]").forEach((el) => {
-    const on = isFav(el.dataset.favIcon);
-    el.textContent = on ? "favorite" : "favorite_border";
-    el.style.fontVariationSettings = `'FILL' ${on ? 1 : 0}`;
-    el.classList.toggle("text-error", on);
+    const lit = on.has(el.dataset.favIcon);
+    const want = lit ? "favorite" : "favorite_border";
+    if (el.textContent !== want) el.textContent = want;
+    el.style.fontVariationSettings = `'FILL' ${lit ? 1 : 0}`;
+    el.classList.toggle("text-error", lit);
   });
 }
 
@@ -184,6 +243,30 @@ export function pushPlay(track) {
 export function pushHistory(q) {
   if (!q) return;
   save(HISTORY_KEY, [q, ...load(HISTORY_KEY, []).filter((x) => x !== q)].slice(0, 20));
+}
+
+// ------------------------------------------------------------- offline vault
+// Mirror of desktop's vault.js isDownloaded: which ids sit on disk, so the
+// offline gate can skip the ones that would never resolve without a network.
+// Cached in localStorage so boot-offline knows the answer instantly, then
+// re-read from the local SQLite ledger in the background.
+export const VAULT_IDS_KEY = "tm-vault-ids";
+let vaultIds = null;
+
+export function isVaulted(id) {
+  if (!id) return false;
+  if (!vaultIds) vaultIds = new Set(load(VAULT_IDS_KEY, []));
+  return vaultIds.has(String(id));
+}
+
+export async function refreshVault() {
+  if (!invoke) return;
+  try {
+    const r = await invoke("list_downloads");
+    const entries = (r && r.entries) || [];
+    vaultIds = new Set(entries.map((e) => e && e.id).filter(Boolean).map(String));
+    save(VAULT_IDS_KEY, [...vaultIds]);
+  } catch {} // offline boot: keep the cached set
 }
 
 const ART_RENDS = [
@@ -218,15 +301,37 @@ export function hqArt(url, target = "500x500") {
   return proxied(out);
 }
 
+/// Android's default artwork: the REON mark shipped with the mobile shell
+/// (desktop keeps its own src/logo.png — this path is mobile-only).
+export const LOGO = "logo.png";
+
 export function art(url) {
   const raw = typeof url === "string" ? url : "";
+  // No art → the brand mark, never an empty src (that makes the browser
+  // request the page URL as an image and blank the tile).
+  if (!raw) return `src="${LOGO}"`;
   return `src="${esc(hqArt(raw))}" data-art-orig="${esc(raw)}" loading="lazy"`;
 }
 
 export function paintArt(img, url) {
-  if (!img || !url) return;
-  img.setAttribute("data-art-orig", url);
-  img.src = hqArt(url);
+  if (!img) return;
+  const raw = typeof url === "string" ? url : "";
+  if (!raw) {
+    if (img.getAttribute("src") !== LOGO) {
+      img.removeAttribute("data-art-orig");
+      img.removeAttribute("data-art-step");
+      img.setAttribute("src", LOGO);
+      img.classList.remove("hidden");
+    }
+    return;
+  }
+  const next = hqArt(raw);
+  // Media events fire ~10×/s; rewriting src forces a decode of the same file.
+  if (img.getAttribute("src") === next && img.getAttribute("data-art-orig") === raw) return;
+  img.setAttribute("data-art-orig", raw);
+  img.removeAttribute("data-art-step");
+  img.classList.remove("hidden");
+  img.src = next;
 }
 
 function artSteps(raw) {
@@ -257,8 +362,13 @@ window.artFail = function (img) {
       return false;
     }
   }
-  img.removeAttribute("src");
-  img.classList.add("hidden");
+  // Ladder exhausted → brand mark. Guard against re-setting a src that has
+  // already failed (the error event would otherwise loop forever).
+  const src = img.getAttribute("src");
+  if (src !== LOGO && !(src || "").endsWith("/logo.png")) {
+    img.setAttribute("src", LOGO);
+  }
+  img.classList.remove("hidden");
   return true;
 };
 
@@ -341,6 +451,22 @@ export function setDlQuality(value) {
 export const AUTOUPDATE_KEY = "tm-autoupdate";
 const UPDATE_STAMP_KEY = "tm-update-checked";
 
+export const EVENTS_KEY = "tm-events";
+
+/// Append a real event for the Notifications screen (downloads, updates,
+/// restores). Newest first, capped, and an identical unread message inside a
+/// minute is dropped — the auto update check would otherwise flood the feed.
+export function pushEvent(kind, title, body) {
+  if (!title) return;
+  try {
+    const list = load(EVENTS_KEY, []);
+    const top = list[0];
+    if (top && top.title === title && Date.now() - (Number(top.ts) || 0) < 60e3) return;
+    const ev = { id: `ev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, kind: kind || "system", title: String(title), body: body ? String(body) : "", ts: Date.now(), read: false };
+    save(EVENTS_KEY, [ev, ...list].slice(0, 40));
+  } catch {}
+}
+
 /// Check for a newer release and install it when the platform allows.
 /// `auto` is the boot path: silent, at most once a day, no error toasts.
 export async function checkForUpdates(auto = false) {
@@ -359,15 +485,18 @@ export async function checkForUpdates(auto = false) {
     }
     if (!latest.installable) {
       toast(`Version ${latest.version} is available`, 6000, "info");
+      pushEvent("update", `Update ${latest.version} available`, "A newer build of the app can be installed from the releases page.");
       return r;
     }
     try {
       await invoke("update_install");
       toast(`Updated to ${latest.version} — restart the app`, 6000, "success");
+      pushEvent("update", `Updated to ${latest.version}`, "Restart the app to finish switching versions.");
     } catch {
       // Android has no in-place install (and no link opener yet): say so
       // rather than pretending the download went through.
       toast(`Version ${latest.version} is ready — install it from the releases page`, 7000, "info");
+      pushEvent("update", `Version ${latest.version} is ready`, "Install the new build from the releases page.");
     }
     return r;
   } catch (e) {
@@ -425,6 +554,7 @@ export async function downloadTrack(track, btn, quiet = false) {
     };
     const out = await invoke("download_song", { id: track.id, quality: dlQuality(), onProgress: progress });
     if (out && out.duplicate_of && !quiet) toast("Already in vault");
+    refreshVault(); // the offline gate must see the new file immediately
     return out;
   } catch (e) {
     console.error(e);
@@ -466,6 +596,7 @@ export async function downloadAll(items, what = "tracks", btn = null) {
     else if (!fail) toast(`Saved ${ok} ${what}${skip ? ` (${skip} already saved)` : ""}`, 4000, "success");
     else if (!ok) toast(`Download failed for all ${fail} ${what}`, 6000, "error");
     else toast(`Saved ${ok} of ${list.length} ${what} — ${fail} failed`, 6000, "error");
+    if (ok) pushEvent("downloads", `Saved ${ok} ${what}`, skip ? `${skip} were already in the vault.` : `Downloaded at ${dlQuality()} kbps to the offline vault.`);
   } finally {
     batchRunning = false;
     setBusy(btn, false);

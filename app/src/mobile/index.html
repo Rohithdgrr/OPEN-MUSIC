@@ -45,6 +45,27 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
 .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text { color: #a1a1aa; }
 .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word { background-image: linear-gradient(90deg, #a1a1aa, #a1a1aa); }
 
+/* Lyrics full-view stage — the "Full View" button promotes the preview card
+   to a fixed overlay with stage-sized type; auto-scroll keeps working. */
+.tm-lyrics-full {
+  position: fixed;
+  left: 0.5rem;
+  right: 0.5rem;
+  top: calc(3.75rem + env(safe-area-inset-top, 0px));
+  bottom: 4.5rem;
+  z-index: 65;
+  margin: 0 !important;
+  background: #f9f9fb;
+  border: 1px solid #e8e8e9;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+.tm-lyrics-full [data-lyrics] { flex: 1 1 auto; max-height: none !important; }
+.tm-lyrics-full .lyric-text { font-size: 17px !important; }
+.tm-lyrics-full .lyric-active .lyric-text { font-size: 20px !important; }
+.tm-lyrics-full .lyric-past .lyric-text { font-size: 15px !important; }
+
 /* Toast stack — mobile's own; the desktop's #toast-stack lives in styles.css,
    which this shell never loads. Stacks up to 4, click to dismiss. */
 #tm-toast-stack {
@@ -84,6 +105,20 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
   flex-shrink: 0;
   background: #a1a1aa;
 }
+.tm-toast > span:not(.tm-dot) { min-width: 0; overflow-wrap: anywhere; }
+.tm-toast-action {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #a1a1aa;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tm-toast-action:active { background: rgba(255, 255, 255, 0.2); }
 .tm-toast[data-kind="success"] .tm-dot { background: #22c55e; }
 .tm-toast[data-kind="error"] .tm-dot { background: #ef4444; }
 .tm-toast.tm-out { opacity: 0; transform: translateY(4px); transition: opacity 0.2s, transform 0.2s; }

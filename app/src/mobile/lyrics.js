@@ -1,8 +1,9 @@
 // lyrics.js — karaoke lyrics for the mobile NowPlaying card.
 //
 // Port of the desktop's lyrics.js: synced lines, per-word wipe driven by
-// --progress, rAF clock, tap-to-seek. The offset/fullscreen/auto-scroll tools
-// stay desktop-only; the mobile card is a preview, not a stage.
+// --progress, rAF clock, tap-to-seek, pinned auto-scroll (which stands down
+// for 3s whenever the reader scrolls the card themselves) and the Full View
+// stage toggled by the card header.
 import { audio } from "./player.js";
 
 // Enhanced LRC carries per-word stamps: `[00:12.34]<00:12.34>Kesariya <00:12.89>tera`.
@@ -16,6 +17,11 @@ let box = null;
 let lines = [];
 let scrollTarget = null;
 let raf = null;
+// While the reader is dragging the list themselves, auto-scroll stands down
+// for 3s after their last touch — fighting a user's thumb is the classic
+// karaoke-scroll bug. Highlights keep updating; only the pinning pauses.
+let userScrollUntil = 0;
+let boxScrollWired = null;
 
 function splitWords(text) {
   if (!WORD_TAG.test(text)) return null;
@@ -90,6 +96,17 @@ export function renderLyrics(target, data) {
     return;
   }
   box.replaceChildren();
+  // One capture-phase listener per box (not per render): any wheel/touchmove
+  // inside the card means the user is reading ahead — pause the pinning.
+  if (boxScrollWired !== box) {
+    boxScrollWired = box;
+    const userScroll = () => {
+      userScrollUntil = Date.now() + 3000;
+      scrollTarget = null; // forget the pin so it re-engages cleanly after
+    };
+    box.addEventListener("wheel", userScroll, { passive: true, capture: true });
+    box.addEventListener("touchmove", userScroll, { passive: true, capture: true });
+  }
   if (synced.length) {
     synced.forEach(([seconds, text], i) => {
       const nextT = i + 1 < synced.length ? synced[i + 1][0] : seconds + 4;
@@ -137,9 +154,10 @@ export function syncLyrics() {
       if (w.el) w.el.style.setProperty("--progress", `${Math.round(p * 100)}%`);
     }
   }
-  if (active) {
+  if (active && Date.now() >= userScrollUntil) {
     // Pin the active line near the top of the visible card. Measured against
     // the box's own rect so it works regardless of offset-parent chains.
+    // Skipped while the user is reading elsewhere (userScrollUntil).
     const top = Math.max(0, box.scrollTop + (active.getBoundingClientRect().top - box.getBoundingClientRect().top) - 8);
     if (scrollTarget !== top) {
       scrollTarget = top;
@@ -149,9 +167,15 @@ export function syncLyrics() {
 }
 
 // `timeupdate` fires ~4 times a second, which makes the karaoke wipe stutter.
-// While the audio is playing, drive the highlight from rAF.
-function tick() {
-  syncLyrics();
+// While the audio is playing, drive the highlight from rAF — but throttled:
+// every sync walks every word and reads layout, so 60 Hz of that was a
+// measurable drain on battery for a wipe nobody can see moving at that rate.
+let lastSync = 0;
+function tick(ts) {
+  if (ts - lastSync > 66) {
+    lastSync = ts;
+    syncLyrics();
+  }
   raf = requestAnimationFrame(tick);
 }
 

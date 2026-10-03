@@ -1,4 +1,4 @@
-// generated from design/screens/mobile/nowplaying/code.html â€” do not edit
+// generated from design/screens/mobile/nowplaying/code.html — do not edit
 
 /* global tailwind */
 
@@ -89,29 +89,12 @@ tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-dim
       });
     }
 
-    // Shuffle & repeat toggles
-    const shuffleBtn = document.getElementById('shuffle-btn');
-    if (shuffleBtn) {
-      let shuffleActive = false;
-      shuffleBtn.addEventListener('click', function() {
-        shuffleActive = !shuffleActive;
-        shuffleBtn.classList.toggle('text-primary', shuffleActive);
-        shuffleBtn.classList.toggle('text-on-surface-variant', !shuffleActive);
-      });
-    }
-
-    const repeatBtn = document.getElementById('repeat-btn');
-    if (repeatBtn) {
-      let repeatActive = false;
-      repeatBtn.addEventListener('click', function() {
-        repeatActive = !repeatActive;
-        repeatBtn.classList.toggle('text-primary', repeatActive);
-        repeatBtn.classList.toggle('text-on-surface-variant', !repeatActive);
-      });
-    }
+    // Shuffle & repeat: the real toggles live in binders.js (playerState is
+    // the source of truth). The design's local boolean versions fought it —
+    // every paint flipped the class back — so they are gone.
   })();
 })();
 
 (function () {
-(function(){const headerShuffle=document.getElementById('header-shuffle-btn');const shuffleBtn=document.getElementById('shuffle-btn');if(headerShuffle&&shuffleBtn){headerShuffle.addEventListener('click',function(){shuffleBtn.click();headerShuffle.classList.toggle('text-primary');headerShuffle.classList.toggle('text-on-surface-variant');});}const dlBtn=document.getElementById('download-btn');if(dlBtn){let dlState=false;dlBtn.addEventListener('click',function(){dlState=!dlState;const icon=dlBtn.querySelector('.material-symbols-outlined');if(icon){icon.textContent=dlState?'check':'download';icon.classList.toggle('text-primary',dlState);}});}})();
+(function(){const headerShuffle=document.getElementById('header-shuffle-btn');const shuffleBtn=document.getElementById('shuffle-btn');if(headerShuffle&&shuffleBtn){headerShuffle.addEventListener('click',function(){shuffleBtn.click();});}const dlBtn=document.getElementById('download-btn');if(dlBtn){let dlState=false;dlBtn.addEventListener('click',function(){dlState=!dlState;const icon=dlBtn.querySelector('.material-symbols-outlined');if(icon){icon.textContent=dlState?'check':'download';icon.classList.toggle('text-primary',dlState);}});}})();
 })();

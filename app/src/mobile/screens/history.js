@@ -1,4 +1,4 @@
-// generated from design/screens/mobile/history/code.html â€” do not edit
+// generated from design/screens/mobile/history/code.html — do not edit
 
 /* global tailwind */
 

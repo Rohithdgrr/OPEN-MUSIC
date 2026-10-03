@@ -1,5 +1,7 @@
 // player.js — one shared <audio> for every mobile screen: queue, resolve, transport.
-import { invoke, pushPlay, toast, hqArt } from "./shared.js";
+import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted } from "./shared.js";
+import { netMode } from "./net.js";
+import { ensureReco } from "./radio.js";
 
 const audio = document.getElementById("audio");
 // Full scale: the media element is a limiter (max 1.0), so anything less only
@@ -26,17 +28,29 @@ const msSupported = typeof navigator !== "undefined" && "mediaSession" in naviga
 
 function mediaMeta(track) {
   if (!msSupported || !track) return;
+  // No artwork → the brand mark. An empty artwork array leaves Android's
+  // media notification showing a grey placeholder instead of anything ours.
+  // Lock-screen/notification surfaces need absolute URLs — a relative /art
+  // path renders as a broken image in the system media card.
+  const abs = (s) => {
+    try {
+      return new URL(s, document.baseURI).href;
+    } catch {
+      return s;
+    }
+  };
+  const art = track.image
+    ? [
+        { src: abs(hqArt(track.image, "500x500")), sizes: "500x500", type: "image/jpeg" },
+        { src: abs(hqArt(track.image, "150x150")), sizes: "150x150", type: "image/jpeg" },
+      ]
+    : [{ src: abs(LOGO), sizes: "512x512", type: "image/png" }];
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title || "",
       artist: track.artist || track.subtitle || "",
       album: track.album || "",
-      artwork: track.image
-        ? [
-            { src: hqArt(track.image, "500x500"), sizes: "500x500", type: "image/jpeg" },
-            { src: hqArt(track.image, "150x150"), sizes: "150x150", type: "image/jpeg" },
-          ]
-        : [],
+      artwork: art,
     });
   } catch {}
 }
@@ -68,8 +82,18 @@ function mediaHandlers() {
   set("pause", () => {
     if (audio) audio.pause();
   });
+  set("stop", () => {
+    if (audio) {
+      audio.pause();
+      try {
+        audio.currentTime = 0;
+      } catch {}
+    }
+  });
   set("previoustrack", () => prev());
   set("nexttrack", () => next());
+  set("seekbackward", (d) => seek((audio ? audio.currentTime : 0) - (d && d.seekOffset ? d.seekOffset : 10)));
+  set("seekforward", (d) => seek((audio ? audio.currentTime : 0) + (d && d.seekOffset ? d.seekOffset : 10)));
   set("seekto", (d) => {
     if (d && typeof d.seekTime === "number") seek(d.seekTime);
   });
@@ -112,6 +136,24 @@ function paint() {
       console.error(e);
     }
   }
+}
+
+/// For screens that mutate the queue from outside (the Radio toggle refills
+/// an exhausted queue on demand).
+export function repaint() {
+  paint();
+}
+
+/// Endless radio: keep the queue fed while repeat is off and it is close to
+/// running dry. Repeat modes never run out, so they never top up.
+function topUpRadio() {
+  if (netMode() === "offline") return; // recommendations need the network
+  if (repeat !== 0 || queue.length - qi > 3) return;
+  ensureReco(queue, qi)
+    .then((added) => {
+      if (added) paint();
+    })
+    .catch(() => {});
 }
 
 // One retry for transient blips: a momentary drop must not skip the song and
@@ -265,11 +307,39 @@ export function enqueueAll(list) {
   return q.length;
 }
 
+/// Offline gate: with the network down, only vaulted ids can resolve (the
+/// backend serves those straight from disk). Skip the rest and advance —
+/// but bound the run so a repeat queue of undownloaded tracks can't loop.
+let skipRun = 0;
+
+function skipOffline(track) {
+  skipRun += 1;
+  if (skipRun >= Math.max(1, queue.length)) {
+    skipRun = 0;
+    badge = "OFFLINE";
+    audio.pause();
+    toast("Nothing in this queue is downloaded — unavailable offline", 5000, "error");
+    paint();
+    return;
+  }
+  badge = "OFFLINE";
+  toast(`Skipped — ${track.title || "track"} not downloaded`, 3000, "info");
+  paint();
+  step(1, true);
+}
+
 async function start() {
   const track = queue[qi];
   if (!track) return;
   const mine = ++seq;
   retries = 0; // each new track gets a fresh retry budget
+  // Offline first: resolve_song would burn 15–25s of CDN timeouts before
+  // failing, and the vaulted copy is the only thing that can play anyway.
+  if (netMode() === "offline" && !isVaulted(track.id)) {
+    if (mine === seq) skipOffline(track);
+    return;
+  }
+  skipRun = 0; // a playable track resets the skip budget
   badge = "RESOLVING";
   mediaMeta(track); // lock screen shows the track while it resolves
   paint();
@@ -283,15 +353,31 @@ async function start() {
       return step(1, true);
     }
     audio.src = info.proxy_url;
-    badge = info.range_status === "unrestricted" ? "LOSSLESS" : String(info.chosen_quality || info.range_status || "OK").toUpperCase();
+    badge = String(info.chosen_quality || info.range_status || "OK").toUpperCase();
     pushPlay(track);
     await audio.play();
     prefetchNext();
+    topUpRadio();
   } catch (e) {
     if (mine === seq) {
+      // The resolve died with the network — if the track is on disk, play
+      // that instead; otherwise fall through to the skip logic.
+      if (netMode() !== "online" && isVaulted(track.id)) {
+        try {
+          const base = window.__tmBase;
+          if (base) {
+            audio.src = `${base}/file?id=${encodeURIComponent(track.id)}`;
+            badge = "VAULT";
+            await audio.play();
+            paint();
+            return;
+          }
+        } catch {}
+      }
       badge = "ERROR";
       console.error(e);
       toast(String(e).slice(0, 100), 5000, "error");
+      if (netMode() === "offline") skipOffline(track);
     }
   }
   if (mine === seq) paint();
@@ -300,7 +386,7 @@ async function start() {
 // Warm the resolve + range probe for the next queued track so advancing is a
 // cache hit instead of a network wait. Quiet by design.
 function prefetchNext() {
-  if (!invoke) return;
+  if (!invoke || netMode() === "offline") return; // no point warming CDN lookups
   const ids = queue
     .slice(qi + 1, qi + 3)
     .map((t) => t && t.id)

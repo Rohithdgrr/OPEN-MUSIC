@@ -110,26 +110,52 @@
     );
   }
 
+  // Fragments are immutable for the session: refetching (and re-parsing) a
+  // 32 KB screen on every navigation was pure waste. Keyed by fragment dir.
+  var FRAGMENTS = {};
+
+  function stampImages() {
+    // Static design exports ship raw <img> tags with no fallback rung. Put
+    // them on the art ladder so a dead placeholder URL degrades to the brand
+    // mark instead of a blank tile, and let them decode off the main thread.
+    mount.querySelectorAll("img").forEach(function (img) {
+      if (!img.hasAttribute("data-art-orig")) {
+        img.setAttribute("data-art-orig", img.getAttribute("src") || "");
+      }
+      if (!img.hasAttribute("loading")) img.setAttribute("loading", "lazy");
+      if (!img.hasAttribute("decoding")) img.setAttribute("decoding", "async");
+    });
+  }
+
+  function paint(html, key, dir, query) {
+    mount.innerHTML = html;
+    stripNavs(mount);
+    if (dir !== "nowplaying") mount.insertAdjacentHTML("beforeend", navHTML(key));
+    stampImages();
+    window.scrollTo(0, 0);
+    var s = document.createElement("script");
+    s.src = "screens/" + dir + ".js";
+    s.onload = s.onerror = function () {
+      document.dispatchEvent(new CustomEvent("smount", { detail: { dir: dir, key: key, query: query } }));
+    };
+    mount.appendChild(s);
+  }
+
   function render(key, query) {
     var dir = SCREENS[key] || "home";
     var id = ++seq;
+    if (FRAGMENTS[dir]) {
+      paint(FRAGMENTS[dir], key, dir, query);
+      return;
+    }
     fetch("screens/" + dir + ".html")
       .then(function (r) {
         return r.text();
       })
       .then(function (html) {
         if (id !== seq) return; // a newer navigation won the race
-        mount.innerHTML = html;
-        stripNavs(mount);
-        if (dir !== "nowplaying") mount.insertAdjacentHTML("beforeend", navHTML(key));
-        window.scrollTo(0, 0);
-        var s = document.createElement("script");
-        s.src = "screens/" + dir + ".js";
-        s.onload = s.onerror = function () {
-          if (id !== seq) return;
-          document.dispatchEvent(new CustomEvent("smount", { detail: { dir: dir, key: key, query: query } }));
-        };
-        mount.appendChild(s);
+        FRAGMENTS[dir] = html;
+        paint(html, key, dir, query);
       });
   }
 
@@ -172,7 +198,7 @@
     if (b) {
       var label = b.getAttribute("aria-label");
       if (label === "Notifications") go("notifications");
-      else if (label === "Settings") go("settings");
+      else if (label === "Settings" || /audio settings/i.test(label)) go("settings");
       else if (label === "History") go("history");
       else if (label === "Analytics") go("analytics");
     }

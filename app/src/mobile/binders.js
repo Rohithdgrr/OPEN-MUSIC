@@ -33,12 +33,21 @@ import {
   setDlQuality,
   checkForUpdates,
   AUTOUPDATE_KEY,
+  EVENTS_KEY,
+  pushEvent,
+  shareThing,
 } from "./shared.js";
 import { buildBackup, parseBackupFile, applyBackup, readSettings, writeSettings, backupFilename } from "../sync.js";
-import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat } from "./player.js";
-import { renderLyrics, resetLyrics } from "./lyrics.js";
+import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat, repaint } from "./player.js";
+import { ensureReco, isRadioOn, setRadioOn } from "./radio.js";
+import { renderLyrics, resetLyrics, syncLyrics } from "./lyrics.js";
+import { netMode } from "./net.js";
+import { licensesHTML, aboutHTML, termsHTML } from "./legal.js";
 
 const main = () => document.querySelector("#screen main");
+
+// Last successful Home feed — rendered verbatim when the network is gone.
+const HOME_SNAP_KEY = "tm-home-snap";
 
 /// Byte counts as a human string: "0.00 GB" for a 3 MB download reads as
 /// broken, so scale the unit to the value.
@@ -119,6 +128,7 @@ export function entityNav(kind, it) {
   const q = new URLSearchParams();
   if (item.token) q.set("token", item.token);
   if (item.id) q.set("id", item.id);
+  if (item.local) q.set("local", "1"); // local playlist: read from LIBRARY_KEY
   for (const [k, v] of [
     ["title", item.title],
     ["subtitle", item.subtitle],
@@ -167,12 +177,19 @@ async function mountHome() {
   if (!invoke) return;
   let feed = null;
   try {
-    feed = await invoke("home_feed");
+    // Offline: skip the upstream call entirely (it would sit on timeouts)
+    // and repaint the last feed the app actually saw.
+    if (netMode() !== "offline") feed = await invoke("home_feed");
   } catch (e) {
     console.error(e);
     toast(`Couldn't load Home: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
   }
+  if (!feed) {
+    feed = load(HOME_SNAP_KEY, null);
+    if (feed) toast("Offline — showing your saved Home", 3500, "info");
+  }
   if (!feed) return;
+  save(HOME_SNAP_KEY, feed); // the offline fallback for the next cold boot
   const sections = [...m.querySelectorAll("section")];
 
   const spot = feed.spotlight;
@@ -245,6 +262,21 @@ async function mountHome() {
       all.dataset.list = "qp";
       all.dataset.idx = "0";
     }
+    // Rows are painted from the first five of the day's chart; the chart has
+    // ~100. Swap in the full list so Play All and every row tap agree.
+    if (feed.chart_id) {
+      invoke("playlist_tracks", { id: feed.chart_id })
+        .then((full) => {
+          if (!Array.isArray(full) || !full.length) return;
+          setList("qp", full);
+          const box = afterHead(qp, "Quick Picks");
+          if (box) {
+            box.innerHTML = full.slice(0, 8).map((t, i) => rowHTML("qp", i, t)).join("");
+            paintFavs();
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   const artists = feed.artists || [];
@@ -258,7 +290,50 @@ async function mountHome() {
         .map((a, i) => artistCardHTML(a, i, entityNav("artist", a)))
         .join("");
     }
+    // No "all artists" screen exists on mobile — hide the button rather than
+    // leave a dead one in the corner.
+    [...artS.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent))?.remove();
   }
+
+  // Two shelves the feed already returns but the shell never painted: new
+  // releases and the daily-updating playlists. Built in JS so the design
+  // fragment stays untouched.
+  const root = m.querySelector("section")?.parentElement;
+  const shelves = [
+    ["tm-shelf-albums", "New Releases", (feed.albums || []).map((a, i) => plCardHTML(a, i, entityNav("album", a)))],
+    ["tm-shelf-daily", "Fresh Playlists", (feed.daily || []).map((p, i) => plCardHTML(p, i, entityNav("playlist", p)))],
+  ];
+  for (const [key, title, cards] of shelves) {
+    if (!root) break;
+    let sec = root.querySelector(`[data-shelf="${key}"]`);
+    if (!cards.length) {
+      sec?.remove();
+      continue;
+    }
+    if (!sec) {
+      sec = document.createElement("section");
+      sec.dataset.shelf = key;
+      sec.className = "flex flex-col space-y-space-sm";
+      sec.innerHTML = `<div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">${title}</h2></div><div class="flex gap-space-md overflow-x-auto no-scrollbar -mx-gutter px-gutter py-1" data-cards></div>`;
+      root.appendChild(sec);
+    }
+    const box = sec.querySelector("[data-cards]");
+    if (box) box.innerHTML = cards.slice(0, 12).join("");
+  }
+
+  // SEE ALL: Jump Back In → the history it is drawn from; Curated → lift the
+  // 12-card cap for this session.
+  const jumpSeeAll = jump && [...jump.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent));
+  if (jumpSeeAll) jumpSeeAll.addEventListener("click", () => go("history"));
+  const curSeeAll = curS && [...curS.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent));
+  if (curSeeAll) {
+    curSeeAll.addEventListener("click", () => {
+      const c = afterHead(curS, "Curated Playlists");
+      if (c) c.innerHTML = curated.map((p, i) => plCardHTML(p, i, entityNav("playlist", p))).join("");
+      curSeeAll.remove();
+    });
+  }
+
   paintFavs();
 }
 
@@ -465,22 +540,35 @@ async function mountSearch(query) {
   const navOf = (it, k) => entityNav(k, it);
 
   let results = [];
+  // One-query snapshot: the offline fallback repaints the last successful
+  // search verbatim (mirrors the desktop's tm-search behaviour).
+  const SEARCH_SNAP_KEY = "tm-search-snap";
+  const snapKey = `${q}::${cat}`;
   if (q && invoke) {
     try {
+      if (netMode() === "offline") throw new Error("offline");
       if (entityKinds[cat]) {
         const r = await invoke("search_entities", { query: q, kind: entityKinds[cat], limit: 30, page: 1 });
         results = r.items || [];
       } else {
-        const r = await invoke("search_songs", { query: q, limit: cat === "lossless" ? 50 : 30, page: 1 });
+        const r = await invoke("search_songs", { query: q, limit: cat === "hires" ? 50 : 30, page: 1 });
         results = r.tracks || [];
         // Hi-Res chip: the catalog already tags each track, so the chip
         // filters this page instead of asking a different endpoint.
-        if (cat === "lossless") results = results.filter((t) => t.hq);
+        if (cat === "hires") results = results.filter((t) => t.hq);
       }
       pushHistory(q);
+      save(SEARCH_SNAP_KEY, { key: snapKey, results });
     } catch (e) {
-      console.error(e);
-      toast(`Search failed: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
+      const snap = load(SEARCH_SNAP_KEY, null);
+      if (snap && snap.key === snapKey && Array.isArray(snap.results) && snap.results.length) {
+        results = snap.results;
+        toast("Offline — showing saved results", 3500, "info");
+      } else {
+        console.error(e);
+        if (String(e) !== "Error: offline") toast(`Search failed: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
+        else toast("You're offline — search needs a network", 3500, "info");
+      }
     }
   }
 
@@ -508,6 +596,22 @@ async function mountSearch(query) {
         setList("topres", [first]);
         card.dataset.list = "topres";
         card.dataset.idx = "0";
+      }
+      // The card's Favorite button was static chrome: for songs it becomes a
+      // real favorite (the delegation resolves the card's track); entity
+      // results have no favorite concept, so it is hidden there.
+      const favBtn = topSec.querySelector('[aria-label="Favorite"]');
+      if (favBtn) {
+        const ic = favBtn.querySelector(".material-symbols-outlined");
+        if (kind || !card) {
+          favBtn.classList.add("hidden");
+          favBtn.removeAttribute("data-fav");
+          if (ic) delete ic.dataset.favIcon;
+        } else {
+          favBtn.classList.remove("hidden");
+          favBtn.dataset.fav = "";
+          if (ic) ic.dataset.favIcon = first.id || "";
+        }
       }
     }
   }
@@ -780,7 +884,7 @@ async function mountLibrary() {
 
 async function openLib(item) {
   if (!item || !invoke) return;
-  if (item.local) return;
+  if (item.local) return go(entityNav("playlist", item));
   if (item.token) return go(entityNav("album", item));
   try {
     const r = await invoke("playlist_tracks", { id: item.id });
@@ -877,6 +981,18 @@ async function mountDownload() {
           )
           .join("")
       : '<div class="py-space-md text-center font-body-sm text-secondary">No downloads yet</div>';
+  }
+  // The header's refresh icon only spun itself; re-run the mount so the vault
+  // list is actually re-read. Storage opens the real settings screen.
+  const sync = document.getElementById("refreshSyncBtn");
+  if (sync && !sync.dataset.vaultWired) {
+    sync.dataset.vaultWired = "1";
+    sync.addEventListener("click", () => mountDownload());
+  }
+  const storage = m.querySelector('button[aria-label="Storage Settings"]');
+  if (storage && !storage.dataset.vaultWired) {
+    storage.dataset.vaultWired = "1";
+    storage.addEventListener("click", () => go("settings"));
   }
 }
 
@@ -989,7 +1105,6 @@ function paintDetail(m, kind, tracks, meta) {
   const artist = info.subtitle || t.artist;
   const image = info.image || t.image;
   const year = info.year || t.year;
-  const allHq = t.allHq;
 
   const cover = m.querySelector("section img") || m.querySelector("main img");
   if (cover && image) paintArt(cover, image);
@@ -1008,7 +1123,6 @@ function paintDetail(m, kind, tracks, meta) {
     paintOrHide(m, /^\d+\sTRACKS$/i, t.n ? `${t.n} TRACKS` : "");
     paintOrHide(m, /^\d+\sMIN$/i, t.mins ? `${t.mins} MIN` : "");
     paintOrHide(m, /^HYPERION SOUND$/, t.label);
-    paintOrHide(m, /24-BIT \/ 96kHz FLAC/, allHq ? "LOSSLESS 24-BIT" : "320 KBPS");
     // Liner notes are editorial mock copy with no upstream equivalent.
     const liner = findByText(m, /^Studio Liner Notes$/);
     if (liner) liner.closest("section")?.classList.add("hidden");
@@ -1017,9 +1131,6 @@ function paintDetail(m, kind, tracks, meta) {
     if (h2) h2.textContent = title;
     paintOrHide(m, /^By .+•\s*\d+ tracks/i, `By ${artist || "You"} • ${t.n} tracks${t.mins ? ` • ${fmtDur(t.total)}` : ""}`);
     paintOrHide(m, /^\d+\sTRACKS$/i, t.n ? `${t.n} TRACKS` : "");
-    // Cover badge and the pill beside it carry design copy ("24-BIT",
-    // "Private"); qualify them from the tracks or drop them.
-    paintOrHide(m, /^24-BIT$/, allHq ? "24-BIT" : "320 KBPS");
     const pill = findByText(m, /^Private$/i);
     if (pill) {
       const tag = [year, t.lead.year, t.lead.language, t.lead.label].find(Boolean);
@@ -1043,6 +1154,8 @@ function paintDetail(m, kind, tracks, meta) {
     if (badge) badge.textContent = String(t.n);
   }
   wirePlayAll(m, tracks);
+  wireShuffleHeader(m);
+  wireShareHeader(m, () => shareThing({ title, text: artist }));
   paintFavs();
 }
 
@@ -1104,7 +1217,6 @@ async function mountArtist(m, token, meta) {
     const facts = [
       ["Primary Label", tracks.find((t) => t.label)?.label || ""],
       ["Releases", (overview.releases || []).length ? String(overview.releases.length) : ""],
-      ["Lossless Masters", tracks.length ? `${tracks.filter((t) => t.hq).length} of ${tracks.length}` : ""],
     ];
     [...about.querySelectorAll("div.flex.items-center.justify-between")].forEach((row, i) => {
       const [k, v] = facts[i] || [];
@@ -1115,6 +1227,9 @@ async function mountArtist(m, token, meta) {
     });
   }
   wirePlayAll(m, tracks);
+  wireShuffleHeader(m);
+  wireShareHeader(m, () => shareThing({ title: name, text: "Artist" }));
+  wireStationRadio(m, tracks);
   paintFavs();
 }
 
@@ -1237,17 +1352,53 @@ async function mountDetail(kind, query) {
   // album_tracks / playlist_tracks return a bare Track[]; artist_tracks
   // returns a page object. Accept either shape.
   const asTracks = (r) => (Array.isArray(r) ? r : (r && (r.list || r.tracks)) || []);
+  // Fetch with a one-entry disk snapshot: a previously opened album or
+  // playlist repaints offline instead of dying on the network. (Local
+  // playlists below never hit this — they are already offline.)
+  const DETAIL_SNAP_KEY = "tm-detail-snap";
+  const withSnap = async (key, fn) => {
+    if (netMode() === "offline") {
+      const snap = load(DETAIL_SNAP_KEY, null);
+      if (snap && snap.key === key) return snap.value;
+      throw new Error("offline");
+    }
+    try {
+      const value = await fn();
+      save(DETAIL_SNAP_KEY, { key, value });
+      return value;
+    } catch (e) {
+      const snap = load(DETAIL_SNAP_KEY, null);
+      if (snap && snap.key === key) {
+        toast("Offline — showing saved copy", 3500, "info");
+        return snap.value;
+      }
+      throw e;
+    }
+  };
   try {
     if (kind === "album") {
-      paintDetail(m, kind, asTracks(await invoke("album_tracks", { token })), meta);
+      paintDetail(m, kind, asTracks(await withSnap(`album:${token || id}`, () => invoke("album_tracks", { token }))), meta);
       wireHeaderDownload(m, "album tracks");
+    } else if (kind === "playlist" && q.get("local")) {
+      // Locally created playlists never reach the network — they live in
+      // LIBRARY_KEY and previously opened nowhere at all.
+      const rec = load(LIBRARY_KEY, []).find((x) => x.id === id);
+      if (!rec) return toast("Playlist not found");
+      paintDetail(
+        m,
+        kind,
+        rec.tracks || [],
+        meta.title ? meta : { title: rec.title, subtitle: rec.subtitle, image: rec.image, count: String((rec.tracks || []).length) },
+      );
+      wireHeaderDownload(m, "playlist tracks");
     } else if (kind === "playlist") {
-      paintDetail(m, kind, asTracks(await invoke("playlist_tracks", { id })), meta);
+      paintDetail(m, kind, asTracks(await withSnap(`playlist:${id}`, () => invoke("playlist_tracks", { id }))), meta);
       wireHeaderDownload(m, "playlist tracks");
     } else await mountArtist(m, token, meta);
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 100), 5000, "error");
+    if (String(e) === "Error: offline") toast("You're offline — open this again after connecting", 4000, "info");
+    else toast(String(e).slice(0, 100), 5000, "error");
   }
 }
 
@@ -1263,19 +1414,83 @@ function wireHeaderDownload(m, what) {
   fresh.addEventListener("click", () => downloadAll(store.detail || [], what, fresh));
 }
 
+/// Header Shuffle / Share shipped as static chrome. Shuffle plays the loaded
+/// detail list (turning shuffle mode on first); Share opens the system sheet.
+/// The labels differ per screen, so one selector covers album/playlist/artist.
+function wireShuffleHeader(m) {
+  const btn = m.querySelector('button[aria-label="Shuffle"], button[aria-label="Shuffle playback"], button[aria-label="Shuffle Discography"]');
+  if (!btn || btn.dataset.shWired) return;
+  const fresh = btn.cloneNode(true);
+  fresh.dataset.shWired = "1";
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", () => {
+    const list = store.detail || [];
+    if (!list.length) return toast("Tracklist hasn't loaded yet", 3000, "error");
+    if (!playerState().shuffle) toggleShuffle();
+    playList(list, Math.floor(Math.random() * list.length));
+    go("nowplaying");
+  });
+}
+
+function wireShareHeader(m, mk) {
+  const btn = m.querySelector('button[aria-label="Share Playlist"], button[aria-label="Share Album"], button[aria-label="Share Artist"]');
+  if (!btn || btn.dataset.shrWired) return;
+  const fresh = btn.cloneNode(true);
+  fresh.dataset.shrWired = "1";
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", mk);
+}
+
+/// "Artist Station Radio": play the artist's tracks and keep the queue fed
+/// from recommendations — the same path the NowPlaying radio toggle uses.
+function wireStationRadio(m, tracks) {
+  const btn = m.querySelector('button[aria-label="Artist Station Radio"]');
+  if (!btn || btn.dataset.stWired) return;
+  const fresh = btn.cloneNode(true);
+  fresh.dataset.stWired = "1";
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", () => {
+    if (!tracks.length) return toast("Nothing to play yet", 3000, "error");
+    playList(tracks, 0);
+    setRadioOn(true);
+    const st = playerState();
+    go("nowplaying");
+    toast("Station on — recommendations keep the queue fed", 3000, "success");
+    ensureReco(st.queue, st.qi);
+  });
+}
+
 let lyricsFor = "";
 let lyricsBox = null;
 let lyricToken = 0;
+/// Tracks whose lookup already failed: paintNowplaying runs ~4×/s, so a
+/// cleared `lyricsFor` on error retried the fetch on every single frame
+/// (permanent skeleton + a request storm). One failure = one message.
+const lyricsFailed = new Set();
+
+const LYRICS_UNAVAILABLE = '<span class="font-body-sm text-secondary italic">Lyrics unavailable</span>';
 
 async function ensureLyrics() {
   const box = document.querySelector("[data-lyrics]");
   const t = playerState().track;
-  if (!box || !document.getElementById("elapsed-time") || !t || !invoke) return;
+  if (!box || !document.getElementById("elapsed-time") || !invoke) return;
+  if (!t) {
+    // Queue drained while the card is still open: drop the last track's words.
+    if (lyricsFor !== "") {
+      lyricsFor = "";
+      box.innerHTML = '<span class="font-body-sm text-secondary italic">Nothing playing</span>';
+    }
+    return;
+  }
   // Keyed per box as well as per track: remounting NowPlaying rebuilds the
   // card, and its placeholder lines must be replaced again for the same track.
   if (lyricsFor === t.id && lyricsBox === box) return;
   lyricsFor = t.id;
   lyricsBox = box;
+  if (lyricsFailed.has(t.id)) {
+    box.innerHTML = LYRICS_UNAVAILABLE;
+    return;
+  }
   const token = ++lyricToken;
   box.innerHTML =
     '<div class="h-3.5 w-3/4 rounded-md animate-pulse bg-surface-container-high"></div><div class="h-3.5 w-1/2 rounded-md animate-pulse bg-surface-container-high"></div>';
@@ -1285,10 +1500,9 @@ async function ensureLyrics() {
     renderLyrics(box, r || {});
   } catch (e) {
     console.error(e);
-    if (token === lyricToken) {
-      lyricsFor = "";
-      box.innerHTML = '<span class="font-body-sm text-secondary italic">Lyrics unavailable</span>';
-    }
+    if (token !== lyricToken) return;
+    lyricsFailed.add(t.id);
+    box.innerHTML = LYRICS_UNAVAILABLE;
   }
 }
 
@@ -1307,24 +1521,29 @@ function paintNowplaying(st) {
   if (bar) bar.style.width = pct + "%";
   const needle = document.getElementById("scrubber-needle");
   if (needle) needle.style.left = `calc(${pct}% - 7px)`;
+  // Paint guards: this runs ~4×/s and a textContent write invalidates layout
+  // even when the string is unchanged.
+  const setTxt = (el, v) => {
+    if (el && el.textContent !== v) el.textContent = v;
+  };
   const el = document.getElementById("elapsed-time");
-  if (el) el.textContent = fmtTime(st.pos);
+  setTxt(el, fmtTime(st.pos));
   const rm = document.getElementById("remaining-time");
-  if (rm) rm.textContent = `-${fmtTime(Math.max(0, st.dur - st.pos))}`;
+  setTxt(rm, `-${fmtTime(Math.max(0, st.dur - st.pos))}`);
   const icon = document.getElementById("play-pause-icon");
-  if (icon) icon.textContent = st.paused ? "play_arrow" : "pause";
+  setTxt(icon, st.paused ? "play_arrow" : "pause");
 
   const t = st.track;
   if (t) {
     const title = m.querySelector('[class*="font-headline-lg"]');
-    if (title && t.title) title.textContent = t.title;
+    if (title && t.title) setTxt(title, t.title);
     // The artist line lives beside the title (p.font-body-md); the only
     // font-headline-md in <main> is the middle lyrics line — painting it
     // would overwrite the lyrics with the artist name.
     const titleEl = m.querySelector("h1.font-headline-lg");
     const headerArtist = titleEl && titleEl.parentElement && titleEl.parentElement.querySelector("p.font-body-md");
     const artist = headerArtist || m.querySelector("p.font-body-md");
-    if (artist && t.artist) artist.textContent = t.artist;
+    if (artist && t.artist) setTxt(artist, t.artist);
     // Only the header credit is stamped: the fallback match can land on a
     // lyric line, and a lyric tap must mean "seek", not "open artist".
     if (headerArtist && t.artist) {
@@ -1341,19 +1560,29 @@ function paintNowplaying(st) {
   const bd = document.querySelector("[data-badge]");
   if (bd) {
     if (bd.dataset.badgeIdle === undefined) bd.dataset.badgeIdle = bd.textContent;
-    bd.textContent = badgeLabel(st.badge, bd.dataset.badgeIdle);
+    const want = badgeLabel(st.badge, bd.dataset.badgeIdle);
+    if (bd.textContent !== want) bd.textContent = want;
   }
 
-  const sh = document.getElementById("shuffle-btn");
-  if (sh) {
+  // Both shuffle affordances: the header mirror must track the real state too.
+  for (const sh of [document.getElementById("shuffle-btn"), document.getElementById("header-shuffle-btn")]) {
+    if (!sh) continue;
     sh.classList.toggle("text-primary", st.shuffle);
     sh.classList.toggle("text-on-surface-variant", !st.shuffle);
+    sh.setAttribute("aria-pressed", String(!!st.shuffle));
   }
   const rp = document.getElementById("repeat-btn");
   if (rp) {
     rp.classList.toggle("text-primary", st.repeat > 0);
     rp.classList.toggle("text-on-surface-variant", st.repeat === 0);
+    // 0=off, 1=queue, 2=one track — the glyph is the only cue the mode has.
+    const ic = rp.querySelector(".material-symbols-outlined");
+    if (ic) ic.textContent = st.repeat === 2 ? "repeat_one" : "repeat";
+    rp.setAttribute("aria-label", st.repeat === 0 ? "Repeat off" : st.repeat === 1 ? "Repeat all" : "Repeat one");
+    rp.setAttribute("aria-pressed", String(st.repeat > 0));
   }
+  const rb = document.getElementById("radio-btn");
+  if (rb) paintRadioBtn(rb, isRadioOn());
 
   const key = `${st.qi}:${st.queue.length}:${t ? t.id : ""}`;
   if (key !== upNextKey) {
@@ -1381,6 +1610,15 @@ function paintNowplaying(st) {
     }
   }
   ensureLyrics();
+}
+
+/// The Radio toggle is pure preference state — paint it from the source of
+/// truth so a remount never shows a stale switch.
+function paintRadioBtn(btn, on) {
+  if (!btn) return;
+  btn.classList.toggle("text-primary", !!on);
+  btn.classList.toggle("text-on-surface-variant", !on);
+  btn.setAttribute("aria-pressed", String(!!on));
 }
 
 function mountNowplaying() {
@@ -1421,17 +1659,346 @@ function mountNowplaying() {
       if (t) downloadTrack(t, fresh);
     });
   }
+  // Lyrics "Full View": promote the preview card to the fixed stage (CSS in
+  // index.html) and re-pin the active line to the new geometry right away.
+  const fullBtn = m.querySelector("[data-lyrics-full]");
+  if (fullBtn && !fullBtn.dataset.fullWired) {
+    fullBtn.dataset.fullWired = "1";
+    fullBtn.addEventListener("click", () => {
+      const card = fullBtn.closest("div.rounded-xl");
+      if (!card) return;
+      const on = card.classList.toggle("tm-lyrics-full");
+      fullBtn.textContent = on ? "Close" : "Full View";
+      requestAnimationFrame(() => syncLyrics());
+    });
+  }
+  const shareBtn = document.getElementById("share-utility-btn");
+  if (shareBtn && !shareBtn.dataset.shrWired) {
+    const fresh = shareBtn.cloneNode(true);
+    fresh.dataset.shrWired = "1";
+    shareBtn.replaceWith(fresh);
+    fresh.addEventListener("click", () => {
+      const t = playerState().track;
+      if (!t) return toast("Nothing is playing", 3000, "error");
+      shareThing({ title: t.title, text: t.artist, url: t.page_url });
+    });
+  }
+  const queueBtn = m.querySelector('button[aria-label="Queue"]');
+  if (queueBtn && !queueBtn.dataset.qWired) {
+    const fresh = queueBtn.cloneNode(true);
+    fresh.dataset.qWired = "1";
+    queueBtn.replaceWith(fresh);
+    fresh.addEventListener("click", () => {
+      const row0 = m.querySelector('div[class*="p-2 rounded-xl"]');
+      const host = row0 && row0.parentElement;
+      if (host) host.scrollIntoView({ behavior: "smooth", block: "end" });
+      else toast("Nothing queued", 2500);
+    });
+  }
   document.getElementById("master-play-pause")?.addEventListener("click", () => toggle());
   m.querySelector('[aria-label="Next"]')?.addEventListener("click", () => next());
   m.querySelector('[aria-label="Previous"]')?.addEventListener("click", () => prev());
   document.getElementById("shuffle-btn")?.addEventListener("click", () => toggleShuffle());
   document.getElementById("repeat-btn")?.addEventListener("click", () => cycleRepeat());
+  const radioBtn = document.getElementById("radio-btn");
+  if (radioBtn) {
+    const fresh = radioBtn.cloneNode(true); // drop the design's cosmetic node
+    radioBtn.replaceWith(fresh);
+    paintRadioBtn(fresh, isRadioOn());
+    fresh.addEventListener("click", () => {
+      const on = setRadioOn(!isRadioOn());
+      paintRadioBtn(fresh, on);
+      if (!on) return toast("Radio off — the queue ends where it ends", 3000);
+      toast("Radio on — recommendations keep the queue fed", 3000, "success");
+      const st = playerState();
+      ensureReco(st.queue, st.qi)
+        .then((n) => {
+          if (n) {
+            toast(`Added ${n} recommended tracks`, 3500, "success");
+            repaint();
+          }
+        })
+        .catch(() => {});
+    });
+  }
   document.getElementById("favorite-btn")?.addEventListener("click", () => {
     const t = playerState().track;
     if (t) toggleFav(t);
   });
   upNextKey = "";
   paintNowplaying(playerState());
+}
+
+// -------------------------------------------------------------- analytics -
+// The Telemetry Bay ships as a design mock ("48h 12m", "Solaris & Kaelen",
+// hardcoded bars). Everything here repaints it from the real play log, and
+// hides the sections that no data can back (format split, mood spectrum)
+// rather than restating invented numbers.
+
+function hideNear(root, re, selector) {
+  const el = findByText(root, re);
+  const target = el && el.closest(selector);
+  if (target) target.remove();
+}
+
+function mountAnalytics() {
+  const m = main();
+  if (!m) return;
+  wireBack(m);
+
+  const plays = load(PLAYS_KEY, []);
+  const totalSec = plays.reduce((s, t) => s + (Number(t.duration_secs) || 0) * (Number(t.count) || 1), 0);
+  const totalPlays = plays.reduce((s, t) => s + (Number(t.count) || 1), 0);
+  const hqPlays = plays.filter((t) => t.hq).reduce((s, t) => s + (Number(t.count) || 1), 0);
+  const hqPct = totalPlays ? Math.round((hqPlays / totalPlays) * 100) : 0;
+
+  // Hero: real listening time + play count.
+  const hero = m.querySelector(".font-headline-xl");
+  if (hero) hero.innerHTML = `${Math.floor(totalSec / 3600)}<span class="text-secondary text-headline-md font-normal">h</span> ${Math.floor((totalSec % 3600) / 60)}<span class="text-secondary text-headline-md font-normal">m</span>`;
+  const trend = [...m.querySelectorAll("span")].find((s) => /\+\d+%/.test(s.textContent) && s.querySelector(".material-symbols-outlined"));
+  if (trend) {
+    const icon = trend.querySelector(".material-symbols-outlined");
+    trend.replaceChildren(icon, document.createTextNode(` ${totalPlays} plays`));
+  }
+  // The quality-breakdown block was removed from the markup: there is no
+  // real fidelity data behind it, so nothing is painted here.
+  // Nothing computed here: drop the fabricated blocks outright.
+  hideNear(m, /Avg Session/, ".grid");
+  hideNear(m, /Resolution Analysis/, "section");
+  hideNear(m, /Acoustic Mood Spectrum/, "section");
+  hideNear(m, /Peak session coincided/, ".flex");
+
+  // Daily Rhythm: last 7 days of real listening, oldest → newest.
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - i);
+    const from = start.getTime();
+    const to = from + 24 * 3600e3;
+    const sec = plays.reduce((s, t) => {
+      const ts = Number(t.ts) || 0;
+      return ts >= from && ts < to ? s + (Number(t.duration_secs) || 0) * (Number(t.count) || 1) : s;
+    }, 0);
+    days.push({ label: ["S", "M", "T", "W", "T", "F", "S"][start.getDay()], name: start.toLocaleDateString(undefined, { weekday: "short" }), sec });
+  }
+  const peak = days.reduce((a, b) => (b.sec > a.sec ? b : a), days[0]);
+  const chart = m.querySelector(".h-28");
+  if (chart) {
+    const max = Math.max(60, ...days.map((d) => d.sec));
+    const cols = [...chart.children];
+    cols.forEach((col, i) => {
+      const d = days[i];
+      if (!d) return;
+      const hrs = d.sec / 3600;
+      const label = col.querySelector("span");
+      if (label) {
+        label.textContent = hrs >= 1 ? `${hrs.toFixed(1)}h` : hrs ? `${Math.round(hrs * 60)}m` : "0h";
+        label.style.opacity = "1"; // touch devices have no hover to reveal it
+      }
+      const bar = col.querySelector("div");
+      if (bar) {
+        const pct = d.sec ? Math.max(4, Math.round((d.sec / max) * 100)) : 4;
+        bar.style.height = `${pct}%`;
+        const on = d === peak && peak.sec > 0;
+        bar.classList.toggle("bg-primary", on);
+        bar.classList.toggle("bg-surface-container-highest", !on);
+      }
+    });
+  }
+  const peakLabel = findByText(m, /^Sat/) || [...m.querySelectorAll("span")].find((s) => /•/.test(s.textContent) && /hrs?$/.test(s.textContent.trim()));
+  if (peakLabel && peak.sec) peakLabel.textContent = `${peak.name} • ${(peak.sec / 3600).toFixed(1)} hrs`;
+
+  // Top artists: aggregate the play log and rebuild the section's rows.
+  const byArtist = new Map();
+  for (const t of plays) {
+    const name = String(t.artist || "").split(",")[0].trim() || "Unknown artist";
+    const c = Number(t.count) || 1;
+    const cur = byArtist.get(name) || { name, plays: 0, sec: 0, image: t.image || "" };
+    cur.plays += c;
+    cur.sec += (Number(t.duration_secs) || 0) * c;
+    if (!cur.image && t.image) cur.image = t.image;
+    byArtist.set(name, cur);
+  }
+  const top = [...byArtist.values()].sort((a, b) => b.plays - a.plays).slice(0, 5);
+  const listHost = sectionFor("Top Artists")?.querySelector(".space-y-space-xs");
+  if (listHost) {
+    listHost.innerHTML = top.length
+      ? top
+          .map(
+            (a, i) => `<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors">
+            <div class="flex items-center gap-space-sm min-w-0">
+              <span class="font-label-mono text-label-mono font-semibold text-secondary w-3">${String(i + 1).padStart(2, "0")}</span>
+              <div class="w-10 h-10 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
+              <div class="min-w-0">
+                <h3 class="font-body-md text-body-md text-on-surface font-semibold truncate">${esc(a.name)}</h3>
+                <span class="font-label-mono text-[10px] text-secondary truncate">${a.plays} plays • ${fmtDur(a.sec)}</span>
+              </div>
+            </div>
+            <button aria-label="Play artist" data-artist-play="${esc(a.name)}" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-primary transition-colors flex-shrink-0"><span class="material-symbols-outlined text-[18px]">play_arrow</span></button>
+          </div>`,
+          )
+          .join("")
+      : '<div class="font-body-sm text-secondary py-6 text-center">Play something and your real stats show up here.</div>';
+    listHost.querySelectorAll("[data-artist-play]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const mine = plays.filter((t) => (String(t.artist || "").split(",")[0].trim() || "Unknown artist") === b.dataset.artistPlay);
+        if (!mine.length) return;
+        playList(mine, 0);
+        go("nowplaying");
+      });
+    });
+  }
+
+  // Export: share a plain-text summary (Share sheet → clipboard fallback).
+  const exportBtn = [...m.querySelectorAll("button")].find((b) => /Export Telemetry/i.test(b.textContent));
+  if (exportBtn && !exportBtn.dataset.expWired) {
+    exportBtn.dataset.expWired = "1";
+    exportBtn.addEventListener("click", async () => {
+      const lines = [
+        `Listening summary — ${new Date().toLocaleDateString()}`,
+        `Total: ${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m across ${totalPlays} plays`,
+        `High-quality tagged: ${hqPct}%`,
+        "",
+        "Top artists:",
+        ...top.map((a, i) => `${i + 1}. ${a.name} — ${a.plays} plays (${fmtDur(a.sec)})`),
+      ].join("\n");
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: "Listening summary", text: lines });
+          return;
+        } catch (e) {
+          if (e && e.name === "AbortError") return;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(lines);
+        toast("Summary copied");
+      } catch {
+        toast("Sharing is unavailable here");
+      }
+    });
+  }
+  // Share Insights is the same summary through the same sheet.
+  const insights = [...m.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Share Insights");
+  if (insights && !insights.dataset.insWired) {
+    insights.dataset.insWired = "1";
+    insights.addEventListener("click", () => exportBtn.click());
+  }
+}
+
+// ----------------------------------------------------------- notifications -
+// A real feed over the EVENTS_KEY log (downloads, updates, restores). The
+// design ships six fictional cards with no way to clear them.
+
+const EV_META = {
+  update: { type: "releases", icon: "system_update", tag: "UPDATE" },
+  downloads: { type: "drops", icon: "download_done", tag: "VAULT" },
+  restore: { type: "system", icon: "settings_backup_restore", tag: "BACKUP" },
+  system: { type: "system", icon: "info", tag: "SYSTEM" },
+};
+
+function relTime(ts) {
+  const s = Math.max(1, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+function mountNotification() {
+  const m = main();
+  if (!m) return;
+  wireBack(m);
+  const events = load(EVENTS_KEY, []);
+  const unread = events.filter((e) => !e.read).length;
+
+  const strip = findByText(m, /EVENT FEED/);
+  if (strip) strip.textContent = `EVENT FEED: ${events.length} LOGGED`;
+  const stripCount = findByText(m, /^\d+ EVENTS$/);
+  if (stripCount) stripCount.textContent = `${unread} UNREAD`;
+
+  // Filter pills: relabel to the kinds this app actually emits + counts.
+  const pills = [...m.querySelectorAll(".filter-pill")];
+  const cats = ["all", "update", "downloads", "system"];
+  const names = { all: "All", update: "Updates", downloads: "Downloads", system: "System" };
+  pills.forEach((p, i) => {
+    const cat = cats[i];
+    if (!cat) return;
+    p.dataset.category = cat;
+    const spans = p.querySelectorAll("span");
+    if (spans[0]) spans[0].textContent = names[cat];
+    if (spans[1]) spans[1].textContent = String(cat === "all" ? events.length : events.filter((e) => (EV_META[e.kind] || EV_META.system).type === cat).length);
+  });
+
+  const stream = m.querySelector("#notificationStream");
+  if (stream) {
+    if (!events.length) {
+      stream.innerHTML = `<div class="flex flex-col items-center justify-center gap-3 py-20 text-center">
+        <span class="material-symbols-outlined text-[40px] text-on-surface-variant">notifications_off</span>
+        <div class="font-body-md text-body-md text-on-surface font-medium">You're all caught up</div>
+        <div class="font-body-sm text-body-sm text-secondary max-w-[16rem]">Download results, update notices and backup events land here.</div>
+      </div>`;
+    } else {
+      const groups = [
+        { key: "today", label: "Today", items: events.filter((e) => Date.now() - e.ts < 24 * 3600e3) },
+        { key: "earlier", label: "Earlier", items: events.filter((e) => Date.now() - e.ts >= 24 * 3600e3) },
+      ].filter((g) => g.items.length);
+      stream.innerHTML = groups
+        .map(
+          (g) => `<section class="notification-group flex flex-col gap-space-xs" data-group="${g.key}">
+          <div class="flex items-center justify-between pb-space-xs">
+            <span class="font-label-mono text-label-mono text-secondary uppercase tracking-widest">${g.label}</span>
+            <span class="font-label-mono text-label-mono text-secondary">${g.items.filter((e) => !e.read).length} UNREAD</span>
+          </div>
+          ${g.items
+            .map((e) => {
+              const meta = EV_META[e.kind] || EV_META.system;
+              return `<article class="notification-card group bg-surface-container-lowest p-space-md rounded-xl transition-all duration-200 relative shadow-sm" data-type="${meta.type}">
+              <div class="flex items-start gap-space-md">
+                <div class="w-12 h-12 rounded-lg bg-surface-container-low flex flex-col items-center justify-center flex-shrink-0 text-on-surface">
+                  <span class="material-symbols-outlined text-[20px]">${meta.icon}</span>
+                  <span class="font-label-mono text-[8px] text-secondary">${meta.tag}</span>
+                </div>
+                <div class="flex-1 min-w-0 flex flex-col gap-1">
+                  <div class="flex items-baseline justify-between gap-space-xs">
+                    <h2 class="font-headline-md text-body-lg font-medium text-on-surface truncate">${esc(e.title)}</h2>
+                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                      <span class="font-label-mono text-label-mono text-secondary">${relTime(e.ts)}</span>
+                      ${e.read ? "" : '<span class="status-dot w-1.5 h-1.5 rounded-full bg-primary"></span>'}
+                    </div>
+                  </div>
+                  ${e.body ? `<p class="font-body-md text-body-md text-on-surface-variant leading-snug">${esc(e.body)}</p>` : ""}
+                </div>
+              </div>
+            </article>`;
+            })
+            .join("")}
+        </section>`,
+        )
+        .join("");
+    }
+  }
+
+  const wire = (el, fn) => {
+    if (!el || el.dataset.wired) return;
+    el.dataset.wired = "1";
+    el.addEventListener("click", fn);
+  };
+  const findBtn = (re) => [...m.querySelectorAll("button")].find((b) => re.test(b.getAttribute("aria-label") || ""));
+  wire(findBtn(/clear all/i), () => {
+    save(EVENTS_KEY, []);
+    toast("Notifications cleared");
+    mountNotification();
+  });
+  wire(findBtn(/notification settings/i), () => go("settings"));
+  wire(findBtn(/configure alerts/i), () => go("settings"));
+  wire(m.querySelector("#markAllReadBtn"), () => {
+    if (!events.length) return;
+    save(EVENTS_KEY, events.map((e) => ({ ...e, read: true })));
+    toast("All marked read");
+    mountNotification();
+  });
 }
 
 // ---------------------------------------------------------------- settings -
@@ -1548,10 +2115,61 @@ function paintSettings(m) {
   if (au) paintSwitch(au, String(load(AUTOUPDATE_KEY, "1")) === "1");
 }
 
+/// tauri.conf.json "version" — the design export shipped a mock v2.4.0.
+const APP_VERSION = "0.3.0";
+
+function paintVersion(m) {
+  const head = m.querySelector("header span");
+  if (head && /^v\d/i.test(head.textContent.trim())) head.textContent = `v${APP_VERSION}`;
+  const foot = [...m.querySelectorAll("p")].find((p) => /VERSION\s+\d/i.test(p.textContent));
+  if (foot) foot.textContent = `VERSION ${APP_VERSION}`;
+}
+
+/// The three legal rows were href="#" anchors the router swallows, so they
+/// opened nothing. Expand them inline with the desktop's real copy instead
+/// of inventing a second navigation model for three paragraphs.
+function wireLegal(m) {
+  const rows = [
+    [/Open Source Licenses/i, licensesHTML],
+    [/About Project/i, aboutHTML],
+    [/Terms &\s*Conditions/i, termsHTML],
+  ];
+  for (const [re, html] of rows) {
+    const row = [...m.querySelectorAll("a")].find((a) => re.test(a.textContent));
+    if (!row || row.dataset.legalWired) continue;
+    row.dataset.legalWired = "1";
+    row.setAttribute("role", "button");
+    row.setAttribute("tabindex", "0");
+    row.removeAttribute("href"); // no hash navigation, no router swallow
+    const holder = document.createElement("div");
+    holder.className = "hidden px-space-md py-3 bg-surface-container-low/60";
+    row.insertAdjacentElement("afterend", holder);
+    const chev = row.querySelector(".material-symbols-outlined");
+    const toggle = () => {
+      const closed = holder.classList.toggle("hidden");
+      if (!closed && !holder.dataset.filled) {
+        holder.dataset.filled = "1";
+        holder.innerHTML = html();
+      }
+      if (chev) chev.textContent = closed ? "chevron_right" : "expand_more";
+    };
+    row.addEventListener("click", toggle);
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  }
+}
+
 function mountSettings() {
   const m = main();
   if (!m) return;
+  wireBack(m);
   paintSettings(m);
+  paintVersion(m);
+  wireLegal(m);
   pushPrefs();
   if (m.dataset.settingsWired) return;
   m.dataset.settingsWired = "1";
@@ -1665,6 +2283,7 @@ function mountSettings() {
         paintFavs();
         mountSettings(); // repaint the controls from the restored settings
         toast(`Restored ${applied.counts.favorites} favourites, ${applied.counts.playlists} playlists`, 5000, "success");
+        pushEvent("restore", "Backup restored", `${applied.counts.favorites} favourites and ${applied.counts.playlists} playlists were imported from a backup file.`);
       } catch (e) {
         console.error(e);
         toast(`Restore failed: ${e && e.message ? e.message : e}`, 5000, "error");
@@ -1682,6 +2301,8 @@ export const MOUNT = {
   download: mountDownload,
   history: mountHistory,
   settings: mountSettings,
+  analytics: mountAnalytics,
+  notification: mountNotification,
   album: (q) => mountDetail("album", q),
   artist: (q) => mountDetail("artist", q),
   playlist: (q) => mountDetail("playlist", q),

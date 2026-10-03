@@ -1,4 +1,4 @@
-// settings.js â€” settings dialog, widget prefs, user preferences
+// settings.js — settings dialog, widget prefs, user preferences
 // Split from main.js (Phase 4 M1).
 import { diag, esc, invoke, notifyLocalChange, toast } from "./core.js";
 import { $, errorEl } from "./dom.js";
@@ -47,7 +47,7 @@ export const PLATFORM = /windows/i.test(navigator.userAgent)
       ? "Linux"
       : "Desktop";
 
-/// Direct Rust dependencies, read off Cargo.lock â€” the list an attribution
+/// Direct Rust dependencies, read off Cargo.lock — the list an attribution
 /// page is expected to carry. The full transitive tree is 469 crates and is not
 /// useful on screen; the lock file is the authoritative copy.
 export const LICENSES = [
@@ -189,7 +189,7 @@ export function prefLangs() {
 export function saveLangs(list) {
   savePref(LANG_KEY, JSON.stringify([...new Set(list.filter((s) => s && s !== "all"))]));
 }
-/// The one language the catalog itself is asked for â€” the first pick. The rest
+/// The one language the catalog itself is asked for — the first pick. The rest
 /// are applied client-side by `filterLang`, which is the only place that can
 /// keep a multi-language set.
 export const prefLang = () => prefLangs()[0] || "all";
@@ -229,7 +229,7 @@ export function filterLang(list) {
   return hit.length ? hit : list;
 }
 
-/// Display label for a language slug â€” "telugu" â†’ "Telugu".
+/// Display label for a language slug — "telugu" → "Telugu".
 export function langLabel(slug) {
   const hit = LANGS.find(([v]) => v === slug);
   if (hit) return hit[1];
@@ -239,7 +239,7 @@ export function langLabel(slug) {
 /// Home's own filter, stricter than `filterLang`: rows that carry a language
 /// must match the picks, rows that carry none are kept (nothing to filter
 /// them by). A shelf is only emptied when its source *does* speak another
-/// language â€” which `langShelves` in home.js then refills from a
+/// language — which `langShelves` in home.js then refills from a
 /// language-scoped search.
 export function filterLangHome(list) {
   const langs = prefLangs();
@@ -353,8 +353,8 @@ export const SETTINGS_VIEWS = {
             "translate",
             "Music language",
             langs.length
-              ? `Songs are filtered to ${langs.length} language${langs.length > 1 ? "s" : ""} â€” tap to add or remove`
-              : "Showing every language â€” tap to filter",
+              ? `Songs are filtered to ${langs.length} language${langs.length > 1 ? "s" : ""} — tap to add or remove`
+              : "Showing every language — tap to filter",
             langChips,
           ) +
             setRow(
@@ -379,14 +379,14 @@ export const SETTINGS_VIEWS = {
             setRow(
               "high_quality",
               "Download quality",
-              "Opus bitrate for new downloads (normalized to âˆ’16 LUFS)",
+              "Opus bitrate for new downloads (normalized to −16 LUFS)",
               `<select id="set-dl-quality" class="${setSelect}">${options(
                 [
-                  ["320kbps", "320 kbps â€” max"],
+                  ["320kbps", "320 kbps — max"],
                   ["160kbps", "160 kbps"],
                   ["96kbps", "96 kbps"],
-                  ["64kbps", "64 kbps â€” small"],
-                  ["48kbps", "48 kbps â€” tiny"],
+                  ["64kbps", "64 kbps — small"],
+                  ["48kbps", "48 kbps — tiny"],
                 ],
                 prefDlQuality(),
               )}</select>`,
@@ -401,7 +401,7 @@ export const SETTINGS_VIEWS = {
   storage: {
     eyebrow: "Settings / Storage",
     body: () => {
-      // Usage arrives async (disk walk), so the line fills after render â€”
+      // Usage arrives async (disk walk), so the line fills after render —
       // same pattern as fillShortcutMode.
       setTimeout(fillStorage, 0);
       return `
@@ -443,7 +443,7 @@ export const SETTINGS_VIEWS = {
   backup: {
     eyebrow: "Settings / Backup & Export",
     body: () => {
-      // Counts arrive after render â€” same skeleton pattern as fillStorage.
+      // Counts arrive after render — same skeleton pattern as fillStorage.
       // refreshGDrive() is parked with the Google Drive UI below.
       setTimeout(fillBackupInfo, 0);
       return `
@@ -468,11 +468,11 @@ export const SETTINGS_VIEWS = {
           </div>
         </div>
       </div>
-      <!-- GOOGLE DRIVE (optional) â€” parked 2026-10: the OAuth consent screen is
+      <!-- GOOGLE DRIVE (optional) — parked 2026-10: the OAuth consent screen is
            stuck in Google "testing" mode, so sign-in 403s for anyone but the
            listed testers. The backend (gdrive.rs) and the sync engine
            (gsync.js) stay in the tree; uncomment below to bring the UI back. -->
-      ${setNote("A backup holds favorites, local playlists and settings â€” downloads, cache and history stay on this machine. The file stays the manual path.")}
+      ${setNote("A backup holds favorites, local playlists and settings — downloads, cache and history stay on this machine. The file stays the manual path.")}
     </div>`;
     },
   },
@@ -481,7 +481,7 @@ export const SETTINGS_VIEWS = {
     eyebrow: "Settings / Updates",
     body: () => {
       // The check is a network round-trip, so the panel paints a skeleton
-      // first â€” same pattern as fillStorage / fillShortcutMode.
+      // first — same pattern as fillStorage / fillShortcutMode.
       setTimeout(fillUpdates, 0);
       return `
     <div class="flex flex-col gap-4">
@@ -565,7 +565,7 @@ export const SETTINGS_VIEWS = {
         ${kv("Catalog", "JioSaavn first-party, 5 community mirrors as fallback")}
         ${kv("Playback", "Local axum relay on 127.0.0.1, Range forwarded verbatim")}
         ${kv("Lyrics", "LRCLIB, Better Lyrics, then JioSaavn, LRCLIB search")}
-        ${kv("Vault", "App data folder Â· TRANCE MUSIC")}
+        ${kv("Vault", "App data folder · TRANCE MUSIC")}
         ${kv("Licence", "MIT")}
       </dl>
       ${setNote("No installer and no code signing yet &mdash; this build runs from source. Development status is in <span class='font-label-mono'>CHANGELOG.md</span>.")}
@@ -726,7 +726,7 @@ function fillBackupInfo() {
   if (box) {
     const favs = loadFavs().length;
     const pls = loadLocalPls();
-    box.textContent = `${favs} favorites Â· ${pls.length} local playlists Â· ${Object.keys(readSettings()).length} settings`;
+    box.textContent = `${favs} favorites · ${pls.length} local playlists · ${Object.keys(readSettings()).length} settings`;
   }
   const sel = $("#set-backup-pl");
   if (sel) {
@@ -801,7 +801,7 @@ async function doPlaylistExport(format) {
   const picked = sel ? sel.value : "";
   const playlist = loadLocalPls().find((p) => p.id === picked);
   if (!playlist) {
-    toast("Pick a playlist first â€” or create one in Library.", "info");
+    toast("Pick a playlist first — or create one in Library.", "info");
     return;
   }
   const isCsv = format === "csv";
@@ -852,12 +852,12 @@ async function doPlaylistExport(format) {
 //       ? "Google Drive sync is not configured in this build."
 //       : status.signed_in
 //         ? `Signed in. ${lastSyncLine()}`
-//         : "Not signed in. Sign-in is optional â€” backup files always work.";
+//         : "Not signed in. Sign-in is optional — backup files always work.";
 //   }
 // }
 // 
 // async function doGDriveSignIn() {
-//   toast("Browser opened â€” complete the Google sign-in there.", "info");
+//   toast("Browser opened — complete the Google sign-in there.", "info");
 //   try {
 //     await invoke("gdrive_sign_in");
 //     toast("Signed in with Google.", "success");
@@ -872,7 +872,7 @@ async function doPlaylistExport(format) {
 // async function doGDriveSignOut() {
 //   try {
 //     await invoke("gdrive_sign_out");
-//     toast("Signed out â€” your local data stays.", "info");
+//     toast("Signed out — your local data stays.", "info");
 //     diag("gdrive", true, "signed out");
 //   } catch (err) {
 //     diag("gdrive", false, String(err));
@@ -950,7 +950,7 @@ async function fillStorage() {
     const sel = $("#set-cache-size");
     const mb = String(Math.round(s.budget_bytes / (1024 * 1024)));
     if (sel && sel.value !== mb) {
-      if (![...sel.options].some((o) => o.value === mb)) sel.add(new Option(`${mb} MB â€” custom`, mb));
+      if (![...sel.options].some((o) => o.value === mb)) sel.add(new Option(`${mb} MB — custom`, mb));
       sel.value = mb;
     }
   } catch (err) {
@@ -967,7 +967,7 @@ function storageLine(s) {
 /// Where the "Releases page" button goes; refreshed by every successful check.
 let lastUpdatePage = "https://github.com/Rohithdgrr/OPEN-MUSIC/releases";
 
-/// Updates view: one call returns the whole story â€” signed manifest first,
+/// Updates view: one call returns the whole story — signed manifest first,
 /// GitHub metadata as the fallback, plus the rollback list.
 async function fillUpdates() {
   const box = $("#set-update-status");
@@ -977,7 +977,7 @@ async function fillUpdates() {
   try {
     r = await invoke("update_check");
   } catch (err) {
-    if (box.isConnected) box.textContent = "Could not reach GitHub â€” check the connection and try again.";
+    if (box.isConnected) box.textContent = "Could not reach GitHub — check the connection and try again.";
     if (list?.isConnected) list.textContent = "";
     diag("update", false, String(err));
     return;
@@ -986,11 +986,11 @@ async function fillUpdates() {
   lastUpdatePage = r.page || lastUpdatePage;
   if (r.latest) {
     const v = `v${esc(r.latest.version)}`;
-    const notes = r.latest.notes ? ` â€” ${esc(r.latest.notes.split("\n")[0])}` : "";
+    const notes = r.latest.notes ? ` — ${esc(r.latest.notes.split("\n")[0])}` : "";
     box.innerHTML = r.latest.installable
       ? `<span class="text-primary font-medium">${v} is available.</span> You are on ${esc(r.current)}${notes}
          <button type="button" data-update-install class="block mt-2 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-medium hover:opacity-90 transition-opacity">Install ${v} &amp; restart</button>`
-      : `<span class="text-primary font-medium">${v} is out,</span> but it was published before in-app updates â€” install it from the releases page.${notes}`;
+      : `<span class="text-primary font-medium">${v} is out,</span> but it was published before in-app updates — install it from the releases page.${notes}`;
   } else {
     box.textContent = `You are up to date on ${r.current}.`;
   }
@@ -998,7 +998,7 @@ async function fillUpdates() {
   <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-container transition-colors">
     <span class="min-w-0 flex-1">
       <span class="block text-sm text-on-surface">${esc(rel.name || rel.tag)}</span>
-      <span class="block text-xs text-on-surface-variant">${esc(rel.tag)}${rel.published ? " Â· " + esc(rel.published.slice(0, 10)) : ""}</span>
+      <span class="block text-xs text-on-surface-variant">${esc(rel.tag)}${rel.published ? " · " + esc(rel.published.slice(0, 10)) : ""}</span>
     </span>
     ${
       rel.current
@@ -1034,16 +1034,16 @@ function watchUpdateProgress() {
       const pct = $("#set-update-pct");
       if (pct) pct.textContent = `${n}%`;
       const phase = $("#set-update-phase");
-      if (phase) phase.textContent = "Downloadingâ€¦";
+      if (phase) phase.textContent = "Downloading…";
     } else if (p.phase === "verify") {
       bar.style.width = "100%";
       const pct = $("#set-update-pct");
       if (pct) pct.textContent = "100%";
       const phase = $("#set-update-phase");
-      if (phase) phase.textContent = "Verifying signatureâ€¦";
+      if (phase) phase.textContent = "Verifying signature…";
     } else if (p.phase === "done") {
       const phase = $("#set-update-phase");
-      if (phase) phase.textContent = "Installed â€” restart the app.";
+      if (phase) phase.textContent = "Installed — restart the app.";
     }
   });
   if (updateOff && typeof updateOff.catch === "function") {
@@ -1065,7 +1065,7 @@ function runUpdateInstall() {
   watchUpdateProgress();
   $("#set-update-progress")?.classList.remove("hidden");
   invoke("update_install")
-    .then(() => toast("Update installed â€” restart the app to switch versions.", "success"))
+    .then(() => toast("Update installed — restart the app to switch versions.", "success"))
     .catch((err) => {
       updating = false;
       diag("update", false, String(err));
@@ -1079,9 +1079,9 @@ function runUpdateRollback(tag) {
   updating = true;
   watchUpdateProgress();
   $("#set-update-progress")?.classList.remove("hidden");
-  toast(`Installing ${tag}â€¦`, "info");
+  toast(`Installing ${tag}…`, "info");
   invoke("update_rollback", { tag })
-    .then(() => toast(`${tag} installed â€” restart the app to switch versions.`, "success"))
+    .then(() => toast(`${tag} installed — restart the app to switch versions.`, "success"))
     .catch((err) => {
       updating = false;
       diag("update", false, String(err));
@@ -1227,7 +1227,7 @@ export function openSettings(view = "menu") {
           .then((s) => {
             const box = $("#set-storage-usage");
             if (box) box.innerHTML = storageLine(s);
-            toast("Cache cleared â€” covers and lyrics re-download as you browse.", "success");
+            toast("Cache cleared — covers and lyrics re-download as you browse.", "success");
           })
           .catch((err) => diag("cache", false, String(err)))
           .finally(() => {

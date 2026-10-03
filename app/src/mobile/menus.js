@@ -21,6 +21,7 @@ import {
   LIBRARY_KEY,
   downloadTrack,
   downloadAll,
+  shareThing,
 } from "./shared.js";
 import { playerState, insertNext, enqueue, insertNextAll, enqueueAll } from "./player.js";
 import { entityNav, MOUNT } from "./binders.js";
@@ -132,28 +133,6 @@ function openSheet({ title, sub, image, items = [], rows = [] }) {
 
 // ------------------------------------------------------------------ actions
 
-async function shareThing({ title, text, url }) {
-  const payload = {};
-  if (title) payload.title = title;
-  if (text) payload.text = text;
-  if (url) payload.url = url;
-  if (navigator.share) {
-    try {
-      await navigator.share(payload);
-      return;
-    } catch (e) {
-      if (e && e.name === "AbortError") return; // user dismissed the sheet
-    }
-  }
-  const line = [title, text, url].filter(Boolean).join(" — ");
-  try {
-    await navigator.clipboard.writeText(line);
-    toast("Share text copied");
-  } catch {
-    toast("Sharing is unavailable here");
-  }
-}
-
 async function viewAlbum(track) {
   if (!track.album) return toast("No album information for this track");
   if (!invoke) return toast("Backend unavailable", 4000, "error");
@@ -208,7 +187,6 @@ function detailsSheet(track) {
     ["Language", track.language],
     ["Label", track.label],
     ["Duration", track.duration || (track.duration_secs ? fmtTime(track.duration_secs) : "")],
-    ["Quality", track.hq ? "Lossless" : ""],
     ["Track ID", track.id],
   ].filter((r) => r[1]);
   openSheet({
@@ -219,6 +197,61 @@ function detailsSheet(track) {
   });
 }
 
+// ------------------------------------------------------------------ playlists
+
+/// Local playlists are plain records in LIBRARY_KEY (the same shape
+/// promptCreatePlaylist creates). The picker lists them, plus "New playlist",
+/// and the confirmation toast carries an Open shortcut to the Library.
+function localPlaylists() {
+  return load(LIBRARY_KEY, []).filter((p) => p && p.local && p.kind === "playlist");
+}
+
+function addToPlaylist(track) {
+  if (!track || !track.id) return toast("Nothing to add");
+  const put = (plId) => {
+    const all = load(LIBRARY_KEY, []);
+    const i = all.findIndex((x) => x.id === plId);
+    if (i < 0) return toast("Playlist not found", 4000, "error");
+    const cur = { ...(all[i] || {}) };
+    if ((cur.tracks || []).some((t) => t.id === track.id)) return toast(`Already in “${cur.title}”`);
+    cur.tracks = [{ ...track }, ...(cur.tracks || [])];
+    cur.subtitle = `${cur.tracks.length} song${cur.tracks.length === 1 ? "" : "s"}`;
+    if (!cur.image && track.image) cur.image = track.image;
+    cur.ts = Date.now();
+    all[i] = cur;
+    save(LIBRARY_KEY, all);
+    toast(`Added to “${cur.title}”`, 6000, "success", { label: "Open", fn: () => go("library") });
+  };
+  const lists = localPlaylists();
+  const items = lists.map((p) => ({
+    icon: (p.tracks || []).some((t) => t.id === track.id) ? "check" : "playlist_play",
+    label: `${p.title} · ${(p.tracks || []).length}`,
+    action: () => put(p.id),
+  }));
+  items.push({
+    icon: "add",
+    label: "New playlist",
+    action: () => {
+      const all = load(LIBRARY_KEY, []);
+      const n = all.filter((x) => x.local).length + 1;
+      const pl = {
+        id: `local-${Date.now()}`,
+        local: true,
+        kind: "playlist",
+        title: `New Playlist ${n}`,
+        subtitle: "1 song",
+        tracks: [{ ...track }],
+        image: track.image || "",
+        ts: Date.now(),
+      };
+      all.unshift(pl);
+      save(LIBRARY_KEY, all);
+      toast(`Created “${pl.title}”`, 6000, "success", { label: "Open", fn: () => go("library") });
+    },
+  });
+  openSheet({ title: "Add to playlist", sub: track.title || "", image: track.image, items });
+}
+
 // ------------------------------------------------------------------- menus
 
 /// The full track menu — the one the design shows on NowPlaying.
@@ -226,6 +259,11 @@ export function trackMenu(track, ctx) {
   if (!track) return toast("Nothing selected");
   const items = [];
   if (track.id) {
+    items.push({
+      icon: "playlist_add",
+      label: "Add to Playlist",
+      action: () => addToPlaylist(track),
+    });
     items.push({
       icon: "playlist_play",
       label: "Play Next",
@@ -438,6 +476,8 @@ const KEBABS = ["more_vert", "more_horiz"];
 export function isMenuTrigger(btn) {
   if (!btn || btn.tagName !== "BUTTON") return false;
   if (btn.id === "more-options-btn") return true;
+  // NowPlaying's "+" is a picker, not a menu — same trigger path though.
+  if (btn.id === "playlist-add-btn") return true;
   // Inline handlers (Library's static rows) and data-libmenu own their menu.
   if (btn.hasAttribute("onclick") || btn.hasAttribute("data-libmenu")) return false;
   const label = btn.getAttribute("aria-label") || "";
@@ -460,6 +500,11 @@ function trackFromDom(btn) {
 
 /// Resolve whatever a kebab belongs to and open the matching menu.
 export function handleMenuTrigger(btn) {
+  if (btn.id === "playlist-add-btn") {
+    const current = playerState().track;
+    if (!current) return toast("Nothing is playing");
+    return addToPlaylist(current);
+  }
   if (btn.dataset.menuEntity) return entityMenu(btn.dataset.menuEntity);
   if (btn.dataset.menuList) {
     const list = store[btn.dataset.menuList];
