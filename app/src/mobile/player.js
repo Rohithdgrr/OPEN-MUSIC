@@ -307,6 +307,21 @@ export function enqueueAll(list) {
   return q.length;
 }
 
+/// Drop one entry by absolute queue index ("Remove from Queue" on a
+/// NowPlaying row). The rows only offer entries past the playhead, but the
+/// index bookkeeping still guards a removal at/before `qi` so the playing
+/// track never shifts out from under the transport.
+export function removeFromQueue(idx) {
+  const i = Number(idx);
+  if (!Number.isInteger(i) || i < 0 || i >= queue.length) return false;
+  queue.splice(i, 1);
+  if (!queue.length) qi = 0;
+  else if (i < qi) qi -= 1;
+  else if (qi >= queue.length) qi = queue.length - 1;
+  paint();
+  return true;
+}
+
 /// Offline gate: with the network down, only vaulted ids can resolve (the
 /// backend serves those straight from disk). Skip the rest and advance —
 /// but bound the run so a repeat queue of undownloaded tracks can't loop.

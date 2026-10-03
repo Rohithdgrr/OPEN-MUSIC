@@ -5,7 +5,7 @@
 //! 1. **LRCLIB** `/api/get` — free, no key, returns `syncedLyrics` *and*
 //!    `plainLyrics` in one round trip. A duration match must agree within
 //!    ~2 s or the record is refused (404).
-//! 1b. **Better Lyrics** — syllable-synced TTML, free. Flattened to
+//!    1b. **Better Lyrics** — syllable-synced TTML, free. Flattened to
 //!    timed lines so the frontend's word-by-word wipe works unchanged.
 //! 2. **JioSaavn** `lyrics.getLyrics` — the web player's own endpoint. Plain
 //!    text with `<br>` breaks, but it covers Indian-language songs LRCLIB
@@ -198,9 +198,11 @@ fn parse_ttml_time(raw: &str) -> Option<f64> {
     match parts.as_slice() {
         [ss] => ss.parse().ok(),
         [mm, ss] => Some(mm.parse::<f64>().ok()? * 60.0 + ss.parse::<f64>().ok()?),
-        [hh, mm, ss] => {
-            Some(hh.parse::<f64>().ok()? * 3600.0 + mm.parse::<f64>().ok()? * 60.0 + ss.parse::<f64>().ok()?)
-        }
+        [hh, mm, ss] => Some(
+            hh.parse::<f64>().ok()? * 3600.0
+                + mm.parse::<f64>().ok()? * 60.0
+                + ss.parse::<f64>().ok()?,
+        ),
         _ => None,
     }
 }
@@ -236,9 +238,14 @@ pub fn parse_ttml_lines(ttml: &str) -> Vec<(f64, String)> {
                 _ => {}
             }
         }
-        let line = html_unescape(text.split_whitespace().collect::<Vec<_>>().join(" ").as_str())
-            .trim()
-            .to_string();
+        let line = html_unescape(
+            text.split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .as_str(),
+        )
+        .trim()
+        .to_string();
         if !line.is_empty() {
             out.push((secs, line));
         }

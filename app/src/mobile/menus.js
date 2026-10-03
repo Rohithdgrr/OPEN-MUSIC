@@ -23,7 +23,7 @@ import {
   downloadAll,
   shareThing,
 } from "./shared.js";
-import { playerState, insertNext, enqueue, insertNextAll, enqueueAll } from "./player.js";
+import { playerState, insertNext, enqueue, insertNextAll, enqueueAll, removeFromQueue } from "./player.js";
 import { entityNav, MOUNT } from "./binders.js";
 
 // --------------------------------------------------------------------- sheet
@@ -255,7 +255,9 @@ function addToPlaylist(track) {
 // ------------------------------------------------------------------- menus
 
 /// The full track menu — the one the design shows on NowPlaying.
-export function trackMenu(track, ctx) {
+/// `ctx` is "history" | "queue" | null; `idx` is the absolute queue index
+/// that only the queue context needs (for the removal entry).
+export function trackMenu(track, ctx, idx) {
   if (!track) return toast("Nothing selected");
   const items = [];
   if (track.id) {
@@ -293,6 +295,17 @@ export function trackMenu(track, ctx) {
     action: () => shareThing({ title: track.title, text: [track.artist, track.album].filter(Boolean).join(" • "), url: track.page_url }),
   });
   items.push({ icon: "info", label: "Track Details", action: () => detailsSheet(track) });
+  if (ctx === "queue" && Number.isInteger(idx)) {
+    items.push({
+      icon: "remove_from_queue",
+      label: "Remove from Queue",
+      danger: true,
+      action: () => {
+        removeFromQueue(idx);
+        toast(`Removed “${track.title || "track"}” from the queue`);
+      },
+    });
+  }
   if (ctx === "history") {
     items.push({
       icon: "delete",
@@ -515,7 +528,12 @@ export function handleMenuTrigger(btn) {
   if (row) {
     const list = store[row.dataset.list];
     const track = list && list[+row.dataset.idx || 0];
-    if (track) return trackMenu(track, location.hash.startsWith("#/history") ? "history" : null);
+    if (track) {
+      // NowPlaying's Up Next rows get the queue context (Remove from Queue);
+      // everything else keeps the history check it always had.
+      const ctx = row.dataset.list === "npq" ? "queue" : location.hash.startsWith("#/history") ? "history" : null;
+      return trackMenu(track, ctx, +row.dataset.idx);
+    }
   }
   if (location.hash.startsWith("#/nowplaying") || btn.id === "more-options-btn") {
     const current = playerState().track;

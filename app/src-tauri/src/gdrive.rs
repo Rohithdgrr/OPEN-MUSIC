@@ -219,9 +219,7 @@ fn parse_callback_target(head: &str) -> Result<(String, String), String> {
 
 const SUCCESS_PAGE: &str = "<!doctype html><html><body style=\"font-family:sans-serif;display:flex;height:100vh;align-items:center;justify-content:center\"><div><h2>Signed in to TRANCE MUSIC</h2><p>You can close this tab and return to the app.</p></div></body></html>";
 
-async fn read_head(
-    stream: &mut tokio::net::TcpStream,
-) -> Result<String, String> {
+async fn read_head(stream: &mut tokio::net::TcpStream) -> Result<String, String> {
     use tokio::io::AsyncReadExt;
     let mut buf = Vec::with_capacity(1024);
     let mut chunk = [0u8; 512];
@@ -258,7 +256,10 @@ async fn reply(stream: &mut tokio::net::TcpStream, status: &str, body: &str) {
 /// paths, e.g. favicon, get a 404 and the wait continues). The listener is
 /// passed in already bound: the port is claimed before the browser opens,
 /// so nothing can steal it in between.
-async fn wait_for_code(std_listener: std::net::TcpListener, want_state: &str) -> Result<String, String> {
+async fn wait_for_code(
+    std_listener: std::net::TcpListener,
+    want_state: &str,
+) -> Result<String, String> {
     std_listener
         .set_nonblocking(true)
         .map_err(|e| format!("loopback bind failed: {e}"))?;
@@ -304,7 +305,16 @@ fn open_browser(url: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     let op: Vec<u16> = "open\0".encode_utf16().collect();
     let file: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
-    let ret = unsafe { ShellExecuteW(std::ptr::null_mut(), op.as_ptr(), file.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+    let ret = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            op.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    };
     if (ret as usize) <= 32 {
         return Err("could not open the browser for Google sign-in".to_string());
     }
@@ -313,7 +323,11 @@ fn open_browser(url: &str) -> Result<(), String> {
 
 #[cfg(not(windows))]
 fn open_browser(url: &str) -> Result<(), String> {
-    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     std::process::Command::new(opener)
         .arg(url)
         .spawn()
@@ -350,7 +364,10 @@ async fn exchange_code(
         .map_err(|e| format!("token exchange failed: {e}"))?;
     if !resp.status().is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Google refused the auth code ({})", body.chars().take(200).collect::<String>()));
+        return Err(format!(
+            "Google refused the auth code ({})",
+            body.chars().take(200).collect::<String>()
+        ));
     }
     resp.json::<TokenResponse>()
         .await
@@ -378,7 +395,10 @@ async fn refresh_access(http: &reqwest::Client) -> Result<(String, Instant), Str
         .await
         .map_err(|e| format!("token refresh returned junk: {e}"))?;
     let skew = tok.expires_in.clamp(0, 3600) - 60;
-    Ok((tok.access_token, Instant::now() + Duration::from_secs(skew.max(60) as u64)))
+    Ok((
+        tok.access_token,
+        Instant::now() + Duration::from_secs(skew.max(60) as u64),
+    ))
 }
 
 /// A usable access token, refreshing when missing, stale, or forced.
@@ -388,7 +408,10 @@ async fn authed(
     force_refresh: bool,
 ) -> Result<String, String> {
     {
-        let inner = state.inner.lock().map_err(|e| format!("sync state poisoned: {e}"))?;
+        let inner = state
+            .inner
+            .lock()
+            .map_err(|e| format!("sync state poisoned: {e}"))?;
         if !force_refresh {
             if let (Some(tok), Some(exp)) = (inner.access_token.clone(), inner.expires_at) {
                 if Instant::now() < exp {
@@ -398,7 +421,10 @@ async fn authed(
         }
     }
     let (tok, exp) = refresh_access(http).await?;
-    let mut inner = state.inner.lock().map_err(|e| format!("sync state poisoned: {e}"))?;
+    let mut inner = state
+        .inner
+        .lock()
+        .map_err(|e| format!("sync state poisoned: {e}"))?;
     inner.access_token = Some(tok.clone());
     inner.expires_at = Some(exp);
     Ok(tok)
@@ -434,7 +460,11 @@ fn drive_error(status: reqwest::StatusCode, body: String) -> String {
     )
 }
 
-async fn drive_find(http: &reqwest::Client, token: &str, filename: &str) -> Result<Option<String>, String> {
+async fn drive_find(
+    http: &reqwest::Client,
+    token: &str,
+    filename: &str,
+) -> Result<Option<String>, String> {
     let q = format!("name = '{filename}' and 'appDataFolder' in parents and trashed = false");
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("q", &q)
@@ -521,7 +551,10 @@ async fn drive_upload(
     let resp = http
         .patch(format!("{DRIVE_UPLOAD}/{file_id}?uploadType=media"))
         .bearer_auth(token)
-        .header(reqwest::header::CONTENT_TYPE, "application/json; charset=utf-8")
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/json; charset=utf-8",
+        )
         .body(bytes.to_vec())
         .send()
         .await
@@ -581,9 +614,7 @@ pub fn gdrive_status(state: tauri::State<'_, GDriveState>) -> GDriveStatus {
 /// code, exchanges it, and stores the refresh token in the OS keychain.
 /// `prompt=consent` guarantees a refresh token even on re-sign-in.
 #[tauri::command]
-pub async fn gdrive_sign_in(
-    state: tauri::State<'_, GDriveState>,
-) -> Result<(), String> {
+pub async fn gdrive_sign_in(state: tauri::State<'_, GDriveState>) -> Result<(), String> {
     if cfg!(mobile) {
         return Err("Google sign-in is not supported on Android yet".to_string());
     }
@@ -596,9 +627,12 @@ pub async fn gdrive_sign_in(
     let oauth_state = random_hex(16)?;
     // Ephemeral port, bound BEFORE the browser opens: no hardcoded port,
     // no collision, no race.
-    let std_listener =
-        std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| format!("loopback bind failed: {e}"))?;
-    let port = std_listener.local_addr().map_err(|e| format!("loopback bind failed: {e}"))?.port();
+    let std_listener = std::net::TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| format!("loopback bind failed: {e}"))?;
+    let port = std_listener
+        .local_addr()
+        .map_err(|e| format!("loopback bind failed: {e}"))?
+        .port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("client_id", cid)
@@ -619,7 +653,10 @@ pub async fn gdrive_sign_in(
         .ok_or_else(|| "Google did not return a refresh token — please try again".to_string())?;
     keyring_save(&refresh)?;
     let skew = tok.expires_in.clamp(0, 3600) - 60;
-    let mut inner = state.inner.lock().map_err(|e| format!("sync state poisoned: {e}"))?;
+    let mut inner = state
+        .inner
+        .lock()
+        .map_err(|e| format!("sync state poisoned: {e}"))?;
     inner.access_token = Some(tok.access_token);
     inner.expires_at = Some(Instant::now() + Duration::from_secs(skew.max(60) as u64));
     Ok(())
@@ -718,16 +755,19 @@ mod tests {
 
     #[test]
     fn callback_parses_code_and_state() {
-        let (code, state) =
-            parse_callback_target("GET /callback?code=4%2Fabc&state=deadbeef HTTP/1.1\r\nHost: x\r\n\r\n")
-                .unwrap();
+        let (code, state) = parse_callback_target(
+            "GET /callback?code=4%2Fabc&state=deadbeef HTTP/1.1\r\nHost: x\r\n\r\n",
+        )
+        .unwrap();
         assert_eq!(code, "4/abc");
         assert_eq!(state, "deadbeef");
     }
 
     #[test]
     fn callback_reports_consent_denied_and_missing_parts() {
-        assert!(parse_callback_target("GET /callback?error=access_denied&state=s HTTP/1.1").is_err());
+        assert!(
+            parse_callback_target("GET /callback?error=access_denied&state=s HTTP/1.1").is_err()
+        );
         assert!(parse_callback_target("GET /callback?state=s HTTP/1.1").is_err());
         assert!(parse_callback_target("GET /favicon.ico HTTP/1.1").is_err());
         assert!(parse_callback_target("POST /callback?code=a&state=b HTTP/1.1").is_err());

@@ -15,7 +15,8 @@ mod sha256;
 #[allow(dead_code)] // parked with its commands (see generate_handler)
 mod sysvol;
 mod transcode;
-#[cfg(desktop)]
+// update_check must exist on every platform (mobile Settings calls it); the
+// install/rollback commands inside stay desktop-only with the updater plugin.
 mod update;
 mod widget;
 
@@ -728,7 +729,9 @@ async fn bluetooth_devices() -> Result<Vec<BluetoothDevice>, String> {
         let mut address = String::new();
         for line in text.lines() {
             let trimmed = line.trim();
-            if let Some(rest) = trimmed.strip_prefix(r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\") {
+            if let Some(rest) = trimmed.strip_prefix(
+                r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\",
+            ) {
                 address = rest.split('\\').next().unwrap_or("").trim().to_string();
                 continue;
             }
@@ -766,7 +769,7 @@ async fn bluetooth_devices() -> Result<Vec<BluetoothDevice>, String> {
                 connected: false,
             });
         }
-        devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        devices.sort_by_key(|a| a.name.to_lowercase());
         Ok(devices)
     }
 }
@@ -855,7 +858,9 @@ fn read_import_file(app: tauri::AppHandle) -> Result<String, String> {
         .map_err(|e| format!("stat {}: {e}", path.display()))?
         .len();
     if size > MAX_IMPORT_BYTES {
-        return Err(format!("backup too large: {size} bytes (max {MAX_IMPORT_BYTES})"));
+        return Err(format!(
+            "backup too large: {size} bytes (max {MAX_IMPORT_BYTES})"
+        ));
     }
     std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))
 }
@@ -1370,13 +1375,13 @@ pub fn run() {
             reveal_download,
             reveal_vault,
             // Bluetooth parked on request: the mini player button/panel is commented out
-// in index.html and transport.js. Uncomment to restore.
-// bluetooth_devices,
-// open_bluetooth_settings,
+            // in index.html and transport.js. Uncomment to restore.
+            // bluetooth_devices,
+            // open_bluetooth_settings,
             // System (laptop) master volume parked on request — the app's own audio
-// element volume stays as it was. Uncomment to drive Windows' mixer.
-// sysvol::system_volume,
-// sysvol::set_system_volume,
+            // element volume stays as it was. Uncomment to drive Windows' mixer.
+            // sysvol::system_volume,
+            // sysvol::set_system_volume,
             #[cfg(desktop)]
             export_file,
             #[cfg(desktop)]
@@ -1401,7 +1406,6 @@ pub fn run() {
             cache_set_budget,
             cache_clear,
             prefetch_next,
-            #[cfg(desktop)]
             update::update_check,
             #[cfg(desktop)]
             update::update_install,

@@ -6,10 +6,14 @@
 // verified against the updater pubkey before a byte is installed — a
 // tampered asset simply fails signature check and nothing runs.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+#[cfg(desktop)]
+use tauri::Emitter;
+use tauri::{AppHandle, State};
+#[cfg(desktop)]
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::proxy::AppState;
@@ -85,7 +89,9 @@ pub(crate) fn is_newer(candidate: &str, current: &str) -> bool {
 }
 
 /// Tags travel straight into a download URL, so only the boring characters
-/// get through — no slashes, no dots-only names, no surprises.
+/// get through — no slashes, no dots-only names, no surprises. Used by the
+/// desktop rollback path only, so mobile never sees it.
+#[cfg_attr(not(desktop), allow(dead_code))]
 fn safe_tag(tag: &str) -> bool {
     !tag.is_empty()
         && tag.len() < 100
@@ -96,38 +102,90 @@ fn safe_tag(tag: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
-async fn gh_get<T: serde::de::DeserializeOwned>(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<T, String> {
-    client
+/// GitHub's unauthenticated REST quota is 60 requests/hour/IP, and the
+/// Updates panel can hit this several times in a row (every open, every
+/// "Check again", once per boot). Cache each URL for 5 minutes, and when a
+/// refresh fails (offline / rate limit) serve the last copy that did work —
+/// a transient GitHub hiccup must not surface as an error panel.
+const GH_TTL: Duration = Duration::from_secs(300);
+static GH_CACHE: Mutex<Vec<(String, Instant, serde_json::Value)>> = Mutex::new(Vec::new());
+
+fn gh_cached(url: &str) -> Option<serde_json::Value> {
+    GH_CACHE
+        .lock()
+        .ok()?
+        .iter()
+        .find(|(u, at, _)| u == url && at.elapsed() < GH_TTL)
+        .map(|(_, _, v)| v.clone())
+}
+
+fn gh_stale(url: &str) -> Option<serde_json::Value> {
+    GH_CACHE
+        .lock()
+        .ok()?
+        .iter()
+        .find(|(u, ..)| u == url)
+        .map(|(_, _, v)| v.clone())
+}
+
+fn gh_store(url: &str, v: serde_json::Value) {
+    if let Ok(mut cache) = GH_CACHE.lock() {
+        cache.retain(|(u, ..)| u != url);
+        cache.push((url.to_string(), Instant::now(), v));
+        while cache.len() > 8 {
+            cache.remove(0);
+        }
+    }
+}
+
+async fn gh_json(client: &reqwest::Client, url: &str) -> Result<serde_json::Value, String> {
+    if let Some(v) = gh_cached(url) {
+        return Ok(v);
+    }
+    let resp = client
         .get(url)
         .header(reqwest::header::USER_AGENT, "trance-music-updater")
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
-        .await
-        .map_err(|e| e.to_string())?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json::<T>()
-        .await
-        .map_err(|e| e.to_string())
+        .await;
+    let fail = |e: String| gh_stale(url).ok_or(e);
+    match resp {
+        Ok(r) if r.status().as_u16() == 403 || r.status().as_u16() == 429 => {
+            fail("GitHub rate limit reached — try again in a few minutes".to_string())
+        }
+        Ok(r) => match r.error_for_status() {
+            Ok(ok) => match ok.json::<serde_json::Value>().await {
+                Ok(v) => {
+                    gh_store(url, v.clone());
+                    Ok(v)
+                }
+                Err(e) => fail(e.to_string()),
+            },
+            Err(e) => fail(e.to_string()),
+        },
+        Err(e) => fail(format!(
+            "Couldn't reach GitHub — check your connection ({e})"
+        )),
+    }
 }
 
-/// Settings / Updates: the signed manifest is authoritative when it exists;
-/// plain GitHub metadata is the fallback while releases predate in-app
-/// updates. The rollback list degrades to empty (offline, rate limit)
-/// rather than failing the whole check.
-#[tauri::command]
-pub async fn update_check(
-    app: AppHandle,
-    state: State<'_, Arc<AppState>>,
-) -> Result<UpdateCheck, String> {
-    let current = app.package_info().version.to_string();
-    let mut endpoint_err: Option<String> = None;
-    let mut latest: Option<LatestRelease> = None;
+async fn gh_get<T: serde::de::DeserializeOwned>(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<T, String> {
+    serde_json::from_value::<T>(gh_json(client, url).await?).map_err(|e| e.to_string())
+}
 
-    match app.updater().map_err(|e| e.to_string())?.check().await {
+/// The signed `latest.json` manifest — the authoritative source, but only
+/// where `tauri-plugin-updater` exists (desktop). Mobile reports the tuple's
+/// `ran` as false so `update_check` knows to ask GitHub directly.
+#[cfg(desktop)]
+async fn manifest_check(app: &AppHandle) -> (Option<LatestRelease>, Option<String>, bool) {
+    let check = match app.updater() {
+        Ok(u) => u.check().await,
+        Err(e) => return (None, Some(e.to_string()), true),
+    };
+    match check {
         Ok(Some(u)) => {
             let notes = u.body.clone().unwrap_or_default();
             let published = u
@@ -136,33 +194,55 @@ pub async fn update_check(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            latest = Some(LatestRelease {
-                version: u.version.clone(),
-                notes,
-                published,
-                installable: true,
-            });
+            (
+                Some(LatestRelease {
+                    version: u.version.clone(),
+                    notes,
+                    published,
+                    installable: true,
+                }),
+                None,
+                true,
+            )
         }
-        Ok(None) => {} // manifest answered: the running build is current
-        Err(e) => endpoint_err = Some(e.to_string()),
+        Ok(None) => (None, None, true), // manifest answered: this build is current
+        Err(e) => (None, Some(e.to_string()), true),
     }
+}
 
-    if latest.is_none() && endpoint_err.is_some() {
+#[cfg(not(desktop))]
+async fn manifest_check(_app: &AppHandle) -> (Option<LatestRelease>, Option<String>, bool) {
+    (None, None, false)
+}
+
+/// Settings / Updates: the signed manifest is authoritative when it exists;
+/// plain GitHub metadata is the fallback on desktop while releases predate
+/// in-app updates — and the only source on mobile, where the updater plugin
+/// is not compiled. The rollback list degrades to empty (offline, rate limit)
+/// rather than failing the whole check.
+#[tauri::command]
+pub async fn update_check(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<UpdateCheck, String> {
+    let current = app.package_info().version.to_string();
+    let (mut latest, endpoint_err, manifest_ran) = manifest_check(&app).await;
+
+    if latest.is_none() && (endpoint_err.is_some() || !manifest_ran) {
         // The newest release has no manifest (published before this feature
         // shipped) — say the version exists, just not installable in-app.
         let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-        if let Ok(rel) = gh_get::<GhRelease>(&state.client, &url).await {
-            let v = normalize_version(&rel.tag_name);
-            if is_newer(&v, &current) {
-                latest = Some(LatestRelease {
-                    version: v,
-                    notes: rel.body.unwrap_or_default(),
-                    published: rel.published_at.unwrap_or_default(),
-                    installable: false,
-                });
-            }
-        } else if let Some(e) = endpoint_err {
-            return Err(e); // both sources down (offline / rate-limited)
+        let rel = gh_get::<GhRelease>(&state.client, &url)
+            .await
+            .map_err(|e| format!("Update check failed: {e}"))?;
+        let v = normalize_version(&rel.tag_name);
+        if is_newer(&v, &current) {
+            latest = Some(LatestRelease {
+                version: v,
+                notes: rel.body.unwrap_or_default(),
+                published: rel.published_at.unwrap_or_default(),
+                installable: false,
+            });
         }
     }
 
@@ -194,7 +274,9 @@ pub async fn update_check(
 
 /// Install button: re-checks the manifest (fresh signature, fresh URL) and
 /// hands the package to the platform installer. On Windows the app exits
-/// into the passive installer, which relaunches the new build.
+/// into the passive installer, which relaunches the new build. Desktop-only —
+/// mobile has no in-place installer, so the command is not registered there.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
     let update = app
@@ -211,6 +293,7 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
 /// is the tag's own signed `update.json`, so stepping back is verified the
 /// same way a forward update is. `!=` accepts older and newer builds alike;
 /// the running version is rejected as a no-op.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn update_rollback(app: AppHandle, tag: String) -> Result<(), String> {
     if !safe_tag(&tag) {
@@ -235,6 +318,7 @@ pub async fn update_rollback(app: AppHandle, tag: String) -> Result<(), String> 
 /// Shared download + install, streaming progress to the Settings panel as
 /// `update:progress`. The verify phase is the signature check — a failure
 /// there aborts before anything is executed.
+#[cfg(desktop)]
 async fn install_now(app: &AppHandle, update: Update) -> Result<(), String> {
     let mut got = 0usize;
     let sink = app.clone();

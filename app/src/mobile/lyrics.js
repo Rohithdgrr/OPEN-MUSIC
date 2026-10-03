@@ -155,10 +155,17 @@ export function syncLyrics() {
     }
   }
   if (active && Date.now() >= userScrollUntil) {
-    // Pin the active line near the top of the visible card. Measured against
-    // the box's own rect so it works regardless of offset-parent chains.
-    // Skipped while the user is reading elsewhere (userScrollUntil).
-    const top = Math.max(0, box.scrollTop + (active.getBoundingClientRect().top - box.getBoundingClientRect().top) - 8);
+    // Centre the active line in the window so the card always reads
+    // previous / current / next. Measured against the box's own rect so it
+    // works regardless of offset-parent chains, then clamped so the first
+    // and last lines settle at the ends instead of overscrolling. Skipped
+    // while the user is reading elsewhere (userScrollUntil).
+    const top = Math.max(
+      0,
+      box.scrollTop +
+        (active.getBoundingClientRect().top - box.getBoundingClientRect().top) -
+        (box.clientHeight - active.offsetHeight) / 2,
+    );
     if (scrollTarget !== top) {
       scrollTarget = top;
       box.scrollTo({ top, behavior: "smooth" });

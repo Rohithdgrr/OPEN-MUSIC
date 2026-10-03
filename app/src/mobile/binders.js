@@ -1584,6 +1584,11 @@ function paintNowplaying(st) {
   const rb = document.getElementById("radio-btn");
   if (rb) paintRadioBtn(rb, isRadioOn());
 
+  const qc = m.querySelector("[data-queue-count]");
+  if (qc) {
+    const n = Math.max(0, st.queue.length - st.qi - 1);
+    if (qc.textContent !== String(n)) qc.textContent = String(n);
+  }
   const key = `${st.qi}:${st.queue.length}:${t ? t.id : ""}`;
   if (key !== upNextKey) {
     upNextKey = key;
@@ -1593,14 +1598,15 @@ function paintNowplaying(st) {
       const rest = st.queue.slice(st.qi + 1);
       host.innerHTML = rest.length
         ? rest
-            .map((x, i) => `<div data-list="npq" data-idx="${st.qi + 1 + i}" class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container/60 cursor-pointer active:bg-surface-container-low transition-colors">
-            <div class="flex items-center gap-3 min-w-0">
+            .map((x, i) => `<div data-list="npq" data-idx="${st.qi + 1 + i}" class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container/60 cursor-pointer active:bg-surface-container-low transition-colors flex items-center gap-2">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
               <div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0"><img alt="" class="w-full h-full object-cover" ${art(x.image)}></div>
               <div class="flex flex-col min-w-0 flex-1">
                 <span class="font-body-md font-medium text-on-surface truncate">${esc(x.title || "")}</span>
                 <span class="font-body-sm text-[11px] text-secondary truncate">${esc(x.artist || "")}</span>
               </div>
             </div>
+            <button type="button" aria-label="More options" class="w-8 h-8 flex items-center justify-center flex-shrink-0 text-secondary hover:text-on-surface active:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
           </div>`,
           )
           .join("")
@@ -1619,6 +1625,15 @@ function paintRadioBtn(btn, on) {
   btn.classList.toggle("text-primary", !!on);
   btn.classList.toggle("text-on-surface-variant", !on);
   btn.setAttribute("aria-pressed", String(!!on));
+}
+
+/// Smooth-scroll the Up Next list into view (transport Queue button and the
+/// header's "View Queue" link both land here).
+function scrollQueue(m) {
+  const row0 = m.querySelector('div[class*="p-2 rounded-xl"]');
+  const host = row0 && row0.parentElement;
+  if (host) host.scrollIntoView({ behavior: "smooth", block: "end" });
+  else toast("Nothing queued", 2500);
 }
 
 function mountNowplaying() {
@@ -1688,12 +1703,13 @@ function mountNowplaying() {
     const fresh = queueBtn.cloneNode(true);
     fresh.dataset.qWired = "1";
     queueBtn.replaceWith(fresh);
-    fresh.addEventListener("click", () => {
-      const row0 = m.querySelector('div[class*="p-2 rounded-xl"]');
-      const host = row0 && row0.parentElement;
-      if (host) host.scrollIntoView({ behavior: "smooth", block: "end" });
-      else toast("Nothing queued", 2500);
-    });
+    fresh.addEventListener("click", () => scrollQueue(m));
+  }
+  // The header's "View Queue" link — same target as the transport button.
+  const viewQueue = m.querySelector("[data-queue-scroll]");
+  if (viewQueue && !viewQueue.dataset.qWired) {
+    viewQueue.dataset.qWired = "1";
+    viewQueue.addEventListener("click", () => scrollQueue(m));
   }
   document.getElementById("master-play-pause")?.addEventListener("click", () => toggle());
   m.querySelector('[aria-label="Next"]')?.addEventListener("click", () => next());

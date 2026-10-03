@@ -33,8 +33,10 @@ impl VolumeState {
 #[cfg(windows)]
 mod platform {
     use super::VolumeState;
-    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
     use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+    use windows::Win32::Media::Audio::{
+        eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
+    };
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
     };
@@ -91,7 +93,9 @@ mod platform {
                     .SetMute(muted, std::ptr::null())
                     .map_err(|e| format!("set mute failed ({e})"))?;
             }
-            let now = volume.GetMasterVolumeLevelScalar().unwrap_or(level.unwrap_or(1.0));
+            let now = volume
+                .GetMasterVolumeLevelScalar()
+                .unwrap_or(level.unwrap_or(1.0));
             let now_muted = volume.GetMute().map(|m| m.as_bool()).unwrap_or(false);
             Ok(VolumeState::clean(now, now_muted))
         }

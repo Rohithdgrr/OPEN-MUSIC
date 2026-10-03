@@ -6,6 +6,7 @@ import { MOUNT, openLib, entityNav } from "./binders.js";
 import { isMenuTrigger, handleMenuTrigger } from "./menus.js";
 
 document.addEventListener("smount", async (e) => {
+  syncWidget(playerState()); // route changed: re-gate the floating bar first
   const fn = MOUNT[e.detail.dir];
   if (!fn) return;
   try {
@@ -193,8 +194,8 @@ document.addEventListener("click", (e) => {
 // ---------------------------------------------------------------- widget player
 // The desktop floating card (widget.html) rebuilt as an Android always-on
 // control: art, title/artist, prev/play/next/repeat/fav + a click-to-seek
-// rail. The design's per-screen mini-player markup is hidden — one player,
-// on every screen, like the desktop footer bar.
+// rail. The design's per-screen mini-player markup is hidden — one player on
+// every screen except NowPlaying, which owns the full transport.
 function ensureWidget() {
   if (document.getElementById("tm-widget")) return;
   const hide = document.createElement("style");
@@ -224,11 +225,26 @@ function ensureWidget() {
 }
 ensureWidget();
 
-onPaint((st) => {
+/// NowPlaying owns the full transport, so the floating bar must not paint
+/// over it. Keyed off the hash (same normalization as router.js) rather than
+/// the smount event, so a navigation that never repaints still gates correctly.
+function onNowPlaying() {
+  var raw = location.hash.replace(/^#\/?/, "");
+  var qi = raw.indexOf("?");
+  return (qi >= 0 ? raw.slice(0, qi) : raw).toLowerCase() === "nowplaying";
+}
+
+function syncWidget(st) {
   const w = document.getElementById("tm-widget");
+  if (!w) return null;
+  w.classList.toggle("hidden", !st || !st.track || onNowPlaying());
+  return w;
+}
+
+onPaint((st) => {
+  const w = syncWidget(st);
   if (!w) return;
-  w.classList.toggle("hidden", !st.track);
-  if (!st.track) return;
+  if (!st.track || onNowPlaying()) return;
   const t = st.track;
   const title = w.querySelector("#tm-w-title");
   if (title && t.title) title.textContent = t.title;
