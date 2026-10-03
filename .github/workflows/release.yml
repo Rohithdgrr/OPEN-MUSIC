@@ -95,6 +95,10 @@ jobs:
         # manifest step below is optional for exactly that case.
         continue-on-error: true
         run: node app/scripts/make-update-json.mjs ${{ github.ref_name }} app/src-tauri/target/release/bundle
+      - name: Verify manifest URLs resolve
+        # GitHub rewrites asset names (spaces -> dots); a wrong name only
+        # surfaces as a 404 when the app tries to update. Fail here instead.
+        run: node app/scripts/verify-update-json.mjs app/src-tauri/target/release/bundle/latest.json
       - name: Publish installers
         uses: softprops/action-gh-release@v2
         with:

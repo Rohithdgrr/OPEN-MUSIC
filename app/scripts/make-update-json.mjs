@@ -96,8 +96,12 @@ const platform = (zip) => {
     console.warn(`skipping ${zip}: no ${sig} (build it with TAURI_SIGNING_PRIVATE_KEY set)`);
     return null;
   }
+  // GitHub rewrites release asset names on upload: spaces become dots
+  // (same rule as action-gh-release's alignAssetName). The URL must
+  // reference the stored name — a space-encoded name 404s forever.
+  const stored = zip.split(/[\\/]/).pop().replace(/ /g, ".");
   return {
-    url: `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(zip.split(/[\\/]/).pop())}`,
+    url: `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(stored)}`,
     signature: readFileSync(sig, "utf8").trim(),
   };
 };
