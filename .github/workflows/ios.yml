@@ -95,30 +95,15 @@ jobs:
         working-directory: app
         run: |
           set -o pipefail
-          # The generated project hard-codes a signing identity, so an unsigned
-          # CI build fails with "requires a development team".
-          # xcodebuild ignores team-less signing for the simulator SDK, but
-          # only when the identity is emptied: strip the signing settings from
-          # the project before the Tauri CLI drives the build (it must stay the
-          # driver - the project has a build phase that reads
-          # .tauri/cli-options-server.json, which exists only while it runs).
-          python3 - <<'PY'
-          import re, pathlib
-          p = pathlib.Path("src-tauri/gen/apple/trance-music.xcodeproj/project.pbxproj")
-          s = p.read_text(encoding="utf-8")
-          # Empty identity + no team => simulator SDK needs no identity.
-          s = re.sub(r"CODE_SIGN_IDENTITY = [^;]+;", 'CODE_SIGN_IDENTITY = "";', s)
-          s = re.sub(r"CODE_SIGN_STYLE = [^;]+;", 'CODE_SIGN_STYLE = Manual;', s)
-          s = re.sub(r"DEVELOPMENT_TEAM = [^;]+;", 'DEVELOPMENT_TEAM = "";', s)
-          s = re.sub(r"CODE_SIGNING_REQUIRED = [^;]+;", 'CODE_SIGNING_REQUIRED = NO;', s)
-          s = re.sub(r"CODE_SIGNING_ALLOWED = [^;]+;", 'CODE_SIGNING_ALLOWED = NO;', s)
-          p.write_text(s, encoding="utf-8")
-          print("neutralized iOS signing settings")
-          PY
-          # `--simulator` targets the simulator SDK and skips the archive
-          # export entirely - a device build tries to export an .ipa and dies
-          # with "exportArchive No Team Found in Archive" when unsigned.
-          npx tauri ios build --ci --simulator --verbose 2>&1 | tee ios-build.log
+          # Unsigned CI build via the CLI's official flags (added in
+          # tauri-cli 2.11, PR #15061): `--no-sign` archives without a
+          # development team and pulls the .app out of the .xcarchive, so no
+          # exportArchive step runs ("No Team Found" was the old failure).
+          # `--target aarch64-apple-ios-sim` selects the simulator SDK -
+          # there is no `--simulator` flag (it errors as unexpected argument).
+          # The CLI must stay the driver: the project has a build phase that
+          # reads .tauri/cli-options-server.json, live only while it runs.
+          npx tauri ios build --ci --verbose --no-sign --target aarch64-apple-ios-sim 2>&1 | tee ios-build.log
 
       - name: Report the failure where it can be read
         if: failure()
@@ -174,5 +159,6 @@ jobs:
           path: |
             app/src-tauri/gen/apple/build/**/*.ipa
             app/src-tauri/gen/apple/build/**/*.app
+            app/src-tauri/gen/apple/build/**/*.xcarchive
           if-no-files-found: error
           retention-days: 14
