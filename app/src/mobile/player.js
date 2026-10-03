@@ -149,7 +149,7 @@ function streamError() {
   }
   retries = 0;
   badge = "ERROR";
-  toast("Playback failed — skipping");
+  toast("Playback failed — skipping", 5000, "error");
   paint();
   step(1, true);
 }
@@ -181,28 +181,28 @@ if (audio) {
 /// it to `resolve_song` would never resolve to audio.
 export async function playPlaylist(id, i = 0) {
   if (!invoke || !id) {
-    toast("Backend unavailable");
+    toast("Backend unavailable", 4000, "error");
     return false;
   }
   try {
     const r = await invoke("playlist_tracks", { id });
     const list = Array.isArray(r) ? r : (r && (r.list || r.tracks)) || [];
     if (!list.length) {
-      toast("That playlist has no playable tracks");
+      toast("That playlist has no playable tracks", 5000, "error");
       return false;
     }
     playList(list, i);
     return true;
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 100));
+    toast(String(e).slice(0, 100), 5000, "error");
     return false;
   }
 }
 
 export function playList(list, i = 0) {
   if (!invoke) {
-    toast("Backend unavailable");
+    toast("Backend unavailable", 4000, "error");
     return;
   }
   const q = (list || []).filter((t) => t && t.id);
@@ -277,7 +277,7 @@ async function start() {
     const info = await invoke("resolve_song", { id: track.id });
     if (mine !== seq) return;
     if (!info || info.range_status === "dead" || !info.proxy_url) {
-      toast(`Could not resolve ${track.title || "track"}`);
+      toast(`Could not resolve ${track.title || "track"}`, 5000, "error");
       // `true` = auto: an unadvanceable queue (one dead track, repeat off)
       // stops instead of re-resolving the same id forever.
       return step(1, true);
@@ -291,7 +291,7 @@ async function start() {
     if (mine === seq) {
       badge = "ERROR";
       console.error(e);
-      toast(String(e).slice(0, 100));
+      toast(String(e).slice(0, 100), 5000, "error");
     }
   }
   if (mine === seq) paint();

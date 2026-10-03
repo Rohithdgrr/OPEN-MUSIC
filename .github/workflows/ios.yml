@@ -1,0 +1,99 @@
+name: iOS
+
+# iOS can only be compiled by Apple tooling: Xcode + the iOS SDK exist on
+# macOS alone, so `tauri ios build` cannot run on Windows or Linux at all.
+# This job therefore runs on a macOS runner and produces the archive GitHub
+# stores as an artifact.
+#
+# What it produces depends on which secrets are configured:
+#   * TAURI_APPLE_CERTIFICATE + TAURI_APPLE_CERTIFICATE_PASSWORD
+#     + APPLE_PROVISIONING_PROFILE + APPLE_TEAM_ID  -> a signed .ipa
+#   * none of those                                    -> a simulator build
+#     (.app, unsigned, installable on a simulator or your own device via
+#     Xcode). In-app updates do not apply to iOS — the App Store handles that.
+#
+# Manual run: Actions -> iOS -> Run workflow.
+# Tag run:  push a v* tag to build alongside the desktop release.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*", "V*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    name: Build iOS
+    runs-on: macos-14
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.TAURI_APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.TAURI_APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.app
+          xcodebuild -version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+
+      - name: Build stylesheet
+        working-directory: app
+        run: npm run css
+
+      - name: Rust targets for iOS
+        run: rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Import signing material (when configured)
+        if: env.APPLE_CERTIFICATE != ''
+        run: |
+          security create-keychain -p actions -s ios-signing
+          security default-keychain -s ios-signing
+          security unlock-keychain -p actions ios-signing
+          echo "$APPLE_CERTIFICATE" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k ios-signing \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T apple
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k actions ios-signing
+          mkdir -p "$RUNNER_TEMP/mobile"
+          echo "$APPLE_PROVISIONING_PROFILE" | base64 --decode \
+            > "$RUNNER_TEMP/mobile/embedded.mobileprovision"
+
+      - name: Generate the Xcode project
+        working-directory: app
+        run: npx tauri ios init --ci
+
+      - name: Signed device build (.ipa)
+        if: env.APPLE_CERTIFICATE != '' && env.APPLE_PROVISIONING_PROFILE != ''
+        working-directory: app
+        run: |
+          export APPLE_SIGNING_IDENTITY="Developer: ${APPLE_TEAM_ID}"
+          npx tauri ios build --ipa
+
+      - name: Simulator build (.app, unsigned)
+        if: env.APPLE_CERTIFICATE == ''
+        working-directory: app
+        run: npx tauri ios build --simulator
+
+      - name: Upload the iOS archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: |
+            app/src-tauri/gen/apple/build/**/*.ipa
+            app/src-tauri/gen/apple/build/**/*.app
+          if-no-files-found: error
+          retention-days: 14

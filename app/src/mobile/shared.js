@@ -117,20 +117,34 @@ export function badgeLabel(badge, fallback = "") {
   }
 }
 
-let toastEl;
-export function toast(msg, ms = 3200) {
-  if (!toastEl) {
-    toastEl = document.createElement("div");
-    toastEl.className = "fixed top-16 inset-x-0 z-[60] flex justify-center px-4 pointer-events-none";
-    toastEl.innerHTML = '<div class="bg-primary text-on-primary px-3 py-1.5 rounded shadow-lg font-label-sm text-label-sm max-w-[92%] truncate"></div>';
-    document.body.appendChild(toastEl);
+// One stacked node per message (max 4), a colored dot per kind, tap to
+// dismiss. `ms` stays the second argument so every existing caller holds.
+let toastStack = null;
+export function toast(msg, ms = 3200, kind = "info") {
+  if (!toastStack) {
+    toastStack = document.createElement("div");
+    toastStack.id = "tm-toast-stack";
+    toastStack.setAttribute("role", "status");
+    toastStack.setAttribute("aria-live", "polite");
+    document.body.appendChild(toastStack);
   }
-  const box = toastEl.firstElementChild;
-  box.textContent = String(msg);
-  clearTimeout(toastEl._t);
-  toastEl._t = setTimeout(() => {
-    box.textContent = "";
-  }, ms);
+  const el = document.createElement("div");
+  el.className = "tm-toast";
+  el.dataset.kind = kind === "error" || kind === "success" ? kind : "info";
+  const dot = document.createElement("span");
+  dot.className = "tm-dot";
+  const text = document.createElement("span");
+  text.textContent = String(msg);
+  el.append(dot, text);
+  toastStack.appendChild(el);
+  while (toastStack.children.length > 4) toastStack.firstElementChild.remove();
+  const timer = setTimeout(dismiss, ms);
+  function dismiss() {
+    clearTimeout(timer);
+    el.classList.add("tm-out");
+    setTimeout(() => el.remove(), 250);
+  }
+  el.addEventListener("click", dismiss);
 }
 
 export function isFav(id) {
@@ -263,7 +277,7 @@ export function rowHTML(name, i, t) {
       <div class="relative w-10 h-10 rounded bg-surface-container-highest overflow-hidden flex-shrink-0"><img alt="" class="w-full h-full object-cover" ${art(t.image)}></div>
       <div class="flex flex-col min-w-0">
         <span class="text-body-md font-medium text-on-surface truncate">${esc(t.title || "")}</span>
-        <span class="text-body-sm text-secondary truncate">${esc(t.artist || t.subtitle || "")}</span>
+        <span class="text-body-sm text-secondary truncate" data-entity-name data-entity-kind="artist">${esc(t.artist || t.subtitle || "")}</span>
       </div>
     </div>
     <div class="flex items-center gap-space-sm flex-shrink-0">
@@ -301,28 +315,161 @@ export function artistCardHTML(a, i, nav) {
   </div>`;
 }
 
-export async function downloadTrack(track) {
-  if (!invoke || !track || !track.id) {
-    toast("Backend unavailable");
-    return;
+const activeDownloads = new Set();
+let batchRunning = false;
+
+const errLine = (e) => String(e).split("\n")[0].slice(0, 90);
+
+// 128 kbps Opus is the sweet spot the backend itself promotes favourites to
+// (lib.rs PREMIUM_KBPS): transparent quality at a third of 320's file size.
+export function dlQuality() {
+  try {
+    return localStorage.getItem(DL_QUALITY_KEY) || "128kbps";
+  } catch {
+    return "128kbps";
   }
-  const quality = (() => {
-    try {
-      return localStorage.getItem(DL_QUALITY_KEY) || "96kbps";
-    } catch {
-      return "96kbps";
+}
+
+/// Raw string storage: `save()` would JSON-quote the value and dlQuality()
+/// reads the key directly, so the picker writes it the same way.
+export function setDlQuality(value) {
+  try {
+    localStorage.setItem(DL_QUALITY_KEY, String(value));
+  } catch {}
+}
+
+export const AUTOUPDATE_KEY = "tm-autoupdate";
+const UPDATE_STAMP_KEY = "tm-update-checked";
+
+/// Check for a newer release and install it when the platform allows.
+/// `auto` is the boot path: silent, at most once a day, no error toasts.
+export async function checkForUpdates(auto = false) {
+  if (!invoke) return null;
+  if (auto) {
+    const last = Number(load(UPDATE_STAMP_KEY, 0)) || 0;
+    if (Date.now() - last < 24 * 3600e3) return null;
+  }
+  try {
+    const r = await invoke("update_check");
+    save(UPDATE_STAMP_KEY, Date.now());
+    const latest = r && r.latest;
+    if (!latest) {
+      if (!auto) toast("You're on the latest version", 3000, "success");
+      return r;
     }
-  })();
-  toast(`Downloading ${track.title || "track"}…`);
+    if (!latest.installable) {
+      toast(`Version ${latest.version} is available`, 6000, "info");
+      return r;
+    }
+    try {
+      await invoke("update_install");
+      toast(`Updated to ${latest.version} — restart the app`, 6000, "success");
+    } catch {
+      // Android has no in-place install (and no link opener yet): say so
+      // rather than pretending the download went through.
+      toast(`Version ${latest.version} is ready — install it from the releases page`, 7000, "info");
+    }
+    return r;
+  } catch (e) {
+    if (!auto) toast(`Update check failed: ${String(e).split("\n")[0].slice(0, 80)}`, 5000, "error");
+    return null;
+  }
+}
+
+/// Swap a row/header button's glyph to a spinner while its download runs.
+function setBusy(btn, on) {
+  const span = btn && btn.querySelector(".material-symbols-outlined");
+  if (!span) return;
+  if (on) {
+    if (btn._dlIcon === undefined) btn._dlIcon = span.textContent;
+    span.textContent = "progress_activity";
+    span.classList.add("animate-spin");
+  } else if (btn._dlIcon !== undefined) {
+    span.textContent = btn._dlIcon;
+    span.classList.remove("animate-spin");
+    delete btn._dlIcon;
+  }
+}
+
+function setLabel(btn, text) {
+  const span = btn && btn.querySelector("span.font-label-mono");
+  if (!span) return;
+  if (btn._dlLabel === undefined) btn._dlLabel = span.textContent;
+  span.textContent = text;
+}
+
+function clearLabel(btn) {
+  const span = btn && btn.querySelector("span.font-label-mono");
+  if (span && btn._dlLabel !== undefined) span.textContent = btn._dlLabel;
+  if (btn) delete btn._dlLabel;
+}
+
+/// Download one track. Returns the backend outcome, or null on failure /
+/// skip. `quiet` suppresses the per-track toasts so a batch can summarize.
+export async function downloadTrack(track, btn, quiet = false) {
+  if (!invoke || !track || !track.id) {
+    toast("Backend unavailable", 4000, "error");
+    return null;
+  }
+  if (activeDownloads.has(track.id)) {
+    if (!quiet) toast("Already downloading that track");
+    return null;
+  }
+  activeDownloads.add(track.id);
+  setBusy(btn, true);
+  if (!quiet) toast(`Downloading ${track.title || "track"}…`);
   try {
     const progress = new Channel();
     progress.onmessage = (p) => {
-      if (p && p.done) toast(`${p.title || "Track"} saved to vault`);
+      if (p && p.done && !quiet) toast(`${p.title || "Track"} saved to vault`, 3200, "success");
     };
-    const out = await invoke("download_song", { id: track.id, quality, onProgress: progress });
-    if (out && out.duplicate_of) toast("Already in vault");
+    const out = await invoke("download_song", { id: track.id, quality: dlQuality(), onProgress: progress });
+    if (out && out.duplicate_of && !quiet) toast("Already in vault");
+    return out;
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 100));
+    toast(`Download failed: ${errLine(e)}`, 5000, "error");
+    return null;
+  } finally {
+    activeDownloads.delete(track.id);
+    setBusy(btn, false);
+  }
+}
+
+/// Download a whole collection (album / playlist / chart / liked songs).
+/// Sequential like the desktop's vault.js:downloadAll — one batch at a time,
+/// skips what is already in the vault, survives individual failures.
+export async function downloadAll(items, what = "tracks", btn = null) {
+  const list = (Array.isArray(items) ? items : []).filter((t) => t && t.id);
+  if (!list.length) return toast("Nothing to download here");
+  if (batchRunning) return toast("A batch download is already running");
+  if (!invoke) return toast("Backend unavailable", 4000, "error");
+  batchRunning = true;
+  setBusy(btn, true);
+  let ok = 0;
+  let fail = 0;
+  let skip;
+  try {
+    let saved = new Set();
+    try {
+      const vault = await invoke("list_downloads");
+      saved = new Set(((vault && vault.entries) || []).map((e) => e.id));
+    } catch {}
+    const todo = list.filter((t) => !saved.has(t.id) && !activeDownloads.has(t.id));
+    skip = list.length - todo.length;
+    for (let i = 0; i < todo.length; i++) {
+      setLabel(btn, `${i + 1}/${todo.length}`);
+      if (await downloadTrack(todo[i], null, true)) ok += 1;
+      else fail += 1;
+    }
+    if (!todo.length) toast(`All ${list.length} ${what} already saved`, 3200, "success");
+    else if (!fail) toast(`Saved ${ok} ${what}${skip ? ` (${skip} already saved)` : ""}`, 4000, "success");
+    else if (!ok) toast(`Download failed for all ${fail} ${what}`, 6000, "error");
+    else toast(`Saved ${ok} of ${list.length} ${what} — ${fail} failed`, 6000, "error");
+  } finally {
+    batchRunning = false;
+    setBusy(btn, false);
+    clearLabel(btn);
+    hooks.repaintDownload?.();
   }
 }

@@ -747,4 +747,14 @@ mod tests {
         assert!(doc_filename("../evil").is_err());
         assert!(doc_filename("").is_err());
     }
+
+    #[test]
+    fn client_id_follows_the_build_env() {
+        // `client_id()` must reflect exactly what option_env! baked in
+        // (build.rs sources it from the shell env or .google-client-id).
+        let baked = option_env!("TRANCE_MUSIC_GOOGLE_CLIENT_ID")
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false);
+        assert_eq!(super::client_id().is_ok(), baked);
+    }
 }

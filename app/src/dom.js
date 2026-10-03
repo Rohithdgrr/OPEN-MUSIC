@@ -34,6 +34,7 @@ export const bar = {
   volTrack: $("#bar-vol-track"),
   volFill: $("#bar-vol-fill"),
   queue: $("#bar-queue"),
+  // bt: $("#bar-bt"), // Bluetooth button parked; see transport.js
 };
 export const np = {
   badge: $("#np-badge"),

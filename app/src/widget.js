@@ -1,5 +1,6 @@
 // The desktop card is a pure view: the main window owns the queue, the audio
 // element and every control, so this file only paints state and forwards taps.
+// import { wireJelly } from "./jelly.js"; // jelly mode off
 const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
 const emit = (event, payload) => window.__TAURI__?.event?.emit(event, payload);
 function listen(event, handler) {
@@ -15,6 +16,7 @@ const OFF_KEY = "tm-desk-widget";
 
 const card = document.getElementById("wg-card");
 const win = window.__TAURI__?.window?.getCurrentWindow?.();
+// wireJelly(() => card); // jelly mode off
 
 // L3: the same /art cache the main window uses. The widget window doesn't
 // run main.js, so it fetches the relay base itself; until it resolves,
@@ -121,6 +123,16 @@ function render(s) {
     repeat.classList.toggle("is-on", s.repeat !== "off");
     const icon = repeat.querySelector(".material-symbols-outlined");
     if (icon) icon.textContent = s.repeat === "one" ? "repeat_one" : "repeat";
+  }
+
+  // Favorite: the main window owns the list, so the card only paints the
+  // state it is handed and forwards the tap (bridge.js handles "fav").
+  const fav = el("wg-fav");
+  const favIcon = el("wg-favicon");
+  if (favIcon) favIcon.style.fontVariationSettings = s.fav ? "'FILL' 1" : "'FILL' 0";
+  if (fav) {
+    fav.classList.toggle("is-on", !!s.fav);
+    fav.title = s.fav ? "Remove from favorites" : "Add to favorites";
   }
 
   const next = s.next;
@@ -276,6 +288,7 @@ function wireControls() {
   el("wg-next")?.addEventListener("click", () => cmd("next"));
   el("wg-nextup")?.addEventListener("click", () => cmd("next"));
   el("wg-dl")?.addEventListener("click", () => cmd("download"));
+  el("wg-fav")?.addEventListener("click", () => cmd("fav"));
   el("wg-repeat")?.addEventListener("click", () => cmd("repeat"));
   el("wg-mute")?.addEventListener("click", () => cmd("mute"));
   el("wg-pin")?.addEventListener("click", () => setPinned(!pinned));

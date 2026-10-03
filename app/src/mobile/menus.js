@@ -20,6 +20,7 @@ import {
   PLAYS_KEY,
   LIBRARY_KEY,
   downloadTrack,
+  downloadAll,
 } from "./shared.js";
 import { playerState, insertNext, enqueue, insertNextAll, enqueueAll } from "./player.js";
 import { entityNav, MOUNT } from "./binders.js";
@@ -118,7 +119,7 @@ function openSheet({ title, sub, image, items = [], rows = [] }) {
           run && run();
         } catch (e) {
           console.error(e);
-          toast(String(e).slice(0, 90));
+          toast(String(e).split("\n")[0].slice(0, 90), 5000, "error");
         }
       }, 120);
     });
@@ -155,17 +156,17 @@ async function shareThing({ title, text, url }) {
 
 async function viewAlbum(track) {
   if (!track.album) return toast("No album information for this track");
-  if (!invoke) return toast("Backend unavailable");
+  if (!invoke) return toast("Backend unavailable", 4000, "error");
   try {
     const r = await invoke("search_entities", { query: track.album, kind: "album", limit: 10 });
     const items = (r && r.items) || [];
     const want = String(track.album).toLowerCase();
     const hit = items.find((x) => String(x.title || "").toLowerCase() === want) || items[0];
-    if (!hit || !hit.token) return toast("Album not found");
+    if (!hit || !hit.token) return toast("Album not found", 4000, "error");
     go(entityNav("album", hit));
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 90));
+    toast(String(e).slice(0, 90), 5000, "error");
   }
 }
 
@@ -179,11 +180,11 @@ async function goToArtist(track) {
     const items = (r && r.items) || [];
     const want = query.toLowerCase();
     const hit = items.find((x) => String(x.title || "").toLowerCase() === want) || items[0];
-    if (!hit || !hit.token) return toast("Artist not found");
+    if (!hit || !hit.token) return toast("Artist not found", 4000, "error");
     go(entityNav("artist", hit));
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 90));
+    toast(String(e).slice(0, 90), 5000, "error");
   }
 }
 
@@ -279,7 +280,8 @@ function metaFromUrl() {
 /// Header overflow menu on album / artist / playlist / liked-songs.
 export function entityMenu(kind) {
   const meta = metaFromUrl();
-  const tracks = store.detail || [];
+  // Liked-songs fills `favs`; every other detail screen fills `detail`.
+  const tracks = (kind === "liked" ? store.favs : store.detail) || [];
   const label = KIND_LABEL[kind] || "Collection";
   const items = [
     {
@@ -298,6 +300,14 @@ export function entityMenu(kind) {
         if (!tracks.length) return toast("Tracklist hasn't loaded yet");
         const n = enqueueAll(tracks);
         toast(`${n} track${n === 1 ? "" : "s"} added to queue`);
+      },
+    },
+    {
+      icon: "download",
+      label: "Download all",
+      action: () => {
+        if (!tracks.length) return toast("Tracklist hasn't loaded yet");
+        downloadAll(tracks, `${tracks.length} ${label.toLowerCase()}`);
       },
     },
     {

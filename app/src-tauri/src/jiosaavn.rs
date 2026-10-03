@@ -218,11 +218,21 @@ pub fn validate_media_url(raw: &str) -> Result<String, String> {
 // Defensive parsing helpers (mirror JSON has optional/null fields)
 // ---------------------------------------------------------------------------
 
+/// The mirror sends the literal strings "NULL" / "null" where it has no value
+/// (artist, album, label on album-track listings), which would otherwise be
+/// rendered to the user as metadata text.
+pub(crate) fn is_placeholder(s: &str) -> bool {
+    matches!(
+        s.trim().to_ascii_lowercase().as_str(),
+        "" | "null" | "none" | "undefined" | "n/a" | "na" | "-"
+    )
+}
+
 pub(crate) fn text(v: &Value, key: &str) -> Option<String> {
     v.get(key)
         .and_then(|x| x.as_str())
         .map(str::trim)
-        .filter(|s| !s.is_empty())
+        .filter(|s| !is_placeholder(s))
         .map(str::to_string)
 }
 
@@ -1486,6 +1496,26 @@ mod tests {
             upgrade_image("https://c.saavncdn.com/editorial/E.jpg?bch=9"),
             "https://c.saavncdn.com/editorial/E.jpg?bch=9"
         );
+    }
+
+    #[test]
+    fn placeholder_strings_never_reach_the_ui() {
+        // The mirror answers "NULL" where a track has no artist/album; it
+        // must read as absent, not as metadata text.
+        let v = serde_json::json!({
+            "artist": "NULL",
+            "album": "null",
+            "label": "  ",
+            "year": "none",
+            "language": "Tamil",
+        });
+        assert_eq!(text(&v, "artist"), None);
+        assert_eq!(text(&v, "album"), None);
+        assert_eq!(text(&v, "label"), None);
+        assert_eq!(text(&v, "year"), None);
+        assert_eq!(text(&v, "language").as_deref(), Some("Tamil"));
+        assert_eq!(text(&serde_json::json!({"a": "N/A"}), "a"), None);
+        assert_eq!(text(&serde_json::json!({"a": "-"}), "a"), None);
     }
 
     #[test]

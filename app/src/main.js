@@ -7,6 +7,7 @@ import { $, bar, np } from "./dom.js";
 import { loadHistory } from "./history.js";
 import { loadHome, loadPlays } from "./home.js";
 import { autoSyncBoot } from "./gsync.js";
+// import { wireJelly } from "./jelly.js"; // jelly mode off
 import { renderFavs } from "./library.js";
 import { initMediaSession, setMediaSessionTrack } from "./media.js";
 import { setResume } from "./playback.js";
@@ -106,6 +107,9 @@ wireDesktopCard();
 wireShortcuts();
 renderFavs();
 showView("home"); // open on the Home tab
+// Desktop app jelly wobble on the main window's visible content while the
+// window is dragged (see jelly.js + widget.rs tm:window-moved).
+// wireJelly(() => document.querySelector("[data-view]:not(.hidden)")); // jelly mode off
 doSearch({ silent: true });
 loadHome();
 // Optional Drive sync (Phase 3): wires boot/online/visible/edit triggers.

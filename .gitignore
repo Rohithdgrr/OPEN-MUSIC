@@ -40,3 +40,16 @@ $RECYCLE.BIN/
 *.tmp
 .env
 .env.local
+
+app/src-tauri/.google-client-id
+
+
+# Android release signing — never commit the keystore
+*.keystore
+keystore.properties
+# Build junk / signing secrets
+langsplit_tmp.pdb
+*.pdb
+# Tauri regenerates the Android + Apple scaffolds from tauri.conf.json.
+# gen/android holds a release.keystore + keystore.properties = signing secrets.
+app/src-tauri/gen/

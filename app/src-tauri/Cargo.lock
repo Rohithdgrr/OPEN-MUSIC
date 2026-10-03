@@ -4974,7 +4974,7 @@ dependencies = [
 
 [[package]]
 name = "trance-music"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -4996,6 +4996,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
+ "windows",
  "windows-sys 0.61.2",
  "wiremock",
 ]

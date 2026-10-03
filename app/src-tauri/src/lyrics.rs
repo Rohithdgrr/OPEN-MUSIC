@@ -5,6 +5,8 @@
 //! 1. **LRCLIB** `/api/get` — free, no key, returns `syncedLyrics` *and*
 //!    `plainLyrics` in one round trip. A duration match must agree within
 //!    ~2 s or the record is refused (404).
+//! 1b. **Better Lyrics** — syllable-synced TTML, free. Flattened to
+//!    timed lines so the frontend's word-by-word wipe works unchanged.
 //! 2. **JioSaavn** `lyrics.getLyrics` — the web player's own endpoint. Plain
 //!    text with `<br>` breaks, but it covers Indian-language songs LRCLIB
 //!    does not.
@@ -19,6 +21,9 @@ use crate::jiosaavn::{check_id, html_unescape};
 
 /// Base url of the community lyrics database.
 const LRCLIB: &str = "https://lrclib.net/api";
+
+/// Better Lyrics: free syllable-synced TTML endpoint.
+const BETTER: &str = "https://api.betterlyrics.org/getLyrics";
 
 /// One answer for the lyrics stage. `Deserialize` carries the L4 disk tier:
 /// entries are written as JSON and read back by `proxy::cached_lyrics`.
@@ -96,6 +101,14 @@ pub async fn fetch(
         }
     }
 
+    // 1b. Better Lyrics: free syllable-synced TTML; the panel's existing
+    //    word-by-word wipe is driven off these timed lines.
+    if let Ok(Some(l)) = better_lyrics(client, artist, title, album, duration).await {
+        if !l.synced.is_empty() {
+            return Ok(l);
+        }
+    }
+
     // 2. First-party plain text — the source Indian-language songs live on.
     if let Ok(Some((plain, copyright))) = crate::official::lyrics(client, id).await {
         return Ok(Lyrics {
@@ -138,6 +151,100 @@ fn from_hit(h: &Hit) -> Lyrics {
         synced: h.synced.clone(),
         copyright: None,
     }
+}
+
+/// Better Lyrics returns TTML — free, syllable-synced. We flatten each
+/// timed line to `(seconds, text)` so the frontend's existing word-by-word
+/// wipe works without a new render path.
+async fn better_lyrics(
+    client: &reqwest::Client,
+    artist: &str,
+    title: &str,
+    album: &str,
+    duration: u32,
+) -> Result<Option<Lyrics>, String> {
+    let query = [
+        ("s", bare_title(title).to_string()),
+        ("a", first_artist(artist).to_string()),
+        ("al", album.trim().to_string()),
+        ("d", duration.to_string()),
+    ]
+    .iter()
+    .map(|(k, v)| (k.to_string(), v.clone()))
+    .collect::<Vec<_>>();
+    let url = format!("{BETTER}?{}", encode(&query));
+    let Some(v) = get_json(client, &url).await? else {
+        return Ok(None);
+    };
+    let Some(ttml) = v.get("ttml").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let synced = parse_ttml_lines(ttml);
+    if synced.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Lyrics {
+        source: "betterlyrics".into(),
+        plain: Some(joined(&synced)),
+        synced,
+        copyright: None,
+    }))
+}
+
+/// TTML clock time: `HH:MM:SS.mmm`, `MM:SS.mmm`, or bare seconds.
+fn parse_ttml_time(raw: &str) -> Option<f64> {
+    let v = raw.trim();
+    let parts: Vec<&str> = v.split(':').collect();
+    match parts.as_slice() {
+        [ss] => ss.parse().ok(),
+        [mm, ss] => Some(mm.parse::<f64>().ok()? * 60.0 + ss.parse::<f64>().ok()?),
+        [hh, mm, ss] => {
+            Some(hh.parse::<f64>().ok()? * 3600.0 + mm.parse::<f64>().ok()? * 60.0 + ss.parse::<f64>().ok()?)
+        }
+        _ => None,
+    }
+}
+
+/// Flatten one `<p begin="..">…<span …>word</span></p>` into `(seconds, line)`.
+/// Tags are stripped; entities and whitespace are normalised.
+pub fn parse_ttml_lines(ttml: &str) -> Vec<(f64, String)> {
+    let mut out: Vec<(f64, String)> = Vec::new();
+    for chunk in ttml.split("<p") {
+        let Some(head_end) = chunk.find('>') else {
+            continue;
+        };
+        let attrs = &chunk[..head_end];
+        let rest = &chunk[head_end + 1..];
+        let Some(body) = rest.split("</p>").next() else {
+            continue;
+        };
+        let start = attrs
+            .split("begin=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .and_then(parse_ttml_time);
+        let Some(secs) = start else {
+            continue;
+        };
+        let mut text = String::new();
+        let mut in_tag = false;
+        for c in body.chars() {
+            match c {
+                '<' => in_tag = true,
+                '>' if in_tag => in_tag = false,
+                c if !in_tag => text.push(c),
+                _ => {}
+            }
+        }
+        let line = html_unescape(text.split_whitespace().collect::<Vec<_>>().join(" ").as_str())
+            .trim()
+            .to_string();
+        if !line.is_empty() {
+            out.push((secs, line));
+        }
+    }
+    out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    out
 }
 
 fn joined(synced: &[(f64, String)]) -> String {
@@ -344,6 +451,31 @@ mod tests {
     }
 
     #[test]
+    fn ttml_lines_are_flattened_to_timed_text() {
+        let ttml = r#"<tt xml:lang="en"><body><div>
+<p begin="00:13.13" end="00:15.00"><span begin="00:13.13" end="00:13.5">Yeah</span></p>
+<p begin="00:27.16" end="00:30.00"><span begin="00:27.16" end="00:27.6">I've</span> <span begin="00:27.6" end="00:28.0">been</span></p>
+<p begin="01:02.00" end="01:04.00">second &amp; quiet</p>
+</div></body></tt>"#;
+        assert_eq!(
+            parse_ttml_lines(ttml),
+            vec![
+                (13.13, "Yeah".to_string()),
+                (27.16, "I've been".to_string()),
+                (62.0, "second & quiet".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn ttml_time_parses_clock_forms() {
+        assert_eq!(parse_ttml_time("62.5"), Some(62.5));
+        assert_eq!(parse_ttml_time("1:02.50"), Some(62.5));
+        assert_eq!(parse_ttml_time("0:01:02.50"), Some(62.5));
+        assert_eq!(parse_ttml_time("junk"), None);
+    }
+
+    #[test]
     fn lrclib_records_are_gated_on_duration() {
         let close = Hit {
             plain: Some("x".into()),
@@ -412,6 +544,23 @@ mod tests {
         let body = lyrics.plain.unwrap_or_default();
         assert!(!body.contains("<br>"), "line breaks must be converted");
         assert!(body.lines().count() > 3, "a song has more than three lines");
+    }
+
+    #[tokio::test]
+    async fn live_better_lyrics_serves_timed_lines() {
+        if std::env::var("OP_OFFLINE").is_ok() {
+            return;
+        }
+        let client = crate::jiosaavn::api_client();
+        let got = better_lyrics(&client, "The Weeknd", "Blinding Lights", "After Hours", 200)
+            .await
+            .expect("better lyrics reachable");
+        // Coverage for Western pop is real; an empty answer just means the
+        // day's network lost — the chain treats it as a hit-or-miss rung.
+        if let Some(l) = got {
+            assert!(!l.synced.is_empty());
+            assert_eq!(l.source, "betterlyrics");
+        }
     }
 
     #[tokio::test]

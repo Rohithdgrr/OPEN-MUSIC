@@ -26,6 +26,71 @@
 main.pt-14 { padding-top: calc(3.5rem + env(safe-area-inset-top, 0px)); }
 main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
 ::-webkit-scrollbar { display: none; }
+
+/* Lyrics karaoke — port of the desktop's styles.css (mobile loads no
+   styles.css, so the .lyric-* rules live here). JS toggles lyric-active /
+   lyric-past and drives each word's fill through --progress. */
+.lyric-line { border-left: 2px solid transparent; }
+.lyric-word {
+  background-image: linear-gradient(90deg, #18181b 0%, #18181b var(--progress, 0%), #d4d4d8 var(--progress, 0%), #d4d4d8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lyric-text { transition: font-size 0.25s ease, font-weight 0.25s ease, color 0.25s ease; }
+.lyric-active { border-left: 3px solid #18181b; background: rgba(24, 24, 27, 0.05); }
+.lyric-active .lyric-text { font-size: 15px; font-weight: 700; line-height: 1.4; color: #18181b; }
+.lyric-past .lyric-text { font-size: 13px; color: #d4d4d8; }
+.lyric-past .lyric-word { background-image: linear-gradient(90deg, #d4d4d8, #d4d4d8); }
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text { color: #a1a1aa; }
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word { background-image: linear-gradient(90deg, #a1a1aa, #a1a1aa); }
+
+/* Toast stack — mobile's own; the desktop's #toast-stack lives in styles.css,
+   which this shell never loads. Stacks up to 4, click to dismiss. */
+#tm-toast-stack {
+  position: fixed;
+  top: calc(4rem + env(safe-area-inset-top, 0px));
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+.tm-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 100%;
+  background: #1b1b1e;
+  color: #f0f0f2;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  animation: tm-toast-in 0.18s ease-out;
+}
+.tm-toast .tm-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  margin-top: 0.3rem;
+  flex-shrink: 0;
+  background: #a1a1aa;
+}
+.tm-toast[data-kind="success"] .tm-dot { background: #22c55e; }
+.tm-toast[data-kind="error"] .tm-dot { background: #ef4444; }
+.tm-toast.tm-out { opacity: 0; transform: translateY(4px); transition: opacity 0.2s, transform 0.2s; }
+@keyframes tm-toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
 </style>
 </head>
 <body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased">

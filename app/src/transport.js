@@ -1,7 +1,7 @@
 // transport.js — transport controls, modes, volume, queue extras, share/credits
 // Split from main.js (Phase 4 M1).
 import { emitState } from "./bridge.js";
-import { diag, openCredits, showError, showView, toast } from "./core.js";
+import { diag, openCredits, showError, showView, toast } from "./core.js"; // esc, invoke: Bluetooth parked
 import { $, audio, bar, np } from "./dom.js";
 import { loadPlays } from "./home.js";
 import { createLocalPl } from "./library.js";
@@ -115,6 +115,73 @@ bar.queue.addEventListener("click", () => {
   renderQueue();
   showView("now-playing");
 });
+
+// -------------------------------------------------------------- bluetooth -
+// Parked on request: the mini player Bluetooth button + panel are hidden in
+// index.html (<!-- BT -->) and the Rust commands (bluetooth_devices,
+// open_bluetooth_settings) are unregistered. Uncomment both to restore.
+// WebView2 has no Web Bluetooth, so this only listed what Windows already had
+// paired and handed pairing to Settings anyway.
+//
+// const btPanel = $("#bt-panel");
+// const btList = $("#bt-list");
+//
+// function paintBtList(devices) {
+//   if (!btList) return;
+//   if (!devices.length) {
+//     btList.innerHTML =
+//       '<p class="text-[12px] text-on-surface-variant px-1 py-2">No paired Bluetooth devices found.</p>';
+//     return;
+//   }
+//   btList.innerHTML = devices
+//     .map(
+//       (d) => `
+//     <div class="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 hover:bg-surface-container-low transition-colors">
+//       <span class="flex items-center gap-2 min-w-0">
+//         <span class="material-symbols-outlined text-[16px] text-on-surface-variant">speaker</span>
+//         <span class="truncate">${esc(d.name)}</span>
+//       </span>
+//       <span class="font-label-mono text-[10px] text-on-surface-variant shrink-0">${esc(d.address)}</span>
+//     </div>`,
+//     )
+//     .join("");
+// }
+//
+// async function loadBtDevices() {
+//   if (!btList) return;
+//   btList.innerHTML =
+//     '<p class="text-[12px] text-on-surface-variant px-1 py-2">Reading paired devices&hellip;</p>';
+//   try {
+//     paintBtList(await invoke("bluetooth_devices"));
+//   } catch (e) {
+//     if (btList) {
+//       btList.innerHTML = `<p class="text-[12px] text-red-600 px-1 py-2">Could not read devices: ${esc(String(e))}</p>`;
+//     }
+//     diag("bluetooth", false, String(e));
+//   }
+// }
+//
+// function setBtPanel(open) {
+//   if (!btPanel) return;
+//   btPanel.classList.toggle("hidden", !open);
+//   bar.bt?.setAttribute("aria-expanded", String(open));
+//   if (open) loadBtDevices();
+// }
+//
+// bar.bt?.addEventListener("click", (e) => {
+//   e.stopPropagation();
+//   setBtPanel(btPanel?.classList.contains("hidden") ?? true);
+// });
+// $("#bt-close")?.addEventListener("click", () => setBtPanel(false));
+// $("#bt-settings")?.addEventListener("click", () => {
+//   invoke("open_bluetooth_settings").catch((err) => diag("bluetooth", false, String(err)));
+// });
+// // Click-away / Escape, the same contract every popover in the app follows.
+// document.addEventListener("click", (e) => {
+//   if (!btPanel || btPanel.classList.contains("hidden")) return;
+//   if (btPanel.contains(e.target) || bar.bt?.contains(e.target)) return;
+//   setBtPanel(false);
+// });
 
 // ------------------------------------------------------------ queue extras -
 /// Recency-weighted, artist-aware shuffle: never the same artist within 3

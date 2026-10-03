@@ -7,6 +7,7 @@ import {
   go,
   toast,
   setList,
+  store,
   hooks,
   fmtTime,
   fmtDur,
@@ -20,6 +21,7 @@ import {
   paintFavs,
   pushHistory,
   downloadTrack,
+  downloadAll,
   toggleFav,
   FAVS_KEY,
   PLAYS_KEY,
@@ -27,8 +29,14 @@ import {
   LIBRARY_KEY,
   LANG_KEY,
   COUNTRY_KEY,
+  dlQuality,
+  setDlQuality,
+  checkForUpdates,
+  AUTOUPDATE_KEY,
 } from "./shared.js";
+import { buildBackup, parseBackupFile, applyBackup, readSettings, writeSettings, backupFilename } from "../sync.js";
 import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat } from "./player.js";
+import { renderLyrics, resetLyrics } from "./lyrics.js";
 
 const main = () => document.querySelector("#screen main");
 
@@ -149,7 +157,9 @@ async function mountHome() {
   const h1 = m.querySelector("h1");
   if (h1) {
     const hr = new Date().getHours();
-    h1.textContent = hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening";
+    const base = hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening";
+    const name = String(load(NAME_KEY, "")).trim();
+    h1.textContent = name ? `${base}, ${name}` : base;
   }
   const dateEl = m.querySelector("section span.uppercase");
   if (dateEl) dateEl.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -160,7 +170,7 @@ async function mountHome() {
     feed = await invoke("home_feed");
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 90));
+    toast(`Couldn't load Home: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
   }
   if (!feed) return;
   const sections = [...m.querySelectorAll("section")];
@@ -470,7 +480,7 @@ async function mountSearch(query) {
       pushHistory(q);
     } catch (e) {
       console.error(e);
-      toast(String(e).slice(0, 90));
+      toast(`Search failed: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
     }
   }
 
@@ -781,7 +791,7 @@ async function openLib(item) {
     playList([{ id: item.id, title: item.title || "", artist: item.subtitle || "", image: item.image || "" }], 0);
   } catch (e) {
     console.error(e);
-    toast(`Can't open ${item.title || "item"}`);
+    toast(`Can't open ${item.title || "item"}`, 5000, "error");
   }
 }
 
@@ -817,6 +827,13 @@ function mountLiked() {
     pb.dataset.idx = "0";
     pb.classList.toggle("opacity-40", !favs.length);
   }
+  const dl = document.getElementById("dl-toggle");
+  if (dl && !dl.dataset.dlWired) {
+    dl.dataset.dlWired = "1";
+    const fresh = dl.cloneNode(true);
+    dl.replaceWith(fresh);
+    fresh.addEventListener("click", () => downloadAll(favs, "liked tracks", fresh));
+  }
   paintFavs();
 }
 
@@ -832,7 +849,7 @@ async function mountDownload() {
       entries = (await invoke("list_downloads")).entries || [];
     } catch (e) {
       console.error(e);
-      toast(String(e).slice(0, 90));
+      toast(`Couldn't load downloads: ${String(e).split("\n")[0].slice(0, 60)}`, 5000, "error");
     }
   }
   if (activeBlock) activeBlock.classList.add("hidden");
@@ -1221,32 +1238,57 @@ async function mountDetail(kind, query) {
   // returns a page object. Accept either shape.
   const asTracks = (r) => (Array.isArray(r) ? r : (r && (r.list || r.tracks)) || []);
   try {
-    if (kind === "album") paintDetail(m, kind, asTracks(await invoke("album_tracks", { token })), meta);
-    else if (kind === "playlist") paintDetail(m, kind, asTracks(await invoke("playlist_tracks", { id })), meta);
-    else await mountArtist(m, token, meta);
+    if (kind === "album") {
+      paintDetail(m, kind, asTracks(await invoke("album_tracks", { token })), meta);
+      wireHeaderDownload(m, "album tracks");
+    } else if (kind === "playlist") {
+      paintDetail(m, kind, asTracks(await invoke("playlist_tracks", { id })), meta);
+      wireHeaderDownload(m, "playlist tracks");
+    } else await mountArtist(m, token, meta);
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 100));
+    toast(String(e).slice(0, 100), 5000, "error");
   }
 }
 
+/// The design's header download toggles only restyled themselves. Rebind them
+/// (cloneNode drops the generated script's cosmetic listener) to a real batch
+/// download of the loaded tracklist.
+function wireHeaderDownload(m, what) {
+  const btn = m.querySelector("#download-toggle, #album-download-btn");
+  if (!btn || btn.dataset.dlWired) return;
+  btn.dataset.dlWired = "1";
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", () => downloadAll(store.detail || [], what, fresh));
+}
+
 let lyricsFor = "";
+let lyricsBox = null;
+let lyricToken = 0;
 
 async function ensureLyrics() {
-  const box = document.querySelector('#screen main div[class*="gap-1 py-1"]');
+  const box = document.querySelector("[data-lyrics]");
   const t = playerState().track;
-  if (!box || !document.getElementById("elapsed-time") || !t || !invoke || lyricsFor === t.id) return;
+  if (!box || !document.getElementById("elapsed-time") || !t || !invoke) return;
+  // Keyed per box as well as per track: remounting NowPlaying rebuilds the
+  // card, and its placeholder lines must be replaced again for the same track.
+  if (lyricsFor === t.id && lyricsBox === box) return;
   lyricsFor = t.id;
+  lyricsBox = box;
+  const token = ++lyricToken;
+  box.innerHTML =
+    '<div class="h-3.5 w-3/4 rounded-md animate-pulse bg-surface-container-high"></div><div class="h-3.5 w-1/2 rounded-md animate-pulse bg-surface-container-high"></div>';
   try {
     const r = await invoke("get_lyrics", { id: t.id, title: t.title || "", artist: t.artist || "", album: t.album || "", duration: t.duration_secs || 0 });
-    const lines = Array.isArray(r && r.synced) ? r.synced.map((x) => x[1]) : r && r.plain ? String(r.plain).split("\n") : [];
-    const clean = lines.filter(Boolean).slice(0, 3);
-    box.innerHTML = clean.length
-      ? clean.map((ln) => `<div class="py-0.5 font-body-md text-[13px] text-on-surface leading-snug">${esc(ln)}</div>`).join("")
-      : '<span class="font-body-sm text-secondary italic">No lyrics found</span>';
+    if (token !== lyricToken) return; // a newer track already fetched its own
+    renderLyrics(box, r || {});
   } catch (e) {
-    lyricsFor = "";
     console.error(e);
+    if (token === lyricToken) {
+      lyricsFor = "";
+      box.innerHTML = '<span class="font-body-sm text-secondary italic">Lyrics unavailable</span>';
+    }
   }
 }
 
@@ -1254,7 +1296,12 @@ let upNextKey = "";
 
 function paintNowplaying(st) {
   const m = main();
-  if (!m || !m.querySelector("#scrubber-bar")) return;
+  if (!m || !m.querySelector("#scrubber-bar")) {
+    // Another screen owns <main>: drop the karaoke clock so the rAF loop
+    // never scrolls a detached card.
+    resetLyrics();
+    return;
+  }
   const pct = st.dur ? Math.min(100, (st.pos / st.dur) * 100) : 0;
   const bar = document.getElementById("scrubber-bar");
   if (bar) bar.style.width = pct + "%";
@@ -1275,10 +1322,15 @@ function paintNowplaying(st) {
     // font-headline-md in <main> is the middle lyrics line — painting it
     // would overwrite the lyrics with the artist name.
     const titleEl = m.querySelector("h1.font-headline-lg");
-    const artist =
-      (titleEl && titleEl.parentElement && titleEl.parentElement.querySelector("p.font-body-md")) ||
-      m.querySelector("p.font-body-md");
+    const headerArtist = titleEl && titleEl.parentElement && titleEl.parentElement.querySelector("p.font-body-md");
+    const artist = headerArtist || m.querySelector("p.font-body-md");
     if (artist && t.artist) artist.textContent = t.artist;
+    // Only the header credit is stamped: the fallback match can land on a
+    // lyric line, and a lyric tap must mean "seek", not "open artist".
+    if (headerArtist && t.artist) {
+      headerArtist.dataset.entityName = "";
+      headerArtist.dataset.entityKind = "artist";
+    }
     const artImg = m.querySelector("img");
     if (artImg && t.image) paintArt(artImg, t.image);
     const fi = document.getElementById("favorite-icon");
@@ -1366,7 +1418,7 @@ function mountNowplaying() {
     dlBtn.replaceWith(fresh);
     fresh.addEventListener("click", () => {
       const t = playerState().track;
-      if (t) downloadTrack(t);
+      if (t) downloadTrack(t, fresh);
     });
   }
   document.getElementById("master-play-pause")?.addEventListener("click", () => toggle());
@@ -1382,13 +1434,242 @@ function mountNowplaying() {
   paintNowplaying(playerState());
 }
 
-function mountSettings() {
+// ---------------------------------------------------------------- settings -
+// Preference lists are the desktop's (settings.js) verbatim: same slugs and
+// same localStorage keys, so a backup restored across machines still means
+// the same thing.
+const NAME_KEY = "tm-name";
+const LANGS = [
+  ["all", "All languages"],
+  ["telugu", "Telugu"],
+  ["hindi", "Hindi"],
+  ["tamil", "Tamil"],
+  ["bengali", "Bengali"],
+  ["kannada", "Kannada"],
+  ["malayalam", "Malayalam"],
+  ["english", "English"],
+  ["chinese", "Chinese"],
+  ["german", "German"],
+  ["marathi", "Marathi"],
+  ["punjabi", "Punjabi"],
+  ["gujarati", "Gujarati"],
+  ["odia", "Odia"],
+  ["urdu", "Urdu"],
+  ["spanish", "Spanish"],
+  ["french", "French"],
+  ["japanese", "Japanese"],
+  ["korean", "Korean"],
+];
+const COUNTRIES = [
+  ["", "Automatic"],
+  ["IN", "India"],
+  ["BD", "Bangladesh"],
+  ["NP", "Nepal"],
+  ["LK", "Sri Lanka"],
+  ["PK", "Pakistan"],
+  ["AE", "United Arab Emirates"],
+  ["SA", "Saudi Arabia"],
+  ["QA", "Qatar"],
+  ["US", "United States"],
+  ["CA", "Canada"],
+  ["GB", "United Kingdom"],
+  ["AU", "Australia"],
+  ["SG", "Singapore"],
+  ["MY", "Malaysia"],
+  ["DE", "Germany"],
+  ["FR", "France"],
+  ["JP", "Japan"],
+  ["ZA", "South Africa"],
+  ["BR", "Brazil"],
+];
+const DL_QUALITIES = [
+  ["128kbps", "128 kbps — Recommended"],
+  ["320kbps", "320 kbps — max"],
+  ["160kbps", "160 kbps"],
+  ["96kbps", "96 kbps"],
+  ["64kbps", "64 kbps — small"],
+  ["48kbps", "48 kbps — tiny"],
+];
+
+const prefLangs = () => {
+  const v = load(LANG_KEY, []);
+  return (Array.isArray(v) ? v : [v]).filter((s) => typeof s === "string" && s && s !== "all");
+};
+const saveLangs = (list) => save(LANG_KEY, [...new Set(list.filter((s) => s && s !== "all"))]);
+
+/// The whole language set goes over so the backend cache key changes when
+/// any pick changes, not just the leading one (mirror of applySysPrefs).
+function pushPrefs() {
   if (!invoke) return;
-  try {
-    const langs = load(LANG_KEY, []);
-    const country = load(COUNTRY_KEY, "");
-    invoke("content_prefs_set", { lang: (Array.isArray(langs) ? langs : []).join(","), country: country || "" }).catch(() => {});
-  } catch {}
+  invoke("content_prefs_set", { lang: prefLangs().join(","), country: load(COUNTRY_KEY, "") || "" }).catch(() => {});
+}
+
+function paintSwitch(btn, on) {
+  btn.setAttribute("aria-checked", String(on));
+  btn.classList.toggle("bg-primary", on);
+  btn.classList.toggle("bg-surface-container-high", !on);
+  const knob = btn.firstElementChild;
+  if (knob) {
+    knob.classList.toggle("translate-x-5", on);
+    knob.classList.toggle("translate-x-0.5", !on);
+  }
+}
+
+/// Values only — safe to run repeatedly (after a restore repaints the panel),
+/// unlike the wiring below, which would stack listeners.
+function paintSettings(m) {
+  const name = m.querySelector("#set-name");
+  if (name) name.value = load(NAME_KEY, "") || "";
+
+  const chips = m.querySelector("#set-langs");
+  if (chips) {
+    const on = prefLangs();
+    chips.innerHTML = LANGS.map(([v, l]) => {
+      const active = v === "all" ? !on.length : on.includes(v);
+      return `<button type="button" data-lang="${esc(v)}" aria-pressed="${active}" class="px-2.5 py-1 rounded-full font-label-sm text-label-sm transition-colors ${
+        active ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface-variant"
+      }">${esc(l)}</button>`;
+    }).join("");
+  }
+
+  const country = m.querySelector("#set-country");
+  if (country) {
+    const cur = load(COUNTRY_KEY, "") || "";
+    country.innerHTML = COUNTRIES.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(l)}</option>`).join("");
+  }
+
+  const quality = m.querySelector("#set-dl-quality");
+  if (quality) {
+    const cur = dlQuality();
+    quality.innerHTML = DL_QUALITIES.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(l)}</option>`).join("");
+  }
+
+  const au = m.querySelector("#set-autoupdate");
+  if (au) paintSwitch(au, String(load(AUTOUPDATE_KEY, "1")) === "1");
+}
+
+function mountSettings() {
+  const m = main();
+  if (!m) return;
+  paintSettings(m);
+  pushPrefs();
+  if (m.dataset.settingsWired) return;
+  m.dataset.settingsWired = "1";
+
+  const name = m.querySelector("#set-name");
+  if (name)
+    name.addEventListener("change", () => {
+      const value = name.value.trim();
+      save(NAME_KEY, value);
+      name.value = value;
+      toast(value ? `Display name: ${value}` : "Display name cleared", 3000, "success");
+    });
+
+  const chips = m.querySelector("#set-langs");
+  if (chips)
+    chips.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-lang]");
+      if (!b) return;
+      const v = b.dataset.lang;
+      let on = prefLangs();
+      if (v === "all") on = [];
+      else on = on.includes(v) ? on.filter((x) => x !== v) : [...on, v];
+      saveLangs(on);
+      paintSettings(m);
+      pushPrefs();
+      toast(on.length ? `Music language: ${on.join(", ")}` : "Music language: all languages", 3000, "success");
+    });
+
+  const country = m.querySelector("#set-country");
+  if (country)
+    country.addEventListener("change", () => {
+      save(COUNTRY_KEY, country.value);
+      pushPrefs();
+      const label = (COUNTRIES.find(([v]) => v === country.value) || [])[1] || "Automatic";
+      toast(`Country: ${label}`, 3000, "success");
+    });
+
+  const quality = m.querySelector("#set-dl-quality");
+  if (quality)
+    quality.addEventListener("change", () => {
+      setDlQuality(quality.value);
+      toast(`New downloads: ${quality.selectedOptions[0] ? quality.selectedOptions[0].textContent : quality.value}`, 3000, "success");
+    });
+
+  const au = m.querySelector("#set-autoupdate");
+  if (au)
+    au.addEventListener("click", () => {
+      const on = String(load(AUTOUPDATE_KEY, "1")) !== "1";
+      save(AUTOUPDATE_KEY, on ? "1" : "0");
+      paintSwitch(au, on);
+      toast(on ? "Automatic updates on — checked once a day" : "Automatic updates off", 3000, "success");
+    });
+
+  const now = m.querySelector("#set-update-now");
+  const status = m.querySelector("#set-update-status");
+  const check = m.querySelector("#set-update-check");
+  if (check)
+    check.addEventListener("click", async () => {
+      check.disabled = true;
+      if (now) now.textContent = "Checking…";
+      const r = await checkForUpdates(false);
+      if (now) {
+        now.textContent = !r
+          ? "Check failed — try again"
+          : r.latest
+            ? `v${r.current} → v${r.latest.version}`
+            : `v${r.current} — up to date`;
+      }
+      if (status && r && r.latest) status.textContent = r.latest.installable ? "Installing the update" : "A newer version exists";
+      check.disabled = false;
+    });
+
+  const file = m.querySelector("#set-backup-file");
+  m.querySelector("#set-backup-export")?.addEventListener("click", async () => {
+    const doc = buildBackup(
+      { favorites: load(FAVS_KEY, []), playlists: load(LIBRARY_KEY, []).filter((p) => p && p.local), settings: readSettings() },
+      Date.now(),
+    );
+    const text = JSON.stringify(doc, null, 2);
+    const blob = new File([text], backupFilename(doc.exportedAt), { type: "application/json" });
+    // The desktop writes through a save dialog; Android has none, so hand the
+    // file to the share sheet and fall back to the clipboard.
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [blob] })) {
+        await navigator.share({ files: [blob], title: "TRANCE MUSIC backup" });
+        return toast(`Backup shared (${doc.favorites.records.length} favourites)`, 4000, "success");
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Backup copied to clipboard", 5000, "success");
+    } catch {
+      toast("Couldn't share a backup on this device", 5000, "error");
+    }
+  });
+
+  m.querySelector("#set-backup-restore")?.addEventListener("click", () => file && file.click());
+  if (file)
+    file.addEventListener("change", async () => {
+      const picked = file.files && file.files[0];
+      file.value = "";
+      if (!picked) return;
+      try {
+        const applied = applyBackup(parseBackupFile(await picked.text()));
+        save(FAVS_KEY, applied.favorites);
+        const rest = load(LIBRARY_KEY, []).filter((p) => p && !p.local);
+        save(LIBRARY_KEY, [...rest, ...(applied.playlists || [])]);
+        writeSettings(applied.settings || {});
+        paintFavs();
+        mountSettings(); // repaint the controls from the restored settings
+        toast(`Restored ${applied.counts.favorites} favourites, ${applied.counts.playlists} playlists`, 5000, "success");
+      } catch (e) {
+        console.error(e);
+        toast(`Restore failed: ${e && e.message ? e.message : e}`, 5000, "error");
+      }
+    });
 }
 
 onPaint(paintNowplaying);
@@ -1405,6 +1686,13 @@ export const MOUNT = {
   artist: (q) => mountDetail("artist", q),
   playlist: (q) => mountDetail("playlist", q),
   nowplaying: mountNowplaying,
+};
+
+// Called by app.js after a delete and by shared.js after a batch. Only the
+// screen that owns the list repaints — every other mount runs on navigation.
+hooks.repaintDownload = () => {
+  const h = location.hash;
+  if (/^#\/(download|downloads)/.test(h)) mountDownload();
 };
 
 export { openLib };

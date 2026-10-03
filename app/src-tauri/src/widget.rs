@@ -109,14 +109,22 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             api.prevent_close();
             let _ = window.hide();
         }
-        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
-            if window.label() == "widget" =>
-        {
+        tauri::WindowEvent::Moved(_) => {
+            if window.label() == "widget" {
+                if let Some(win) = window.app_handle().get_webview_window("widget") {
+                    rescue_orphaned_monitor(&win);
+                }
+            }
+            // Jelly mode off (user requested). Re-enable by restoring the
+            // tm:window-moved emit that feeds app/src/jelly.js.
+            // let _ = window.emit("tm:window-moved", serde_json::json!({}));
+        }
+        tauri::WindowEvent::Resized(_) if window.label() == "widget" => {
             if let Some(win) = window.app_handle().get_webview_window("widget") {
                 rescue_orphaned_monitor(&win);
             }
         }
-        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => {}
+        tauri::WindowEvent::Resized(_) => {}
         _ => {}
     }
 }

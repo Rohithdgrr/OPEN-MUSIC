@@ -22,6 +22,13 @@ export function stampEntity(el, kind, name) {
   }
 }
 
+/// The mirror ships the literal strings "NULL"/"None" where it has no value;
+/// Rust already drops them, and restored local data is filtered here too so a
+/// row can never print a placeholder as an artist or album name.
+function isPlaceholder(s) {
+  return /^(null|none|undefined|n\/a|na|-)$/i.test(String(s || "").trim());
+}
+
 /// Split a credits string the way the catalog indexes it — "Arijit Singh,
 /// Nikhita Gandhi" or "Sonu Nigam & Shreya Ghoshal" are three artists, and
 /// handing the whole line to a search returns one arbitrary page for every
@@ -30,7 +37,7 @@ export function creditNames(s) {
   return String(s || "")
     .split(/,|&/)
     .map((x) => x.trim())
-    .filter(Boolean);
+    .filter((x) => x && !isPlaceholder(x));
 }
 
 /// Per-name artist links for a row that has room for them; the first names
@@ -49,7 +56,7 @@ export function metaLinks(t) {
   const one = (kind, value) =>
     `<span class="hover:underline cursor-pointer" data-entity-kind="${esc(kind)}" data-entity-name="${esc(value)}">${esc(value)}</span>`;
   const parts = creditNames(t.artist).map((n) => one("artist", n));
-  if (t.album) parts.push(one("album", t.album));
+  if (t.album && !isPlaceholder(t.album)) parts.push(one("album", t.album));
   return parts.join('<span class="opacity-60"> · </span>');
 }
 

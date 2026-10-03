@@ -12,6 +12,8 @@ mod lyrics;
 mod official;
 mod proxy;
 mod sha256;
+#[allow(dead_code)] // parked with its commands (see generate_handler)
+mod sysvol;
 mod transcode;
 mod update;
 mod widget;
@@ -685,6 +687,112 @@ fn reveal_vault(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     state.reveal_vault()
 }
 
+/// One paired Bluetooth device, as the shell knows it.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // parked with the mini player button
+struct BluetoothDevice {
+    name: String,
+    address: String,
+    /// False for devices Windows still lists but has never connected.
+    connected: bool,
+}
+
+/// Paired Bluetooth devices, read from the Bluetooth service's own key.
+///
+/// WebView2 has no Web Bluetooth, so pairing itself is Windows' job: this
+/// command only reports what is already paired, and `open_bluetooth_settings`
+/// hands the user over to the Settings page for new pairings. Reading the
+/// registry needs no extra crate and no elevated rights.
+#[allow(dead_code)] // parked with the mini player button
+#[tauri::command]
+async fn bluetooth_devices() -> Result<Vec<BluetoothDevice>, String> {
+    #[cfg(not(windows))]
+    {
+        let _ = Vec::<BluetoothDevice>::new();
+        Ok(Vec::new())
+    }
+    #[cfg(windows)]
+    {
+        const KEY: &str = r"HKLM\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices";
+        // `reg query` writes to stdout; a missing key (no Bluetooth radio)
+        // is an empty list, not an error the panel should shout about.
+        let out = std::process::Command::new("reg")
+            .args(["query", KEY, "/s"])
+            .output()
+            .map_err(|e| format!("bluetooth registry read failed: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut devices = Vec::new();
+        // One `Name` REG_BINARY per device key; the key path carries the MAC.
+        let mut address = String::new();
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if let Some(rest) = trimmed.strip_prefix(r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\BTHPORT\Parameters\Devices\") {
+                address = rest.split('\\').next().unwrap_or("").trim().to_string();
+                continue;
+            }
+            let Some((name, rest)) = trimmed.split_once("Name") else {
+                continue;
+            };
+            if !name.trim().is_empty() {
+                continue;
+            }
+            let Some((_, hex)) = rest.split_once("REG_BINARY") else {
+                continue;
+            };
+            // REG_BINARY holds the device name as UTF-16LE, one hex pair per byte.
+            let bytes: Vec<u8> = hex
+                .split_whitespace()
+                .flat_map(|chunk| {
+                    (0..chunk.len())
+                        .step_by(2)
+                        .filter_map(|i| u8::from_str_radix(&chunk[i..i + 2], 16).ok())
+                        .collect::<Vec<u8>>()
+                })
+                .collect();
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .take_while(|u| *u != 0)
+                .collect();
+            let name = String::from_utf16_lossy(&units).trim().to_string();
+            if name.is_empty() || address.is_empty() {
+                continue;
+            }
+            devices.push(BluetoothDevice {
+                name,
+                address: address.clone(),
+                connected: false,
+            });
+        }
+        devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(devices)
+    }
+}
+
+/// Open the Windows Bluetooth settings page — the only place pairing can
+/// actually happen. `cmd /C start` avoids a shell-quoting dependency.
+#[allow(dead_code)] // parked with the mini player button
+#[tauri::command]
+fn open_bluetooth_settings() -> Result<(), String> {
+    if cfg!(mobile) {
+        return Err("bluetooth settings are not available on Android".to_string());
+    }
+    #[cfg(windows)]
+    {
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/C", "start", "", "ms-settings:bluetooth"]);
+        crate::hide_console(&mut cmd);
+        cmd.spawn()
+            .map_err(|e| format!("could not open bluetooth settings: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        Err("bluetooth settings are only wired up on Windows".to_string())
+    }
+}
+
 /// Phase 1 backup/restore: write text through the native Save dialog.
 /// Cancellation is an Err the frontend treats as silent; the Ok holds the
 /// path that was written, for the confirmation toast.
@@ -1254,6 +1362,14 @@ pub fn run() {
             import_manifest,
             reveal_download,
             reveal_vault,
+            // Bluetooth parked on request: the mini player button/panel is commented out
+// in index.html and transport.js. Uncomment to restore.
+// bluetooth_devices,
+// open_bluetooth_settings,
+            // System (laptop) master volume parked on request — the app's own audio
+// element volume stays as it was. Uncomment to drive Windows' mixer.
+// sysvol::system_volume,
+// sysvol::set_system_volume,
             export_file,
             read_import_file,
             gdrive::gdrive_status,

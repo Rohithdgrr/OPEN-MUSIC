@@ -23,7 +23,7 @@ if (!tag || !bundleRoot) {
   process.exit(2);
 }
 
-const here = dirname(fileURLToPath(fileURLToPath(import.meta.url)));
+const here = dirname(fileURLToPath(import.meta.url));
 const conf = JSON.parse(readFileSync(join(here, "..", "src-tauri", "tauri.conf.json"), "utf8"));
 const version = String(conf.version);
 const normalizedTag = tag.trim().replace(/^[vV]/, "");
@@ -53,25 +53,48 @@ const files = walk(resolve(bundleRoot));
 // Each bundle type gets its own key; the arch is read from the artifact name
 // so an arm64 Mac and an x64 Linux box both land on the right entry.
 const archOf = (name) => (/aarch64|arm64/i.test(name) ? "aarch64" : "x86_64");
-const pick = (ext) => files.find((f) => f.endsWith(ext)) || null;
+
+// Tauri 2 signs the installer file itself (`TRANCE MUSIC_0.3.0_x64-setup.exe`
+// + `.exe.sig`), while older builds wrapped it in a `.zip`. Accept either so
+// the manifest keeps working across versions. Older installers from previous
+// builds sit in the same folder, so a file carrying this release's version
+// always wins over one that does not.
+const pick = (...exts) => {
+  for (const ext of exts) {
+    const hits = files.filter((f) => f.endsWith(ext));
+    const hit = hits.find((f) => f.includes(version)) || hits[hits.length - 1];
+    if (hit) return hit;
+  }
+  return null;
+};
+
+const nsisExe = pick("-setup.exe", ".exe");
+const msi = pick(".msi");
+const appimage = pick(".AppImage.tar.gz", ".AppImage");
+const appTar = pick(".app.tar.gz");
 
 const bundles = [
-  { key: () => `windows-${archOf("x64")}-nsis`, zip: pick(".nsis.zip"), os: "windows" },
-  { key: () => `windows-${archOf("x64")}-msi`, zip: pick(".msi.zip"), os: "windows" },
-  { key: () => `linux-${archOf(files.find((f) => f.endsWith(".AppImage.tar.gz")) || "x86_64")}-appimage`, zip: pick(".AppImage.tar.gz"), os: "linux" },
-  { key: () => `darwin-${archOf(pick(".app.tar.gz") || "x86_64")}`, zip: pick(".app.tar.gz"), os: "macos" },
+  { key: () => `windows-${archOf(nsisExe || "x64")}-nsis`, zip: nsisExe, os: "windows" },
+  { key: () => `windows-${archOf("x64")}-msi`, zip: msi, os: "windows" },
+  { key: () => `linux-${archOf(appimage || "x86_64")}-appimage`, zip: appimage, os: "linux" },
+  { key: () => `darwin-${archOf(appTar || "x86_64")}`, zip: appTar, os: "macos" },
 ].filter((b) => b.zip);
 
 if (!bundles.length) {
-  console.error(`no updater artifacts (*.nsis.zip / *.msi.zip / *.AppImage.tar.gz / *.app.tar.gz) under ${bundleRoot}`);
+  console.error(
+    `no updater artifacts (*.exe / *.msi / *.AppImage / *.app.tar.gz) under ${bundleRoot}`,
+  );
   process.exit(1);
 }
 
 const platform = (zip) => {
   const sig = `${zip}.sig`;
   if (!statSyncExists(sig)) {
-    console.error(`missing signature for ${zip} — was TAURI_SIGNING_PRIVATE_KEY set?`);
-    process.exit(1);
+    // An unsigned artifact (a build made without TAURI_SIGNING_PRIVATE_KEY)
+    // cannot be offered for in-app update — say so and leave it out rather
+    // than failing the whole release.
+    console.warn(`skipping ${zip}: no ${sig} (build it with TAURI_SIGNING_PRIVATE_KEY set)`);
+    return null;
   }
   return {
     url: `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(zip.split(/[\\/]/).pop())}`,
@@ -88,11 +111,22 @@ function statSyncExists(p) {
 }
 
 const platforms = {};
-for (const b of bundles) platforms[b.key()] = platform(b.zip);
+for (const b of bundles) {
+  const entry = platform(b.zip);
+  if (entry) platforms[b.key()] = entry;
+}
 // Plain `{os}-{arch}` fallback — the shape the updater falls back to when no
 // installer-specific key matches the installed bundle.
 const plain = bundles.find((b) => b.os === "windows") || bundles[0];
-platforms[plain.key().split("-").slice(0, 2).join("-")] = platform(plain.zip);
+if (plain) {
+  const entry = platform(plain.zip);
+  if (entry) platforms[plain.key().split("-").slice(0, 2).join("-")] = entry;
+}
+
+if (!Object.keys(platforms).length) {
+  console.error(`no signed updater artifacts under ${bundleRoot} — nothing to offer in-app`);
+  process.exit(1);
+}
 
 const manifest = {
   version,

@@ -1,7 +1,7 @@
 // app.js — boot + global click delegation + mini-player paint for the mobile shell.
-import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, badgeLabel, HISTORY_KEY } from "./shared.js";
+import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, badgeLabel, HISTORY_KEY, checkForUpdates, AUTOUPDATE_KEY } from "./shared.js";
 import { playList, playPlaylist, toggle, onPaint, playerState } from "./player.js";
-import { MOUNT, openLib } from "./binders.js";
+import { MOUNT, openLib, entityNav } from "./binders.js";
 import { isMenuTrigger, handleMenuTrigger } from "./menus.js";
 
 document.addEventListener("smount", async (e) => {
@@ -11,19 +11,37 @@ document.addEventListener("smount", async (e) => {
     await fn(e.detail.query);
   } catch (err) {
     console.error(err);
-    toast(String(err).slice(0, 120));
+    toast(String(err).slice(0, 120), 5000, "error");
   }
 });
+
+/// Name -> entity page: the row/NowPlaying artist taps. Mirror of the menus'
+/// viewAlbum/goToArtist resolvers, keyed by name instead of a track.
+async function resolveEntity(kind, name) {
+  if (!invoke || !name) return;
+  const query = kind === "artist" ? name.split(",")[0].trim() : name;
+  try {
+    const r = await invoke("search_entities", { query, kind, limit: 8, page: 1 });
+    const items = (r && r.items) || [];
+    const want = query.toLowerCase();
+    const hit = items.find((x) => String(x.title || "").toLowerCase() === want) || items[0];
+    if (!hit || !(hit.token || hit.id)) return toast(`No ${kind} found for “${query}”`, 4000, "error");
+    go(entityNav(kind, hit));
+  } catch (e) {
+    console.error(e);
+    toast(`Could not look up that ${kind}`, 4000, "error");
+  }
+}
 
 async function removeDownload(path) {
   if (!invoke || !path) return;
   try {
     await invoke("remove_download", { path });
-    toast("Removed from vault");
+    toast("Removed from vault", 3200, "success");
     hooks.repaintDownload?.();
   } catch (e) {
     console.error(e);
-    toast(String(e).slice(0, 90));
+    toast(`Could not remove: ${String(e).split("\n")[0].slice(0, 80)}`, 5000, "error");
   }
 }
 
@@ -66,6 +84,17 @@ document.addEventListener("click", (e) => {
     go(nav.dataset.nav);
     return;
   }
+  // Artist/album names inside rows and NowPlaying jump to that entity. It
+  // must run before the row-play fallback below so a name tap never starts
+  // playback (the spans are siblings of fav/dl/kebab, so those stay clear).
+  const ent = el("[data-entity-name]");
+  if (ent) {
+    const name = ent.textContent.trim();
+    if (name) {
+      resolveEntity(ent.dataset.entityKind || "artist", name);
+      return;
+    }
+  }
   const libi = el("[data-libi]");
   if (libi) {
     openLib(store.lib?.[+libi.dataset.libi]);
@@ -87,7 +116,7 @@ document.addEventListener("click", (e) => {
   if (dl) {
     const row = dl.closest("[data-list][data-idx]");
     const track = row && store[row.dataset.list]?.[+row.dataset.idx];
-    if (track) downloadTrack(track);
+    if (track) downloadTrack(track, dl);
     return;
   }
   const plPlay = el("[data-pl-play]");
@@ -160,4 +189,10 @@ if (invoke) {
     .catch(() => {});
 } else {
   console.warn("Tauri IPC unavailable — mobile backend disabled");
+}
+
+if (invoke && String(load(AUTOUPDATE_KEY, "1")) === "1") {
+  // Fire-and-forget on boot: daily cadence lives inside checkForUpdates, and a
+  // failed check must never hold up first paint.
+  checkForUpdates(true).catch(() => {});
 }

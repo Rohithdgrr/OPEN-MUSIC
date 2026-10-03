@@ -131,7 +131,8 @@ pub fn hyper_tool_running() -> bool {
                 std::process::Command::new("pgrep")
                     .arg("-x")
                     .arg(name)
-                    .map(|c| c.status.map(|s| s.success()).unwrap_or(false))
+                    .output()
+                    .map(|o| o.status.success())
                     .unwrap_or(false)
             })
     }

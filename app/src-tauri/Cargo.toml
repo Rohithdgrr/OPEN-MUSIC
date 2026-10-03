@@ -1,6 +1,6 @@
 [package]
 name = "trance-music"
-version = "0.2.0"
+version = "0.3.0"
 description = "TRANCE MUSIC — open-source music streaming player"
 edition = "2021"
 rust-version = "1.77"
@@ -54,6 +54,16 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 # The desktop card's "on the wallpaper" placement is a raw SetParent into the
 # shell's WorkerW layer, which the Tauri window API does not expose.
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
+# The volume slider drives the Windows master volume, which means COM
+# (IMMDeviceEnumerator / IAudioEndpointVolume) — windows-sys only exposes the
+# raw ABI, so the `windows` crate's typed COM interfaces are used here.
+windows = { version = "0.62", features = [
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Threading",
+] }
 
 [profile.release]
 codegen-units = 1
