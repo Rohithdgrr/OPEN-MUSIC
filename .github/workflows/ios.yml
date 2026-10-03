@@ -115,10 +115,9 @@ jobs:
           p.write_text(s, encoding="utf-8")
           print("neutralized iOS signing settings")
           PY
-          # `--simulator` targets the simulator SDK and skips the archive
-          # export entirely - a device build tries to export an .ipa and dies
-          # with "exportArchive No Team Found in Archive" when unsigned.
-          npx tauri ios build --ci --simulator --verbose 2>&1 | tee ios-build.log
+          # Build the simulator target explicitly and disable signing; this is
+          # the supported CLI path for unsigned iOS builds.
+          npx tauri ios build --ci --target aarch64-apple-ios-sim --no-sign --verbose 2>&1 | tee ios-build.log
 
       - name: Report the failure where it can be read
         if: failure()
