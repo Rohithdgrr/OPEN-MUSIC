@@ -106,9 +106,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
         run: |
           # Artifacts and job logs both need an authenticated API call to read
-          # back; an issue comment is public, so paste the tail there.
+          # back; an issue comment is public, so paste the tail there. Written
+          # with curl + the token rather than `gh` so a missing/failed CLI can
+          # never silently swallow the report.
           {
             echo "### iOS build failure (\`${TAG}\`)"
             echo
@@ -116,15 +119,34 @@ jobs:
             tail -n 120 app/ios-build.log 2>/dev/null || echo "no build log was produced"
             echo '```'
           } > /tmp/report.md
-          NUM=$(gh issue list --search "iOS build log in:title" --state all \
-            --json number -q '.[0].number' 2>/dev/null || true)
-          if [ -z "$NUM" ]; then
-            gh issue create --title "iOS build log" \
-              --body "Automated iOS build reports land here." >/dev/null
-            NUM=$(gh issue list --search "iOS build log in:title" --state all \
-              --json number -q '.[0].number')
-          fi
-          gh issue comment "$NUM" --body-file /tmp/report.md || true
+          python3 - <<'PY'
+          import json, os, urllib.request
+          repo = os.environ["REPO"]; tok = os.environ["GH_TOKEN"]
+          body = open("/tmp/report.md", encoding="utf-8").read()
+          api = f"https://api.github.com/repos/{repo}/issues"
+          req = urllib.request.Request(api, headers={
+            "Authorization": f"Bearer {tok}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "trance-ci"})
+          issues = json.load(urllib.request.urlopen(req))
+          num = next((i["number"] for i in issues
+                      if i["title"] == "iOS build log" and "pull_request" not in i), 0)
+          if not num:
+            data = json.dumps({"title": "iOS build log",
+                              "body": "Automated iOS build reports land here."}).encode()
+            r = urllib.request.Request(api, data=data, method="POST", headers={
+              "Authorization": f"Bearer {tok}",
+              "Accept": "application/vnd.github+json",
+              "User-Agent": "trance-ci"})
+            num = json.load(urllib.request.urlopen(r))["number"]
+          c = urllib.request.Request(f"{api}/{num}/comments",
+            data=json.dumps({"body": body}).encode(), method="POST", headers={
+              "Authorization": f"Bearer {tok}",
+              "Accept": "application/vnd.github+json",
+              "User-Agent": "trance-ci"})
+          urllib.request.urlopen(c)
+          print(f"reported to issue #{num}")
+          PY
 
       - name: Upload the iOS archive
         uses: actions/upload-artifact@v4
