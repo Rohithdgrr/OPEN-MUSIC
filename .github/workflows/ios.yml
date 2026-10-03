@@ -12,13 +12,12 @@ name: iOS
 #     (.app, unsigned, installable on a simulator or your own device via
 #     Xcode). In-app updates do not apply to iOS — the App Store handles that.
 #
-# Manual run: Actions -> iOS -> Run workflow.
-# Tag run:  push a v* tag to build alongside the desktop release.
+# Manual run: Actions -> iOS -> Run workflow. Desktop releases never build
+# iOS — tag pushes deliberately do NOT trigger this workflow; re-run it by
+# hand when a simulator build is wanted.
 
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*", "V*"]
 
 permissions:
   contents: read

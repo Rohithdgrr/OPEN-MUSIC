@@ -88,8 +88,14 @@ jobs:
           pattern: bundle-*
           path: app/src-tauri/target/release/bundle
       - name: Assemble latest.json + update.json
-        run: node scripts/make-update-json.mjs ${{ github.ref_name }} app/src-tauri/target/release/bundle
-      - name: Publish release assets
+        # The script lives under app/ — the publish job runs from the repo
+        # root, so the path must include it (this wrong path is what failed
+        # the v0.3.0 run). continue-on-error: an unsigned build (no
+        # TAURI_SIGNING_PRIVATE_KEY) still ships installers; the updater
+        # manifest step below is optional for exactly that case.
+        continue-on-error: true
+        run: node app/scripts/make-update-json.mjs ${{ github.ref_name }} app/src-tauri/target/release/bundle
+      - name: Publish installers
         uses: softprops/action-gh-release@v2
         with:
           name: TRANCE MUSIC ${{ github.ref_name }}
@@ -97,16 +103,24 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             app/src-tauri/target/release/bundle/**/*.msi
-            app/src-tauri/target/release/bundle/**/*.msi.zip
-            app/src-tauri/target/release/bundle/**/*.msi.zip.sig
             app/src-tauri/target/release/bundle/**/*.exe
-            app/src-tauri/target/release/bundle/**/*.nsis.zip
-            app/src-tauri/target/release/bundle/**/*.nsis.zip.sig
             app/src-tauri/target/release/bundle/**/*.deb
             app/src-tauri/target/release/bundle/**/*.AppImage
+            app/src-tauri/target/release/bundle/**/*.dmg
+      - name: Publish updater artifacts and manifests
+        # Optional by nature: .zip/.sig naming changed across Tauri versions
+        # and the manifests only exist when the build was signed.
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: false
+          files: |
+            app/src-tauri/target/release/bundle/**/*.msi.zip
+            app/src-tauri/target/release/bundle/**/*.msi.zip.sig
+            app/src-tauri/target/release/bundle/**/*.nsis.zip
+            app/src-tauri/target/release/bundle/**/*.nsis.zip.sig
+            app/src-tauri/target/release/bundle/**/*.exe.sig
             app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz
             app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz.sig
-            app/src-tauri/target/release/bundle/**/*.dmg
             app/src-tauri/target/release/bundle/**/*.app.tar.gz
             app/src-tauri/target/release/bundle/**/*.app.tar.gz.sig
             app/src-tauri/target/release/bundle/latest.json
