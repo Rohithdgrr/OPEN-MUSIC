@@ -14,6 +14,6 @@ if (Test-Path $keyPath) {
 if ($env:TRANCE_MUSIC_GOOGLE_CLIENT_ID) { "Google client id: baked in" }
 else { "Google client id: not set (Drive UI is parked in this build anyway)" }
 
-npm run css
+# Desktop application uses pure vanilla CSS (styles.css) with zero build step.
 npx tauri build --bundles msi,nsis
 "EXITCODE=$LASTEXITCODE"

@@ -1,6 +1,6 @@
 [package]
 name = "trance-music"
-version = "0.3.0"
+version = "0.4.0"
 description = "TRANCE MUSIC — open-source music streaming player"
 edition = "2021"
 rust-version = "1.77"
@@ -18,6 +18,8 @@ tauri = { version = "2", features = ["tray-icon"] }
 getrandom = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "1"
+hex = "0.4"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 axum = "0.8"
@@ -26,6 +28,10 @@ futures = "0.3"
 # JioSaavn encrypts `encrypted_media_url` with DES-ECB before base64.
 des = "0.8"
 base64 = "0.22"
+# URL encoding for OAuth and catalog APIs
+urlencoding = "2"
+# Catalog trait async trait support
+async-trait = "0.1"
 # Cache layers L1/L2/L4-RAM: concurrent TTL + size-aware LRU (design §TL;DR 2).
 moka = { version = "0.12", features = ["future"] }
 # Vault ledger (review 4.5): WAL-mode SQLite, bundled so no system SQLite
@@ -46,8 +52,11 @@ tauri-plugin-updater = "2"
 # extra frontend capability entries are needed.
 tauri-plugin-dialog = "2"
 # Phase 2: the Drive refresh token lives in the OS credential store, never in
-# a file or localStorage.
-keyring = "3"
+# a file or localStorage. keyring 3 ships NO default store: without the native
+# feature for the running OS it silently falls back to the in-memory mock —
+# sign-in "succeeds" but every later load reads NoEntry, so the status never
+# leaves "Not signed in" (and Drive/Spotify import can never refresh).
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
 
 # reqwest's default TLS (native-tls) drags openssl-sys in on Android, where
 # there is no system OpenSSL to link against. Desktop keeps the default

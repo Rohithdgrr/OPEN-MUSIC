@@ -1,12 +1,36 @@
 // player.js — one shared <audio> for every mobile screen: queue, resolve, transport.
-import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted } from "./shared.js";
+import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted, relayUrl, haptic } from "./shared.js";
+// Namespace import for forward-compatible helpers (effectiveStreamQuality,
+// isExplicitTrack, explicitHidden, eqPreset, normalizeOn) which may not exist
+// in shared.js yet. A static named import of a missing export would fail the
+// whole module at link time, so access via the namespace object with guarded
+// optional calls instead — player never crashes when the export hasn't landed.
+import * as sharedHelpers from "./shared.js";
 import { netMode } from "./net.js";
 import { ensureReco } from "./radio.js";
 
-const audio = document.getElementById("audio");
+// `audio` is a live binding (screens import it): the gapless/crossfade
+// engine swaps which element is audible by reassigning it, and every reader
+// (playerState, mediaSession handlers, lyrics clock) follows automatically.
+// `standby` preloads the next track so the handoff has zero gap.
+let audio = document.getElementById("audio");
+let standby = null;
 // Full scale: the media element is a limiter (max 1.0), so anything less only
 // quietens playback — loudness belongs to the device/OS volume, not here.
-if (audio) audio.volume = 1;
+function baseVol() {
+  try {
+    // Read the raw string first: `Number(null)` is 0 and `Number.isFinite(0)`
+    // is true, so parsing a missing key directly would return 0 and mute a
+    // fresh install (songs list fine, playback is silent).
+    const raw = localStorage.getItem("tm-mobile-vol");
+    if (raw != null && raw !== "") {
+      const vol = Number(raw);
+      if (Number.isFinite(vol)) return Math.min(1, Math.max(0, vol));
+    }
+  } catch {}
+  return 1;
+}
+if (audio) audio.volume = baseVol();
 
 let queue = [];
 let qi = -1;
@@ -196,6 +220,16 @@ function streamError() {
   step(1, true);
 }
 
+function onAudioEvent(e) {
+  // Both transport elements share this handler; only the audible one drives
+  // paint/ended/error. The standby's events are preload noise.
+  if (!e || e.target !== audio) return;
+  if (e.type === "ended") return ended();
+  if (e.type === "error") return streamError();
+  if (e.type === "timeupdate") xfadeTick();
+  paint();
+}
+
 if (audio) {
   for (const ev of [
     "play",
@@ -210,12 +244,37 @@ if (audio) {
     "ended",
     "error",
   ]) {
-    audio.addEventListener(ev, (e) => {
-      if (e.type === "ended") return ended();
-      if (e.type === "error") return streamError();
-      paint();
-    });
+    audio.addEventListener(ev, onAudioEvent);
   }
+  // Re-apply EQ on play (once): resumes a suspended AudioContext after the
+  // user gesture and picks up any preset change made while paused.
+  audio.addEventListener("play", () => {
+    try {
+      applyEq();
+    } catch {}
+  });
+}
+
+function ensureStandby() {
+  if (standby) return standby;
+  try {
+    standby = document.createElement("audio");
+    standby.preload = "auto";
+    standby.volume = 0;
+    try {
+      const v = Number(localStorage.getItem("tm-play-speed") || "1");
+      standby.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
+    } catch {}
+    for (const ev of ["timeupdate", "ended", "error", "canplay"]) {
+      standby.addEventListener(ev, onAudioEvent);
+    }
+    try {
+      ensureEqChain(standby);
+    } catch {}
+  } catch {
+    standby = null;
+  }
+  return standby;
 }
 
 /// Load a playlist/chart's tracks and start it (Home hero, playlist headers).
@@ -254,6 +313,7 @@ export function playList(list, i = 0) {
   }
   queue = q;
   qi = Math.max(0, Math.min(Number(i) || 0, q.length - 1));
+  abortXfade(true); // new list: drop any preloaded standby buffer
   start();
 }
 
@@ -327,6 +387,271 @@ export function removeFromQueue(idx) {
 /// but bound the run so a repeat queue of undownloaded tracks can't loop.
 let skipRun = 0;
 
+// ------------------------------------------------------- stream quality ---
+// effectiveStreamQuality() lives in shared.js once that lands; until then
+// fall back to the raw localStorage key so the player never crashes.
+export function effectiveQuality() {
+  try {
+    const fn = sharedHelpers.effectiveStreamQuality;
+    if (typeof fn === "function") {
+      const v = fn();
+      if (v) return v;
+    }
+  } catch {}
+  try {
+    return localStorage.getItem("tm-stream-quality") || "320kbps";
+  } catch {
+    return "320kbps";
+  }
+}
+
+// ------------------------------------------------------- explicit skip ---
+function isExplicitHiddenTrack(track) {
+  try {
+    const hidFn = sharedHelpers.explicitHidden;
+    const isFn = sharedHelpers.isExplicitTrack;
+    if (typeof hidFn !== "function" || typeof isFn !== "function") return false;
+    return !!hidFn() && !!isFn(track);
+  } catch {
+    return false;
+  }
+}
+
+function skipExplicit(track) {
+  skipRun += 1;
+  if (skipRun >= Math.max(1, queue.length)) {
+    skipRun = 0;
+    badge = "IDLE";
+    try {
+      audio.pause();
+    } catch {}
+    toast("Skipped explicit tracks hidden by setting", 4000, "info");
+    paint();
+    return;
+  }
+  badge = "IDLE";
+  toast(`Skipped explicit — ${track.title || "track"}`, 3000, "info");
+  paint();
+  step(1, true);
+}
+
+// ------------------------------------------------------- EQ + normalize -
+// WebAudio chains, mobile-safe and built lazily (MediaElementSource can only
+// be created once per <audio>, so one chain per transport element, shared
+// AudioContext). The crossfade standby gets its own chain so the handoff
+// never bypasses EQ.
+let eqCtx = null;
+const eqChains = new Map(); // element -> { low, mid, high, comp, gain }
+let eqNodes = null; // legacy alias: the audible element's chain
+
+export function ensureEqChain(el) {
+  const target = el || audio;
+  if (!target) return null;
+  const cached = eqChains.get(target);
+  if (cached) {
+    if (!el || target === audio) eqNodes = cached;
+    return cached;
+  }
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!eqCtx) eqCtx = new AC();
+    let src = null;
+    try {
+      src = eqCtx.createMediaElementSource(target);
+    } catch {
+      // Already wired (or unwirable) — don't crash, just skip EQ.
+      return eqChains.get(target) || null;
+    }
+    const low = eqCtx.createBiquadFilter();
+    low.type = "lowshelf";
+    low.frequency.value = 120;
+    const mid = eqCtx.createBiquadFilter();
+    mid.type = "peaking";
+    mid.frequency.value = 1000;
+    const high = eqCtx.createBiquadFilter();
+    high.type = "highshelf";
+    high.frequency.value = 8000;
+    const comp = eqCtx.createDynamicsCompressor();
+    try {
+      comp.threshold.value = 0;
+    } catch {}
+    const gain = eqCtx.createGain();
+    try {
+      gain.gain.value = 1;
+    } catch {}
+    src.connect(low);
+    low.connect(mid);
+    mid.connect(high);
+    high.connect(comp);
+    comp.connect(gain);
+    gain.connect(eqCtx.destination);
+    const nodes = { low, mid, high, comp, gain };
+    eqChains.set(target, nodes);
+    if (!el || target === audio) eqNodes = nodes;
+    return nodes;
+  } catch {
+    return null;
+  }
+}
+
+export function applyEq() {
+  try {
+    let preset = "flat";
+    // Per-track override wins (track menu → "EQ for this track"); the
+    // global preset stays the fallback for everything else.
+    try {
+      const cur = queue[qi];
+      const mapFn = sharedHelpers.trackEqFor;
+      const per = typeof mapFn === "function" && cur ? mapFn(cur.id) : "";
+      if (per) preset = per;
+      else {
+        const fn = sharedHelpers.eqPreset;
+        if (typeof fn === "function") preset = fn() || "flat";
+        else preset = localStorage.getItem("tm-eq-preset") || "flat";
+      }
+    } catch {
+      try {
+        preset = localStorage.getItem("tm-eq-preset") || "flat";
+      } catch {
+        preset = "flat";
+      }
+    }
+    let norm = false;
+    try {
+      const fn = sharedHelpers.normalizeOn;
+      if (typeof fn === "function") norm = !!fn();
+      else norm = localStorage.getItem("tm-normalize") === "1";
+    } catch {
+      try {
+        norm = localStorage.getItem("tm-normalize") === "1";
+      } catch {
+        norm = false;
+      }
+    }
+    const MAP = {
+      flat: [0, 0, 0],
+      bass: [6, 1, 2],
+      bassboost: [9, 3, 4],
+      pop: [2, 3, 4],
+      bright: [-1, 1, 5],
+      vocal: [-2, 4, 3],
+    };
+    const g = MAP[preset] || MAP.flat;
+    let ok = false;
+    for (const el of [audio, standby]) {
+      if (!el) continue;
+      const nodes = ensureEqChain(el);
+      if (!nodes) continue;
+      try {
+        nodes.low.gain.value = g[0];
+        nodes.mid.gain.value = g[1];
+        nodes.high.gain.value = g[2];
+      } catch {}
+      try {
+        // Threshold 0dB is effectively off (nothing peaks above it);
+        // -24dB gives the normalize compression.
+        nodes.comp.threshold.value = norm ? -24 : 0;
+      } catch {}
+      ok = true;
+    }
+    try {
+      eqNodes = eqChains.get(audio) || eqNodes;
+    } catch {}
+    try {
+      if (eqCtx && eqCtx.state === "suspended") eqCtx.resume().catch(() => {});
+    } catch {}
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+// ------------------------------------------------------- queue management
+export function moveQueue(from, to) {
+  const f = Number(from);
+  const t = Number(to);
+  if (!Number.isInteger(f) || !Number.isInteger(t) || f < 0 || f >= queue.length || t < 0 || t >= queue.length) return false;
+  if (f === t) return true;
+  const [item] = queue.splice(f, 1);
+  queue.splice(t, 0, item);
+  if (f === qi) qi = t;
+  else if (f < qi && t >= qi) qi -= 1;
+  else if (f > qi && t <= qi) qi += 1;
+  paint();
+  return true;
+}
+
+export function clearQueue(keepCurrent = true) {
+  const cur = keepCurrent ? queue[qi] : null;
+  // Mutate in place: playerState() hands out the live array reference.
+  queue.length = 0;
+  if (cur) {
+    queue.push(cur);
+    qi = 0;
+  } else {
+    qi = -1;
+  }
+  paint();
+  return true;
+}
+
+export function smartShuffleQueue() {
+  if (queue.length < 2) return false;
+  let recent = new Set();
+  try {
+    const plays = sharedHelpers.load ? sharedHelpers.load(sharedHelpers.PLAYS_KEY, []) : [];
+    recent = new Set((plays || []).slice(0, 15).map((t) => t && t.id).filter(Boolean));
+  } catch {}
+  const cur = queue[qi];
+  const pool = queue.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const placed = [];
+  while (pool.length) {
+    let best = 0;
+    let bestScore = Infinity;
+    for (let p = 0; p < pool.length; p++) {
+      const it = pool[p];
+      const artist = String((it && it.artist) || "").toLowerCase();
+      let score = Math.random() * 0.9;
+      if (it && it.id && recent.has(it.id)) score += 100;
+      for (let w = 1; w <= 3 && w <= placed.length; w++) {
+        if (String((placed[placed.length - w] && placed[placed.length - w].artist) || "").toLowerCase() === artist) {
+          score += 50;
+          break;
+        }
+      }
+      if (score < bestScore) {
+        bestScore = score;
+        best = p;
+      }
+    }
+    placed.push(...pool.splice(best, 1));
+  }
+  queue.length = 0;
+  queue.push(...placed);
+  if (cur) {
+    const newIdx = queue.findIndex((t) => t && t.id === cur.id);
+    qi = newIdx >= 0 ? newIdx : 0;
+  } else {
+    qi = 0;
+  }
+  paint();
+  return true;
+}
+
+export function queueHistory() {
+  if (qi <= 0) return [];
+  return queue.slice(0, qi);
+}
+
+export function queueUpNext() {
+  return queue.slice(qi + 1);
+}
+
 function skipOffline(track) {
   skipRun += 1;
   if (skipRun >= Math.max(1, queue.length)) {
@@ -354,12 +679,17 @@ async function start() {
     if (mine === seq) skipOffline(track);
     return;
   }
+  if (isExplicitHiddenTrack(track)) {
+    if (mine === seq) skipExplicit(track);
+    return;
+  }
   skipRun = 0; // a playable track resets the skip budget
   badge = "RESOLVING";
   mediaMeta(track); // lock screen shows the track while it resolves
   paint();
   try {
-    const info = await invoke("resolve_song", { id: track.id });
+    const streamQ = effectiveQuality();
+    const info = await invoke("resolve_song", { id: track.id, quality: streamQ });
     if (mine !== seq) return;
     if (!info || info.range_status === "dead" || !info.proxy_url) {
       toast(`Could not resolve ${track.title || "track"}`, 5000, "error");
@@ -368,10 +698,21 @@ async function start() {
       return step(1, true);
     }
     audio.src = info.proxy_url;
+    try {
+      applyEq();
+    } catch {}
+    try {
+      const v = Number(localStorage.getItem("tm-play-speed") || "1");
+      audio.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
+    } catch {}
+    try {
+      audio.volume = baseVol();
+    } catch {}
     badge = String(info.chosen_quality || info.range_status || "OK").toUpperCase();
     pushPlay(track);
     await audio.play();
     prefetchNext();
+    preloadStandby(); // gapless/xfade: resolve + buffer the next track now
     topUpRadio();
   } catch (e) {
     if (mine === seq) {
@@ -381,7 +722,10 @@ async function start() {
         try {
           const base = window.__tmBase;
           if (base) {
-            audio.src = `${base}/file?id=${encodeURIComponent(track.id)}`;
+            audio.src = relayUrl(base, `/file?id=${encodeURIComponent(track.id)}`);
+            try {
+              applyEq();
+            } catch {}
             badge = "VAULT";
             await audio.play();
             paint();
@@ -412,13 +756,266 @@ function prefetchNext() {
   } catch {}
 }
 
+// --------------------------------------------- gapless + crossfade -
+// Dual-element transport: `standby` preloads the next track while `audio`
+// plays. At the handoff the standby fades in (over tm-xfade seconds, or a
+// 280ms butt-join when only tm-gapless is on) and the bindings swap —
+// `audio` always names the audible element, so every reader follows.
+// Shuffle + repeat-one defeat prediction, so those paths keep the classic
+// stop-and-resolve handoff.
+function xfadeSecs() {
+  try {
+    const v = Number(localStorage.getItem("tm-xfade") || "0");
+    return v >= 0 && v <= 12 ? v : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function gaplessOn() {
+  try {
+    return localStorage.getItem("tm-gapless") === "1";
+  } catch {
+    return false;
+  }
+}
+
+function xfadeActive() {
+  return xfadeSecs() > 0 || gaplessOn();
+}
+
+/// The next queue entry, when it is knowable ahead of time.
+function peekNext() {
+  if (!queue.length || repeat === 2) return null;
+  if (shuffle) return null; // picked at step time — unpredictable
+  if (qi + 1 < queue.length) return { track: queue[qi + 1], index: qi + 1 };
+  if (repeat === 1 && queue.length) return { track: queue[0], index: 0 };
+  return null;
+}
+
+function peekId() {
+  const p = peekNext();
+  return p && p.track ? String(p.track.id || "") : "";
+}
+
+/// Same resolution start() performs, without playing: stream URL or the
+/// vault relay copy. Null when the track cannot play right now.
+async function resolveUrl(track) {
+  if (!track || !track.id) return null;
+  if (netMode() === "offline") {
+    if (!isVaulted(track.id)) return null;
+    try {
+      const base = window.__tmBase;
+      if (!base) return null;
+      return { url: relayUrl(base, `/file?id=${encodeURIComponent(track.id)}`) };
+    } catch {
+      return null;
+    }
+  }
+  if (!invoke) return null;
+  try {
+    const info = await invoke("resolve_song", { id: track.id, quality: effectiveQuality() });
+    if (!info || info.range_status === "dead" || !info.proxy_url) return null;
+    return { url: info.proxy_url };
+  } catch {
+    return null;
+  }
+}
+
+let standbyForId = "";
+let xfading = null;
+let xfadeTimer = null;
+const swapListeners = new Set();
+
+/// Screens that captured the element at import (lyrics clock) re-attach here.
+/// Called immediately with the current element, then on every swap.
+export function onAudioSwap(fn) {
+  if (typeof fn !== "function") return () => {};
+  swapListeners.add(fn);
+  try {
+    fn(audio);
+  } catch {}
+  return () => swapListeners.delete(fn);
+}
+
+async function preloadStandby() {
+  if (!xfadeActive()) return;
+  const id = peekId();
+  if (!id || id === standbyForId) return;
+  standbyForId = id; // claim first — one resolve per track, never a stampede
+  try {
+    const sb = ensureStandby();
+    const target = peekNext();
+    if (!sb || !target || String(target.track.id || "") !== id) {
+      standbyForId = "";
+      return;
+    }
+    const r = await resolveUrl(target.track);
+    if (standbyForId !== id) return; // queue moved on while resolving
+    if (r && r.url) {
+      try {
+        sb.volume = 0;
+        sb.src = r.url;
+        sb.load();
+      } catch {}
+    } else {
+      standbyForId = "";
+    }
+  } catch {
+    standbyForId = "";
+  }
+}
+
+function armDrive() {
+  if (xfadeTimer) clearInterval(xfadeTimer);
+  xfadeTimer = setInterval(() => {
+    if (!xfading) {
+      clearInterval(xfadeTimer);
+      xfadeTimer = null;
+      return;
+    }
+    driveXfade();
+  }, 50);
+}
+
+function beginXfade() {
+  const peek = peekNext();
+  const sb = standby;
+  if (!peek || !sb || !sb.src || standbyForId !== String(peek.track.id || "")) return;
+  if (sb.readyState < 2) return; // HAVE_CURRENT_DATA — not enough to start
+  const secs = xfadeSecs();
+  xfading = {
+    el: sb,
+    index: peek.index,
+    t0: performance.now(),
+    ms: secs > 0 ? secs * 1000 : 280,
+    base: baseVol(),
+  };
+  try {
+    sb.currentTime = 0;
+    sb.volume = 0;
+    sb.play().catch(() => {});
+  } catch {}
+  armDrive();
+}
+
+function driveXfade() {
+  const x = xfading;
+  if (!x) return;
+  const p = Math.min(1, (performance.now() - x.t0) / Math.max(1, x.ms));
+  // The standby stalled before making sound: never cut over to silence —
+  // bail out and let the normal ended → step path resolve the track.
+  if (p >= 0.5 && x.el.paused && x.el.readyState < 2) return abortXfade();
+  try {
+    if (audio) audio.volume = x.base * (1 - p);
+    x.el.volume = x.base * p;
+  } catch {}
+  if (p >= 1) finishXfade();
+}
+
+/// Timeupdate on the audible element: trigger the handoff, or drive a fade.
+function xfadeTick() {
+  if (xfading) {
+    driveXfade();
+    return;
+  }
+  if (!xfadeActive() || !audio || audio.paused) return;
+  const sb = standby;
+  if (!sb || !sb.src || sb.readyState < 3) return; // HAVE_FUTURE_DATA
+  if (standbyForId !== peekId()) {
+    preloadStandby();
+    return;
+  }
+  const dur = audio.duration;
+  if (!Number.isFinite(dur) || dur <= 0) return;
+  const secs = xfadeSecs();
+  const triggerAt = secs > 0 ? Math.min(secs, dur / 2) : 0.3;
+  if (dur - audio.currentTime <= triggerAt) beginXfade();
+}
+
+function finishXfade() {
+  const x = xfading;
+  if (!x) return;
+  xfading = null;
+  if (xfadeTimer) {
+    clearInterval(xfadeTimer);
+    xfadeTimer = null;
+  }
+  const old = audio;
+  const sb = x.el;
+  try {
+    if (sb.paused) sb.play().catch(() => {});
+  } catch {}
+  qi = x.index;
+  skipRun = 0;
+  retries = 0;
+  badge = "OK";
+  audio = sb; // the swap: every reader of the live binding follows
+  standby = old;
+  try {
+    audio.volume = baseVol();
+    standby.volume = 0;
+    standby.removeAttribute("src");
+    standby.load();
+  } catch {}
+  standbyForId = "";
+  try {
+    mediaMeta(queue[qi]);
+  } catch {}
+  try {
+    applyEq();
+  } catch {}
+  try {
+    pushPlay(queue[qi]);
+  } catch {}
+  for (const fn of [...swapListeners]) {
+    try {
+      fn(audio);
+    } catch {}
+  }
+  prefetchNext();
+  topUpRadio();
+  paint();
+}
+
+/// User took over mid-fade (seek / next / prev / new list): restore levels,
+// release the standby buffer, keep the queue index untouched.
+function abortXfade(clearSrc = false) {
+  if (xfadeTimer) {
+    clearInterval(xfadeTimer);
+    xfadeTimer = null;
+  }
+  if (!xfading && !clearSrc) return;
+  xfading = null;
+  try {
+    if (audio) audio.volume = baseVol();
+    if (standby) {
+      standby.volume = 0;
+      if (clearSrc) {
+        standby.pause();
+        standby.removeAttribute("src");
+        standby.load();
+        standbyForId = "";
+      }
+    }
+  } catch {}
+}
+
 export function toggle() {
   if (!audio || !audio.src) return;
+  try {
+    haptic(10);
+  } catch {}
   if (audio.paused) audio.play().catch(() => {});
-  else audio.pause();
+  else {
+    abortXfade();
+    audio.pause();
+  }
 }
 
 function ended() {
+  // A fade in flight owns the ending: cut over now instead of resolving.
+  if (xfading) return finishXfade();
   // Some engines fire `ended` twice in quick succession; ignore the repeat so
   // a double event can never skip the next track (mirrors playback.js).
   const now = Date.now();
@@ -434,6 +1031,7 @@ function ended() {
 
 function step(dir, auto = false) {
   if (!queue.length) return;
+  abortXfade(true); // manual/auto advance owns the transport now
   if (shuffle && dir > 0 && queue.length > 1) {
     let n = qi;
     while (n === qi) n = Math.floor(Math.random() * queue.length);
@@ -458,11 +1056,18 @@ function step(dir, auto = false) {
 }
 
 export function next() {
+  try {
+    haptic(10);
+  } catch {}
   step(1);
 }
 
 export function prev() {
+  try {
+    haptic(10);
+  } catch {}
   if (audio && audio.currentTime > 3) {
+    abortXfade();
     audio.currentTime = 0;
     return;
   }
@@ -470,6 +1075,7 @@ export function prev() {
 }
 
 export function seek(sec) {
+  abortXfade(); // user took the playhead: volumes back, fade cancelled
   if (audio && Number.isFinite(sec)) audio.currentTime = Math.max(0, Math.min(sec, audio.duration || sec));
 }
 

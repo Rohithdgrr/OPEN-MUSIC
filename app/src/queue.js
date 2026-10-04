@@ -283,10 +283,14 @@ export async function advanceQueue() {
   }
   if (next < 0) return;
   advancing = true;
+  let gapless = false;
+  try {
+    gapless = localStorage.getItem("tm-gapless") === "1";
+  } catch {}
   setTimeout(() => {
     advancing = false;
     playQueueItem(next);
-  }, 600);
+  }, gapless ? 0 : 600);
 }
 
 

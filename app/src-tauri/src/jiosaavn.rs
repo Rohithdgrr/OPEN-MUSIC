@@ -605,28 +605,75 @@ pub struct SearchPage {
     pub page_full: bool,
 }
 
+/// Upstream pages merged into one app-level page.
+///
+/// JioSaavn's `search.getResults` hands back degenerate pages — a single hit
+/// can fill 28 of 30 rows (verified live: query "love", page 1) — which
+/// collapses to a couple of songs after dedup. Merging a span of upstream
+/// pages keeps one app page full of distinct songs; the pages are fetched
+/// together, so the extra calls cost one round trip, not four.
+const UPSTREAM_SPAN: u32 = 4;
+
+/// The upstream pages merged into app-level `page` (1-based, gapless).
+fn upstream_pages(page: u32) -> std::ops::RangeInclusive<u32> {
+    let start = (page.max(1) - 1) * UPSTREAM_SPAN + 1;
+    start..=start + UPSTREAM_SPAN - 1
+}
+
+/// One upstream search page: the first-party API first, the community
+/// mirrors as the fallback when it fails outright.
+async fn fetch_search_page(
+    client: &reqwest::Client,
+    query: &str,
+    limit: u32,
+    page: u32,
+) -> Result<Vec<Track>, String> {
+    match crate::official::search(client, query, limit, page).await {
+        Ok(rows) => Ok(rows),
+        Err(primary) => mirror_search_songs(client, query, limit, page)
+            .await
+            .map_err(|fallback| format!("jiosaavn.com: {primary}; mirrors: {fallback}")),
+    }
+}
+
 /// Search the catalog, page `page` (1-based).
 ///
-/// Official JioSaavn first (paginated, no mirror rate limit); the community
-/// mirrors are the fallback when the first-party call fails outright.
-/// Duplicate collapsing happens here, once, so the raw page length stays
-/// available for `page_full`.
+/// One app page spans [`UPSTREAM_SPAN`] upstream pages (see
+/// [`upstream_pages`]); partial failures still serve whatever arrived, and
+/// only an empty merge with errors fails outright. Duplicate collapsing
+/// happens here, once, so the raw page lengths stay available for
+/// `page_full` — measured from the *last* page in the span, before dedup
+/// shrinks it, so "Load more" survives heavy collapsing.
 pub async fn search_songs(
     client: &reqwest::Client,
     query: &str,
     limit: u32,
     page: u32,
 ) -> Result<SearchPage, String> {
-    let raw = match crate::official::search(client, query, limit, page).await {
-        Ok(tracks) => tracks,
-        Err(primary) => mirror_search_songs(client, query, limit, page)
-            .await
-            .map_err(|fallback| {
-                format!("search failed — jiosaavn.com: {primary}; mirrors: {fallback}")
-            })?,
-    };
-    // Both sources clamp to at most 40 results per page.
-    let page_full = raw.len() as u32 >= limit.clamp(1, 40);
+    let pages = futures::future::join_all(upstream_pages(page).map(|p| {
+        fetch_search_page(client, query, limit, p)
+    }))
+    .await;
+
+    let mut raw: Vec<Track> = Vec::new();
+    let mut errs: Vec<String> = Vec::new();
+    let mut page_full = false;
+    for res in pages {
+        match res {
+            Ok(rows) => {
+                // join_all preserves span order, so this is the highest page
+                // seen — "more results exist" is judged from it alone.
+                page_full = rows.len() as u32 >= limit.clamp(1, 40);
+                raw.extend(rows);
+            }
+            Err(e) => errs.push(e),
+        }
+    }
+    if raw.is_empty() && !errs.is_empty() {
+        errs.sort();
+        errs.dedup();
+        return Err(format!("search failed — {}", errs.join("; ")));
+    }
     Ok(SearchPage {
         tracks: dedup_tracks(raw),
         page_full,
@@ -1060,6 +1107,18 @@ pub async fn qualify_url(client: &reqwest::Client, url: &str) -> Result<Probe, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn upstream_pages_span_four_without_gaps_or_overlap() {
+        assert_eq!(upstream_pages(1).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+        assert_eq!(upstream_pages(2).collect::<Vec<_>>(), vec![5, 6, 7, 8]);
+        assert_eq!(upstream_pages(9).collect::<Vec<_>>(), vec![33, 34, 35, 36]);
+    }
+
+    #[test]
+    fn upstream_pages_clamps_page_zero_to_the_first_span() {
+        assert_eq!(upstream_pages(0).collect::<Vec<_>>(), vec![1, 2, 3, 4]);
+    }
 
     #[test]
     fn check_id_accepts_real_ids_and_rejects_injection() {

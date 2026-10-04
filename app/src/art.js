@@ -35,10 +35,24 @@ export function hqArt(url, target = "500x500") {
 // L3: route images through the relay's /art cache (RAM -> disk -> upstream),
 // so a cover is downloaded once no matter how many views render it. Before
 // boot has fetched `proxy_base` the direct CDN url is used instead.
+// `__tmBase` carries the relay session token in its own query string
+// (`http://127.0.0.1:PORT?token=…`), so the path has to be spliced in FRONT
+// of that query — `…PORT/art?u=…&token=…`. Appending after the base would
+// bury `/art` inside the query (request path `/`) and 404 every cover.
+function relayUrl(base, pathQuery) {
+  const qi = base.indexOf("?");
+  if (qi < 0) return `${base}${pathQuery}`;
+  const origin = base.slice(0, qi);
+  const tokenQ = base.slice(qi + 1);
+  return pathQuery.includes("?")
+    ? `${origin}${pathQuery}&${tokenQ}`
+    : `${origin}${pathQuery}?${tokenQ}`;
+}
+
 function proxied(url) {
   const base = window.__tmBase;
   if (!base || !url) return url;
-  return `${base}/art?u=${encodeURIComponent(url)}`;
+  return relayUrl(base, `/art?u=${encodeURIComponent(url)}`);
 }
 
 /// The platform logo — a local file, so it paints with no network at all.
@@ -72,7 +86,9 @@ export function paintArt(img, url, target) {
 function artSteps(raw) {
   let orig = raw || "";
   const base = window.__tmBase;
-  if (base && orig.startsWith(`${base}/art?u=`)) {
+  // The proxied form is `<origin>/art?u=…&token=…` — match on the origin
+  // only, so the token (which rides in the base's query) stays opaque here.
+  if (base && orig.startsWith(`${base.split("?")[0]}/art?u=`)) {
     try {
       orig = new URL(orig).searchParams.get("u") || orig;
     } catch {}

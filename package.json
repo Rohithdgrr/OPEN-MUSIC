@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "tauri": "npm --prefix app run tauri --",
+    "css": "npm --prefix app run css --",
+    "css:watch": "npm --prefix app run css:watch --",
+    "lint": "npm --prefix app run lint --",
+    "test": "npm --prefix app test --",
+    "test:smoke": "npm --prefix app run test:smoke --"
+  }
+}

@@ -845,6 +845,11 @@ export async function doSearch(opts = {}) {
     );
     refreshResults();
     saveSearchSnapshot(q, lastResults);
+    // SQLite song cache: search pages feed offline lists + instant repaints.
+    try {
+      const page = lastResults.slice(0, 50);
+      import("./store_db.js").then((m) => m.cacheSongs(page).catch(() => {}));
+    } catch {}
     return;
   }
 
@@ -889,6 +894,9 @@ export async function doSearch(opts = {}) {
   lastResults = lastResults.concat(filterLang(fresh));
   diag(`search "${q}" page ${searchPage}`, true, `+${fresh.length} tracks`);
   refreshResults();
+  try {
+    import("./store_db.js").then((m) => m.cacheSongs(fresh.slice(0, 50)).catch(() => {}));
+  } catch {}
 }
 
 /// Fold one entity page into `lastCards` and repaint the card grid.

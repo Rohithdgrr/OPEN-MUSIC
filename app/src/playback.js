@@ -81,6 +81,7 @@ let pendingResume = null; // { id, t } — applied once, to the next play of tha
 /// Seed the position at boot (main.js). Only the song the app is about to
 /// offer is worth carrying over.
 export function setResume(id, t) {
+  if (!rememberPosOn()) return;
   if (id && t > 1) pendingResume = { id, t };
 }
 
@@ -92,7 +93,33 @@ function seekTo(t) {
   } catch {}
 }
 
+function rememberPosOn() {
+  try {
+    return localStorage.getItem("tm-remember-pos") !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function streamQuality() {
+  try {
+    return localStorage.getItem("tm-stream-quality") || "320kbps";
+  } catch {
+    return "320kbps";
+  }
+}
+
+function applySpeed() {
+  try {
+    const v = Number(localStorage.getItem("tm-play-speed") || "1");
+    const ok = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
+    audio.playbackRate = ok;
+    audio.preservesPitch = true;
+  } catch {}
+}
+
 function rememberPosition() {
+  if (!rememberPosOn()) return;
   const track = queue[queueIndex]?.track;
   if (!track) return;
   try {
@@ -208,7 +235,7 @@ export async function playQueueItem(index) {
   let info;
   try {
     diag(`resolve ${track.id}`, null, track.title);
-    info = await invoke("resolve_song", { id: track.id });
+    info = await invoke("resolve_song", { id: track.id, quality: streamQuality() });
     diag(
       `resolve ${track.id}`,
       info.range_status === "unrestricted",
@@ -240,6 +267,7 @@ export async function playQueueItem(index) {
   diag(`play ${track.id}`, true, info.proxy_url.slice(0, 70) + "…");
   streamRetries = 0;
   audio.src = info.proxy_url;
+  applySpeed();
   resumeHere(track);
   try {
     await audio.play();
@@ -292,7 +320,7 @@ async function startFade(nextIndex, xf, remain) {
   let info;
   try {
     diag(`xfade ${item.track.id}`, null, `resolve for ${xf}s fade`);
-    info = await invoke("resolve_song", { id: item.track.id });
+    info = await invoke("resolve_song", { id: item.track.id, quality: streamQuality() });
   } catch (err) {
     diag(`xfade ${item.track.id}`, false, String(err).slice(0, 120));
     cancelFade();
@@ -360,6 +388,10 @@ async function finishFade(f) {
   streamRetries = 0;
   const pos = audio2.currentTime;
   audio.src = info.proxy_url;
+  try {
+    const v = Number(localStorage.getItem("tm-play-speed") || "1");
+    audio.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
+  } catch {}
   audio.addEventListener(
     "loadedmetadata",
     () => {

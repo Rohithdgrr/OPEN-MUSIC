@@ -19,6 +19,24 @@
 
 ## Later
 
+- **Spotify Canvas on the Now Playing screen** — looping artist video behind
+  the album art. Deferred, not desktop-first: Canvas has no official API (the
+  internal Pathfinder GraphQL needs a `sp_dc` cookie harvested from a browser
+  session — not our OAuth flow, and unofficial/ToS + rate-limit risk), and every
+  play needs a JioSaavn → Spotify track match first. When built, keep it
+  backend-shaped and lazy:
+  1. `spotify_import_top` already returns ISRCs — key the cache on ISRC, skip
+     the URI-match step where possible.
+  2. One Tauri command `fetch_canvas(isrc)`; `sp_dc` lives in the OS keyring
+     (`keyring` crate), requests go through Rust, never the webview.
+  3. Cache `isrc → mp4` in the existing `moka` TTL cache (URLs are expiring
+     CDN links; short TTL, no invalidation system).
+  4. Render in the mobile `nowplaying` screen as
+     `<video loop muted autoplay playsinline>`; **album art stays the
+     fallback** on miss, error, or rate-limit.
+  5. Mobile-specific: gate the loop behind a Settings toggle (default off on
+     metered data — video costs battery + bytes), restart it only on track
+     change, no new crate until the query hash churns.
 - Background playback hardening (audio focus, headset buttons, phone-call ducking).
 - Download manager UX: pause/resume, Wi-Fi-only, per-track quality.
 - Offline-first search/history when the catalog is unreachable.

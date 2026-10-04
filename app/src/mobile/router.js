@@ -36,6 +36,9 @@
     notification: "notification",
     notifications: "notification",
     nowplaying: "nowplaying",
+    // "queue" is sheet-only (openQueue overlay): deep-links fall back to the
+    // NowPlaying fragment and light no tab (TAB_OF has no queue entry).
+    queue: "nowplaying",
   };
 
   function go(key) {
@@ -144,7 +147,13 @@
     var s = document.createElement("script");
     s.src = "screens/" + dir + ".js";
     s.onload = s.onerror = function () {
-      document.dispatchEvent(new CustomEvent("smount", { detail: { dir: dir, key: key, query: query } }));
+      var detail = { dir: dir, key: key, query: query };
+      // app.js is a deferred ES module — on a fast first load the screen
+      // script beats it (~67ms) and a plain dispatch would be heard by nobody,
+      // leaving the route stuck on design mock content with no handlers.
+      // Queue the newest mount instead; app.js flushes it when it comes up.
+      if (window.__tmAppReady) document.dispatchEvent(new CustomEvent("smount", { detail: detail }));
+      else window.__tmPendingSmount = detail;
     };
     mount.appendChild(s);
   }

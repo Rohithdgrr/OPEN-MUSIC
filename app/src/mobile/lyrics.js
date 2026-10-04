@@ -4,7 +4,7 @@
 // --progress, rAF clock, tap-to-seek, pinned auto-scroll (which stands down
 // for 3s whenever the reader scrolls the card themselves) and the Full View
 // stage toggled by the card header.
-import { audio } from "./player.js";
+import { audio, onAudioSwap } from "./player.js";
 
 // Enhanced LRC carries per-word stamps: `[00:12.34]<00:12.34>Kesariya <00:12.89>tera`.
 // Rust's LRC parser keeps the text after the line stamp, tags included, so the
@@ -60,9 +60,18 @@ function addLine(seconds, text, endSeconds) {
   line.className = LINE_CLASS;
   if (seconds != null) line.dataset.seconds = String(seconds);
   const p = document.createElement("p");
-  p.className = TEXT_CLASS;
+  try {
+    const sz = localStorage.getItem("tm-lyrics-size") || "m";
+    p.className = sz === "s" ? "lyric-text text-[12px] leading-relaxed transition-all duration-300" : sz === "l" ? "lyric-text text-[16px] leading-relaxed transition-all duration-300" : TEXT_CLASS;
+  } catch {
+    p.className = TEXT_CLASS;
+  }
   const tagged = typeof text === "string" ? splitWords(text) : null;
-  const words = tagged || fallbackWords(text, seconds, endSeconds);
+  let karaoke = true;
+  try {
+    karaoke = localStorage.getItem("tm-lyrics-gloss") !== "0";
+  } catch {}
+  const words = karaoke ? tagged || fallbackWords(text, seconds, endSeconds) : null;
   if (words && seconds != null) {
     line._words = words.map(() => null);
     words.forEach((w, i) => {
@@ -155,6 +164,11 @@ export function syncLyrics() {
     }
   }
   if (active && Date.now() >= userScrollUntil) {
+    let auto = true;
+    try {
+      auto = localStorage.getItem("tm-lyrics-autoscroll") !== "0";
+    } catch {}
+    if (!auto) return;
     // Centre the active line in the window so the card always reads
     // previous / current / next. Measured against the box's own rect so it
     // works regardless of offset-parent chains, then clamped so the first
@@ -195,16 +209,27 @@ function stop() {
   raf = null;
 }
 
-audio.addEventListener("play", () => {
-  if (lines.length) start();
-});
-audio.addEventListener("pause", () => {
-  stop();
-  syncLyrics();
-});
-audio.addEventListener("ended", () => {
-  stop();
-});
+// Playback events drive the karaoke clock. The transport swaps its audible
+// element on gapless/crossfade handoffs, so attach per element (once each)
+// and follow swaps instead of capturing the import-time element forever.
+function wireAudio(el) {
+  if (!el || el.__tmLyricsWired) return;
+  el.__tmLyricsWired = true;
+  el.addEventListener("play", () => {
+    if (lines.length) start();
+  });
+  el.addEventListener("pause", () => {
+    stop();
+    syncLyrics();
+  });
+  el.addEventListener("ended", () => {
+    stop();
+  });
+}
+wireAudio(audio);
+try {
+  onAudioSwap(wireAudio);
+} catch {}
 
 /// Tap any line to seek there.
 document.addEventListener("click", (e) => {

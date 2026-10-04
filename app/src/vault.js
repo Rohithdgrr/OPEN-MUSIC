@@ -102,8 +102,26 @@ export async function downloadTrack(track, btn, quiet = false) {
 
 /// One click saves the whole album/movie/playlist: walks the list sequentially
 /// with n/total on the button, skipping whatever is already in the vault or
-/// currently downloading, and survives individual track failures.
+/// currently downloading, and survives individual track failures. A second
+/// click on the same button stops the run: `stopBatch` flags the loop and
+/// cancels the in-flight track backend-side, so the halt lands within one
+/// chunk (~256 KB) instead of after the whole song.
 export let dlBatch = false;
+let dlAbort = false;
+const isCancelledErr = (err) => /cancelled/i.test(String(err || ""));
+
+/// Stop a running `downloadAll`: no further tracks are queued, and every
+/// in-flight `download_song` is told to abort mid-stream. Safe to call when
+/// nothing is running (sets a flag the next loop start clears).
+export function stopBatch() {
+  dlAbort = true;
+  for (const id of activeDownloads.keys()) {
+    try {
+      invoke("cancel_download", { id }).catch(() => {});
+    } catch {}
+  }
+}
+
 export async function downloadAll(items, what, btn) {
   const list = (items || []).filter((t) => t && t.id);
   if (!list.length) {
@@ -115,10 +133,19 @@ export async function downloadAll(items, what, btn) {
     return;
   }
   dlBatch = true;
+  dlAbort = false;
   const icon = btn?.querySelector(".material-symbols-outlined");
   const labelEl = btn && btn.lastElementChild !== icon ? btn.lastElementChild : null;
   const originalIcon = icon ? icon.textContent : "";
   const originalLabel = labelEl ? labelEl.textContent : "";
+  const originalTitle = btn ? btn.title : "";
+  // The button stays clickable throughout: it is the Stop switch. Icon and
+  // title say so; the label keeps counting n/total underneath.
+  if (btn) {
+    btn.disabled = false;
+    btn.title = "Stop downloading";
+  }
+  if (icon) icon.textContent = "stop";
   const restore = (mark) => {
     if (icon) {
       icon.textContent = mark;
@@ -130,11 +157,13 @@ export async function downloadAll(items, what, btn) {
       setTimeout(() => {
         labelEl.textContent = originalLabel;
       }, 4000);
-    if (btn) btn.disabled = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.title = originalTitle;
+    }
     dlBatch = false;
+    dlAbort = false;
   };
-  if (btn) btn.disabled = true;
-  if (icon) icon.textContent = "progress_activity";
   // Fresh vault list: a restart must not re-download what is already saved.
   await refreshVault();
   const saved = new Set(vaultEntries.map((e) => e.id));
@@ -146,17 +175,33 @@ export async function downloadAll(items, what, btn) {
   }
   let ok = 0;
   let fail = 0;
+  let stopped = false;
   for (let i = 0; i < todo.length; i++) {
+    if (dlAbort) {
+      stopped = true;
+      break;
+    }
     if (labelEl) labelEl.textContent = `${i + 1}/${todo.length}`;
-    if (icon) icon.textContent = "progress_activity";
+    if (icon) icon.textContent = "stop";
     try {
       await downloadTrack(todo[i], null, true);
       ok++;
-    } catch {
+    } catch (err) {
+      // A backend abort is the user stopping, not a failure — count it
+      // neither as saved nor as failed, and halt the queue behind it.
+      if (isCancelledErr(err) || dlAbort) {
+        stopped = true;
+        break;
+      }
       fail++;
     }
   }
-  restore(fail ? "error" : "check");
+  restore(stopped ? "stop" : fail ? "error" : "check");
+  if (stopped) {
+    diag("download-all", null, `stopped at ${ok}/${todo.length} ${what}`);
+    toast(`Stopped — ${ok} of ${todo.length} ${what} downloaded.`, "info", 4000);
+    return;
+  }
   diag("download-all", !fail, `${ok}/${todo.length} ${what}`);
   if (fail) toast(`Saved ${ok} of ${todo.length} ${what} (${fail} failed).`, "error", 6000);
   else toast(`Saved all ${ok} ${what} to the offline vault.`, "success");

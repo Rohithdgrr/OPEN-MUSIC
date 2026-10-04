@@ -11,7 +11,7 @@ import { setRadioStation } from "./radio.js";
 import { addBtn, dedupeTracks, doSearch, lastCards, trackRow, uniqById } from "./search.js";
 import { paintModes } from "./transport.js";
 import { artistLinks, fmtTime, metaLinks, npText, openEntityByName } from "./util.js";
-import { downloadAll, downloadTrack, refreshVault } from "./vault.js";
+import { dlBatch, downloadAll, downloadTrack, refreshVault, stopBatch } from "./vault.js";
 
 // ------------------------------------------------- local playlists (mine) -
 // They live in the same library array as saved items, flagged `local`, so the
@@ -167,6 +167,11 @@ export function pushPlay(track) {
   // Home's taste section is built from plays — a new one is new taste, so it
   // repaints here too.
   paintTaste();
+  // SQLite song cache (best-effort): play counters survive localStorage
+  // eviction and feed offline Recent / Most Played. Never blocks the UI.
+  try {
+    import("./store_db.js").then((m) => m.recordPlay(track).catch(() => {}));
+  } catch {}
 }
 
 // ---------------------------------------------------------------- favorites -
@@ -231,6 +236,10 @@ export function toggleFavTrack(track) {
   );
   diag("favorite", on, track.title);
   emitState(true);
+  // SQLite mirror so favorites survive localStorage eviction / reinstall.
+  try {
+    import("./store_db.js").then((m) => m.mirrorFav(track, on).catch(() => {}));
+  } catch {}
   // Two-tier vault: a favorited song that is already saved gets re-saved at
   // the premium bitrate in the background. Songs that were never downloaded
   // are left alone — a heart must not start a download.
@@ -579,6 +588,101 @@ export let ddReturnView = "home";
 /// Bumped by every open so a stale response never paints over a newer screen.
 export let ddSeq = 0;
 
+// ------------------------------------------------- per-view language filter -
+// Albums, playlists and charts can carry songs in several languages
+// (`Track.language`, comma-separated when a song spans more than one). The
+// picker defaults to "" (All) and only renders when the loaded list actually
+// spans more than one language — single-language views look untouched.
+// NOTE: local `trackLangs`/`langName` instead of settings.js `langLabel`:
+// settings already imports this module, so importing it back would cycle.
+// The LANGS table there labels every slug by capitalising it, which is
+// exactly what `langName` does.
+/** Selected language slug for the playlist/chart view ("" = All). */
+export let pdLang = "";
+/** Selected language slug for the album/artist detail view ("" = All). */
+export let ddLang = "";
+
+/// Slugs one track belongs to, lowercased: "Tamil, Hindi" -> ["tamil","hindi"].
+export function trackLangs(t) {
+  return String((t && t.language) || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/// Display label for a slug — "telugu" -> "Telugu".
+export function langName(slug) {
+  return slug ? slug[0].toUpperCase() + slug.slice(1) : "";
+}
+
+/// Distinct slugs across a list, sorted, empty-language tracks ignored.
+export function langsOf(list) {
+  const set = new Set();
+  for (const t of list || []) for (const l of trackLangs(t)) set.add(l);
+  return [...set].sort();
+}
+
+export const matchLang = (t, lang) => !lang || trackLangs(t).includes(lang);
+
+/// Every track the playlist view currently shows: search query AND language.
+export function pdShownTracks() {
+  return pdTracks.filter((t) => matchLang(t, pdLang) && matchQuery(t, pdQuery));
+}
+
+/// Every track the detail view currently shows: language only (no search box).
+export function ddShownTracks() {
+  return ddTracks.filter((t) => matchLang(t, ddLang));
+}
+
+const matchQuery = (t, q) =>
+  !q || `${t.title || ""} ${t.artist || ""} ${t.album || ""}`.toLowerCase().includes(q);
+
+export function setPdLang(lang) {
+  pdLang = lang || "";
+  pdVisible = PD_FIRST;
+  paintPd();
+}
+
+export function setDdLang(lang) {
+  ddLang = lang || "";
+  ddVisible = DD_FIRST;
+  renderDd();
+}
+
+/// Language chips above a track list. Renders `All (n)` plus one chip per
+/// language with its count; hidden unless the list spans 2+ languages. The
+/// container is created in place (before the track box) so no markup edit is
+/// needed — single-language views never see it.
+export function renderLangChips(boxId, buckets, counts, current, onPick) {
+  const box = document.getElementById(boxId);
+  if (!box || !box.parentElement) return;
+  const wrapId = `${boxId}-lang`;
+  let wrap = document.getElementById(wrapId);
+  if (buckets.length < 2) {
+    wrap?.classList.add("hidden");
+    return;
+  }
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = wrapId;
+    wrap.className = "flex items-center gap-2 flex-wrap px-6 pt-4";
+    wrap.setAttribute("role", "group");
+    wrap.setAttribute("aria-label", "Filter by language");
+    box.parentElement.insertBefore(wrap, box);
+  }
+  wrap.classList.remove("hidden");
+  const total = counts.all || 0;
+  const chip = (value, label, n) =>
+    `<button type="button" data-lang-pick="${esc(value)}" title="${value ? `Show only ${esc(label)} songs` : "Show songs in every language"}" class="${value === current ? FILTER_ON : FILTER_OFF}">${esc(label)} (${n})</button>`;
+  wrap.innerHTML =
+    chip("", "All", total) + buckets.map((l) => chip(l, langName(l), counts[l] || 0)).join("");
+  wrap.onclick = (e) => {
+    const btn = e.target.closest("[data-lang-pick]");
+    if (!btn) return;
+    onPick(btn.dataset.langPick || "");
+  };
+}
+
 export function plItemById(id) {
   const pools = homeFeed
     ? [...lastCards, ...homeFeed.playlists, ...homeFeed.charts, homeFeed.spotlight].filter(Boolean)
@@ -610,6 +714,7 @@ export async function openPlaylist(item, { scroll = true } = {}) {
   pdTracks = pdLocal ? (item.tracks || []).slice() : [];
   pdVisible = Math.min(PD_FIRST, pdTracks.length);
   pdQuery = "";
+  pdLang = "";
   const pdSearch = $("#pd-search");
   if (pdSearch) pdSearch.value = "";
   showView("playlists");
@@ -685,22 +790,28 @@ export function paintPdRows() {
     $("#pd-foot")?.classList.add("hidden");
     return;
   }
-  // Filtered view (search within playlist): show every match; otherwise the
-  // incremental `pdVisible` window over the full list.
+  // Filtered view (search within playlist, language picker): show every
+  // match; otherwise the incremental `pdVisible` window over the full list.
   const q = pdQuery;
-  const list = q
-    ? pdTracks.filter((t) =>
-        `${t.title || ""} ${t.artist || ""} ${t.album || ""}`.toLowerCase().includes(q),
-      )
-    : pdTracks;
-  if (q && !list.length) {
-    box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">No tracks match "${esc(q)}".</p>`;
+  const lang = pdLang;
+  const filtered = q || lang;
+  const list = pdShownTracks();
+  const buckets = langsOf(pdTracks);
+  const counts = { all: pdTracks.length };
+  for (const t of pdTracks) for (const l of trackLangs(t)) counts[l] = (counts[l] || 0) + 1;
+  renderLangChips("pd-tracks", buckets, counts, lang, setPdLang);
+  if (filtered && !list.length) {
+    box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">${
+      lang && !q
+        ? `No ${langName(lang)} tracks in this playlist.`
+        : `No tracks match "${esc(q)}".`
+    }</p>`;
     $("#pd-foot")?.classList.remove("hidden");
     $("#pd-more")?.classList.add("hidden");
     npText("pd-showing", `0 of ${pdTracks.length} tracks match`);
     return;
   }
-  const shown = q ? list : list.slice(0, pdVisible);
+  const shown = filtered ? list : list.slice(0, pdVisible);
   const frag = document.createDocumentFragment();
   shown.forEach((t, i) => {
     const wrap = document.createElement("div");
@@ -743,13 +854,13 @@ export function paintPdRows() {
     }
     playTracksAt(list, Number(row.dataset.ri));
   };
-  const left = q ? 0 : pdTracks.length - shown.length;
+  const left = filtered ? 0 : pdTracks.length - shown.length;
   $("#pd-foot")?.classList.toggle("hidden", !pdTracks.length);
   $("#pd-more")?.classList.toggle("hidden", !left);
   npText(
     "pd-showing",
-    q
-      ? `${shown.length} of ${pdTracks.length} tracks match "${q}"`
+    filtered
+      ? `${shown.length} of ${pdTracks.length} tracks${lang ? ` in ${langName(lang)}` : ""}${q ? ` match "${q}"` : ""}`
       : `Showing ${shown.length} of ${pdTracks.length} tracks in playlist`,
   );
   npText("pd-more-label", `Load all ${pdTracks.length} tracks`);
@@ -762,12 +873,33 @@ export function paintDdSubtitle() {
 }
 
 /// The track list plus its "show/load more" bar, kept in step with each other.
+/// A picked language narrows the rows, the counts and everything downstream
+/// (play / shuffle / download) — but never the paging window itself, which
+/// still walks the full catalogue behind the filter.
 export function renderDd(emptyMsg) {
-  trackRows(ddTracks, $("#dd-tracks"), emptyMsg, ddVisible);
-  npText("dd-list-count", ddTracks.length ? `${ddTracks.length} loaded` : "");
+  const list = ddShownTracks();
+  const buckets = langsOf(ddTracks);
+  const counts = { all: ddTracks.length };
+  for (const t of ddTracks) for (const l of trackLangs(t)) counts[l] = (counts[l] || 0) + 1;
+  renderLangChips("dd-tracks", buckets, counts, ddLang, setDdLang);
+  if (ddLang && !list.length) {
+    const box = $("#dd-tracks");
+    if (box)
+      box.innerHTML = `<p class="font-body-sm text-body-sm text-on-surface-variant p-4">No ${langName(ddLang)} tracks in this ${ddCurrent?.kind || "album"}.</p>`;
+  } else {
+    trackRows(list, $("#dd-tracks"), emptyMsg, ddVisible);
+  }
+  npText(
+    "dd-list-count",
+    ddTracks.length
+      ? ddLang
+        ? `${list.length} of ${ddTracks.length} in ${langName(ddLang)}`
+        : `${ddTracks.length} loaded`
+      : "",
+  );
   const wrap = $("#dd-more-wrap");
   if (!wrap) return;
-  const left = Math.max(0, ddTracks.length - ddVisible);
+  const left = Math.max(0, list.length - ddVisible);
   if (!left && !ddMore) {
     wrap.classList.add("hidden");
     return;
@@ -918,6 +1050,8 @@ export async function openDetail(kind, item, opts = {}) {
   ddReleases = 0;
   ddReleaseList = [];
   ddFilter = "all";
+  ddLang = "";
+  document.getElementById("dd-tracks-lang")?.classList.add("hidden");
   ddSubExtra = item.subtitle || "";
   ddUnit = isArtist ? "songs" : "tracks";
   if (isArtist) $("#dd-list-head")?.classList.remove("hidden");
@@ -1375,7 +1509,10 @@ $("#pd-search")?.addEventListener("input", (e) => {
   pdQuery = e.target.value.toLowerCase().trim();
   paintPdRows();
 });
-$("#pd-play")?.addEventListener("click", () => pdTracks.length && playTracksAt(pdTracks, 0));
+$("#pd-play")?.addEventListener("click", () => {
+  const list = pdShownTracks();
+  if (list.length) playTracksAt(list, 0);
+});
 $("#pd-shuffle")?.addEventListener("click", () => {
   if (!pdTracks.length) return;
   pdTracks = shuffled(pdTracks);
@@ -1383,12 +1520,21 @@ $("#pd-shuffle")?.addEventListener("click", () => {
   paintPdRows();
   setShuffleMode(true);
   paintModes();
-  playTracksAt(pdTracks, 0);
+  const list = pdShownTracks();
+  if (list.length) playTracksAt(list, 0);
 });
 $("#pd-back")?.addEventListener("click", () => $("#playlist-detail")?.classList.add("hidden"));
 $("#pd-download")?.addEventListener("click", () => {
-  if (!pdTracks.length) return;
-  downloadAll(pdTracks, "playlist tracks", $("#pd-download"));
+  // Running batches turn this same button into Stop (vault.js keeps it
+  // enabled for exactly this). The download honours the language picker, so
+  // a Tamil selection fetches only the Tamil tracks.
+  if (dlBatch) {
+    stopBatch();
+    return;
+  }
+  const list = pdShownTracks();
+  if (!list.length) return;
+  downloadAll(list, "playlist tracks", $("#pd-download"));
 });
 $("#pd-more")?.addEventListener("click", () => {
   pdVisible = pdTracks.length;
@@ -1537,13 +1683,28 @@ $("#dd-releases")?.addEventListener("click", (e) => {
 $("#dd-play")?.addEventListener("click", async () => {
   if (!ddTracks.length) return;
   if (ddMore && !(await loadAllArtistSongs())) return;
-  playTracksAt(ddTracks, 0);
+  const list = ddShownTracks();
+  if (list.length) playTracksAt(list, 0);
 });
 $("#dd-download")?.addEventListener("click", async () => {
+  // A running batch turns this same button into Stop (vault.js keeps it
+  // enabled for exactly this) — checked before the track load so the halt
+  // is instant even on a huge artist catalogue.
+  if (dlBatch) {
+    stopBatch();
+    return;
+  }
   if (!ddTracks.length) return;
   if (ddMore && !(await loadAllArtistSongs())) return;
+  // Paging may have introduced new languages — repaint the chips before the
+  // picker is consulted.
+  renderDd();
   const kind = ddCurrent?.kind || "album";
-  downloadAll(ddTracks, kind === "artist" ? "artist songs" : `${kind} tracks`, $("#dd-download"));
+  // The download honours the language picker, so a Tamil selection on a
+  // multi-language album fetches only the Tamil tracks.
+  const list = ddShownTracks();
+  if (!list.length) return;
+  downloadAll(list, kind === "artist" ? "artist songs" : `${kind} tracks`, $("#dd-download"));
 });
 $("#dd-fav")?.addEventListener("click", () => {
   const cur = ddCurrent;
@@ -1573,7 +1734,8 @@ $("#dd-shuffle")?.addEventListener("click", async () => {
   renderDd();
   setShuffleMode(true);
   paintModes();
-  playTracksAt(ddTracks, 0);
+  const list = ddShownTracks();
+  if (list.length) playTracksAt(list, 0);
 });
 // Rest of the loaded songs first, then the next page of the catalogue.
 $("#dd-more")?.addEventListener("click", async () => {

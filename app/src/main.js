@@ -3,7 +3,7 @@
 import { paintArt, paintSharpCover, LOGO } from "./art.js";
 import { wireDesktopCard } from "./bridge.js";
 import { diag, invoke, showView, toast, toTop } from "./core.js";
-import { $, bar, np } from "./dom.js";
+import { $, audio, bar, np } from "./dom.js";
 import { loadHistory } from "./history.js";
 import { loadHome, loadPlays } from "./home.js";
 import { autoSyncBoot } from "./gsync.js";
@@ -155,5 +155,53 @@ autoSyncBoot();
   main?.onFocusChanged?.((f) => report(f));
   window.addEventListener("focus", () => report(true));
   window.addEventListener("blur", () => report(false));
+})();
+
+// --------------------------------------------------- now playing stage deck -
+(() => {
+  const npTabs = document.querySelectorAll(".np-deck-tab");
+  const npLyricsCard = document.getElementById("lyrics-card");
+  const npQueuePanel = document.getElementById("np-panel-queue");
+
+  npTabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const target = tab.dataset.npTab;
+      npTabs.forEach((t) => t.classList.toggle("active", t === tab));
+      if (npLyricsCard) npLyricsCard.classList.toggle("hidden", target !== "lyrics");
+      if (npQueuePanel) npQueuePanel.classList.toggle("hidden", target !== "queue");
+    });
+  });
+
+  // Dynamic ambient backdrop illumination matching master album cover
+  const masterCover = document.getElementById("master-album-cover");
+  const ambientGlow = document.getElementById("np-artwork-ambient");
+  if (masterCover && ambientGlow) {
+    const syncAmbient = () => {
+      const src = masterCover.currentSrc || masterCover.src;
+      if (src && !src.includes("logo.png") && !src.endsWith("logo.png")) {
+        ambientGlow.style.backgroundImage = `url("${src}")`;
+      }
+    };
+    masterCover.addEventListener("load", syncAmbient);
+    new MutationObserver(syncAmbient).observe(masterCover, { attributes: true, attributeFilter: ["src"] });
+    syncAmbient();
+  }
+
+  // Mirror queue count badge onto Now Playing stage tab
+  const qBadge = document.getElementById("queue-count-badge");
+  const npTabQCount = document.getElementById("np-deck-queue-count");
+  if (qBadge && npTabQCount) {
+    new MutationObserver(() => {
+      npTabQCount.textContent = qBadge.textContent || "0";
+    }).observe(qBadge, { childList: true, characterData: true, subtree: true });
+  }
+
+  // Active play state for equalizer bars & vinyl spin
+  const stage = document.getElementById("now-playing-stage");
+  if (stage) {
+    audio.addEventListener("play", () => stage.classList.add("is-playing"));
+    audio.addEventListener("pause", () => stage.classList.remove("is-playing"));
+    if (!audio.paused && audio.src) stage.classList.add("is-playing");
+  }
 })();
 

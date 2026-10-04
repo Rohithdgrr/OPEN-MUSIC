@@ -32,6 +32,7 @@ import { doSearch } from "./search.js";
 import { fmtBytes, npText } from "./util.js";
 import { DL_QUALITY_KEY, prefDlQuality } from "./vault.js";
 import { NET_MODE_KEY, setModePref } from "./net.js";
+import { importCsvToPlaylist, readCsvFile } from "./importer.js";
 
 // ---------------------------------------------------------------- settings -
 // One native <dialog>, three entries and nothing else. The body swaps between
@@ -110,8 +111,11 @@ export const setSwitch = (on, attrs = "", tag = "button") => `
 export const setSelect =
   "max-w-[9.5rem] shrink-0 bg-surface-container-lowest border border-surface-container-highest/70 rounded-lg px-2 py-1.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20";
 
+export const setBtnCls =
+  "px-3 py-1.5 rounded-lg border border-surface-container-highest/70 bg-surface-container-lowest text-xs font-medium text-on-surface hover:bg-surface-container transition-colors";
+
 export const setBtn = (label, attrs = "", cls = "") =>
-  `<button type="button" ${attrs} class="px-3 py-1.5 rounded-lg border border-surface-container-highest/70 bg-surface-container-lowest text-xs font-medium text-on-surface hover:bg-surface-container transition-colors ${cls}">${label}</button>`;
+  `<button type="button" ${attrs} class="${setBtnCls} ${cls}">${label}</button>`;
 
 export const setGroup = (label) =>
   `<span class="font-label-mono text-[10px] uppercase tracking-[0.16em] text-on-surface-variant px-1 block">${label}</span>`;
@@ -196,6 +200,62 @@ export const prefLang = () => prefLangs()[0] || "all";
 export const prefCountry = () => prefStr(COUNTRY_KEY, "");
 export const autostartPref = () => prefStr(AUTOSTART_KEY, "1") !== "0";
 
+// ------------------------------------------------- playback prefs (new) -
+export const STREAM_QUALITY_KEY = "tm-stream-quality";
+export const GAPLESS_KEY = "tm-gapless";
+export const REMEMBER_POS_KEY = "tm-remember-pos";
+export const PLAY_SPEED_KEY = "tm-play-speed";
+export const XFADE_KEY = "tm-xfade";
+export const GEMINI_KEY = "tm-gemini-key";
+export const prefStreamQuality = () => prefStr(STREAM_QUALITY_KEY, "320kbps");
+export const gaplessPref = () => prefStr(GAPLESS_KEY, "0") === "1";
+export const rememberPosPref = () => prefStr(REMEMBER_POS_KEY, "1") !== "0";
+export const prefPlaySpeed = () => {
+  const v = Number(prefStr(PLAY_SPEED_KEY, "1"));
+  return [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
+};
+export function applyPlaySpeed() {
+  const els = [document.getElementById("audio"), document.getElementById("audio2")].filter(Boolean);
+  for (const a of els) {
+    try {
+      a.playbackRate = prefPlaySpeed();
+      a.preservesPitch = true;
+    } catch {}
+  }
+}
+
+// ------------------------------------------------ appearance prefs (new) -
+export const THEME_KEY = "tm-theme";
+export const DENSITY_KEY = "tm-density";
+export const prefTheme = () => prefStr(THEME_KEY, "dark");
+export const prefDensity = () => prefStr(DENSITY_KEY, "comfortable");
+export function applyTheme() {
+  const t = prefTheme();
+  const dark =
+    t === "dark" ? true : t === "light" ? false : window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  document.documentElement.classList.toggle("dark", !!dark);
+  try {
+    document.body.dataset.density = prefDensity();
+  } catch {}
+}
+try {
+  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    if (prefTheme() === "system") applyTheme();
+  });
+} catch {}
+
+// --------------------------------------------------- lyrics prefs (new) -
+export const LYRICS_AUTOSCROLL_KEY = "tm-lyrics-autoscroll";
+export const LYRICS_GLOSS_KEY = "tm-lyrics-gloss";
+export const LYRICS_SIZE_KEY = "tm-lyrics-size";
+export const lyricsAutoScrollPref = () => prefStr(LYRICS_AUTOSCROLL_KEY, "1") !== "0";
+export const lyricsGlossPref = () => prefStr(LYRICS_GLOSS_KEY, "0") === "1";
+export const prefLyricsSize = () => {
+  const v = prefStr(LYRICS_SIZE_KEY, "m");
+  return ["s", "m", "l"].includes(v) ? v : "m";
+};
+export const lyricsSizePx = () => ({ s: "13px", m: "15px", l: "18px" })[prefLyricsSize()];
+
 export function paintGreeting() {
   const el = $("#home-name");
   if (el) el.textContent = prefName();
@@ -209,6 +269,12 @@ export function applySysPrefs() {
   invoke("content_prefs_set", { lang: prefLangs().join(","), country: prefCountry() }).catch((e) =>
     diag("prefs", false, String(e)),
   );
+  try {
+    applyTheme();
+  } catch {}
+  try {
+    applyPlaySpeed();
+  } catch {}
 }
 
 /// Search results, load-more pages and Home's rankings all flow through here:
@@ -278,6 +344,10 @@ const LANGS = [
   ["korean", "Korean"],
 ];
 
+// Inline Spotify mark (green circle + three bars) for the Settings menu and
+// the Spotify section tile. Inline SVG, not a font glyph or a dependency.
+export const SPOTIFY_LOGO = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#1DB954"/><path d="M7.2 10.3Q11.5 8.8 16.2 10.6" stroke="#191414" stroke-width="1.4" stroke-linecap="round" fill="none"/><path d="M7.4 12.7Q11.3 11.5 15.4 13" stroke="#191414" stroke-width="1.2" stroke-linecap="round" fill="none"/><path d="M7.6 15Q10.8 14.1 13.9 15.1" stroke="#191414" stroke-width="1" stroke-linecap="round" fill="none"/></svg>`;
+
 export const SETTINGS_VIEWS = {
   general: {
     eyebrow: "Settings / General",
@@ -312,20 +382,32 @@ export const SETTINGS_VIEWS = {
         rows
           .map(([v, l]) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`)
           .join("");
-      // A native <select multiple> needs ctrl-click and a modifier most people
-      // never try, so the language picker is a chip group: one tap toggles.
+      const activeLangs = langs.length ? langs : [];
+      const isAll = !activeLangs.length;
       const langChip = (v, l, on) =>
-        `<button type="button" data-lang="${esc(v)}" aria-pressed="${on}" class="px-2 py-1 rounded-full text-[11px] font-medium shrink-0 transition-colors ${
+        `<button type="button" data-lang="${esc(v)}" aria-pressed="${on}" class="px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 transition-all flex items-center gap-1.5 border ${
           on
-            ? "bg-primary text-on-primary"
-            : "bg-surface-container text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-        }">${esc(l)}</button>`;
-      const langChips = `<div id="set-langs" class="flex flex-wrap gap-1 justify-end max-w-[15rem]">${
-        langChip("all", "All", !langs.length) +
-        LANGS.filter(([v]) => v !== "all")
-          .map(([v, l]) => langChip(v, l, langs.includes(v)))
-          .join("")
-      }</div>`;
+            ? "bg-black text-white border-black shadow-sm font-semibold"
+            : "bg-white text-neutral-800 border-neutral-200/80 hover:border-black/30 hover:bg-neutral-50"
+        }">
+          <span>${esc(l)}</span>
+          ${on ? '<span class="material-symbols-outlined text-[14px]">check</span>' : ""}
+        </button>`;
+
+      const langChips = `
+      <div class="flex flex-col gap-2.5 w-full pt-1">
+        <div class="flex items-center justify-between text-xs text-neutral-500 pb-0.5">
+          <span>Active filter: <strong class="text-black font-semibold">${isAll ? "All languages" : `${activeLangs.length} selected`}</strong></span>
+          ${!isAll ? '<button type="button" data-lang="all" class="text-xs text-neutral-600 hover:text-black hover:underline cursor-pointer">Reset to All</button>' : ''}
+        </div>
+        <div id="set-langs" class="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto pr-1">
+          ${langChip("all", "All Languages", isAll)}
+          ${LANGS.filter(([v]) => v !== "all")
+            .map(([v, l]) => langChip(v, l, activeLangs.includes(v)))
+            .join("")}
+        </div>
+      </div>`;
+
       return `
     <div class="flex flex-col gap-4">
       <div>
@@ -339,24 +421,28 @@ export const SETTINGS_VIEWS = {
               class="w-40 shrink-0 bg-surface-container-lowest border border-surface-container-highest/70 rounded-lg px-2 py-1.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20" />`,
           ) +
             setRow(
-              "power_settings_new",
-              "Open at startup",
-              startOn ? `Starts with ${PLATFORM}` : "Off - start it yourself",
-              setSwitch(startOn, "data-autostart"),
-            ),
+            "power_settings_new",
+            "Open at startup",
+            startOn ? `Starts with ${PLATFORM}` : "Off - start it yourself",
+            setSwitch(startOn, "data-autostart"),
+          ),
         )}</div>
       </div>
       <div>
         ${setGroup("Catalog")}
         <div class="mt-1.5">${setCard(
-          setRow(
-            "translate",
-            "Music language",
-            langs.length
-              ? `Songs are filtered to ${langs.length} language${langs.length > 1 ? "s" : ""} — tap to add or remove`
-              : "Showing every language — tap to filter",
-            langChips,
-          ) +
+          `<div class="flex flex-col gap-2 px-4 py-3.5 border-b border-surface-container-high/70">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-3">
+                ${setTile("translate")}
+                <div>
+                  <span class="block text-sm font-semibold text-neutral-900">Music Languages</span>
+                  <span class="block text-xs text-neutral-500 mt-0.5">Filter songs, charts, and recommendations by language</span>
+                </div>
+              </div>
+            </div>
+            ${langChips}
+          </div>` +
             setRow(
               "public",
               "Country",
@@ -394,6 +480,184 @@ export const SETTINGS_VIEWS = {
         )}</div>
       </div>
       ${setNote("Language and country apply to new searches and refresh Home straight away; favourites and downloads you already saved are never filtered.")}
+    </div>`;
+    },
+  },
+
+  playback: {
+    eyebrow: "Settings / Playback",
+    body: () => {
+      const streamQ = prefStreamQuality();
+      const xf = prefStr(XFADE_KEY, "0");
+      const gapless = gaplessPref();
+      const remember = rememberPosPref();
+      const speed = String(prefPlaySpeed());
+      const options = (rows, value) =>
+        rows
+          .map(([v, l]) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`)
+          .join("");
+      return `
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Streaming")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "cell_tower",
+            "Streaming quality",
+            "Requested when a track resolves; falls back when the source lacks it",
+            `<select id="set-stream-quality" class="${setSelect}">${options(
+              [
+                ["320kbps", "320 kbps — max"],
+                ["160kbps", "160 kbps"],
+                ["96kbps", "96 kbps"],
+                ["64kbps", "64 kbps — data saver"],
+              ],
+              streamQ,
+            )}</select>`,
+          ) +
+            setRow(
+              "swap_horiz",
+              "Crossfade",
+              "Blend the handover between tracks",
+              `<select id="set-xfade-pref" class="${setSelect}">${options(
+                [
+                  ["0", "Off"],
+                  ["2", "2s fade"],
+                  ["4", "4s fade"],
+                  ["6", "6s fade"],
+                ],
+                xf,
+              )}</select>`,
+            ) +
+            setRow(
+              "bolt",
+              "Gapless",
+              gapless ? "Next track starts instantly (no pause)" : "Small pause between tracks",
+              setSwitch(gapless, "data-gapless"),
+            ),
+        )}</div>
+      </div>
+      <div>
+        ${setGroup("Resume & Speed")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "history",
+            "Remember position",
+            remember ? "Reopen picks up where you stopped" : "Always start tracks from the top",
+            setSwitch(remember, "data-remember-pos"),
+          ) +
+            setRow(
+              "speed",
+              "Playback speed",
+              "Applies to streaming and vault files now",
+              `<select id="set-play-speed" class="${setSelect}">${options(
+                [
+                  ["0.75", "0.75x — slower"],
+                  ["0.9", "0.9x"],
+                  ["1", "1x — normal"],
+                  ["1.1", "1.1x"],
+                  ["1.25", "1.25x"],
+                  ["1.5", "1.5x — fast"],
+                ],
+                speed,
+              )}</select>`,
+            ),
+        )}</div>
+      </div>
+      ${setNote("Streaming quality never touches your vault — downloads keep their own quality above. Crossfade and speed apply immediately.")}
+    </div>`;
+    },
+  },
+
+  appearance: {
+    eyebrow: "Settings / Appearance",
+    body: () => {
+      const theme = prefTheme();
+      const density = prefDensity();
+      const options = (rows, value) =>
+        rows
+          .map(([v, l]) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`)
+          .join("");
+      return `
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Theme")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "dark_mode",
+            "Color theme",
+            theme === "system" ? "Follows your OS" : theme === "dark" ? "Dark on" : "Light on",
+            `<select id="set-theme" class="${setSelect}">${options(
+              [
+                ["system", "System"],
+                ["light", "Light"],
+                ["dark", "Dark"],
+              ],
+              theme,
+            )}</select>`,
+          ) +
+            setRow(
+              "density_medium",
+              "Density",
+              density === "compact" ? "Tighter rows, more on screen" : "Comfortable spacing",
+              `<select id="set-density" class="${setSelect}">${options(
+                [
+                  ["comfortable", "Comfortable"],
+                  ["compact", "Compact"],
+                ],
+                density,
+              )}</select>`,
+            ),
+        )}</div>
+      </div>
+      ${setNote("Theme applies instantly and is remembered across restarts. Compact density tightens list rows and cards.")}
+    </div>`;
+    },
+  },
+
+  lyrics: {
+    eyebrow: "Settings / Lyrics",
+    body: () => {
+      const auto = lyricsAutoScrollPref();
+      const karaoke = prefStr(LYRICS_GLOSS_KEY, "1") !== "0";
+      const size = prefLyricsSize();
+      const options = (rows, value) =>
+        rows
+          .map(([v, l]) => `<option value="${esc(v)}"${v === value ? " selected" : ""}>${esc(l)}</option>`)
+          .join("");
+      return `
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Lyrics")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "arrow_downward",
+            "Auto-scroll",
+            auto ? "Follows the playhead line by line" : "Stays where you leave it",
+            setSwitch(auto, "data-lyrics-auto"),
+          ) +
+            setRow(
+              "graphic_eq",
+              "Karaoke highlight",
+              karaoke ? "Words light up as they are sung" : "Whole lines light up only",
+              setSwitch(karaoke, "data-lyrics-gloss"),
+            ) +
+            setRow(
+              "format_size",
+              "Lyric text size",
+              "Base size for synced lines",
+              `<select id="set-lyrics-size" class="${setSelect}">${options(
+                [
+                  ["s", "Small"],
+                  ["m", "Medium"],
+                  ["l", "Large"],
+                ],
+                size,
+              )}</select>`,
+            ),
+        )}</div>
+      </div>
+      ${setNote("Per-track timing nudges (±ms in Now Playing) are kept per song and are never reset by these defaults.")}
     </div>`;
     },
   },
@@ -473,6 +737,47 @@ export const SETTINGS_VIEWS = {
            listed testers. The backend (gdrive.rs) and the sync engine
            (gsync.js) stay in the tree; uncomment below to bring the UI back. -->
       ${setNote("A backup holds favorites, local playlists and settings — downloads, cache and history stay on this machine. The file stays the manual path.")}
+    </div>`;
+    },
+  },
+
+  spotify: {
+    eyebrow: "Settings / Spotify",
+    body: () => {
+      setTimeout(fillSpotifyStatus, 0);
+      return `
+    <div class="flex flex-col gap-4">
+      <div>
+        ${setGroup("Spotify account")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            SPOTIFY_LOGO,
+            "Connection status",
+            `<span id="set-spotify-status">Checking&hellip;</span>`,
+            `${setBtn("Sign in", 'id="set-spotify-signin"', "hidden")}` +
+            `${setBtn("Sign out", 'id="set-spotify-signout"', "hidden")}`,
+          ),
+        )}</div>
+      </div>
+      <div>
+        ${setGroup("Import from Spotify")}
+        <div class="mt-1.5">${setCard(
+          setRow(
+            "upload_file",
+            "Import CSV",
+            "Upload an Exportify CSV to build a playlist",
+            `<input type="file" id="set-spotify-csv" accept=".csv" class="hidden" />
+             <label for="set-spotify-csv" class="${setBtnCls} cursor-pointer">Choose CSV</label>`,
+          ) +
+          setRow(
+            "library_music",
+            "Import top tracks",
+            "Import your most played tracks from Spotify",
+            `${setBtn("Import", 'id="set-spotify-top"')}`,
+          ),
+        )}</div>
+      </div>
+      ${setNote("CSV import works without signing in. For top tracks import, you need to sign in with your Spotify account. Tracks are matched to the JioSaavn catalog.")}
     </div>`;
     },
   },
@@ -700,10 +1005,14 @@ export const SETTINGS_VIEWS = {
 
 export const SETTINGS_MENU = [
   ["tune", "General", "Name, startup, language &amp; country", "general"],
+  ["play_arrow", "Playback", "Streaming quality, crossfade &amp; speed", "playback"],
+  ["palette", "Appearance", "Theme &amp; density", "appearance"],
+  ["lyrics", "Lyrics", "Auto-scroll, translation &amp; size", "lyrics"],
   ["widgets", "Desktop Widget", "Now-playing card on your desktop", "widget"],
   ["keyboard_shortcut", "Keyboard Shortcuts", "Caps Lock Hyper &amp; media keys", "shortcuts"],
   ["hard_drive", "Storage", "Cache size, usage &amp; clear", "storage"],
   ["backup", "Backup &amp; Export", "Save, restore, CSV &amp; M3U", "backup"],
+  [SPOTIFY_LOGO, "Spotify", "Import playlists &amp; top tracks", "spotify"],
   ["system_update", "Updates", "New releases &amp; revert to an older one", "updates"],
   ["policy", "Open-Source Licences", "MIT &amp; Apache-2.0", "licenses"],
   ["info", "About the Project", `v${APP.version} &middot; ${PLATFORM} desktop`, "about"],
@@ -738,6 +1047,33 @@ function fillBackupInfo() {
           )
           .join("")
       : '<option value="">No local playlists yet</option>';
+  }
+}
+
+async function fillSpotifyStatus() {
+  const statusEl = $("#set-spotify-status");
+  const signinBtn = $("#set-spotify-signin");
+  const signoutBtn = $("#set-spotify-signout");
+
+  if (!statusEl) return;
+
+  try {
+    const signedIn = await invoke("spotify_is_signedin");
+    if (signedIn) {
+      statusEl.textContent = "Signed in";
+      statusEl.classList.add("text-primary");
+      signinBtn?.classList.add("hidden");
+      signoutBtn?.classList.remove("hidden");
+    } else {
+      statusEl.textContent = "Not signed in";
+      statusEl.classList.remove("text-primary");
+      signinBtn?.classList.remove("hidden");
+      signoutBtn?.classList.add("hidden");
+    }
+  } catch (err) {
+    statusEl.textContent = "Spotify not configured";
+    signinBtn?.classList.add("hidden");
+    signoutBtn?.classList.add("hidden");
   }
 }
 
@@ -1137,26 +1473,48 @@ function startShortcutTest() {
   }, 8000);
 }
 
-export function openSettings(view = "menu") {
+export function openSettings(view = "general") {
   let dlg = $("#tm-settings");
   if (!dlg) {
     dlg = document.createElement("dialog");
     dlg.id = "tm-settings";
     dlg.innerHTML = `
-    <div class="w-[min(36rem,calc(100vw-2rem))] max-h-[calc(100vh-3rem)] rounded-2xl bg-surface-container-lowest ring-1 ring-black/5 shadow-2xl overflow-hidden flex flex-col">
-      <div class="flex items-center gap-3 px-5 py-4 border-b border-surface-container-high/80 bg-surface-container-low/70 shrink-0">
-        <button type="button" id="tm-settings-back" title="Back" class="hidden">
-          <span class="material-symbols-outlined text-[18px]">arrow_back</span>
-        </button>
-        <span id="tm-settings-eyebrow" class="min-w-0 flex-1 font-label-mono text-[10px] uppercase tracking-[0.16em] text-on-surface-variant">Settings</span>
-        <span class="w-8 h-8 shrink-0 rounded-lg bg-primary flex items-center justify-center" aria-hidden="true">
-          <span class="material-symbols-outlined text-[18px] text-on-primary">settings</span>
-        </span>
-      </div>
-      <div id="tm-settings-body" class="px-5 py-5 overflow-y-auto"></div>
+    <div class="settings-modal-box">
+      <!-- Left Sidebar Column: Category Sections & Search -->
+      <aside class="settings-sidebar">
+        <div class="settings-sidebar-header">
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-neutral-900 tracking-tight text-base">Settings</span>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono uppercase bg-neutral-200 text-neutral-700 font-semibold">v${APP.version}</span>
+          </div>
+          <div class="settings-search-bar">
+            <span class="material-symbols-outlined text-[16px] text-on-surface-variant">search</span>
+            <input id="set-filter-input" type="text" placeholder="Search settings..." class="w-full bg-transparent text-xs text-on-surface placeholder:text-outline focus:outline-none" />
+          </div>
+        </div>
+        <nav class="settings-nav-scroll" id="settings-nav-list">
+          <!-- Rendered dynamically by openSettings -->
+        </nav>
+      </aside>
+
+      <!-- Right Main Content Column -->
+      <section class="settings-content-pane">
+        <header class="settings-content-header">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <button type="button" id="tm-settings-back" title="Back to menu" class="hidden md:hidden p-1 rounded-lg text-on-surface-variant hover:text-on-surface">
+              <span class="material-symbols-outlined text-[18px]">arrow_back</span>
+            </button>
+            <h2 id="tm-settings-eyebrow" class="text-base font-bold text-neutral-900 dark:text-white tracking-tight truncate">General</h2>
+          </div>
+          <button type="button" id="tm-settings-close" title="Close Settings (Esc)" class="settings-close-btn">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </header>
+        <div id="tm-settings-body" class="settings-content-scroll"></div>
+      </section>
     </div>`;
     dlg.addEventListener("click", (e) => {
-      if (e.target === dlg) dlg.close();
+      if (e.target === dlg || e.target.closest("#tm-settings-close")) dlg.close();
     });
     dlg.addEventListener("close", () => {
       stopShortcutTest();
@@ -1165,7 +1523,7 @@ export function openSettings(view = "menu") {
     dlg.addEventListener("click", (e) => {
       const row = e.target.closest("[data-settings-view]");
       if (row) return openSettings(row.dataset.settingsView);
-      if (e.target.closest("#tm-settings-back")) return openSettings("menu");
+      if (e.target.closest("#tm-settings-back")) return openSettings("general");
       // Each of these flips one stored value, applies it through Rust, then
       // re-renders so the switch/radios and their labels read one source.
       const toggle = e.target.closest("[data-widget-toggle]");
@@ -1253,6 +1611,20 @@ export function openSettings(view = "menu") {
         doPlaylistExport("m3u");
         return;
       }
+      // Spotify sign-in / sign-out
+      if (e.target.closest("#set-spotify-signin")) {
+        doSpotifySignIn();
+        return;
+      }
+      if (e.target.closest("#set-spotify-signout")) {
+        doSpotifySignOut();
+        return;
+      }
+      // Spotify top tracks import
+      if (e.target.closest("#set-spotify-top")) {
+        doSpotifyTopImport();
+        return;
+      }
       // Google Drive (optional sign-in): parked with the rest of the Drive
       // feature while the consent screen sits in Google "testing" mode.
       // if (e.target.closest("[data-gdrive-signin]")) {
@@ -1294,6 +1666,27 @@ export function openSettings(view = "menu") {
         applySysPrefs();
         return openSettings("general");
       }
+      if (e.target.closest("[data-gapless]")) {
+        savePref(GAPLESS_KEY, gaplessPref() ? "0" : "1");
+        toast(gaplessPref() ? "Gapless on — next track starts instantly." : "Gapless off.", "info", 2500);
+        return openSettings("playback");
+      }
+      if (e.target.closest("[data-remember-pos]")) {
+        savePref(REMEMBER_POS_KEY, rememberPosPref() ? "0" : "1");
+        toast(rememberPosPref() ? "Reopen resumes where you stopped." : "Tracks always start from the top.", "info", 2500);
+        return openSettings("playback");
+      }
+      if (e.target.closest("[data-lyrics-auto]")) {
+        savePref(LYRICS_AUTOSCROLL_KEY, lyricsAutoScrollPref() ? "0" : "1");
+        try {
+          document.dispatchEvent(new CustomEvent("tm:lyrics-auto", { detail: lyricsAutoScrollPref() }));
+        } catch {}
+        return openSettings("lyrics");
+      }
+      if (e.target.closest("[data-lyrics-gloss]")) {
+        savePref(LYRICS_GLOSS_KEY, lyricsGlossPref() ? "0" : "1");
+        return openSettings("lyrics");
+      }
       // Music language: one tap toggles a language in or out of the set.
       const chip = e.target.closest("[data-lang]");
       if (chip) {
@@ -1330,6 +1723,34 @@ export function openSettings(view = "menu") {
         loadHome();
         if ($("#search-input")?.value.trim()) doSearch({ silent: true });
         toast(`Reading charts for ${e.target.selectedOptions[0]?.textContent}.`, "info");
+      } else if (e.target.id === "set-stream-quality") {
+        savePref(STREAM_QUALITY_KEY, e.target.value);
+        toast(`Streaming at ${e.target.selectedOptions[0]?.textContent} from now on.`, "info");
+      } else if (e.target.id === "set-xfade-pref") {
+        savePref(XFADE_KEY, e.target.value);
+        try {
+          localStorage.setItem(XFADE_KEY, e.target.value);
+        } catch {}
+        const q = $("#set-xfade");
+        if (q) q.value = e.target.value;
+        toast(e.target.value === "0" ? "Crossfade off." : `Crossfade ${e.target.value}s.`, "info", 2500);
+        openSettings("playback");
+      } else if (e.target.id === "set-play-speed") {
+        savePref(PLAY_SPEED_KEY, e.target.value);
+        applyPlaySpeed();
+        toast(`Playback speed ${Number(e.target.value)}x.`, "info", 2500);
+      } else if (e.target.id === "set-theme") {
+        savePref(THEME_KEY, e.target.value);
+        applyTheme();
+        toast(`Theme: ${e.target.selectedOptions[0]?.textContent}.`, "info", 2500);
+        openSettings("appearance");
+      } else if (e.target.id === "set-density") {
+        savePref(DENSITY_KEY, e.target.value);
+        applyTheme();
+        toast(`Density: ${e.target.selectedOptions[0]?.textContent}.`, "info", 2500);
+      } else if (e.target.id === "set-lyrics-size") {
+        savePref(LYRICS_SIZE_KEY, e.target.value);
+        toast(`Lyric size: ${e.target.selectedOptions[0]?.textContent}.`, "info", 2500);
       } else if (e.target.id === "set-dl-quality") {
         savePref(DL_QUALITY_KEY, e.target.value);
         toast(`New downloads will be saved at ${e.target.selectedOptions[0]?.textContent}.`, "info");
@@ -1346,59 +1767,218 @@ export function openSettings(view = "menu") {
             toast(`Cache capped at ${e.target.selectedOptions[0]?.textContent}.`, "info");
           })
           .catch((err) => diag("cache", false, String(err)));
+      } else if (e.target.id === "set-spotify-csv") {
+        if (e.target.files?.[0]) doSpotifyCsvImport(e.target.files[0]);
+      } else if (e.target.id === "set-filter-input") {
+        const query = (e.target.value || "").toLowerCase().trim();
+        const items = dlg.querySelectorAll("[data-settings-view]");
+        items.forEach((item) => {
+          const text = (item.textContent || "").toLowerCase();
+          item.style.display = !query || text.includes(query) ? "flex" : "none";
+        });
       }
     });
+
+    const filterInput = $("#set-filter-input", dlg);
+    if (filterInput) {
+      filterInput.addEventListener("input", (e) => {
+        const query = (e.target.value || "").toLowerCase().trim();
+        const items = dlg.querySelectorAll("[data-settings-view]");
+        items.forEach((item) => {
+          const text = (item.textContent || "").toLowerCase();
+          item.style.display = !query || text.includes(query) ? "flex" : "none";
+        });
+      });
+    }
+
     document.body.appendChild(dlg);
   }
-  const back = $("#tm-settings-back", dlg);
-  const section = view === "menu" ? null : SETTINGS_VIEWS[view];
-  dlg.dataset.view = view;
-  if (section) {
-    npText("tm-settings-eyebrow", section.eyebrow);
-    $("#tm-settings-body", dlg).innerHTML = section.body();
-    // Swap the whole class string, never add/remove `flex` on top of `hidden`:
-    // Tailwind emits `.hidden` after `.flex`, so the two cannot coexist.
-    if (back)
-      back.className =
-        "flex w-8 h-8 shrink-0 rounded-lg bg-surface-container-lowest border border-surface-container-highest/70 items-center justify-center text-on-surface-variant hover:text-on-surface hover:border-black/20 transition-colors";
-  } else {
-    npText("tm-settings-eyebrow", "Settings");
+
+  // Fallback if an obsolete "menu" view is passed
+  const activeView = view === "menu" ? "general" : view;
+  const section = SETTINGS_VIEWS[activeView] || SETTINGS_VIEWS.general;
+  dlg.dataset.view = activeView;
+
+  // Render Sidebar Navigation
+  const navList = $("#settings-nav-list", dlg);
+  if (navList) {
     const groups = [
-      ["Preferences", SETTINGS_MENU.slice(0, 3)],
-      ["Storage & updates", SETTINGS_MENU.slice(3, 5)],
-      ["About", SETTINGS_MENU.slice(5)],
+      ["Preferences", SETTINGS_MENU.slice(0, 6)],
+      ["Storage & Imports", SETTINGS_MENU.slice(6, 9)],
+      ["About Project", SETTINGS_MENU.slice(9)],
     ];
-    $("#tm-settings-body", dlg).innerHTML = `
-    <div class="flex flex-col gap-4">
-      ${groups
-        .map(
-          ([title, items]) => `
-      <div>
-        ${setGroup(title)}
-        <div class="mt-1.5">${setCard(
-          items
-            .map(
-              ([icon, label, sub, view]) => `
-          <button type="button" data-settings-view="${view}" class="w-full flex items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-surface-container-low group">
-            ${setTile(icon)}
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-medium text-on-surface">${label}</span>
-              <span class="block text-xs text-on-surface-variant mt-0.5 truncate">${sub}</span>
-            </span>
-            <span class="material-symbols-outlined text-[18px] text-on-surface-variant transition-transform group-hover:translate-x-0.5">chevron_right</span>
+    navList.innerHTML = groups
+      .map(
+        ([title, items]) => `
+      <div class="flex flex-col gap-0.5">
+        <span class="settings-nav-group-title">${title}</span>
+        ${items
+          .map(
+            ([icon, label, _sub, viewKey]) => `
+          <button type="button" data-settings-view="${viewKey}" class="settings-nav-item ${
+            viewKey === activeView ? "active" : ""
+          }">
+            ${
+              icon.startsWith("<svg")
+                ? `<span class="w-[18px] h-[18px] flex items-center justify-center shrink-0">${icon}</span>`
+                : `<span class="material-symbols-outlined">${icon}</span>`
+            }
+            <span class="truncate">${label}</span>
           </button>`,
-            )
-            .join(""),
-        )}</div>
+          )
+          .join("")}
       </div>`,
-        )
-        .join("")}
-    </div>`;
-    if (back) back.className = "hidden";
+      )
+      .join("");
   }
+
+  // Update Header Title and Body Content
+  const eyebrow = section.eyebrow.replace(/^Settings\s*\/\s*/, "");
+  npText("tm-settings-eyebrow", eyebrow);
+  const bodyEl = $("#tm-settings-body", dlg);
+  if (bodyEl) {
+    bodyEl.innerHTML = section.body();
+  }
+
   if (!dlg.open) dlg.showModal(); // showModal() throws if already open
 }
 $("#settings-btn")?.addEventListener("click", () => openSettings());
+
+// --------------------------------------------------------------- Spotify -
+async function doSpotifySignIn() {
+  const statusEl = $("#set-spotify-status");
+  const signinBtn = $("#set-spotify-signin");
+  // The browser round-trip can take a while (or never come back when the
+  // redirect URI is not allowlisted) — say so up front instead of sitting on
+  // a stale "Not signed in" while the invoke is in flight.
+  if (statusEl) {
+    statusEl.textContent = "Waiting for browser\u2026";
+    statusEl.classList.remove("text-primary");
+  }
+  signinBtn?.setAttribute("disabled", "");
+  try {
+    if (await invoke("spotify_signin")) {
+      toast("Signed in to Spotify", "success");
+      await fillSpotifyStatus();
+    }
+  } catch (err) {
+    diag("spotify", false, String(err));
+    toast(`Spotify sign-in failed: ${err}`, "error");
+    // Persist the reason in the status line: a fading toast is not enough
+    // when the browser round-trip is the thing failing.
+    if (statusEl) {
+      statusEl.textContent = `Sign-in failed: ${err}`;
+      statusEl.classList.remove("text-primary");
+    }
+  } finally {
+    signinBtn?.removeAttribute("disabled");
+  }
+}
+
+async function doSpotifySignOut() {
+  try {
+    await invoke("spotify_signout");
+    toast("Signed out from Spotify", "success");
+    fillSpotifyStatus();
+  } catch (err) {
+    diag("spotify", false, String(err));
+    toast(`Spotify sign-out failed: ${err}`, "error");
+  }
+}
+
+async function doSpotifyCsvImport(file) {
+  try {
+    const csvText = await readCsvFile(file);
+    const { playlist, matched, missed, errors } = await importCsvToPlaylist(csvText, `Imported ${file.name.replace(/\.csv$/i, "")}`);
+
+    if (errors.length > 0) {
+      console.warn("CSV import warnings:", errors);
+    }
+
+    // Save the playlist
+    const pls = loadLocalPls();
+    pls.push(playlist);
+    saveLocalPls(pls);
+
+    toast(`Imported ${matched} tracks from Spotify CSV (${missed} not found)`, "success");
+    diag("spotify-import", true, `matched ${matched}, missed ${missed}`);
+    renderLibrary();
+  } catch (err) {
+    diag("spotify-import", false, String(err));
+    toast(`CSV import failed: ${err}`, "error");
+  }
+}
+
+async function doSpotifyTopImport() {
+  try {
+    const signedIn = await invoke("spotify_is_signedin");
+    if (!signedIn) {
+      toast("Please sign in to Spotify first", "error");
+      return;
+    }
+
+    toast("Importing top tracks from Spotify...", "info");
+
+    // Tauri 2 maps snake_case Rust args to camelCase keys on the wire.
+    const tracks = await invoke("spotify_import_top", { timeRange: "medium_term", limit: 20 });
+
+    if (tracks.length === 0) {
+      toast("No top tracks found in your Spotify library", "info");
+      return;
+    }
+
+    // Match to JioSaavn catalog
+    const matched = [];
+    const missed = [];
+
+    for (const t of tracks) {
+      try {
+        const query = t.isrc || `${t.name} ${t.artists[0]}`;
+        const results = await invoke("search_songs", { query, limit: 1 });
+
+        if (results.tracks && results.tracks.length > 0) {
+          matched.push({
+            ...results.tracks[0],
+            original: t,
+          });
+        } else {
+          missed.push(t);
+        }
+      } catch (err) {
+        console.error(`Failed to match track: ${t.name} - ${err}`);
+        missed.push(t);
+      }
+    }
+
+    // Create playlist
+    const playlist = {
+      id: `spotify-top-${Date.now()}`,
+      title: "Spotify Top Tracks",
+      tracks: matched.map(m => ({
+        id: m.id,
+        title: m.title || m.name,
+        artist: m.artist,
+        album: m.album,
+        image: m.image,
+        duration: m.duration || m.duration_ms,
+      })),
+      imported: true,
+      source: "spotify-top",
+      createdAt: new Date().toISOString(),
+    };
+
+    const pls = loadLocalPls();
+    pls.push(playlist);
+    saveLocalPls(pls);
+
+    toast(`Imported ${matched.length} top tracks from Spotify (${missed.length} not found)`, "success");
+    diag("spotify-top", true, `matched ${matched.length}, missed ${missed.length}`);
+    renderLibrary();
+  } catch (err) {
+    diag("spotify-top", false, String(err));
+    toast(`Spotify import failed: ${err}`, "error");
+  }
+}
 
 // The #error banner ships inside the search view, which hid failures for
 // downloads triggered from Now Playing / queue / home. Hoist it to <body>

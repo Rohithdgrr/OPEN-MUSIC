@@ -1,0 +1,154 @@
+name: macOS Build & Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install system dependencies
+        run: |
+          brew install openssl@3
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: app/target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install frontend dependencies
+        working-directory: ./app
+        run: npm ci
+
+      - name: Build CSS
+        working-directory: ./app
+        run: npm run css
+
+      - name: Run Rust tests
+        working-directory: ./app/src-tauri
+        run: cargo test --release
+
+      - name: Run Node.js tests
+        working-directory: ./app
+        run: npm test
+
+      - name: Build Tauri app
+        working-directory: ./app
+        run: cargo tauri build
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+
+      - name: Verify build artifacts
+        run: |
+          if [ -d "app/src-tauri/target/release/bundle/macos" ]; then
+            echo "✓ macOS bundle directory exists"
+            ls -lh app/src-tauri/target/release/bundle/macos/
+          else
+            echo "✗ macOS bundle directory not found"
+            exit 1
+          fi
+
+          if [ -f "app/src-tauri/target/release/bundle/dmg/TRANCE MUSIC_*.dmg" ]; then
+            echo "✓ DMG built successfully"
+            ls -lh app/src-tauri/target/release/bundle/dmg/
+          else
+            echo "⚠ DMG not found (may require code signing)"
+          fi
+
+          if [ -f "app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app" ]; then
+            echo "✓ .app bundle built successfully"
+          else
+            echo "✗ .app bundle not found"
+            exit 1
+          fi
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build-artifacts
+          path: |
+            app/src-tauri/target/release/bundle/dmg/*.dmg
+            app/src-tauri/target/release/bundle/macos/*.app
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Smoke test - Verify app bundle
+        run: |
+          APP_BUNDLE="app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app"
+          if [ -d "$APP_BUNDLE" ]; then
+            echo "✓ App bundle exists"
+            # Verify app structure
+            if [ -f "$APP_BUNDLE/Contents/Info.plist" ]; then
+              echo "✓ Info.plist found"
+            else
+              echo "✗ Info.plist missing"
+              exit 1
+            fi
+            if [ -f "$APP_BUNDLE/Contents/MacOS/trance-music" ]; then
+              echo "✓ Binary exists"
+              # Check if binary is executable
+              if [ -x "$APP_BUNDLE/Contents/MacOS/trance-music" ]; then
+                echo "✓ Binary is executable"
+              else
+                echo "⚠ Binary is not executable (may need code signing)"
+              fi
+            else
+              echo "✗ Binary not found"
+              exit 1
+            fi
+          else
+            echo "✗ App bundle not found"
+            exit 1
+          fi
+
+      - name: Run smoke tests
+        working-directory: ./app
+        run: npm run test:smoke
+
+      - name: Create build summary
+        run: |
+          echo "## macOS Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh app/src-tauri/target/release/bundle/macos/ 2>/dev/null || echo "No bundle directory"
+          ls -lh app/src-tauri/target/release/bundle/dmg/ 2>/dev/null || echo "No DMG"
+          echo '```' >> $GITHUB_STEP_SUMMARY

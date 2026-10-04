@@ -5,13 +5,21 @@
 //! (catalog) and `proxy.rs` (media relay) territory.
 
 mod cache;
+// mod catalog; // Temporarily disabled - type mismatches need resolution
 mod db;
 mod gdrive;
 mod jiosaavn;
+// mod jiosaavn_catalog; // Temporarily disabled
 mod lyrics;
 mod official;
 mod proxy;
 mod sha256;
+mod spotify;
+mod store;
+// mod audius; // Temporarily disabled
+
+// Re-export Spotify commands
+pub use spotify::{spotify_is_signedin, spotify_signin, spotify_signout, spotify_import_top};
 #[allow(dead_code)] // parked with its commands (see generate_handler)
 mod sysvol;
 mod transcode;
@@ -158,7 +166,10 @@ async fn resolve_song(
             title: entry.title,
             artist: entry.artist,
             direct_url: entry.path,
-            proxy_url: format!("http://127.0.0.1:{}/file?id={}", state.port, entry.id),
+            proxy_url: format!(
+                "http://127.0.0.1:{}/file?id={}&token={}",
+                state.port, entry.id, state.session_token
+            ),
             qualities: Vec::new(),
             chosen_quality: entry.quality,
             content_length: Some(entry.bytes),
@@ -181,7 +192,7 @@ async fn resolve_song(
 
     // Id-keyed so the relay can purge + re-resolve when the CDN retires the
     // link (design L2); computed before the DTO moves `id`.
-    let proxy_url = proxy_url_for(state.port, &id);
+    let proxy_url = proxy_url_for(state.port, &id, &state.session_token);
     Ok(PlayableAudio {
         id,
         title: song.track.title,
@@ -204,9 +215,13 @@ async fn qualify_url(url: String, state: State<'_, Arc<AppState>>) -> Result<Ran
 }
 
 /// Base URL of the localhost range relay, e.g. `http://127.0.0.1:49213`.
+/// Includes the session token for authentication.
 #[tauri::command]
 fn proxy_base(state: State<'_, Arc<AppState>>) -> String {
-    format!("http://127.0.0.1:{}", state.port)
+    format!(
+        "http://127.0.0.1:{}?token={}",
+        state.port, state.session_token
+    )
 }
 
 /// Bytes currently in the vault (its own ledger, not the cache tree).
@@ -251,6 +266,217 @@ async fn cache_clear(state: State<'_, Arc<AppState>>) -> Result<cache::CacheStat
     state.art_memory.invalidate_all();
     state.disk.clear();
     Ok(state.disk.stats(vault_used(&state)))
+}
+
+/// App store: song metadata cache + KV + search cache (`store.db`).
+/// All of these are best-effort caches — the frontend keeps its localStorage
+/// fallback, so a disabled / corrupt store degrades instead of breaking.
+/// Audio bytes are never stored here; `track` is frontend track JSON only.
+
+/// Cache one song's metadata (upsert, counters preserved).
+#[tauri::command]
+fn store_song(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .put_song(&track)
+}
+
+/// Cache many songs at once (search pages, playlist loads). Capped at 500.
+#[tauri::command]
+fn store_songs(tracks: Vec<serde_json::Value>, state: State<'_, Arc<AppState>>) -> Result<usize, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .put_songs(&tracks)
+}
+
+/// One cached song by id (metadata + play/fav counters), if present.
+#[tauri::command]
+fn store_song_get(id: String, state: State<'_, Arc<AppState>>) -> Result<Option<store::SongRow>, String> {
+    check_id(&id)?;
+    state.inner().store().map_err(|e| e.clone())?.get_song(&id)
+}
+
+/// Recently played songs (needs `store_play` calls to fill up).
+#[tauri::command]
+fn store_recent(limit: Option<u32>, state: State<'_, Arc<AppState>>) -> Result<Vec<store::SongRow>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .recent(limit.unwrap_or(20) as i64)
+}
+
+/// Favorite songs (needs `store_fav` calls to fill up).
+#[tauri::command]
+fn store_favs(limit: Option<u32>, state: State<'_, Arc<AppState>>) -> Result<Vec<store::SongRow>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .favs(limit.unwrap_or(100) as i64)
+}
+
+/// Most-played songs by counter.
+#[tauri::command]
+fn store_most_played(
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::SongRow>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .most_played(limit.unwrap_or(20) as i64)
+}
+
+/// Record one play: caches metadata + bumps play_count / last_played.
+#[tauri::command]
+fn store_play(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Result<u64, String> {
+    state.inner().store().map_err(|e| e.clone())?.record_play(&track)
+}
+
+/// Mirror the favorite flag into the store (for offline fav lists).
+#[tauri::command]
+fn store_fav(
+    track: serde_json::Value,
+    fav: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state.inner().store().map_err(|e| e.clone())?.set_fav(&track, fav)
+}
+
+/// Small important prefs (queue backup, last position). 64 KB value cap.
+#[tauri::command]
+fn store_kv_get(key: String, state: State<'_, Arc<AppState>>) -> Result<Option<String>, String> {
+    state.inner().store().map_err(|e| e.clone())?.kv_get(&key)
+}
+
+#[tauri::command]
+fn store_kv_put(key: String, value: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    state.inner().store().map_err(|e| e.clone())?.kv_put(&key, &value)
+}
+
+/// Persistent search cache (6h TTL, 200 newest). Key format is the caller's
+/// choice — e.g. `songs:<q>:<limit>:<page>:<prefs>`.
+#[tauri::command]
+fn store_search_put(
+    key: String,
+    data: serde_json::Value,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .search_put(&key, &data)
+}
+
+#[tauri::command]
+fn store_search_get(
+    key: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<serde_json::Value>, String> {
+    state.inner().store().map_err(|e| e.clone())?.search_get(&key)
+}
+
+/// Store usage counters + file size for Settings.
+#[tauri::command]
+fn store_stats(state: State<'_, Arc<AppState>>) -> Result<store::StoreStats, String> {
+    state.inner().store().map_err(|e| e.clone())?.stats()
+}
+
+/// Lyrics payload cache (30d TTL, 1000 newest). Keys look like
+/// `lyr:id:<song-id>` (see frontend `cache_keys.js`). Only positive hits
+/// (`source !== "none"`) are worth storing — the frontend decides that.
+#[tauri::command]
+fn store_lyrics_put(
+    key: String,
+    data: serde_json::Value,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .lyrics_put(&key, &data)
+}
+
+#[tauri::command]
+fn store_lyrics_get(
+    key: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<serde_json::Value>, String> {
+    state.inner().store().map_err(|e| e.clone())?.lyrics_get(&key)
+}
+
+/// Detail payload cache: album / playlist / artist responses (24h TTL,
+/// 300 newest). Key format is the caller's choice, e.g. `ent:album:<token>`.
+#[tauri::command]
+fn store_entity_put(
+    key: String,
+    data: serde_json::Value,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .entity_put(&key, &data)
+}
+
+#[tauri::command]
+fn store_entity_get(
+    key: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<serde_json::Value>, String> {
+    state.inner().store().map_err(|e| e.clone())?.entity_get(&key)
+}
+
+/// Offline op queue (Drive-sync requests made while offline). FIFO, 500 cap.
+/// A cache clear never drops these — they are user intent, not fetched data.
+#[tauri::command]
+fn outbox_push(
+    op: String,
+    payload: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<i64, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .outbox_push(&op, &payload)
+}
+
+#[tauri::command]
+fn outbox_list(
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::OutboxEntry>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .outbox_list(limit.unwrap_or(200) as i64)
+}
+
+#[tauri::command]
+fn outbox_ack(
+    ids: Vec<i64>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    state.inner().store().map_err(|e| e.clone())?.outbox_ack(&ids)
+}
+
+/// Clear cached songs (non-favorites) + search rows. Favorites, KV and the
+/// vault are untouched.
+#[tauri::command]
+fn store_clear_cache(state: State<'_, Arc<AppState>>) -> Result<store::Cleared, String> {
+    // Keep the in-memory L1 in sync so a clear reads as cleared immediately.
+    state.inner().store().map_err(|e| e.clone())?.clear_cache()
 }
 
 /// L5 prefetch: warm the resolve + qualification for the next few tracks so
@@ -466,6 +692,15 @@ async fn download_song(
     .await
 }
 
+/// Flag one in-flight `download_song` to abort at the next chunk (≈256 KB).
+/// The `.part` file is deleted, nothing is renamed or recorded — the batch
+/// Stop button calls this for every id in `activeDownloads`, then the
+/// frontend loop stops queueing further tracks itself.
+#[tauri::command]
+fn cancel_download(id: String, state: State<'_, Arc<AppState>>) {
+    state.request_cancel(&id);
+}
+
 /// The two-tier vault: a saved song the user favorites is re-saved at the
 /// premium bitrate. Returns whether anything was upgraded — a song that is not
 /// in the vault, is already at (or above) the premium bitrate, or has no
@@ -517,6 +752,22 @@ async fn save_to_vault(
     target: u32,
     progress: Option<&tauri::ipc::Channel<DownloadProgress>>,
 ) -> Result<DownloadOutcome, String> {
+    // Single-use cancel flag: dropping the guard clears `id` on EVERY exit
+    // (success, failure, early `?`), so a stale Stop can never kill a later
+    // retry of the same song.
+    struct ClearCancel<'a> {
+        state: &'a AppState,
+        id: String,
+    }
+    impl Drop for ClearCancel<'_> {
+        fn drop(&mut self) {
+            self.state.clear_cancel(&self.id);
+        }
+    }
+    let _guard = ClearCancel {
+        state,
+        id: id.to_string(),
+    };
     check_id(id)?;
     let encode = transcode::available();
     let prefer = transcode::source_rendition(target, encode).to_string();
@@ -546,7 +797,7 @@ async fn save_to_vault(
         done: false,
     };
     let (path, written, sha) = state
-        .download_to(&chosen.url, &dest, |received, total| {
+        .download_to(id, &chosen.url, &dest, |received, total| {
             if let Some(channel) = progress {
                 let mut msg = note.clone();
                 msg.received = received;
@@ -1316,6 +1567,8 @@ pub fn run() {
             app.manage(state.clone());
             // Optional Google Drive sync (Phase 2): dormant until sign-in.
             app.manage(crate::gdrive::GDriveState::new());
+            // Optional Spotify integration: dormant until sign-in.
+            app.manage(crate::spotify::SpotifyState::new());
 
             // Design: enforce the disk budget at boot (first tick fires
             // immediately) and every 10 minutes after that.
@@ -1367,6 +1620,7 @@ pub fn run() {
             artist_overview,
             get_lyrics,
             download_song,
+            cancel_download,
             promote_song,
             list_downloads,
             remove_download,
@@ -1391,6 +1645,10 @@ pub fn run() {
             gdrive::gdrive_sign_out,
             gdrive::gdrive_push,
             gdrive::gdrive_pull,
+            spotify::spotify_signin,
+            spotify::spotify_signout,
+            spotify::spotify_is_signedin,
+            spotify::spotify_import_top,
             widget_show,
             widget_embed,
             widget_set_position,
@@ -1405,6 +1663,27 @@ pub fn run() {
             cache_stats,
             cache_set_budget,
             cache_clear,
+            store_song,
+            store_songs,
+            store_song_get,
+            store_recent,
+            store_favs,
+            store_most_played,
+            store_play,
+            store_fav,
+            store_kv_get,
+            store_kv_put,
+            store_search_put,
+            store_search_get,
+            store_stats,
+            store_clear_cache,
+            store_lyrics_put,
+            store_lyrics_get,
+            store_entity_put,
+            store_entity_get,
+            outbox_push,
+            outbox_list,
+            outbox_ack,
             prefetch_next,
             update::update_check,
             #[cfg(desktop)]

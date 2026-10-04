@@ -29,12 +29,18 @@ if (invoke) {
 }
 function artUrl(url) {
   if (!artBase || !url) return url;
-  return `${artBase}/art?u=${encodeURIComponent(url)}`;
+  // artBase may carry the relay token in its query (`…?token=…`); splice the
+  // path in front of it so `/art` stays the request path (see art.js).
+  const qi = artBase.indexOf("?");
+  if (qi < 0) return `${artBase}/art?u=${encodeURIComponent(url)}`;
+  const origin = artBase.slice(0, qi);
+  const tokenQ = artBase.slice(qi + 1);
+  return `${origin}/art?u=${encodeURIComponent(url)}&${tokenQ}`;
 }
 
 // Two window sizes: the wide compact card and the icon it becomes while the
 // user is in another application.
-const FULL = { w: 380, h: 190 };
+const FULL = { w: 380, h: 204 };
 const MINI = { w: 76, h: 76 };
 let isMini = false;
 

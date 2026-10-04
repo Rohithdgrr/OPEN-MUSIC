@@ -35,7 +35,7 @@ export function classify({
   return "online";
 }
 
-/// The 4 banner states collapse onto 3 routing modes; `reconnecting` is a
+/// The 4 probe states collapse onto 3 routing modes; `reconnecting` is a
 /// transient flavour of degraded (prefer the vault, keep the current track).
 const MODES = { online: "online", slow: "degraded", reconnecting: "degraded", lost: "offline" };
 export const mode = (s) => MODES[s] || "degraded";
@@ -47,17 +47,24 @@ const COPY = {
   online: { icon: "", msg: "", kind: "" },
 };
 
-/// Toast copy per mode change (the banner keeps its per-state text above).
+/// Toast copy per mode change (per-state text lives in COPY above).
 const MODE_COPY = {
   online: { msg: "Back online — streaming at full quality", kind: "success" },
   degraded: { msg: "Network is slow — preferring downloaded songs", kind: "info" },
   offline: { msg: "Switched to offline mode — playing from your downloads", kind: "error" },
 };
 
+/// Header badge copy, keyed by raw probe state (not routing mode) so the
+/// badge beside the settings icon narrates every phase — including the
+/// transient "reconnecting" one the floating banner used to own. Only the
+/// text lives here — the hue is CSS's job (`#net-badge[data-net-mode]`
+/// against --tm-ok/--tm-warn/--tm-bad), so the badge, its dot and its pulse
+/// halo can never disagree with each other.
 const BADGE = {
-  online: ["#22c55e", "Online"],
-  degraded: ["#eab308", "Slow"],
-  offline: ["#ef4444", "Offline"],
+  online: { mode: "online", label: "Online", title: "Online — streaming at full quality" },
+  slow: { mode: "degraded", label: "Slow", title: "Slow network — preferring downloaded songs" },
+  reconnecting: { mode: "reconnecting", label: "Reconnecting…", title: "Connection dropped — retrying, downloads preferred meanwhile" },
+  lost: { mode: "offline", label: "Offline", title: "No internet — playing from your downloads" },
 };
 
 let state = "online";
@@ -67,7 +74,6 @@ let lastMode = "online";
 let lastChange = Date.now() - MIN_SWITCH_MS; // the first change is never delayed
 let force = null; // "online" | "offline" | null (auto) — read from tm-net-mode
 let timer = 0;
-let banner = null;
 let invoke = null;
 let diag = () => {};
 let toast = () => {};
@@ -88,34 +94,43 @@ export function netMode() {
   return force || mode(state);
 }
 
-function paintBadge() {
+/// Exported for tests (and only tests): stamp the header badge for a raw probe
+/// state without running the prober. Guards a missing document so plain-node
+/// imports stay safe.
+export function paintBadge(raw) {
   if (typeof document === "undefined") return; // plain-node tests
   const el = document.getElementById("net-badge");
   if (!el) return;
-  const [color, label] = BADGE[netMode()];
-  el.style.color = color;
-  const dot = el.querySelector("[data-net-dot]");
-  if (dot) dot.style.background = color;
+  const b = BADGE[raw || state] || BADGE.slow;
+  // Attribute, not inline style: the stylesheet owns every hue the badge
+  // shows, so the label, the dot and the pulsing halo move together.
+  el.dataset.netMode = b.mode;
+  el.title = b.title;
   const txt = el.querySelector("[data-net-label]");
-  if (txt) txt.textContent = label;
+  if (txt) txt.textContent = b.label;
 }
 
-/// Mode transitions notify once — toast + queue refresh. Entering degraded
-/// from *offline* is silent: the banner says "Reconnecting…" and the real
-/// news is the "Back online" toast that follows.
-function modeChanged(m) {
+/// Mode transitions notify once — badge + queue refresh, and a toast only for
+/// a change the user actually made in Settings. Probe-driven transitions pass
+/// `silent`: the header badge beside the settings icon already narrates those,
+/// so popping a toast on top of it is noise. Entering degraded from *offline*
+/// is silent either way — the badge says "Reconnecting…" and the real news is
+/// the recovery that follows.
+function modeChanged(m, { silent = false } = {}) {
   if (m === lastMode) return;
   const prev = lastMode;
   lastMode = m;
-  if (!(m === "degraded" && prev === "offline")) toast(MODE_COPY[m].msg, MODE_COPY[m].kind);
+  if (!silent && !(m === "degraded" && prev === "offline")) toast(MODE_COPY[m].msg, MODE_COPY[m].kind);
   onMode?.(m);
 }
 
-/// Persistent banner + transition notifications. The banner tracks every raw
-/// probe state; toasts and onMode fire only when the *mode* changes, so a
-/// flapping link never spams the toast stack.
+/// Badge + diagnostics per probe state. The badge tracks every raw state so a
+/// flapping link narrates in place; the toast and onMode fire only when the
+/// *mode* changes, so a flapping link never spams the toast stack. There is
+/// deliberately no floating pill anymore — connection state lives only in the
+/// header badge beside the settings icon.
 function paint(next) {
-  if (next === state || !banner) return;
+  if (next === state) return;
   // ponytail ceiling: a change arriving inside the floor is dropped, not
   // queued — the next probe re-evaluates the same inputs, so it lands one
   // probe interval after the floor expires instead of exactly at it.
@@ -124,25 +139,10 @@ function paint(next) {
   state = next;
   lastChange = Date.now();
   const copy = COPY[next];
-  if (next === "online") {
-    banner.classList.add("hidden");
-    diag("net", true, `recovered from ${prev}`);
-  } else {
-    banner.className = bannerBase(next);
-    banner.innerHTML = `<span class="material-symbols-outlined text-[18px]">${copy.icon}</span><span>${copy.msg}</span>`;
-    banner.classList.remove("hidden");
-    diag("net", next === "lost" ? false : null, `${copy.msg} (was ${prev})`);
-  }
-  paintBadge();
-  modeChanged(netMode());
+  diag("net", next === "online" ? true : next === "lost" ? false : null, `${copy.msg} (was ${prev})`);
+  paintBadge(next);
+  modeChanged(netMode(), { silent: true });
 }
-
-const bannerBase = (next) =>
-  `fixed left-1/2 -translate-x-1/2 top-20 z-[60] flex items-center gap-2 px-4 py-2 rounded-full shadow-lg border font-label-md text-label-md ${
-    next === "lost"
-      ? "bg-error-container text-on-error-container border-error-container"
-      : "bg-inverse-surface text-inverse-on-surface border-inverse-surface"
-  }`;
 
 async function probe() {
   clearTimeout(timer);
@@ -170,6 +170,7 @@ async function probe() {
 }
 
 /// Settings hook: persist the pref first (settings.js does), then re-route.
+/// Not silent: this one is a deliberate user action, so it still confirms.
 export function setModePref(v) {
   force = v === "online" || v === "offline" ? v : null;
   paintBadge();
@@ -183,12 +184,6 @@ export function startNet({ invoke: inv, diag: dg, toast: tt, onMode: om } = {}) 
   if (om) onMode = om;
   force = prefForce();
   lastMode = netMode(); // a forced pref announces nothing at boot
-  banner = document.createElement("div");
-  banner.id = "net-banner";
-  banner.setAttribute("role", "status");
-  banner.setAttribute("aria-live", "polite");
-  banner.className = bannerBase("reconnecting") + " hidden";
-  document.body.appendChild(banner);
 
   window.addEventListener("offline", () => {
     fails = FAILS_TO_LOST;

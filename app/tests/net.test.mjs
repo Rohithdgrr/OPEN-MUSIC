@@ -2,7 +2,7 @@
 // banner, the header badge and the offline routing gate.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { classify, mode, netMode, setModePref } from "../src/net.js";
+import { classify, mode, netMode, setModePref, paintBadge } from "../src/net.js";
 
 test("offline is always lost", () => {
   assert.equal(classify({ onLine: false }), "lost");
@@ -55,4 +55,33 @@ test("a forced mode overrides the classification", () => {
   assert.equal(netMode(), "online"); // probe state is healthy by default
   setModePref(null); // leave no force behind for later tests
   assert.equal(netMode(), "online");
+});
+
+test("the header badge narrates every probe state, no pill needed", () => {
+  const seen = {};
+  const labelEl = { textContent: "" };
+  const badgeEl = {
+    dataset: seen,
+    title: "",
+    querySelector: (sel) => (sel === "[data-net-label]" ? labelEl : null),
+  };
+  globalThis.document = {
+    getElementById: (id) => (id === "net-badge" ? badgeEl : null),
+  };
+  try {
+    paintBadge("online");
+    assert.equal(seen.netMode, "online");
+    assert.equal(labelEl.textContent, "Online");
+    paintBadge("slow");
+    assert.equal(seen.netMode, "degraded");
+    assert.equal(labelEl.textContent, "Slow");
+    paintBadge("reconnecting");
+    assert.equal(seen.netMode, "reconnecting");
+    assert.equal(labelEl.textContent, "Reconnecting…");
+    paintBadge("lost");
+    assert.equal(seen.netMode, "offline");
+    assert.equal(labelEl.textContent, "Offline");
+  } finally {
+    delete globalThis.document;
+  }
 });

@@ -73,39 +73,37 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
 .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text { color: #a1a1aa; }
 .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word { background-image: linear-gradient(90deg, #a1a1aa, #a1a1aa); }
 
-/* Lyrics full-view stage — the "Full View" button promotes the preview card
-   to a fixed overlay with stage-sized type; auto-scroll keeps working. */
+/* Lyrics full-view stage — true immersive fullscreen overlay */
 .tm-lyrics-full {
-  position: fixed;
-  left: 0.75rem;
-  right: 0.75rem;
-  top: calc(3.75rem + env(safe-area-inset-top, 0px));
-  bottom: 4.5rem;
-  z-index: 65;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 95 !important;
   margin: 0 !important;
-  background: rgba(249, 249, 251, 0.98);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(232, 232, 234, 0.8);
-  border-radius: 1.25rem;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.5rem calc(1.5rem + env(safe-area-inset-bottom, 0px)) 1.5rem !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  backdrop-filter: blur(32px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(180%) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
 }
-.tm-lyrics-full [data-lyrics] { flex: 1 1 auto; max-height: none !important; }
-.tm-lyrics-full .lyric-text { font-size: 17px !important; }
-.tm-lyrics-full .lyric-active .lyric-text { font-size: 20px !important; }
-.tm-lyrics-full .lyric-past .lyric-text { font-size: 15px !important; }
+.tm-lyrics-full [data-lyrics] { flex: 1 1 auto; max-height: none !important; padding: 2rem 0; }
+.tm-lyrics-full .lyric-text { font-size: 22px !important; line-height: 1.5 !important; }
+.tm-lyrics-full .lyric-active .lyric-text { font-size: 28px !important; font-weight: 700 !important; line-height: 1.4 !important; }
+.tm-lyrics-full .lyric-past .lyric-text { font-size: 18px !important; opacity: 0.55 !important; }
 
 /* Toast stack — mobile's own; the desktop's #toast-stack lives in styles.css,
    which this shell never loads. Stacks up to 4, click to dismiss. */
+/* Toast stack — mobile's own; stacks up to 4, click to dismiss. */
 #tm-toast-stack {
   position: fixed;
-  top: calc(3.75rem + env(safe-area-inset-top, 0px));
+  top: calc(env(safe-area-inset-top, 24px) + 3.8rem);
   left: 0;
   right: 0;
-  z-index: 70;
+  z-index: 80;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -118,51 +116,633 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  max-width: 92%;
-  background: rgba(27, 27, 30, 0.96);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  color: #f0f0f2;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  max-width: 90%;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  color: #18181b;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 9999px;
-  padding: 0.55rem 1rem;
-  font-size: 12.5px;
+  padding: 0.6rem 1.15rem;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 1.35;
-  box-shadow: 0 10px 30px -4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  animation: tm-toast-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: tm-toast-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.dark .tm-toast,
+html.dark .tm-toast {
+  background: rgba(24, 24, 27, 0.96);
+  color: #f4f4f5;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.3);
 }
 .tm-toast:active { transform: scale(0.97); }
 .tm-toast .tm-dot {
-  width: 0.45rem;
-  height: 0.45rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 9999px;
   flex-shrink: 0;
-  background: #a1a1aa;
+  background: #71717a;
 }
 .tm-toast > span:not(.tm-dot) { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 .tm-toast-action {
   margin-left: 0.4rem;
   flex-shrink: 0;
-  padding: 0.15rem 0.55rem;
+  padding: 0.18rem 0.6rem;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.15);
-  color: #f0f0f2;
+  background: rgba(0, 0, 0, 0.08);
+  color: #18181b;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
-.tm-toast-action:active { background: rgba(255, 255, 255, 0.28); }
-.tm-toast[data-kind="success"] .tm-dot { background: #22c55e; box-shadow: 0 0 8px rgba(34, 197, 94, 0.6); }
-.tm-toast[data-kind="error"] .tm-dot { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, 0.6); }
-.tm-toast.tm-out { opacity: 0; transform: translateY(-4px) scale(0.95); transition: opacity 0.2s, transform 0.2s; }
+.dark .tm-toast-action,
+html.dark .tm-toast-action {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f4f4f5;
+}
+.tm-toast-action:active { opacity: 0.7; }
+.tm-toast[data-kind="success"] .tm-dot { background: #16a34a; box-shadow: 0 0 10px rgba(22, 163, 74, 0.7); }
+.tm-toast[data-kind="error"] .tm-dot { background: #dc2626; box-shadow: 0 0 10px rgba(220, 38, 38, 0.7); }
+.tm-toast[data-kind="warning"] .tm-dot { background: #d97706; box-shadow: 0 0 10px rgba(217, 119, 6, 0.7); }
+.tm-toast[data-kind="info"] .tm-dot { background: #4f46e5; box-shadow: 0 0 10px rgba(79, 70, 229, 0.7); }
+.tm-toast.tm-out { opacity: 0; transform: translateY(-8px) scale(0.94); transition: opacity 0.2s, transform 0.2s; }
 @keyframes tm-toast-in {
-  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(-12px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Skeleton Loading Shimmer — Spotify-style pulse and specular highlights */
+@keyframes tm-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.tm-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(228, 228, 231, 0.55);
+}
+.tm-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.7) 50%, transparent 100%);
+  animation: tm-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Screen Transitions & Spring Micro-interactions */
+#screen {
+  animation: tm-screen-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes tm-screen-enter {
+  from { opacity: 0.9; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+button:active:not(:disabled), [role="button"]:active {
+  transform: scale(0.96);
+  transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.tm-glow {
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.12), 0 2px 8px -2px rgba(0, 0, 0, 0.06);
+}
+
+/* Micro Loading Spinner */
+.tm-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  border-top-color: currentColor;
+  border-radius: 9999px;
+  animation: tm-spin 0.65s linear infinite;
+}
+@keyframes tm-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Mini-player marquee — overflowing widget titles scroll in an 8s loop. */
+@keyframes tm-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.tm-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  animation: tm-marquee 8s linear infinite;
+}
+
+/* Full queue sheet — 85vh bottom sheet (NOT the 40vh track sheet). */
+#tm-queue-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+#tm-queue-sheet [data-q-panel] { max-height: 85vh; border-radius: 1.5rem; }
+#tm-queue-sheet [data-q-list] { overscroll-behavior: contain; }
+
+/* First-run onboarding overlay. */
+#tm-onboard {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+/* ==========================================================================
+   ELEVATED MOBILE LIGHT THEME (Matching Desktop Pure White & Monochrome Depth)
+   Micro-gradients, hairline borders, frosted translucent glass, and soft shadows
+   ========================================================================== */
+
+/* 1. App Background & Canvas */
+html:not(.dark),
+html:not(.dark) body {
+  background-color: #ffffff !important;
+  color: #1a1c1d;
+}
+
+html:not(.dark) main {
+  background-color: #ffffff !important;
+}
+
+/* 2. Frosted Header & Elevated Tab Bar Chrome */
+html:not(.dark) header {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.02) !important;
+}
+
+html:not(.dark) nav.fixed.bottom-0 {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(24px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(150%) !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.07) !important;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.04) !important;
+}
+
+html:not(.dark) nav.fixed.bottom-0 a[aria-current="page"] > div {
+  background: linear-gradient(180deg, #18181b 0%, #000000 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16) !important;
+}
+
+html:not(.dark) nav.fixed.bottom-0 a[aria-current="page"] > div span {
+  color: #ffffff !important;
+}
+
+/* 3. Cards & Surfaces with Micro-Gradients & Crisp Hairline Borders */
+html:not(.dark) .bg-surface-container-lowest,
+html:not(.dark) [data-shelf] > div,
+html:not(.dark) .rounded-2xl.border,
+html:not(.dark) .rounded-xl.border {
+  background: linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%) !important;
+  border-color: rgba(0, 0, 0, 0.07) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+/* 4. Interactive List Rows (Playlists, Albums, Tracklists, History) */
+html:not(.dark) .divide-y > div:hover,
+html:not(.dark) [data-track-row]:hover,
+html:not(.dark) .recent-pill:hover,
+html:not(.dark) .genre-card:hover {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.015) 0%, rgba(0, 0, 0, 0.038) 40%, rgba(0, 0, 0, 0.015) 100%) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html:not(.dark) .genre-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f4f4f7 100%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.07) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
+}
+
+html:not(.dark) .genre-card:active {
+  transform: scale(0.97) !important;
+}
+
+/* 5. Buttons: High-Contrast Obsidian & Surface Gradients */
+html:not(.dark) button.bg-primary,
+html:not(.dark) .bg-primary:not(span) {
+  background: linear-gradient(180deg, #18181b 0%, #09090b 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid #000000 !important;
+}
+
+html:not(.dark) button.bg-primary:hover,
+html:not(.dark) .bg-primary:hover:not(span) {
+  background: linear-gradient(180deg, #27272a 0%, #18181b 100%) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22) !important;
+}
+
+html:not(.dark) button.bg-surface-container-low,
+html:not(.dark) button.bg-surface-container,
+html:not(.dark) .bg-surface-container-low {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f4f6 100%) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Filter Chips in Light Mode */
+html:not(.dark) .filter-chip,
+html:not(.dark) .home-cat-chip {
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+html:not(.dark) .filter-chip.bg-primary,
+html:not(.dark) .home-cat-chip.bg-primary {
+  background: linear-gradient(180deg, #18181b 0%, #000000 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18) !important;
+  border: none !important;
+}
+
+html:not(.dark) .filter-chip:not(.bg-primary),
+html:not(.dark) .home-cat-chip:not(.bg-primary) {
+  background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  color: #47464b !important;
+}
+
+/* 6. Form Inputs & Search Bays */
+html:not(.dark) input[type="text"],
+html:not(.dark) input[type="search"],
+html:not(.dark) input[type="password"],
+html:not(.dark) select {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+  transition: all 0.2s ease;
+}
+
+html:not(.dark) input[type="text"]:focus,
+html:not(.dark) input[type="search"]:focus,
+html:not(.dark) input[type="password"]:focus,
+html:not(.dark) select:focus {
+  border-color: #000000 !important;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* 7. Image and Artwork Depth */
+html:not(.dark) .aspect-square img,
+html:not(.dark) [data-shelf] img,
+html:not(.dark) .w-52 img,
+html:not(.dark) .w-56 img {
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 8. Scrubber Track & Sliders */
+html:not(.dark) #scrubber-container #scrubber-bar {
+  background: linear-gradient(90deg, #18181b 0%, #000000 100%) !important;
+}
+
+html:not(.dark) #scrubber-needle {
+  background: #000000 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* ==========================================================================
+   GLOBAL MOBILE DARK THEME ENGINE (.dark & [data-theme="dark"])
+   Complete high-fidelity obsidian palette (#09090b / #121215), elevated
+   surface containers (#16161a / #202025), crisp white typography (#ffffff),
+   silver secondary metadata (#a1a1aa / #71717a), and luminous accents.
+   ========================================================================== */
+
+html.dark,
+body.dark,
+.dark {
+  color-scheme: dark !important;
+}
+
+html.dark,
+html.dark body,
+body.dark {
+  background-color: #09090b !important;
+  color: #f4f4f5 !important;
+}
+
+.dark main {
+  background-color: #09090b !important;
+}
+
+/* Background Utility Inversions */
+.dark .bg-surface,
+html.dark .bg-surface {
+  background-color: #09090b !important;
+}
+
+.dark .bg-surface-container,
+html.dark .bg-surface-container {
+  background-color: #141417 !important;
+}
+
+.dark .bg-surface-container-low,
+html.dark .bg-surface-container-low {
+  background-color: #101013 !important;
+}
+
+.dark .bg-surface-container-lowest,
+html.dark .bg-surface-container-lowest {
+  background-color: #141416 !important;
+}
+
+.dark .bg-surface-container-high,
+html.dark .bg-surface-container-high {
+  background-color: #1a1a1e !important;
+}
+
+.dark .bg-surface-container-highest,
+html.dark .bg-surface-container-highest {
+  background-color: #242429 !important;
+}
+
+.dark .bg-surface\/85,
+html.dark .bg-surface\/85 {
+  background-color: rgba(9, 9, 11, 0.88) !important;
+}
+
+.dark .bg-surface\/90,
+html.dark .bg-surface\/90 {
+  background-color: rgba(9, 9, 11, 0.92) !important;
+}
+
+/* Header & Bottom Navigation Bar */
+.dark header,
+html.dark header {
+  background-color: rgba(9, 9, 11, 0.9) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark nav.fixed.bottom-0,
+html.dark nav.fixed.bottom-0 {
+  background-color: rgba(14, 14, 17, 0.96) !important;
+  backdrop-filter: blur(24px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(150%) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark nav.fixed.bottom-0 a[aria-current="page"] > div,
+html.dark nav.fixed.bottom-0 a[aria-current="page"] > div {
+  background: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25) !important;
+}
+
+.dark nav.fixed.bottom-0 a[aria-current="page"] > div span,
+html.dark nav.fixed.bottom-0 a[aria-current="page"] > div span {
+  color: #000000 !important;
+}
+
+.dark nav.fixed.bottom-0 a:not([aria-current="page"]) span,
+html.dark nav.fixed.bottom-0 a:not([aria-current="page"]) span {
+  color: #a1a1aa !important;
+}
+
+/* Typography & Headings in Dark Mode */
+.dark .text-on-surface,
+html.dark .text-on-surface {
+  color: #ffffff !important;
+}
+
+.dark .text-on-surface-variant,
+html.dark .text-on-surface-variant {
+  color: #a1a1aa !important;
+}
+
+.dark .text-secondary,
+html.dark .text-secondary {
+  color: #a1a1aa !important;
+}
+
+.dark h1, .dark h2, .dark h3, .dark h4,
+html.dark h1, html.dark h2, html.dark h3, html.dark h4 {
+  color: #ffffff !important;
+}
+
+/* Universal Borders in Dark Mode */
+.dark .border-surface-container,
+.dark .border-surface-container-high,
+.dark .border-surface-container-highest,
+.dark .border-surface-container-high\/40,
+.dark .border-surface-container-high\/60,
+.dark .border-surface-container-high\/70,
+.dark .border-surface-container-high\/80,
+.dark .border-surface-container\/60,
+.dark .border-surface-container\/40,
+html.dark .border-surface-container,
+html.dark .border-surface-container-high,
+html.dark .border-surface-container-highest,
+html.dark .border-surface-container-high\/40,
+html.dark .border-surface-container-high\/60,
+html.dark .border-surface-container-high\/70,
+html.dark .border-surface-container-high\/80,
+html.dark .border-surface-container\/60,
+html.dark .border-surface-container\/40 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Interactive Cards, Grids & Shelves in Dark Mode */
+.dark .bg-surface-container-lowest,
+.dark [data-shelf] > div,
+.dark .rounded-2xl.border,
+.dark .rounded-xl.border,
+html.dark .bg-surface-container-lowest,
+html.dark [data-shelf] > div,
+html.dark .rounded-2xl.border,
+html.dark .rounded-xl.border {
+  background: linear-gradient(180deg, #151518 0%, #101013 100%) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+.dark .genre-card,
+html.dark .genre-card {
+  background: linear-gradient(135deg, #18181c 0%, #121215 100%) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+}
+
+.dark .genre-card .text-primary,
+html.dark .genre-card .text-primary {
+  color: #ffffff !important;
+}
+
+/* Track Rows, Suggestions & Dividers in Dark Mode */
+.dark .divide-y > div:hover,
+.dark [data-track-row]:hover,
+.dark .recent-pill:hover,
+html.dark .divide-y > div:hover,
+html.dark [data-track-row]:hover,
+html.dark .recent-pill:hover {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.09) 35%, rgba(255, 255, 255, 0.04) 100%) !important;
+}
+
+.dark .recent-pill,
+html.dark .recent-pill {
+  background: #141417 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* Primary Contrast Inversion (Black button -> White button in dark mode) */
+.dark button.bg-primary,
+.dark .bg-primary:not(span),
+html.dark button.bg-primary,
+html.dark .bg-primary:not(span) {
+  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 100%) !important;
+  color: #000000 !important;
+  box-shadow: 0 4px 18px rgba(255, 255, 255, 0.25) !important;
+  border: 1px solid #ffffff !important;
+}
+
+.dark button.bg-primary span,
+.dark .bg-primary:not(span) span,
+html.dark button.bg-primary span,
+html.dark .bg-primary:not(span) span {
+  color: #000000 !important;
+}
+
+.dark .text-on-primary,
+html.dark .text-on-primary {
+  color: #000000 !important;
+}
+
+.dark button.bg-surface-container-low,
+.dark button.bg-surface-container,
+.dark .bg-surface-container-low,
+html.dark button.bg-surface-container-low,
+html.dark button.bg-surface-container,
+html.dark .bg-surface-container-low {
+  background: linear-gradient(180deg, #1c1c20 0%, #141418 100%) !important;
+  border-color: rgba(255, 255, 255, 0.09) !important;
+  color: #f4f4f5 !important;
+}
+
+/* Filter Chips in Dark Mode */
+.dark .filter-chip.bg-primary,
+.dark .home-cat-chip.bg-primary,
+html.dark .filter-chip.bg-primary,
+html.dark .home-cat-chip.bg-primary {
+  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 100%) !important;
+  color: #000000 !important;
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25) !important;
+}
+
+.dark .filter-chip:not(.bg-primary),
+.dark .home-cat-chip:not(.bg-primary),
+html.dark .filter-chip:not(.bg-primary),
+html.dark .home-cat-chip:not(.bg-primary) {
+  background: linear-gradient(180deg, #18181c 0%, #121215 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #a1a1aa !important;
+}
+
+/* Form Inputs, Selects & Search Bays in Dark Mode */
+.dark input[type="text"],
+.dark input[type="search"],
+.dark input[type="password"],
+.dark select,
+html.dark input[type="text"],
+html.dark input[type="search"],
+html.dark input[type="password"],
+html.dark select {
+  background: #16161a !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.dark input[type="text"]:focus,
+.dark input[type="search"]:focus,
+.dark input[type="password"]:focus,
+.dark select:focus,
+html.dark input[type="text"]:focus,
+html.dark input[type="search"]:focus,
+html.dark input[type="password"]:focus,
+html.dark select:focus {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14) !important;
+}
+
+/* Scrubber in Dark Mode */
+.dark #scrubber-container #scrubber-bar,
+html.dark #scrubber-container #scrubber-bar {
+  background: #ffffff !important;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5) !important;
+}
+
+.dark #scrubber-needle,
+html.dark #scrubber-needle {
+  background: #ffffff !important;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Lyrics Styling in Mobile Dark Mode */
+.dark .lyric-line,
+html.dark .lyric-line {
+  color: #71717a !important;
+}
+
+.dark .lyric-active,
+html.dark .lyric-active {
+  border-left-color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .lyric-active .lyric-text,
+html.dark .lyric-active .lyric-text {
+  color: #ffffff !important;
+}
+
+.dark .lyric-word,
+html.dark .lyric-word {
+  background-image: linear-gradient(
+    90deg,
+    #ffffff 0%,
+    #ffffff var(--progress, 0%),
+    rgba(255, 255, 255, 0.32) var(--progress, 0%),
+    rgba(255, 255, 255, 0.32) 100%
+  ) !important;
+}
+
+.dark .tm-lyrics-full,
+html.dark .tm-lyrics-full {
+  background: rgba(9, 9, 11, 0.98) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* Full Queue Sheet & Onboarding in Dark Mode */
+.dark #tm-queue-sheet [data-q-panel],
+html.dark #tm-queue-sheet [data-q-panel] {
+  background: #141417 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8) !important;
 }
 </style>
+<script>
+/* Mobile Theme Boot Engine — Evaluates tm-theme before first paint */
+try {
+  const t = localStorage.getItem("tm-theme") || "system";
+  const isDark = t === "dark" || (t === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+  if (isDark) document.documentElement.classList.add("dark");
+} catch {}
+</script>
 </head>
 <body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased">
 <div id="screen"></div>

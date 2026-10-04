@@ -22,9 +22,29 @@ import {
   downloadTrack,
   downloadAll,
   shareThing,
+  shareCard,
+  haptic,
+  movePlaylistTrack,
+  removePlaylistTrack,
+  updatePlaylistMeta,
 } from "./shared.js";
-import { playerState, insertNext, enqueue, insertNextAll, enqueueAll, removeFromQueue } from "./player.js";
+import {
+  playerState,
+  insertNext,
+  enqueue,
+  insertNextAll,
+  enqueueAll,
+  removeFromQueue,
+  playList,
+  moveQueue,
+  clearQueue,
+  smartShuffleQueue,
+  queueHistory,
+  queueUpNext,
+  repaint,
+} from "./player.js";
 import { entityNav, MOUNT } from "./binders.js";
+import { playlistToCsv, playlistToM3u, playlistFilename } from "../sync.js";
 
 // --------------------------------------------------------------------- sheet
 
@@ -43,7 +63,7 @@ function ensureSheet() {
     "fixed inset-0 z-[70] transition-opacity duration-200 flex flex-col justify-end pointer-events-none opacity-0";
   root.innerHTML = `
     <div class="absolute inset-0 bg-black/50 backdrop-blur-md transition-opacity duration-200" data-tm-dismiss></div>
-    <div class="relative bg-surface-container-lowest/98 backdrop-blur-2xl border-t border-surface-container-high/80 rounded-t-[28px] max-w-lg mx-auto w-full px-5 pt-3 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] transform transition-transform duration-250 ease-out flex flex-col gap-3 translate-y-full" data-tm-content>
+    <div class="relative bg-surface-container-lowest/95 backdrop-blur-2xl border-t border-surface-container-high/80 rounded-t-[28px] max-w-lg mx-auto w-full max-h-[40vh] overflow-hidden px-5 pt-3 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] transform transition-transform duration-300 ease-out flex flex-col gap-3 translate-y-full" data-tm-content>
       <div class="w-12 h-1.5 bg-surface-container-highest rounded-full mx-auto mb-1.5 opacity-80"></div>
       <div class="flex items-center gap-3.5 pb-3 border-b border-surface-container-high/60">
         <div class="w-12 h-12 rounded-xl bg-surface-container-high overflow-hidden shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover hidden" data-tm-art></div>
@@ -52,7 +72,7 @@ function ensureSheet() {
           <p class="font-body-sm text-[12px] text-on-surface-variant truncate mt-0.5" data-tm-sub></p>
         </div>
       </div>
-      <div class="flex flex-col gap-0.5 overflow-y-auto max-h-[55vh]" data-tm-list></div>
+      <div class="flex flex-col gap-0.5 overflow-y-auto max-h-[calc(40vh_-_240px)]" data-tm-list></div>
       <button class="w-full py-3.5 rounded-xl bg-surface-container text-on-surface font-body-md text-[14px] font-semibold hover:bg-surface-container-high active:scale-[0.98] transition-all mt-1" data-tm-dismiss>Close</button>
     </div>`;
   document.body.appendChild(root);
@@ -74,7 +94,7 @@ export function closeSheet() {
   content.classList.add("translate-y-full");
 }
 
-function openSheet({ title, sub, image, items = [], rows = [] }) {
+export function openSheet({ title, sub, image, items = [], rows = [] }) {
   ensureSheet();
   titleEl.textContent = String(title || "");
   subEl.textContent = String(sub || "");
@@ -131,6 +151,119 @@ function openSheet({ title, sub, image, items = [], rows = [] }) {
   content.classList.add("translate-y-0");
 }
 
+/// Text-input variant of the sheet: native `prompt()` is broken in Android
+/// WebViews (no dialog, silent cancel), so playlist create/rename goes here.
+/// Calls `onSubmit(cleanName)` and closes; empty names never submit.
+function openInputSheet({ title, sub, image, placeholder, value, cta, onSubmit }) {
+  ensureSheet();
+  titleEl.textContent = String(title || "");
+  subEl.textContent = String(sub || "");
+  if (image) {
+    artEl.setAttribute("data-art-orig", image);
+    artEl.removeAttribute("data-art-step");
+    artEl.src = hqArt(image);
+    artEl.classList.remove("hidden");
+  } else {
+    artEl.removeAttribute("src");
+    artEl.removeAttribute("data-art-orig");
+    artEl.classList.add("hidden");
+  }
+  listEl.innerHTML = `
+    <div class="px-1 py-1 flex flex-col gap-2.5">
+      <input type="text" maxlength="48" data-tm-input
+        placeholder="${esc(placeholder || "Name")}" value="${esc(value || "")}"
+        class="w-full bg-surface-container-low border border-surface-container-high rounded-xl px-3.5 py-3 font-body-md text-[14px] text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary/50" />
+      <button type="button" data-tm-save
+        class="w-full py-3 rounded-xl bg-primary text-on-primary font-body-md text-[14px] font-semibold active:scale-[0.98] transition-all">${esc(cta || "Save")}</button>
+    </div>`;
+  const input = listEl.querySelector("[data-tm-input]");
+  const saveBtn = listEl.querySelector("[data-tm-save]");
+  const submit = () => {
+    const clean = String(input?.value || "").trim();
+    if (!clean) {
+      toast("Give it a name first", 3000, "error");
+      input?.focus();
+      return;
+    }
+    const fn = onSubmit;
+    closeSheet();
+    setTimeout(() => {
+      try {
+        fn && fn(clean);
+      } catch (e) {
+        console.error(e);
+        toast(String(e).split("\n")[0].slice(0, 90), 5000, "error");
+      }
+    }, 120);
+  };
+  saveBtn?.addEventListener("click", submit);
+  input?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
+  root.classList.remove("pointer-events-none", "opacity-0");
+  root.classList.add("pointer-events-auto", "opacity-100");
+  content.classList.remove("translate-y-full");
+  content.classList.add("translate-y-0");
+  setTimeout(() => input?.focus(), 180);
+}
+
+export function createPlaylistSheet(tracks = [], initialName = "") {
+  openInputSheet({
+    title: "New playlist",
+    sub: tracks.length ? `${tracks.length} track${tracks.length === 1 ? "" : "s"} will be added` : "Name your new playlist",
+    placeholder: "Playlist name",
+    value: initialName,
+    cta: tracks.length ? "Create & add" : "Create playlist",
+    onSubmit: (clean) => {
+      const all = load(LIBRARY_KEY, []);
+      if (all.some((x) => x && x.local && String(x.title || "").toLowerCase() === clean.toLowerCase())) {
+        toast("You already have a playlist with that name", 4000, "error");
+        return;
+      }
+      const pl = {
+        id: `local-${Date.now()}`,
+        local: true,
+        kind: "playlist",
+        title: clean,
+        subtitle: `${tracks.length} song${tracks.length === 1 ? "" : "s"}`,
+        tracks: tracks.map((t) => ({ ...t })),
+        image: tracks[0]?.image || "",
+        ts: Date.now(),
+      };
+      all.unshift(pl);
+      save(LIBRARY_KEY, all);
+      toast(`Created “${clean}”`, 6000, "success", { label: "Open", fn: () => go("library") });
+      MOUNT["main-library"]?.();
+    },
+  });
+}
+
+export async function exportLocalPlaylistFile(playlist, format = "csv") {
+  if (!playlist) return toast("Playlist not found", 4000, "error");
+  const isCsv = format === "csv";
+  const content = isCsv ? playlistToCsv(playlist) : playlistToM3u(playlist);
+  const name = playlistFilename(playlist.title || "playlist", format);
+  const mime = isCsv ? "text/csv" : "audio/x-mpegurl";
+  const file = new File([content], name, { type: mime });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: playlist.title });
+      return toast(`Exported "${playlist.title}" as ${format.toUpperCase()}`, 3000, "success");
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+  }
+  try {
+    await navigator.clipboard.writeText(content);
+    toast(`${format.toUpperCase()} copied to clipboard`, 4000, "success");
+  } catch {
+    toast(`Could not export ${format.toUpperCase()}`, 4000, "error");
+  }
+}
+
 // ------------------------------------------------------------------ actions
 
 async function viewAlbum(track) {
@@ -178,7 +311,15 @@ function removeFromHistory(track) {
   MOUNT.history?.();
 }
 
-function detailsSheet(track) {
+export function detailsSheet(track) {
+  if (!track) return;
+  let streamQuality = "";
+  try {
+    const st = playerState();
+    if (st && st.track && (st.track.id === track.id || (!st.track.id && st.track.title === track.title))) {
+      streamQuality = st.badge || "";
+    }
+  } catch {}
   const rows = [
     ["Title", track.title],
     ["Artist", track.artist || track.subtitle],
@@ -187,10 +328,14 @@ function detailsSheet(track) {
     ["Language", track.language],
     ["Label", track.label],
     ["Duration", track.duration || (track.duration_secs ? fmtTime(track.duration_secs) : "")],
+    ["Audio Quality", streamQuality || (track.hq ? "Hi-Res" : "")],
+    ["Catalog plays", track.plays ? Number(track.plays).toLocaleString("en") : ""],
+    ["Lyrics", track.has_lyrics ? "Available" : ""],
+    ["Explicit", track.explicit ? "Yes" : ""],
     ["Track ID", track.id],
   ].filter((r) => r[1]);
   openSheet({
-    title: "Track Details",
+    title: "Track Details & Lineage",
     sub: track.artist || "",
     image: track.image,
     rows,
@@ -231,25 +376,77 @@ function addToPlaylist(track) {
   items.push({
     icon: "add",
     label: "New playlist",
-    action: () => {
-      const all = load(LIBRARY_KEY, []);
-      const n = all.filter((x) => x.local).length + 1;
-      const pl = {
-        id: `local-${Date.now()}`,
-        local: true,
-        kind: "playlist",
-        title: `New Playlist ${n}`,
-        subtitle: "1 song",
-        tracks: [{ ...track }],
-        image: track.image || "",
-        ts: Date.now(),
-      };
-      all.unshift(pl);
-      save(LIBRARY_KEY, all);
-      toast(`Created “${pl.title}”`, 6000, "success", { label: "Open", fn: () => go("library") });
-    },
+    action: () => createPlaylistSheet(track ? [{ ...track }] : [], ""),
   });
   openSheet({ title: "Add to playlist", sub: track.title || "", image: track.image, items });
+}
+
+/// Rename a local playlist in place (LIBRARY_KEY record). `id` wins; the
+/// library row falls back to its title. Opens the bottom-sheet input (native
+/// `prompt()` never shows in the Android WebView) and returns nothing — the
+/// rename completes async via `onRenamed`.
+function renameLocalPlaylist(id, title, onRenamed) {
+  const all = load(LIBRARY_KEY, []);
+  const i = all.findIndex((x) => x && x.local && (id ? x.id === id : x.title === title));
+  if (i < 0) {
+    toast("Playlist not found", 4000, "error");
+    return null;
+  }
+  const current = all[i].title || "";
+  openInputSheet({
+    title: "Rename playlist",
+    sub: current,
+    image: all[i].image || "",
+    placeholder: "Playlist name",
+    value: current,
+    cta: "Rename",
+    onSubmit: (clean) => {
+      const fresh = load(LIBRARY_KEY, []);
+      const at = fresh.findIndex((x) => x && x.local && (id ? x.id === id : x.title === current));
+      if (at < 0) {
+        toast("Playlist not found", 4000, "error");
+        return;
+      }
+      if (fresh.some((x, j) => j !== at && x && x.local && String(x.title || "").toLowerCase() === clean.toLowerCase())) {
+        toast("You already have a playlist with that name", 4000, "error");
+        return;
+      }
+      fresh[at].title = clean;
+      save(LIBRARY_KEY, fresh);
+      toast(`Renamed to "${clean}"`, 3000, "success");
+      MOUNT["main-library"]?.();
+      try {
+        onRenamed && onRenamed(clean);
+      } catch {}
+    },
+  });
+  return null;
+}
+
+/// Delete a local playlist (LIBRARY_KEY record) with a danger confirm inside
+/// the same sheet — two taps, no native confirm().
+export function deleteLocalPlaylist(id, title) {
+  if (!id) return;
+  openSheet({
+    title: `Delete “${title || "playlist"}”?`,
+    sub: "Tracks stay in your library — only the list is removed.",
+    items: [
+      {
+        icon: "delete",
+        label: "Delete playlist",
+        danger: true,
+        action: () => {
+          save(
+            LIBRARY_KEY,
+            load(LIBRARY_KEY, []).filter((x) => x && x.id !== id),
+          );
+          toast("Playlist deleted", 3000, "success");
+          MOUNT["main-library"]?.();
+          if (location.hash.startsWith("#/playlist") && location.hash.includes(id)) history.back();
+        },
+      },
+    ],
+  });
 }
 
 // ------------------------------------------------------------------- menus
@@ -259,6 +456,9 @@ function addToPlaylist(track) {
 /// that only the queue context needs (for the removal entry).
 export function trackMenu(track, ctx, idx) {
   if (!track) return toast("Nothing selected");
+  try {
+    haptic(10);
+  } catch {}
   const items = [];
   if (track.id) {
     items.push({
@@ -294,7 +494,24 @@ export function trackMenu(track, ctx, idx) {
     label: "Share Track",
     action: () => shareThing({ title: track.title, text: [track.artist, track.album].filter(Boolean).join(" • "), url: track.page_url }),
   });
+  items.push({
+    icon: "image",
+    label: "Share Card",
+    action: () => shareCard({ title: track.title, subtitle: track.artist, image: track.image, badge: "TRANCE" }),
+  });
   items.push({ icon: "info", label: "Track Details", action: () => detailsSheet(track) });
+  if (track.id) {
+    items.push({
+      icon: "tune",
+      label: "EQ for this track",
+      action: () => {
+        try {
+          if (typeof window.__tmTrackEq === "function") window.__tmTrackEq(track);
+          else toast("EQ panel unavailable", 3000, "error");
+        } catch {}
+      },
+    });
+  }
   if (ctx === "queue" && Number.isInteger(idx)) {
     items.push({
       icon: "remove_from_queue",
@@ -366,7 +583,49 @@ export function entityMenu(kind) {
       label: "Share",
       action: () => shareThing({ title: meta.title || label, text: meta.subtitle || label }),
     },
+    {
+      icon: "image",
+      label: "Share Card",
+      action: () => shareCard({ title: meta.title || label, subtitle: meta.subtitle || label, image: meta.image, badge: "TRANCE" }),
+    },
   ];
+  // Local playlists are LIBRARY_KEY records — Rename + Delete for them only.
+  const qs = new URLSearchParams(location.hash.split("?")[1] || "");
+  const localId = kind === "playlist" ? qs.get("id") || "" : "";
+  if (localId.startsWith("local-")) {
+    items.push({
+      icon: "edit",
+      label: "Rename",
+      action: () =>
+        renameLocalPlaylist(localId, meta.title, (next) => {
+          if (!next || next === meta.title) return;
+          qs.set("title", next);
+          location.hash = `#/playlist?${qs.toString()}`; // repaint the header
+        }),
+    });
+    items.push({
+      icon: "file_download",
+      label: "Export as CSV",
+      action: () => {
+        const pl = load(LIBRARY_KEY, []).find((x) => x && x.id === localId) || { title: meta.title, tracks };
+        exportLocalPlaylistFile(pl, "csv");
+      },
+    });
+    items.push({
+      icon: "playlist_add_check",
+      label: "Export as M3U",
+      action: () => {
+        const pl = load(LIBRARY_KEY, []).find((x) => x && x.id === localId) || { title: meta.title, tracks };
+        exportLocalPlaylistFile(pl, "m3u");
+      },
+    });
+    items.push({
+      icon: "delete",
+      label: "Delete playlist",
+      danger: true,
+      action: () => deleteLocalPlaylist(localId, meta.title),
+    });
+  }
   openSheet({
     title: meta.title || label,
     sub: meta.subtitle || `${label} options`,
@@ -462,13 +721,75 @@ export async function libraryMenu(item) {
     label: "Share",
     action: () => shareThing({ title: item.title, text: item.sub }),
   });
-  if (load(LIBRARY_KEY, []).some((x) => x.title === item.title)) {
+  items.push({
+    icon: "image",
+    label: "Share Card",
+    action: () => shareCard({ title: item.title, subtitle: item.sub, image: item.image, badge: "TRANCE" }),
+  });
+  if (item.local) {
+    items.push({
+      icon: "edit",
+      label: "Rename",
+      action: () => renameLocalPlaylist(item.id, item.title),
+    });
+    items.push({
+      icon: "description",
+      label: "Edit description",
+      action: () => {
+        const next = window.prompt("Description", item.sub || "");
+        if (next === null) return;
+        if (updatePlaylistMeta(item.id, { desc: next })) {
+          toast("Description updated", 2500, "success");
+          try {
+            MOUNT["main-library"]?.();
+          } catch {}
+        } else {
+          toast("Playlist not found", 4000, "error");
+        }
+      },
+    });
+    items.push({
+      icon: "add_photo_alternate",
+      label: "Edit cover",
+      action: () => {
+        const next = window.prompt("Cover image URL", item.image || "");
+        if (next === null) return;
+        if (updatePlaylistMeta(item.id, { cover: next.trim() })) {
+          toast("Cover updated", 2500, "success");
+          try {
+            MOUNT["main-library"]?.();
+          } catch {}
+        } else {
+          toast("Playlist not found", 4000, "error");
+        }
+      },
+    });
+    items.push({
+      icon: "file_download",
+      label: "Export as CSV",
+      action: () => exportLocalPlaylistFile(item, "csv"),
+    });
+    items.push({
+      icon: "playlist_add_check",
+      label: "Export as M3U",
+      action: () => exportLocalPlaylistFile(item, "m3u"),
+    });
+    items.push({
+      icon: "delete",
+      label: "Delete playlist",
+      danger: true,
+      action: () => deleteLocalPlaylist(item.id, item.title),
+    });
+  } else if (load(LIBRARY_KEY, []).some((x) => x.id === item.id || x.title === item.title)) {
     items.push({
       icon: "delete",
       label: "Remove from library",
       danger: true,
       action: () => {
-        save(LIBRARY_KEY, load(LIBRARY_KEY, []).filter((x) => x.title !== item.title));
+        save(
+          LIBRARY_KEY,
+          load(LIBRARY_KEY, []).filter((x) => (item.id ? x.id !== item.id : x.title !== item.title)),
+        );
         toast("Removed from your library");
         MOUNT["main-library"]?.();
       },
@@ -482,12 +803,209 @@ export async function libraryMenu(item) {
   });
 }
 
+// ------------------------------------------------------------------- queue overlay
+
+/// Full queue overlay (Spotify parity): an 85vh bottom sheet — deliberately NOT
+/// the 40vh track sheet — with [Up Next | History] tabs. Play-now jumps through
+/// playList() with an absolute index (player.js keeps no playIndex export);
+/// every mutation re-renders the overlay content in place.
+export async function openQueue() {
+  const fullQueue = () => {
+    try {
+      const st = playerState();
+      return Array.isArray(st.queue) ? st.queue : [];
+    } catch {
+      return [];
+    }
+  };
+  const currentIdx = () => {
+    try {
+      const n = Number(playerState().qi);
+      return Number.isInteger(n) && n >= 0 ? n : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const upNext = () => {
+    try {
+      const list = queueUpNext();
+      if (Array.isArray(list)) return list;
+    } catch {}
+    return fullQueue().slice(currentIdx() + 1);
+  };
+  const past = () => {
+    try {
+      const list = queueHistory();
+      if (Array.isArray(list)) return list;
+    } catch {}
+    return fullQueue().slice(0, Math.max(0, currentIdx()));
+  };
+
+  let tab = "next";
+  const old = document.getElementById("tm-queue-sheet");
+  if (old) old.remove();
+  const ov = document.createElement("div");
+  ov.id = "tm-queue-sheet";
+  ov.className = "fixed inset-0 z-[80] flex flex-col justify-end pointer-events-auto";
+  ov.innerHTML = `
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-md" data-q-close></div>
+    <div class="relative bg-surface-container-lowest/95 backdrop-blur-2xl border-t border-surface-container-high/80 rounded-3xl max-w-lg mx-auto w-full max-h-[85vh] overflow-hidden px-5 pt-3 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] flex flex-col gap-3 mb-2" data-q-panel>
+      <div class="w-12 h-1.5 bg-surface-container-highest rounded-full mx-auto mb-1 opacity-80"></div>
+      <div class="flex items-center justify-between">
+        <h3 class="font-headline-md text-[15px] font-semibold tracking-tight text-on-surface">Queue</h3>
+        <div class="flex items-center gap-1.5">
+          <button type="button" data-q-smart-shuffle title="Smart Shuffle (artist-aware)" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all">
+            <span class="material-symbols-outlined text-[19px]">shuffle</span>
+          </button>
+          <button type="button" data-q-save-pl title="Save queue as playlist" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all">
+            <span class="material-symbols-outlined text-[19px]">bookmark_add</span>
+          </button>
+        </div>
+      </div>
+      <div class="flex gap-2" data-q-tabs>
+        <button type="button" data-q-tab="next" class="flex-1 py-2 rounded-xl font-body-md text-[13px] font-semibold transition-all">Up Next</button>
+        <button type="button" data-q-tab="history" class="flex-1 py-2 rounded-xl font-body-md text-[13px] font-semibold transition-all">History</button>
+      </div>
+      <div class="flex flex-col gap-1 overflow-y-auto min-h-[120px]" data-q-list></div>
+      <div class="flex gap-2">
+        <button type="button" data-q-clear class="flex-1 py-3 rounded-xl bg-surface-container text-on-surface font-body-md text-[14px] font-semibold active:scale-[0.98] transition-all">Clear</button>
+        <button type="button" data-q-close class="flex-1 py-3 rounded-xl bg-primary text-on-primary font-body-md text-[14px] font-semibold active:scale-[0.98] transition-all">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const qList = ov.querySelector("[data-q-list]");
+  // External drag-reorder (ux.js) needs to repaint after moveQueue: the
+  // render closure is not exported, so hang it off the node instead.
+  ov._render = null;
+
+  const rowHTML = (t, abs, upDown) => {
+    const dur = t.duration || (t.duration_secs ? fmtTime(t.duration_secs) : "");
+    return `<div class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-surface-container/70 transition-colors" data-q-row="${abs}">
+      ${
+        t.image
+          ? `<img src="${esc(hqArt(t.image))}" alt="" loading="lazy" class="w-10 h-10 rounded-lg object-cover shrink-0">`
+          : `<span class="w-10 h-10 rounded-lg bg-surface-container-highest shrink-0"></span>`
+      }
+      <div class="flex flex-col min-w-0 flex-1">
+        <span class="font-body-md text-[13px] text-on-surface font-semibold truncate">${esc(t.title || "Track")}</span>
+        <span class="font-body-sm text-[11px] text-secondary truncate">${esc(t.artist || "")}${dur ? ` · ${esc(dur)}` : ""}</span>
+      </div>
+      ${
+        upDown
+          ? `<button type="button" data-q-up="${abs}" aria-label="Move up" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">arrow_upward</span></button>
+        <button type="button" data-q-down="${abs}" aria-label="Move down" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">arrow_downward</span></button>`
+          : ""
+      }
+      <button type="button" data-q-play="${abs}" aria-label="Play now" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">play_arrow</span></button>
+    </div>`;
+  };
+
+  const render = () => {
+    ov.querySelectorAll("[data-q-tab]").forEach((b) => {
+      const on = b.dataset.qTab === tab;
+      b.className = `flex-1 py-2 rounded-xl font-body-md text-[13px] font-semibold transition-all ${
+        on ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface"
+      }`;
+    });
+    const qi = currentIdx();
+    const rows = tab === "next" ? upNext() : past();
+    const base = tab === "next" ? qi + 1 : 0;
+    if (!rows.length) {
+      qList.innerHTML = `<p class="py-8 text-center font-body-sm text-[12px] text-secondary">${
+        tab === "next" ? "Nothing up next" : "No history yet"
+      }</p>`;
+    } else {
+      qList.innerHTML = rows.map((t, i) => rowHTML(t || {}, base + i, tab === "next")).join("");
+    }
+  };
+  ov._render = render;
+
+  ov.addEventListener("click", (e) => {
+    if (!e.target || !e.target.closest) return;
+    const tabBtn = e.target.closest("[data-q-tab]");
+    if (tabBtn) {
+      tab = tabBtn.dataset.qTab === "history" ? "history" : "next";
+      render();
+      return;
+    }
+    if (e.target.closest("[data-q-close]")) {
+      ov.remove();
+      return;
+    }
+    if (e.target.closest("[data-q-smart-shuffle]")) {
+      try {
+        smartShuffleQueue();
+        toast("Smart-shuffled queue", 2500, "success");
+        render();
+      } catch (err) {
+        console.error(err);
+      }
+      return;
+    }
+    if (e.target.closest("[data-q-save-pl]")) {
+      const fq = fullQueue();
+      if (!fq.length) {
+        toast("The queue is empty", 2500, "info");
+        return;
+      }
+      createPlaylistSheet(fq, `Queue ${new Date().toLocaleDateString()}`);
+      return;
+    }
+    if (e.target.closest("[data-q-clear]")) {
+      try {
+        clearQueue(true);
+      } catch {}
+      toast("Queue cleared", 2500, "success");
+      try {
+        repaint();
+      } catch {}
+      render();
+      return;
+    }
+    const up = e.target.closest("[data-q-up]");
+    if (up) {
+      const a = Number(up.dataset.qUp);
+      if (Number.isInteger(a) && a > currentIdx() + 1) {
+        try {
+          moveQueue(a, a - 1);
+        } catch {}
+      }
+      render();
+      return;
+    }
+    const down = e.target.closest("[data-q-down]");
+    if (down) {
+      const a = Number(down.dataset.qDown);
+      if (Number.isInteger(a) && a < fullQueue().length - 1) {
+        try {
+          moveQueue(a, a + 1);
+        } catch {}
+      }
+      render();
+      return;
+    }
+    const play = e.target.closest("[data-q-play]");
+    if (play) {
+      const a = Number(play.dataset.qPlay);
+      if (Number.isInteger(a)) {
+        try {
+          playList(fullQueue(), a);
+        } catch {}
+      }
+      ov.remove();
+    }
+  });
+  render();
+}
+
 // ----------------------------------------------------------------- triggers
 
 const KEBABS = ["more_vert", "more_horiz"];
 
 export function isMenuTrigger(btn) {
   if (!btn || btn.tagName !== "BUTTON") return false;
+  // Local-playlist row steppers/removers own their action — same trigger path.
+  if (btn.closest("[data-pl-up],[data-pl-down],[data-pl-rm]")) return true;
   if (btn.id === "more-options-btn") return true;
   // NowPlaying's "+" is a picker, not a menu — same trigger path though.
   if (btn.id === "playlist-add-btn") return true;
@@ -511,8 +1029,42 @@ function trackFromDom(btn) {
   return null;
 }
 
+/// Local-playlist detail rows carry [data-pl-up]/[data-pl-down]/[data-pl-rm]:
+/// reorder/remove through the shared LIBRARY_KEY helpers, then remount the
+/// current screen through the existing MOUNT import. Returns true when handled.
+function playlistRowAction(btn) {
+  const act = btn.closest ? btn.closest("[data-pl-up],[data-pl-down],[data-pl-rm]") : null;
+  if (!act) return false;
+  const row = act.closest("[data-list][data-idx]");
+  const idx = Number(row ? row.dataset.idx : act.dataset.idx);
+  if (!Number.isInteger(idx) || idx < 0) return true;
+  const qs = new URLSearchParams(location.hash.split("?")[1] || "");
+  const plId = act.dataset.plId || (row && row.dataset.plId) || qs.get("id") || "";
+  if (!plId) {
+    toast("Playlist not found", 4000, "error");
+    return true;
+  }
+  let ok = false;
+  if (act.hasAttribute("data-pl-up")) ok = movePlaylistTrack(plId, idx, idx - 1);
+  else if (act.hasAttribute("data-pl-down")) ok = movePlaylistTrack(plId, idx, idx + 1);
+  else {
+    const track = row ? store[row.dataset.list]?.[+row.dataset.idx] : null;
+    const tid = act.dataset.trackId || track?.id;
+    if (tid) ok = removePlaylistTrack(plId, tid);
+  }
+  toast(ok ? "Playlist updated" : "Couldn't update playlist", ok ? 2500 : 4000, ok ? "success" : "error");
+  if (ok) {
+    try {
+      const raw = location.hash.replace(/^#\/?/, "").split("?")[0];
+      (MOUNT[raw] || MOUNT["main-library"])?.();
+    } catch {}
+  }
+  return true;
+}
+
 /// Resolve whatever a kebab belongs to and open the matching menu.
 export function handleMenuTrigger(btn) {
+  if (playlistRowAction(btn)) return;
   if (btn.id === "playlist-add-btn") {
     const current = playerState().track;
     if (!current) return toast("Nothing is playing");
@@ -550,3 +1102,7 @@ export function handleMenuTrigger(btn) {
 }
 
 window.__tmLibraryMenu = libraryMenu;
+window.__tmOpenQueue = openQueue;
+window.__tmCreatePlaylist = createPlaylistSheet;
+window.__tmRenamePlaylist = renameLocalPlaylist;
+window.__tmDeletePlaylist = deleteLocalPlaylist;

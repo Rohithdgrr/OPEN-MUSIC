@@ -4,9 +4,10 @@ import { emitState } from "./bridge.js";
 import { diag, openCredits, showError, showView, toast } from "./core.js"; // esc, invoke: Bluetooth parked
 import { $, audio, bar, np } from "./dom.js";
 import { loadPlays } from "./home.js";
-import { createLocalPl } from "./library.js";
+import { createLocalPl, openPicker } from "./library.js";
 import { playQueueItem } from "./playback.js";
 import { current, pickNextIndex, queue, queueIndex, renderQueue, repeatMode, setQueueIndex, setQueueTab, setRepeatMode, setShuffleMode, shuffleMode } from "./queue.js";
+import { arm as armSleep } from "./sleep.js";
 
 // --------------------------------------------------------------- transport -
 export async function togglePlay() {
@@ -268,11 +269,22 @@ shareBtn?.addEventListener("click", async () => {
       diag("share", true, "shared");
     } else {
       await navigator.clipboard.writeText(url);
+      toast("Link copied to clipboard.", "success", 2500);
       diag("share", true, "link copied to clipboard");
     }
   } catch (e) {
+    if (e?.name === "AbortError") return;
     diag("share", false, String(e).slice(0, 80));
   }
+});
+// Now Playing "Add to playlist" (bookmark icon next to download).
+$("#np-add-btn")?.addEventListener("click", () => {
+  const t = queue[queueIndex]?.track;
+  if (!t) {
+    toast("Nothing is playing yet — start a track first.", "info");
+    return;
+  }
+  openPicker(t);
 });
 export const creditsBtn = document.querySelector('[title="Track Credits & Lineage"]');
 creditsBtn?.addEventListener("click", () => {
@@ -285,4 +297,48 @@ creditsBtn?.addEventListener("click", () => {
   diag("credits", true, `${t.title} · ${quality}`);
   openCredits(t, quality);
 });
+
+// --------------------------------------------------- sleep timer + speed -
+// Sleep: one-shot pause after N minutes, fading out over the last 15s (sleep.js
+// is shared with the mobile shell). Re-picking replaces the timer; "Off"
+// cancels. Speed mirrors Settings → Playback (same tm-play-speed key).
+const sleepSel = $("#np-sleep");
+if (sleepSel) {
+  sleepSel.addEventListener("change", () => {
+    const mins = Number(sleepSel.value);
+    const total = armSleep(mins, audio, ({ done }) => {
+      paintVolume(); // follow the fade
+      if (!done) return;
+      toast("Sleep timer — playback stopped.", "info", 4000);
+      diag("sleep", true, "stopped");
+      if (sleepSel.isConnected) sleepSel.value = "0";
+    });
+    if (!total) {
+      toast("Sleep timer off.", "info", 2500);
+      return;
+    }
+    toast(`Sleep timer: stops in ${mins} min.`, "info", 3000);
+    diag("sleep", null, `${mins}m armed`);
+  });
+}
+const speedSel = $("#np-speed");
+if (speedSel) {
+  try {
+    const cur = localStorage.getItem("tm-play-speed") || "1";
+    if ([...speedSel.options].some((o) => o.value === cur)) speedSel.value = cur;
+  } catch {}
+  speedSel.addEventListener("change", () => {
+    try {
+      localStorage.setItem("tm-play-speed", speedSel.value);
+    } catch {}
+    const v = Number(speedSel.value) || 1;
+    for (const a of [audio, document.getElementById("audio2")].filter(Boolean)) {
+      try {
+        a.playbackRate = v;
+        a.preservesPitch = true;
+      } catch {}
+    }
+    toast(`Playback speed ${v}x.`, "info", 2500);
+  });
+}
 

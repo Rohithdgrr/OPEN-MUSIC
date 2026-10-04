@@ -5,9 +5,49 @@ import { $, $$, audio, np } from "./dom.js";
 import { toggleFavTrack } from "./library.js";
 import { queue, queueIndex } from "./queue.js";
 import { downloadTrack } from "./vault.js";
+import { lyricsCacheGet, lyricsCachePut } from "./store_db.js";
+
+const LYRICS_KEY_PREFIX = "lyr:id:";
+const AI_LYRICS_KEY_PREFIX = "lyr:ai:";
+
+function lyricsKey(track) {
+  return LYRICS_KEY_PREFIX + (track.id || "");
+}
+
+function aiLyricsKey(track) {
+  return AI_LYRICS_KEY_PREFIX + (track.id || "") + ":" + (track.title || "").slice(0, 40);
+}
 
 export let lyricLines = $$(".lyric-line");
 export let autoScrollLyrics = true;
+try {
+  autoScrollLyrics = localStorage.getItem("tm-lyrics-autoscroll") !== "0";
+} catch {}
+export function setLyricsAuto(on) {
+  autoScrollLyrics = !!on;
+  scrollTarget = null;
+  const lbl = $("#sync-mode-label");
+  if (lbl) lbl.textContent = autoScrollLyrics ? "Auto-scroll on" : "Auto-scroll off";
+}
+try {
+  document.addEventListener("tm:lyrics-auto", (e) => setLyricsAuto(e.detail !== false));
+} catch {}
+function glossOn() {
+  try {
+    return localStorage.getItem("tm-lyrics-gloss") !== "0";
+  } catch {
+    return true;
+  }
+}
+function lyricTextClass() {
+  let size = "m";
+  try {
+    size = localStorage.getItem("tm-lyrics-size") || "m";
+  } catch {}
+  if (size === "s") return "lyric-text text-[13px] font-normal leading-relaxed transition-all duration-300";
+  if (size === "l") return "lyric-text text-[18px] font-normal leading-relaxed transition-all duration-300";
+  return "lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300";
+}
 /// Last scrollTop we asked for — syncLyrics runs every rAF frame, so the
 /// smooth scroll is only issued when the target line (or its offset) changes.
 let scrollTarget = null;
@@ -15,7 +55,7 @@ let scrollTarget = null;
 export let lyricToken = 0;
 
 export const LYRIC_LINE_CLASS =
-  "lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none";
+  "lyric-line flex items-start gap-3 py-2 px-3 rounded-xl transition-all duration-200 cursor-pointer text-neutral-400 select-none";
 export const LYRIC_TEXT_CLASS =
   "lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300";
 
@@ -111,12 +151,13 @@ export function renderLyrics(data) {
     line.className = LYRIC_LINE_CLASS;
     if (seconds != null) line.dataset.seconds = String(seconds);
     const p = document.createElement("p");
-    p.className = LYRIC_TEXT_CLASS;
+    p.className = lyricTextClass();
     const tagged = typeof text === "string" ? splitWords(text) : null;
     // Line-level LRC has no per-word stamps, so words are spread evenly
     // across the gap until the next line — that is what makes the karaoke
     // wipe work for every source, not just enhanced LRC.
-    const words = tagged || fallbackWords(text, seconds, endSeconds);
+    // Karaoke off (Settings → Lyrics) renders plain lines instead.
+    const words = glossOn() ? tagged || fallbackWords(text, seconds, endSeconds) : null;
     if (words && seconds != null) {
       line._words = words.map(() => null);
       words.forEach((w, i) => {
@@ -187,6 +228,18 @@ export async function loadLyrics(track) {
     lyricLines = [];
     scrollTarget = null;
   }
+
+  // SWR: serve cached lyrics instantly, then refresh in background.
+  const key = lyricsKey(track);
+  let cached = null;
+  try {
+    cached = await lyricsCacheGet(key);
+  } catch {}
+  if (cached && token === lyricToken) {
+    renderLyrics(cached);
+    diag("lyrics", true, "cache");
+  }
+
   let data = null;
   try {
     data = await invoke("get_lyrics", {
@@ -200,10 +253,46 @@ export async function loadLyrics(track) {
     diag("lyrics", false, String(e).slice(0, 120));
   }
   if (token !== lyricToken) return;
-  if (data) {
+  if (data && data.source !== "none") {
     renderLyrics(data);
-    diag("lyrics", data.source !== "none", data.source);
-  } else {
+    diag("lyrics", true, data.source);
+    // Cache positive hits only.
+    lyricsCachePut(key, data).catch(() => {});
+  } else if (!cached) {
+    setLyricsPlaceholder();
+  }
+}
+
+/// AI-generated lyrics via Gemini. Falls back to placeholder on any error.
+export async function generateAiLyrics(track) {
+  const token = ++lyricToken;
+  const box = $("#lyrics-scroll-box");
+  if (box) {
+    box.replaceChildren();
+    const bar = document.createElement("div");
+    bar.className = "lyric-skeleton h-4 rounded-md animate-pulse bg-surface-container-high";
+    bar.style.width = "60%";
+    box.appendChild(bar);
+  }
+  try {
+    const data = await invoke("generate_ai_lyrics", {
+      title: track.title || "",
+      artist: track.artist || "",
+      album: track.album || "",
+      duration: track.duration_secs || 0,
+    });
+    if (token !== lyricToken) return;
+    if (data && data.lines && data.lines.length) {
+      renderLyrics({ source: "ai", lines: data.lines, title: data.title || track.title });
+      diag("lyrics", true, "ai");
+      // Cache AI lyrics so they're free next time.
+      lyricsCachePut(aiLyricsKey(track), data).catch(() => {});
+    } else {
+      setLyricsPlaceholder();
+    }
+  } catch (e) {
+    if (token !== lyricToken) return;
+    diag("lyrics", false, "ai: " + String(e).slice(0, 80));
     setLyricsPlaceholder();
   }
 }
@@ -232,6 +321,7 @@ export function syncLyrics() {
     const on = line === active;
     const past = line.dataset.seconds != null && parseFloat(line.dataset.seconds) < t && !on;
     line.classList.toggle("lyric-active", on);
+    line.classList.toggle("active-line", on);
     line.classList.toggle("lyric-past", past);
     line.classList.toggle("text-on-surface", on);
     line.classList.toggle("text-neutral-400", !on);
@@ -247,16 +337,23 @@ export function syncLyrics() {
   if (active && autoScrollLyrics) {
     const box = $("#lyrics-scroll-box");
     if (box) {
-      // Pin the active line to the TOP of the box (minus the py-4 gap).
-      // scrollIntoView "nearest" only nudged it into view — usually leaving
-      // it at the bottom edge — so the lyrics appeared to sink as they sang.
-      const top = Math.max(0, active.offsetTop - 16);
+      // Pin the active line to the vertical centre of the visible window so
+      // the reader always sees previous / current / next, with the current
+      // lyric in the fully opaque middle of the fade mask. Measured against
+      // the box's own rect so it works regardless of offset-parent chains,
+      // then clamped so the first and last lines settle at the ends instead
+      // of overscrolling.
+      const center =
+        box.scrollTop +
+        (active.getBoundingClientRect().top - box.getBoundingClientRect().top) -
+        (box.clientHeight - active.offsetHeight) / 2;
+      const top = Math.max(0, Math.min(center, box.scrollHeight - box.clientHeight));
       if (scrollTarget !== top) {
         scrollTarget = top;
         box.scrollTo({ top, behavior: "smooth" });
       }
     } else {
-      active.scrollIntoView({ block: "start", behavior: "smooth" });
+      active.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   }
 }
@@ -293,16 +390,25 @@ $("#lyrics-scroll-box")?.addEventListener("click", (e) => {
 });
 
 $("#toggle-sync-mode")?.addEventListener("click", () => {
-  autoScrollLyrics = !autoScrollLyrics;
-  scrollTarget = null;
+  setLyricsAuto(!autoScrollLyrics);
+  try {
+    localStorage.setItem("tm-lyrics-autoscroll", autoScrollLyrics ? "1" : "0");
+  } catch {}
+});
+{
   const lbl = $("#sync-mode-label");
   if (lbl) lbl.textContent = autoScrollLyrics ? "Auto-scroll on" : "Auto-scroll off";
-});
+}
 $("#lyric-offset-minus")?.addEventListener("click", () => setLyricOffset(lyricOffsetMs - 100));
 $("#lyric-offset-plus")?.addEventListener("click", () => setLyricOffset(lyricOffsetMs + 100));
 $("#lyric-offset-reset")?.addEventListener("click", () => setLyricOffset(0));
 $("#toggle-translation-btn")?.addEventListener("click", () => {
   for (const sub of $$(".lyric-subtext")) sub.classList.toggle("hidden");
+});
+$("#btn-ai-lyrics")?.addEventListener("click", () => {
+  const t = queue[queueIndex]?.track;
+  if (!t) return;
+  generateAiLyrics(t);
 });
 $("#btn-fullscreen-lyrics")?.addEventListener("click", () => {
   const card = $("#lyrics-card");

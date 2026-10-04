@@ -115,6 +115,23 @@ export function badgeLabel(badge, fallback = "") {
   }
 }
 
+// ------------------------------------------------------- diagnostics ring -
+// Desktop parity: the desktop `#diag` panel keeps the last 40 backend calls in
+// a ring buffer. `pushDiag` is the `diag` hook net.js and the mounts call;
+// the Settings → Diagnostics sheet renders it.
+const DIAG_MAX = 40;
+const diagRing = [];
+export function pushDiag(name, ok, msg) {
+  diagRing.unshift({ name: String(name), ok: ok === true ? true : ok === false ? false : null, msg: String(msg ?? ""), at: Date.now() });
+  while (diagRing.length > DIAG_MAX) diagRing.pop();
+}
+export function readDiag() {
+  return diagRing.slice();
+}
+export function clearDiag() {
+  diagRing.length = 0;
+}
+
 // One stacked node per message (max 4), a colored dot per kind, tap to
 // dismiss. `ms` stays the second argument so every existing caller holds.
 // `action` ({ label, fn }) appends a tappable shortcut — "added to X → Open".
@@ -215,6 +232,10 @@ export function toggleFav(track) {
   save(FAVS_KEY, list);
   favRaw = null; // force a re-read on the next paint
   paintFavs();
+  // SQLite mirror (best-effort, never blocks the heart animation).
+  try {
+    import("../store_db.js").then((m) => m.mirrorFav(track, i < 0).catch(() => {}));
+  } catch {}
   return i < 0;
 }
 
@@ -237,6 +258,9 @@ export function pushPlay(track) {
       PLAYS_KEY,
       [{ ...track, ts: Date.now(), count: (Number(at?.count) || 0) + 1 }, ...prev.filter((t) => t.id !== track.id)].slice(0, 100),
     );
+  } catch {}
+  try {
+    import("../store_db.js").then((m) => m.recordPlay(track).catch(() => {}));
   } catch {}
 }
 
@@ -278,10 +302,26 @@ const ART_RENDS = [
   ["150x150", "500x500"],
 ];
 
+// `__tmBase` carries the relay session token in its own query string
+// (`http://127.0.0.1:PORT?token=…`). A relay path must be spliced in FRONT
+// of that query — `…PORT/art?u=…&token=…` — because appending after the base
+// would bury `/art` inside the query string (the request path becomes `/`)
+// and the relay 404s every cover. Exported for the vault file fallback,
+// which builds its URL the same way.
+export function relayUrl(base, pathQuery) {
+  const qi = base.indexOf("?");
+  if (qi < 0) return `${base}${pathQuery}`;
+  const origin = base.slice(0, qi);
+  const tokenQ = base.slice(qi + 1);
+  return pathQuery.includes("?")
+    ? `${origin}${pathQuery}&${tokenQ}`
+    : `${origin}${pathQuery}?${tokenQ}`;
+}
+
 function proxied(url) {
   const base = window.__tmBase;
   if (!base || !url) return url;
-  return `${base}/art?u=${encodeURIComponent(url)}`;
+  return relayUrl(base, `/art?u=${encodeURIComponent(url)}`);
 }
 
 export function hqArt(url, target = "500x500") {
@@ -337,7 +377,9 @@ export function paintArt(img, url) {
 function artSteps(raw) {
   let orig = raw || "";
   const base = window.__tmBase;
-  if (base && orig.startsWith(`${base}/art?u=`)) {
+  // The proxied form is `<origin>/art?u=…&token=…` — match on the origin
+  // only, so the token (which rides in the base's query) stays opaque here.
+  if (base && orig.startsWith(`${base.split("?")[0]}/art?u=`)) {
     try {
       orig = new URL(orig).searchParams.get("u") || orig;
     } catch {}
@@ -384,7 +426,13 @@ document.addEventListener(
 export function rowHTML(name, i, t) {
   return `<div data-list="${name}" data-idx="${i}" class="group flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container/60 transition-all cursor-pointer active:scale-[0.99] active:bg-surface-container-high/80 border border-transparent hover:border-surface-container-high/40">
     <div class="flex items-center gap-3 min-w-0 flex-1">
-      <div class="relative w-11 h-11 rounded-lg bg-surface-container-highest overflow-hidden flex-shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover" ${art(t.image)}></div>
+      <div class="relative w-11 h-11 rounded-lg bg-surface-container-highest overflow-hidden flex-shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover" ${art(t.image)}>${(() => {
+        try {
+          return isVaulted(t.id) ? '<span class="absolute bottom-0.5 left-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-surface-container-lowest" title="Downloaded"></span>' : "";
+        } catch {
+          return "";
+        }
+      })()}</div>
       <div class="flex flex-col min-w-0">
         <span class="text-body-md font-medium text-on-surface truncate tracking-tight text-[13.5px]">${esc(t.title || "")}</span>
         <span class="text-body-sm text-secondary truncate text-[11.5px] mt-0.5" data-entity-name data-entity-kind="artist">${esc(t.artist || t.subtitle || "")}</span>
@@ -406,7 +454,15 @@ export function plCardHTML(p, i, nav) {
       <span class="font-label-md text-label-md text-on-surface font-semibold truncate tracking-tight text-[13px]">${esc(p.title || "")}</span>
       <span class="font-body-sm text-[11.5px] text-secondary truncate mt-0.5">${esc(p.subtitle || "")}</span>
       <div class="flex items-center gap-1.5 mt-1 text-on-surface-variant">
-        <span class="px-1.5 py-0.5 rounded bg-surface-container-low font-label-mono text-[9.5px] font-medium text-secondary uppercase tracking-wider">${p.count ? `${p.count} TRACKS` : p.year || ""}</span>
+        <span class="px-1.5 py-0.5 rounded bg-surface-container-low font-label-mono text-[9.5px] font-medium text-secondary uppercase tracking-wider">${p.count ? `${p.count} TRACKS` : p.year || ""}</span>${(() => {
+        try {
+          return p && p.id && typeof playlistOffline === "function" && playlistOffline(p.id)
+            ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/15 font-label-mono text-[9.5px] font-medium text-emerald-600 uppercase tracking-wider">Offline</span>'
+            : "";
+        } catch {
+          return "";
+        }
+      })()}
       </div>
     </div>
   </div>`;
@@ -425,10 +481,84 @@ export function artistCardHTML(a, i, nav) {
   </div>`;
 }
 
-const activeDownloads = new Set();
+const activeDownloads = new Map();
 let batchRunning = false;
+let batchPaused = false;
 
 const errLine = (e) => String(e).split("\n")[0].slice(0, 90);
+
+export const WIFI_ONLY_KEY = "tm-wifi-only";
+
+export function wifiOnly() {
+  try {
+    return localStorage.getItem(WIFI_ONLY_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setWifiOnly(on) {
+  try {
+    localStorage.setItem(WIFI_ONLY_KEY, on ? "1" : "0");
+  } catch {}
+}
+
+function onCellular() {
+  try {
+    const c = navigator.connection;
+    if (!c) return false;
+    if (c.saveData) return true;
+    const t = String(c.type || "").toLowerCase();
+    const et = String(c.effectiveType || "").toLowerCase();
+    if (t === "cellular") return true;
+    // effectiveType alone can't prove cellular, but saveData + slow 2g/3g
+    // on a phone is a strong enough signal to warn, not block — so only
+    // block on explicit cellular type or metered saveData.
+    void et;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export function wifiBlocked() {
+  return wifiOnly() && onCellular();
+}
+
+export function isActiveDownload(id) {
+  return activeDownloads.has(String(id));
+}
+
+export function getActiveDownloads() {
+  return [...activeDownloads.values()];
+}
+
+export function batchPausedNow() {
+  return batchPaused;
+}
+
+export function setBatchPaused(on) {
+  batchPaused = !!on;
+}
+
+/// Best-effort cancel: the Rust `download_song` has no abort channel, so the
+/// bytes keep flowing in the background — but the UI drops the row now and
+/// deletes the finished file if it lands after the cancel.
+export async function cancelDownload(id) {
+  const key = String(id);
+  const cur = activeDownloads.get(key);
+  if (!cur) return false;
+  cur.cancelled = true;
+  cur.cancelPath = cur.cancelPath || "";
+  activeDownloads.delete(key);
+  try {
+    hooks.repaintDownload?.();
+  } catch {}
+  toast(`Cancelled ${cur.title || "download"}`, 2500);
+  // If the backend finishes after the cancel, remove the file it just wrote.
+  cur._cancelCleanup = true;
+  return true;
+}
 
 // 128 kbps Opus is the sweet spot the backend itself promotes favourites to
 // (lib.rs PREMIUM_KBPS): transparent quality at a third of 320's file size.
@@ -540,29 +670,73 @@ export async function downloadTrack(track, btn, quiet = false) {
     toast("Backend unavailable", 4000, "error");
     return null;
   }
-  if (activeDownloads.has(track.id)) {
+  if (wifiBlocked()) {
+    if (!quiet) toast("Wi-Fi only is on — connect to Wi-Fi to download", 4000, "error");
+    return null;
+  }
+  const key = String(track.id);
+  if (activeDownloads.has(key)) {
     if (!quiet) toast("Already downloading that track");
     return null;
   }
-  activeDownloads.add(track.id);
+  const entry = {
+    id: key,
+    title: track.title || "Track",
+    artist: track.artist || "",
+    album: track.album || "",
+    image: track.image || "",
+    quality: dlQuality(),
+    received: 0,
+    total: null,
+    done: false,
+    cancelled: false,
+  };
+  activeDownloads.set(key, entry);
+  try {
+    hooks.repaintDownload?.();
+  } catch {}
   setBusy(btn, true);
   if (!quiet) toast(`Downloading ${track.title || "track"}…`);
   try {
     const progress = new Channel();
     progress.onmessage = (p) => {
-      if (p && p.done && !quiet) toast(`${p.title || "Track"} saved to vault`, 3200, "success");
+      if (!p) return;
+      const cur = activeDownloads.get(key);
+      if (cur) {
+        cur.received = Number(p.received) || cur.received;
+        cur.total = p.total != null ? p.total : cur.total;
+        if (p.quality) cur.quality = p.quality;
+        try {
+          hooks.repaintDownload?.();
+        } catch {}
+      }
+      if (p && p.done && !quiet && !cur?.cancelled) toast(`${p.title || "Track"} saved to vault`, 3200, "success");
     };
     const out = await invoke("download_song", { id: track.id, quality: dlQuality(), onProgress: progress });
+    // Cancelled while the backend kept writing: remove what just landed.
+    if (entry.cancelled || !activeDownloads.has(key)) {
+      try {
+        const path = out && out.path ? out.path : "";
+        if (path && invoke) await invoke("remove_download", { path });
+      } catch {}
+      try {
+        hooks.repaintDownload?.();
+      } catch {}
+      return null;
+    }
     if (out && out.duplicate_of && !quiet) toast("Already in vault");
     refreshVault(); // the offline gate must see the new file immediately
     return out;
   } catch (e) {
     console.error(e);
-    toast(`Download failed: ${errLine(e)}`, 5000, "error");
+    if (!entry.cancelled) toast(`Download failed: ${errLine(e)}`, 5000, "error");
     return null;
   } finally {
-    activeDownloads.delete(track.id);
+    activeDownloads.delete(key);
     setBusy(btn, false);
+    try {
+      hooks.repaintDownload?.();
+    } catch {}
   }
 }
 
@@ -574,7 +748,9 @@ export async function downloadAll(items, what = "tracks", btn = null) {
   if (!list.length) return toast("Nothing to download here");
   if (batchRunning) return toast("A batch download is already running");
   if (!invoke) return toast("Backend unavailable", 4000, "error");
+  if (wifiBlocked()) return toast("Wi-Fi only is on — connect to Wi-Fi to download", 4000, "error");
   batchRunning = true;
+  batchPaused = false;
   setBusy(btn, true);
   let ok = 0;
   let fail = 0;
@@ -585,22 +761,523 @@ export async function downloadAll(items, what = "tracks", btn = null) {
       const vault = await invoke("list_downloads");
       saved = new Set(((vault && vault.entries) || []).map((e) => e.id));
     } catch {}
-    const todo = list.filter((t) => !saved.has(t.id) && !activeDownloads.has(t.id));
+    const todo = list.filter((t) => !saved.has(String(t.id)) && !activeDownloads.has(String(t.id)));
     skip = list.length - todo.length;
     for (let i = 0; i < todo.length; i++) {
+      if (batchPaused) {
+        toast(`Paused — saved ${ok} of ${todo.length} ${what}`, 4000, "info");
+        break;
+      }
       setLabel(btn, `${i + 1}/${todo.length}`);
       if (await downloadTrack(todo[i], null, true)) ok += 1;
       else fail += 1;
     }
-    if (!todo.length) toast(`All ${list.length} ${what} already saved`, 3200, "success");
+    if (batchPaused) {
+      // Pause toast already shown above; don't claim success/failure.
+    } else if (!todo.length) toast(`All ${list.length} ${what} already saved`, 3200, "success");
     else if (!fail) toast(`Saved ${ok} ${what}${skip ? ` (${skip} already saved)` : ""}`, 4000, "success");
     else if (!ok) toast(`Download failed for all ${fail} ${what}`, 6000, "error");
     else toast(`Saved ${ok} of ${list.length} ${what} — ${fail} failed`, 6000, "error");
     if (ok) pushEvent("downloads", `Saved ${ok} ${what}`, skip ? `${skip} were already in the vault.` : `Downloaded at ${dlQuality()} kbps to the offline vault.`);
   } finally {
     batchRunning = false;
+    batchPaused = false;
     setBusy(btn, false);
     clearLabel(btn);
     hooks.repaintDownload?.();
   }
+}
+
+// ---------------------------------------------------------- artist follows -
+// JSON list like FAVS_KEY; toggle returns the new state (callers toast).
+export const FOLLOWS_KEY = "tm-follows";
+
+export function loadFollows() {
+  const list = load(FOLLOWS_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function saveFollows(list) {
+  save(FOLLOWS_KEY, Array.isArray(list) ? list : []);
+}
+
+export function isFollowing(id) {
+  if (!id) return false;
+  return loadFollows().some((a) => a && String(a.id) === String(id));
+}
+
+export function toggleFollow(entry) {
+  if (!entry || !entry.id) return false;
+  const list = loadFollows();
+  const i = list.findIndex((a) => a && String(a.id) === String(entry.id));
+  if (i >= 0) {
+    list.splice(i, 1);
+    saveFollows(list);
+    return false;
+  }
+  list.unshift({ id: entry.id, title: entry.title || "", image: entry.image || "" });
+  saveFollows(list.slice(0, 200));
+  return true;
+}
+
+// --------------------------------------------------------------- mixes -
+// Pure helpers over a plays log; callers pass load(PLAYS_KEY, []).
+export function onRepeatMix(plays, n = 10) {
+  const list = Array.isArray(plays) ? [...plays] : [];
+  list.sort((a, b) => (Number(b?.count) || 0) - (Number(a?.count) || 0));
+  const want = Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 10;
+  return list.slice(0, want);
+}
+
+export function recentlyPlayed(plays, n = 10) {
+  const sorted = (Array.isArray(plays) ? [...plays] : []).sort((a, b) => (Number(b?.ts) || 0) - (Number(a?.ts) || 0));
+  const seen = new Set();
+  const out = [];
+  const want = Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 10;
+  for (const t of sorted) {
+    if (!t || !t.id || seen.has(String(t.id))) continue;
+    seen.add(String(t.id));
+    out.push(t);
+    if (out.length >= want) break;
+  }
+  return out;
+}
+
+// Daily mix: score = count*2 + recency rank (most recent gets the top rank),
+// then take the best N. Unique by id, deterministic-ish (no random factor).
+export function dailyMix(plays, n = 20) {
+  const list = (Array.isArray(plays) ? plays : []).filter((t) => t && t.id);
+  if (!list.length) return [];
+  const want = Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 20;
+  const byTs = [...list].sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
+  const rank = new Map();
+  byTs.forEach((t, i) => {
+    const k = String(t.id);
+    if (!rank.has(k)) rank.set(k, list.length - i);
+  });
+  const byId = new Map();
+  for (const t of list) {
+    const cur = byId.get(String(t.id));
+    if (!cur || (Number(t.count) || 0) > (Number(cur.count) || 0)) byId.set(String(t.id), t);
+  }
+  return [...byId.values()]
+    .map((t) => ({ t, s: (Number(t.count) || 0) * 2 + (rank.get(String(t.id)) || 0) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, want)
+    .map((x) => x.t);
+}
+
+// -------------------------------------------------------- stream quality -
+// Raw strings for the wifi/cell prefs; data-saver/explicit/normalize/smart
+// are raw "1"/"0" flags like WIFI_ONLY_KEY.
+export const STREAM_WIFI_KEY = "tm-stream-wifi";
+export const STREAM_CELL_KEY = "tm-stream-cell";
+export const DATASAVER_KEY = "tm-data-saver";
+
+export function dataSaver() {
+  try {
+    return localStorage.getItem(DATASAVER_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setDataSaver(on) {
+  try {
+    localStorage.setItem(DATASAVER_KEY, on ? "1" : "0");
+  } catch {}
+}
+
+export function effStreamWifi() {
+  try {
+    return localStorage.getItem(STREAM_WIFI_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setEffStreamWifi(v) {
+  try {
+    localStorage.setItem(STREAM_WIFI_KEY, String(v));
+  } catch {}
+}
+
+export function effStreamCell() {
+  try {
+    return localStorage.getItem(STREAM_CELL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setEffStreamCell(v) {
+  try {
+    localStorage.setItem(STREAM_CELL_KEY, String(v));
+  } catch {}
+}
+
+// Data saver wins; otherwise cellular (type or saveData) uses the cell pref,
+// wifi falls back through the legacy tm-stream-quality key.
+export function effectiveStreamQuality() {
+  try {
+    if (dataSaver()) return "64kbps";
+    let cellular = false;
+    try {
+      const c = navigator.connection;
+      if (c) cellular = !!c.saveData || String(c.type || "").toLowerCase() === "cellular";
+    } catch {}
+    if (cellular) {
+      try {
+        return localStorage.getItem(STREAM_CELL_KEY) || "96kbps";
+      } catch {
+        return "96kbps";
+      }
+    }
+    try {
+      return localStorage.getItem(STREAM_WIFI_KEY) || localStorage.getItem("tm-stream-quality") || "320kbps";
+    } catch {
+      return "320kbps";
+    }
+  } catch {
+    return "320kbps";
+  }
+}
+
+// -------------------------------------------------------------- explicit -
+// Raw "1"/"0" flag, default "0" (show everything).
+export const EXPLICIT_KEY = "tm-explicit-hide";
+
+export function explicitHidden() {
+  try {
+    return localStorage.getItem(EXPLICIT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setExplicitHidden(on) {
+  try {
+    localStorage.setItem(EXPLICIT_KEY, on ? "1" : "0");
+  } catch {}
+}
+
+export function isExplicitTrack(t) {
+  if (!t) return false;
+  if (t.explicit === true) return true;
+  return /explicit/i.test(String(t.label || ""));
+}
+
+// ----------------------------------------------------- eq + normalize -
+// Store-only prefs; the audio graph itself lives in player.js.
+export const EQ_KEY = "tm-eq-preset";
+const EQ_PRESETS = ["flat", "bass", "bassboost", "pop", "bright", "vocal"];
+
+export function eqPreset() {
+  try {
+    const v = localStorage.getItem(EQ_KEY);
+    return EQ_PRESETS.includes(v) ? v : "flat";
+  } catch {
+    return "flat";
+  }
+}
+
+export function setEqPreset(v) {
+  try {
+    localStorage.setItem(EQ_KEY, EQ_PRESETS.includes(String(v)) ? String(v) : "flat");
+  } catch {}
+}
+
+export const NORM_KEY = "tm-normalize";
+
+// ------------------------------------------------------- per-track EQ -
+// Optional per-track preset override ({ trackId: preset }); the global
+// preset in EQ_KEY stays the fallback. Surfaced in the track menu ("EQ for
+// this track") and listed with clear buttons in Settings.
+export const TRACK_EQ_KEY = "tm-eq-tracks";
+
+export function trackEqMap() {
+  try {
+    const m = load(TRACK_EQ_KEY, {});
+    return m && typeof m === "object" ? m : {};
+  } catch {
+    return {};
+  }
+}
+
+export function trackEqFor(id) {
+  if (!id) return "";
+  try {
+    const v = trackEqMap()[String(id)];
+    return EQ_PRESETS.includes(v) ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+export function setTrackEq(id, preset) {
+  if (!id) return false;
+  try {
+    const m = trackEqMap();
+    if (!preset) delete m[String(id)];
+    else {
+      if (!EQ_PRESETS.includes(preset)) return false;
+      m[String(id)] = preset;
+    }
+    // Bound the map so it can never grow without limit.
+    const keys = Object.keys(m);
+    if (keys.length > 300) for (const k of keys.slice(0, keys.length - 300)) delete m[k];
+    save(TRACK_EQ_KEY, m);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeOn() {
+  try {
+    return localStorage.getItem(NORM_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setNormalize(on) {
+  try {
+    localStorage.setItem(NORM_KEY, on ? "1" : "0");
+  } catch {}
+}
+
+// ------------------------------------------------------- smart downloads -
+// Smart-DL flag plus per-playlist offline pins (dynamic tm-pl-offline-* keys
+// stay out of the sync allowlist).
+export const SMART_KEY = "tm-smart-dl";
+
+export function smartDlOn() {
+  try {
+    return localStorage.getItem(SMART_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setSmartDl(on) {
+  try {
+    localStorage.setItem(SMART_KEY, on ? "1" : "0");
+  } catch {}
+}
+
+export function playlistOffline(id) {
+  if (id == null || id === "") return false;
+  try {
+    return localStorage.getItem(`tm-pl-offline-${id}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setPlaylistOffline(id, on) {
+  if (id == null || id === "") return;
+  try {
+    localStorage.setItem(`tm-pl-offline-${id}`, on ? "1" : "0");
+  } catch {}
+}
+
+// Bytes grouped by quality bucket (hq = 128k+), plus the entry count.
+export function storageBreakdown(entries) {
+  const list = Array.isArray(entries) ? entries : [];
+  let total = 0;
+  let hq = 0;
+  let std = 0;
+  for (const e of list) {
+    if (!e || typeof e !== "object") continue;
+    const sz = Number(e.size ?? e.total ?? e.bytes ?? e.received) || 0;
+    total += sz;
+    if (/320|128|hq|high/i.test(String(e.quality || ""))) hq += sz;
+    else std += sz;
+  }
+  return { total, byQuality: { hq, std }, count: list.filter(Boolean).length };
+}
+
+// ------------------------------------------------------- playlist editing -
+// Mutations over LIBRARY_KEY local records; persist via save(), bool outcome.
+export function movePlaylistTrack(plId, from, to) {
+  const all = load(LIBRARY_KEY, []);
+  const i = all.findIndex((x) => x && x.id === plId);
+  if (i < 0) return false;
+  const tracks = Array.isArray(all[i] && all[i].tracks) ? [...all[i].tracks] : null;
+  if (!tracks) return false;
+  const f = Number(from);
+  const t = Number(to);
+  if (!Number.isInteger(f) || !Number.isInteger(t)) return false;
+  if (f < 0 || f >= tracks.length || t < 0 || t >= tracks.length) return false;
+  if (f === t) return true;
+  const [moved] = tracks.splice(f, 1);
+  tracks.splice(t, 0, moved);
+  all[i] = { ...all[i], tracks };
+  save(LIBRARY_KEY, all);
+  return true;
+}
+
+export function removePlaylistTrack(plId, trackId) {
+  const all = load(LIBRARY_KEY, []);
+  const i = all.findIndex((x) => x && x.id === plId);
+  if (i < 0) return false;
+  const tracks = Array.isArray(all[i] && all[i].tracks) ? [...all[i].tracks] : null;
+  if (!tracks) return false;
+  const at = tracks.findIndex((t) => t && String(t.id) === String(trackId));
+  if (at < 0) return false;
+  tracks.splice(at, 1);
+  all[i] = { ...all[i], tracks };
+  save(LIBRARY_KEY, all);
+  return true;
+}
+
+// Title is trimmed + capped at 80 chars; an empty title leaves it untouched.
+// desc maps to subtitle, cover maps to image (mirrored onto desc/cover too).
+export function updatePlaylistMeta(plId, meta = {}) {
+  const all = load(LIBRARY_KEY, []);
+  const i = all.findIndex((x) => x && x.id === plId);
+  if (i < 0) return false;
+  const cur = { ...(all[i] || {}) };
+  let changed = false;
+  if (meta && meta.title !== undefined) {
+    const clean = String(meta.title || "").trim().slice(0, 80);
+    if (clean) {
+      cur.title = clean;
+      changed = true;
+    }
+  }
+  if (meta && meta.desc !== undefined) {
+    cur.subtitle = String(meta.desc || "");
+    cur.desc = String(meta.desc || "");
+    changed = true;
+  }
+  if (meta && meta.cover !== undefined) {
+    cur.image = String(meta.cover || "");
+    cur.cover = String(meta.cover || "");
+    changed = true;
+  }
+  if (!changed) return false;
+  all[i] = cur;
+  save(LIBRARY_KEY, all);
+  return true;
+}
+
+// ------------------------------------------------------------ share cards -
+// Renders a 1080x1350 card and shares the PNG file, else copies text.
+// Never throws — every step has a fallback.
+export async function shareCard({ title, subtitle, image, badge } = {}) {
+  try {
+    const t = String(title || "Track");
+    const sub = String(subtitle || "");
+    const bd = String(badge || "");
+    const cv = document.createElement("canvas");
+    cv.width = 1080;
+    cv.height = 1350;
+    const ctx = cv.getContext("2d");
+    if (ctx) {
+      const g = ctx.createLinearGradient(0, 0, 0, 1350);
+      g.addColorStop(0, "#141824");
+      g.addColorStop(1, "#05070d");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 1080, 1350);
+      let drew = false;
+      const artUrl = image ? hqArt(image) : "";
+      if (artUrl) {
+        try {
+          const img = await new Promise((res, rej) => {
+            const im = new Image();
+            im.crossOrigin = "anonymous";
+            im.onload = () => res(im);
+            im.onerror = rej;
+            im.src = artUrl;
+          });
+          ctx.drawImage(img, 140, 140, 800, 800);
+          drew = true;
+        } catch {}
+      }
+      if (!drew) {
+        ctx.fillStyle = "#232a3d";
+        ctx.fillRect(140, 140, 800, 800);
+      }
+      if (bd) {
+        ctx.fillStyle = "#7c5cff";
+        ctx.font = "bold 36px system-ui, sans-serif";
+        ctx.fillText(bd.slice(0, 24), 140, 1020);
+      }
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 64px system-ui, sans-serif";
+      ctx.fillText(t.slice(0, 40), 140, 1090);
+      if (sub) {
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.font = "40px system-ui, sans-serif";
+        ctx.fillText(sub.slice(0, 60), 140, 1150);
+      }
+      let blob = null;
+      try {
+        blob = await new Promise((res) => {
+          try {
+            cv.toBlob((b2) => res(b2), "image/png");
+          } catch {
+            res(null);
+          }
+        });
+      } catch {}
+      if (blob) {
+        try {
+          const file = new File([blob], "share-card.png", { type: "image/png" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: t, text: sub });
+            return;
+          }
+          if (navigator.share) {
+            try {
+              await navigator.share({ title: t, text: [t, sub].filter(Boolean).join(" — ") });
+              return;
+            } catch (e) {
+              if (e && e.name === "AbortError") return;
+            }
+          }
+        } catch {}
+      }
+    }
+    const line = [t, sub].filter(Boolean).join(" — ");
+    try {
+      await navigator.clipboard.writeText(line);
+      toast("Share text copied");
+    } catch {
+      toast("Sharing is unavailable here");
+    }
+  } catch {}
+}
+
+// ---------------------------------------------------------------- haptic -
+// Fire-and-forget vibration; silently ignored where unsupported.
+export function haptic(ms = 12) {
+  try {
+    navigator.vibrate?.(Number(ms) || 12);
+  } catch {}
+}
+
+// ------------------------------------------------------------- onboarding -
+// JSON 1 flag for the first-run gate; taste is a JSON artist-shortlist.
+export const ONBOARD_KEY = "tm-onboarded";
+
+export function isOnboarded() {
+  return load(ONBOARD_KEY, 0) === 1;
+}
+
+export function setOnboarded() {
+  save(ONBOARD_KEY, 1);
+}
+
+export const TASTE_KEY = "tm-taste";
+
+export function loadTaste() {
+  const list = load(TASTE_KEY, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function saveTaste(list) {
+  save(TASTE_KEY, Array.isArray(list) ? list : []);
 }

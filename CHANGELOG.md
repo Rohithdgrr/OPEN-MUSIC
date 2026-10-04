@@ -12,9 +12,71 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ---
 
+## [0.4.0] - 2026-10-05
+
+### Cross-Platform Support: MACOS, LINUX, WINDOWS, IOS & ANDROID
+- Full production compilation, testing, and distribution pipelines across **MACOS**, **LINUX**, **WINDOWS**, and **IOS** (alongside Android).
+- Comprehensive multi-platform matrix CI workflow verifying Rust cores, Node unit tests, lint checks, stylesheet builds, and iOS compilation.
+
+### UI & UX Improvements
+- **Elevated Now Playing Screen Lyrics**: Fixed light theme lyrics formatting with transparent background, clean typography, subtle border markers, and smooth karaoke sweep.
+- **Master Audio Specs**: Removed Master Audio Specs deck panel from Now Playing screen for a cleaner, modern stage interface.
+- **Search Screen Hover Effect Parity**: Unified subtle elevation, smooth hover translations, drop shadows, and thumbnail zoom across Playlist, Album, Library, and History screens.
+- **Desktop Mini Widget Redesign**: Curved corners with acrylic obsidian glass styling, isolated transparent header, crisp contrast, and refined transport controls.
+- **Mobile Experience Upgrade**: Modernized mobile header, notification toast anchors, settings tiles matching desktop aesthetics, and full-screen synchronized lyrics.
+
 ## [Unreleased]
 
-No unreleased changes — everything below shipped in 0.3.0.
+### Fixed
+
+- **Spotify sign-in now persists.** `keyring = "3"` was pulled in with no
+  credential-store feature, so every build silently fell back to keyring's
+  in-memory mock store — sign-in reported success and the token was never
+  written anywhere, leaving the status stuck on "Not signed in" (and Drive sync
+  broken the same way). Now enables `windows-native` / `apple-native` /
+  `linux-native`, plus a regression test that saves via one `Entry` and reads
+  back through a fresh one.
+- **Spotify Settings panel** — the Sign in / Sign out / Choose CSV / Import
+  controls interpolated the `setBtn` *function* into their `class` attribute,
+  so its source text rendered on screen; CSV import also read `files[0]` on
+  `click` (always empty) instead of on `change`.
+- **Spotify top-tracks import** — the invoke sent `time_range`; Tauri 2 expects
+  the camelCase key `timeRange`.
+- **Mobile offline queue rows** — `isVaulted` was used but never imported, so
+  the offline "not downloaded" path threw a `ReferenceError`.
+
+### Added
+
+- **Mobile parity with desktop** — fuzzy/typo-tolerant search ranking
+  (`mobile/rank.js`, same `fuzzy.js` score the desktop uses), a "did you mean"
+  toast action off `search_suggestions`, a `↕` sort chip cycling
+  quality/popular/length/A–Z, a `Verify` button for the vault on the Downloads
+  screen (re-hash report), a `Settings → Diagnostics` sheet fed by a 40-entry
+  ring buffer (`net.js` had been logging into a no-op), and catalog-plays /
+  lyrics / explicit rows on the track details sheet.
+- **Sleep timer** — `app/src/sleep.js`, shared by both shells: 15/30/60/90 min
+  with a 15 s volume ramp before the pause. Desktop keeps the Now Playing
+  select; mobile cycles presets from a new `bedtime` button.
+- **Mobile mini-player upgrades** (`mobile/app.js`) — shuffle toggle,
+  vault ⬇ badge, buffered-progress fill, offline/error/resolving states on
+  the artist line, 40–44 px touch targets, and swipe gestures (left/right =
+  next/prev, up = open NowPlaying).
+- **Mobile library without native dialogs** (`mobile/menus.js`,
+  `mobile/binders.js`) — playlist create/rename/delete moved into the shared
+  bottom-sheet (`openInputSheet`/`createPlaylistSheet`/`deleteLocalPlaylist`;
+  `prompt()`/`confirm()` never open in an Android WebView) and library removal
+  matches by `id` instead of title.
+- **Mobile downloads that report honestly** (`mobile/shared.js`,
+  `mobile/binders.js`) — the In-Transit section renders live progress with
+  per-track cancel (best-effort: the file landing after a cancel is deleted),
+  Pause/Resume for batches, a persisted Wi-Fi-only gate, and wired filter
+  (All / HQ 320 / Standard), sort (Recent / Name / Size) and search controls.
+- **SQLite app store** (`store.rs` → `store.db`, 14 `store_*` commands) —
+  `songs` metadata cache with play/fav counters, small `kv` prefs, and a
+  6 h / 200-row `search_cache`. Both shells mirror plays, favs and search
+  pages into it via `src/store_db.js`; localStorage remains the fallback, so
+  a missing store degrades instead of breaking. Audio bytes are never stored
+  in SQLite — only track JSON.
 
 ---
 

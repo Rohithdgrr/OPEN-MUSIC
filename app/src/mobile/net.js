@@ -80,8 +80,8 @@ function modeChanged(m) {
 }
 
 const bannerBase = (next) =>
-  `fixed inset-x-0 top-0 z-[60] flex items-center justify-center gap-2 px-4 py-2 pt-safe font-label-sm text-label-sm shadow-lg ${
-    next === "lost" ? "bg-error-container text-on-error-container" : "bg-inverse-surface text-inverse-on-surface"
+  `fixed top-[calc(env(safe-area-inset-top,24px)+8px)] inset-x-4 max-w-sm mx-auto z-[85] flex items-center justify-center gap-2 px-4 py-2 rounded-full font-medium text-[12px] shadow-xl backdrop-blur-xl border transition-all duration-300 pointer-events-auto ${
+    next === "lost" ? "bg-red-500/95 text-white border-red-400/30 shadow-red-500/25" : "bg-zinc-900/90 text-zinc-100 border-zinc-700/50 shadow-black/30"
   }`;
 
 function paint(next) {

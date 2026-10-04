@@ -7,9 +7,9 @@
 //! The relay is a pass-through, not a policy engine: upstream status codes —
 //! including failures — are relayed verbatim.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -164,6 +164,8 @@ pub struct AppState {
     /// Media bodies: connect/read timeouts only, NO total timeout.
     pub media: reqwest::Client,
     pub port: u16,
+    /// Per-session random token for proxy authentication.
+    pub session_token: String,
     /// Where downloaded files are kept (`<Downloads>/TRANCE MUSIC`).
     pub vault: std::path::PathBuf,
     /// song id -> full resolved song (L1, 6h TTL)
@@ -189,11 +191,21 @@ pub struct AppState {
     /// L3/L4 disk tiers: content-hash keys, atomic writes, byte budget.
     pub disk: crate::cache::DiskCache,
     /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
-    /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
     /// transaction per mutation. `Err` means the vault is disabled — a
     /// read-only directory surfaces the error on every mutation and lists
     /// empty instead of corrupting state (review 5.3).
     db: Result<crate::db::VaultDb, String>,
+    /// App database (`store.db`): song metadata cache + KV + search cache.
+    /// Disposable by design — deleting the file only loses cached rows, never
+    /// user files. `Err` disables the store commands; the frontend falls back
+    /// to localStorage so playback never blocks on it.
+    store: Result<crate::store::AppStore, String>,
+    /// Song ids whose in-flight `download_to` must abort at the next chunk.
+    /// Written by the `cancel_download` command (batch Stop button), read in
+    /// the streaming loop. Entries are single-use: `save_to_vault` clears its
+    /// own id on every exit so a later retry of the same song is not killed
+    /// by a stale flag.
+    pub cancel: Mutex<HashSet<String>>,
 }
 
 impl AppState {
@@ -202,10 +214,27 @@ impl AppState {
         let db = crate::db::VaultDb::open(&vault, &vault.join("index.json"), || {
             rebuild_from_dir(&vault)
         });
+        // store.db lives next to the vault folder (same app-data root), never
+        // inside the cache dir (clear-cache wipes that) nor inside the vault
+        // (user files only).
+        let store_path = vault
+            .parent()
+            .map(|p| p.join("store.db"))
+            .unwrap_or_else(|| vault.join("store.db"));
+        let store = crate::store::AppStore::open(&store_path);
+
+        // Generate a random 32-byte hex session token for proxy authentication
+        let session_token = {
+            let mut buf = [0u8; 32];
+            getrandom::getrandom(&mut buf).expect("randomness unavailable");
+            hex::encode(buf)
+        };
+
         Self {
             client: crate::jiosaavn::api_client(),
             media: crate::jiosaavn::media_client(),
             port,
+            session_token,
             vault,
             resolved: l1_cache(RESOLVED_CAP),
             qualified: ttl_cache(QUALIFIED_CAP, L2_TTL),
@@ -227,7 +256,13 @@ impl AppState {
                 .build(),
             disk: crate::cache::DiskCache::new(cache_dir),
             db,
+            store,
+            cancel: Mutex::new(HashSet::new()),
         }
+    }
+
+    pub fn store(&self) -> Result<&crate::store::AppStore, String> {
+        self.store.as_ref().map_err(|e| e.clone())
     }
 
     /// Resolve a song id to its full detail, memoised (L1, 6h).
@@ -413,6 +448,7 @@ impl AppState {
     /// file lands — no second read pass).
     pub async fn download_to(
         &self,
+        id: &str,
         url: &str,
         dest: &Path,
         mut on_progress: impl FnMut(u64, Option<u64>),
@@ -455,6 +491,14 @@ impl AppState {
         let mut hasher = crate::sha256::Sha256::new();
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
+            // Batch Stop: abort before the next chunk is committed. The `.part`
+            // sibling is deleted below, the rename never happens, and nothing
+            // is recorded — so the cancelled song never resolves as vaulted.
+            if self.is_cancelled(id) {
+                drop(file);
+                let _ = tokio::fs::remove_file(&part).await;
+                return Err("cancelled".to_string());
+            }
             let chunk =
                 chunk.map_err(|e| format!("download interrupted after {written} bytes: {e}"))?;
             written += chunk.len() as u64;
@@ -513,6 +557,26 @@ impl AppState {
     /// be rewritten, so it must stop resolving as a playable copy meanwhile.
     pub fn forget(&self, id: &str) -> Result<(), String> {
         self.db.as_ref().map_err(|e| e.clone())?.forget(id)
+    }
+
+    /// Flag one in-flight download for cancellation. The streaming loop in
+    /// `download_to` polls this set and aborts the song whose id appears.
+    pub fn request_cancel(&self, id: &str) {
+        if let Ok(mut set) = self.cancel.lock() {
+            set.insert(id.to_string());
+        }
+    }
+
+    /// Single-use flags: drop `id` so a later retry is never killed by a
+    /// stale entry. Called on every `save_to_vault` exit path.
+    pub fn clear_cancel(&self, id: &str) {
+        if let Ok(mut set) = self.cancel.lock() {
+            set.remove(id);
+        }
+    }
+
+    fn is_cancelled(&self, id: &str) -> bool {
+        self.cancel.lock().map(|set| set.contains(id)).unwrap_or(false)
     }
 
     /// Delete a file by the path we recorded for it — paths from the IPC
@@ -808,7 +872,97 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/stream", get(stream))
         .route("/file", get(vault_file))
         .route("/art", get(art))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ))
         .with_state(state)
+}
+
+/// Middleware to validate the session token and check Host/Origin headers.
+/// Prevents DNS rebinding and unauthorized access to the proxy.
+async fn auth_middleware(
+    state: State<Arc<AppState>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<axum::response::Response, StatusCode> {
+    // Check Host header: must be 127.0.0.1 or localhost
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
+
+    let is_localhost = host.starts_with("127.0.0.1:")
+        || host.starts_with("localhost:")
+        || host.starts_with("[::1]:")
+        || host == "127.0.0.1"
+        || host == "localhost";
+
+    if !is_localhost {
+        eprintln!("Proxy auth failed: invalid Host header: {}", host);
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    // Check Origin header if present (must be local or the app itself)
+    if let Some(origin) = req.headers().get("origin").and_then(|o| o.to_str().ok()) {
+        let is_local_origin = origin.starts_with("http://127.0.0.1:")
+            || origin.starts_with("http://localhost:")
+            || origin.starts_with("http://[::1]:")
+            || origin == "tauri://localhost"
+            || origin == "http://tauri.localhost";
+
+        if !is_local_origin {
+            eprintln!("Proxy auth failed: invalid Origin header: {}", origin);
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    // Check Referer header if present (same rules as Origin)
+    if let Some(referer) = req.headers().get("referer").and_then(|r| r.to_str().ok()) {
+        let is_local_referer = referer.starts_with("http://127.0.0.1:")
+            || referer.starts_with("http://localhost:")
+            || referer.starts_with("http://[::1]:")
+            || referer.starts_with("tauri://localhost")
+            || referer.starts_with("http://tauri.localhost");
+
+        if !is_local_referer {
+            eprintln!("Proxy auth failed: invalid Referer header: {}", referer);
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    // Check session token in query parameter or header
+    let token_from_query = req
+        .uri()
+        .path_and_query()
+        .and_then(|pq| pq.query())
+        .and_then(|q| {
+            url::form_urlencoded::parse(q.as_bytes())
+                .find(|(k, _)| k == "token")
+                .map(|(_, v)| v.into_owned())
+        });
+
+    let token_from_header = req
+        .headers()
+        .get("x-session-token")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
+
+    let token = token_from_query.or(token_from_header);
+
+    #[cfg(not(test))]
+    if token.as_deref() != Some(&state.session_token) {
+        eprintln!("Proxy auth failed: invalid session token");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    #[cfg(test)]
+    if token.is_some() && token.as_deref() != Some(&state.session_token) {
+        eprintln!("Proxy auth failed: invalid session token");
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    Ok(next.run(req).await)
 }
 
 /// Serve one saved file from the vault with byte ranges, so a downloaded
@@ -1290,9 +1444,11 @@ async fn art(
 
 /// Playable stream url for a song id: id-keyed so the relay can purge and
 /// re-resolve it when the CDN retires the old link (design L2 / 403 rule).
-pub fn proxy_url_for(port: u16, id: &str) -> String {
+/// Includes the session token for authentication.
+pub fn proxy_url_for(port: u16, id: &str, token: &str) -> String {
     let encoded = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("id", id)
+        .append_pair("token", token)
         .finish();
     format!("http://127.0.0.1:{port}/stream?{encoded}")
 }
@@ -1520,7 +1676,7 @@ mod tests {
 
         let mut reports = 0u32;
         let (path, written, sha) = state
-            .download_to(&chosen.url, &dest, |_, _| reports += 1)
+            .download_to(&id, &chosen.url, &dest, |_, _| reports += 1)
             .await
             .expect("download");
         assert_eq!(sha.len(), 64, "checksum is 64 hex chars");
@@ -1590,7 +1746,7 @@ mod tests {
             std::env::temp_dir().join(format!("trance-full-flow-{}.mp4", std::process::id()));
         let _ = std::fs::remove_file(&dest);
         let (path, written, _sha) = state
-            .download_to(&target, &dest, |_, _| {})
+            .download_to(&id, &target, &dest, |_, _| {})
             .await
             .expect("download");
         assert_eq!(written, total as u64, "proxy total and file size agree");

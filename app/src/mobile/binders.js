@@ -1,5 +1,7 @@
 // binders.js — paints real backend data into each static design screen.
 import { esc } from "../html.js";
+import { querySim } from "../fuzzy.js";
+import { didYouMean } from "../query.js";
 import {
   invoke,
   load,
@@ -36,15 +38,78 @@ import {
   EVENTS_KEY,
   pushEvent,
   shareThing,
+  getActiveDownloads,
+  cancelDownload,
+  setBatchPaused,
+  batchPausedNow,
+  wifiOnly,
+  setWifiOnly,
+  pushDiag,
+  readDiag,
+  clearDiag,
+  loadFollows,
+  isFollowing,
+  toggleFollow,
+  onRepeatMix,
+  recentlyPlayed,
+  dailyMix,
+  dataSaver,
+  setDataSaver,
+  effStreamWifi,
+  setEffStreamWifi,
+  effStreamCell,
+  setEffStreamCell,
+  explicitHidden,
+  setExplicitHidden,
+  eqPreset,
+  setEqPreset,
+  normalizeOn,
+  setNormalize,
+  smartDlOn,
+  setSmartDl,
+  playlistOffline,
+  setPlaylistOffline,
+  movePlaylistTrack,
+  removePlaylistTrack,
+  updatePlaylistMeta,
+  shareCard,
+  haptic,
 } from "./shared.js";
 import { buildBackup, parseBackupFile, applyBackup, readSettings, writeSettings, backupFilename } from "../sync.js";
-import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat, repaint } from "./player.js";
+import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat, repaint, insertNext, audio as mAudio } from "./player.js";
 import { ensureReco, isRadioOn, setRadioOn } from "./radio.js";
 import { renderLyrics, resetLyrics, syncLyrics } from "./lyrics.js";
+import { getGeminiKey, setGeminiKey, hasGeminiKey, fetchAiLyrics, aiCopyright } from "./ai-lyrics.js";
 import { netMode } from "./net.js";
 import { licensesHTML, aboutHTML, termsHTML } from "./legal.js";
+import { trackMenu, openSheet, detailsSheet } from "./menus.js";
 
 const main = () => document.querySelector("#screen main");
+
+// ------------------------------------------------- search rank + recovery -
+// Ordering lives in rank.js (pure + unit-tested); this shell owns the chip
+// that cycles it and the typo toast. Both reuse the desktop's helpers.
+import { rankTracks, nextSort, SORT_LABEL } from "./rank.js";
+let searchSort = "relevance";
+
+/// Nothing matched: ask the catalog for nearby titles and offer the closest as
+/// a toast action (desktop shows the same list under "Did you mean").
+function offerTypoFix(q) {
+  if (!invoke || !q) return;
+  invoke("search_suggestions", { query: q })
+    .then((s) => {
+      const remote = [s?.top, ...(s?.songs || [])].filter(Boolean);
+      const seen = load(HISTORY_KEY, []).map((t) => ({ title: typeof t === "string" ? t : t?.title }));
+      const cands = didYouMean(q, [...remote, ...seen], (a, b) => querySim(a, b));
+      if (!cands.length) return;
+      const fix = cands[0].title;
+      toast(`Nothing for “${q}” — did you mean “${fix}”?`, 7000, "info", {
+        label: "Search",
+        fn: () => go(`search?q=${encodeURIComponent(fix)}`),
+      });
+    })
+    .catch(() => {});
+}
 
 // Last successful Home feed — rendered verbatim when the network is gone.
 const HOME_SNAP_KEY = "tm-home-snap";
@@ -81,17 +146,22 @@ function firstButtonWith(root, icon) {
   );
 }
 
+/// Every screen keeps its back affordance in the fragment <header>, which
+/// lives OUTSIDE `#screen main` — scoping the search to `main` left every one
+/// of those buttons dead (the report's "back button not working"). Scope to
+/// the screen root and wire them all; fragments that already go back through
+/// an inline handler (NowPlaying's Collapse) are skipped or they'd double-step.
 function wireBack(m) {
-  const b = [...m.querySelectorAll("button")].find(
-    (btn) =>
-      !btn.dataset.backWired &&
-      (btn.getAttribute("aria-label") === "Collapse" ||
-        [...btn.querySelectorAll(".material-symbols-outlined")].some((s) => /arrow_back|chevron_left|arrow_back_ios/.test(s.textContent))),
-  );
-  if (b) {
+  const scope = (m && m.closest && m.closest("#screen")) || document.getElementById("screen");
+  if (!scope) return;
+  scope.querySelectorAll("button").forEach((b) => {
+    if (b.dataset.backWired || b.hasAttribute("onclick")) return;
+    const collapse = b.getAttribute("aria-label") === "Collapse";
+    const arrow = [...b.querySelectorAll(".material-symbols-outlined")].some((s) => /arrow_back|chevron_left|arrow_back_ios/.test(s.textContent));
+    if (!collapse && !arrow) return;
     b.dataset.backWired = "1";
     b.addEventListener("click", () => history.back());
-  }
+  });
 }
 
 // ---------------------------------------------------------------- detail --
@@ -159,6 +229,35 @@ function fillRows(sec, tracks, name) {
     if (!keep.has(c)) c.remove();
   });
   sec.insertAdjacentHTML("beforeend", tracks.map((t, i) => rowHTML(name, i, t)).join(""));
+}
+
+/// In-screen filters (album/playlist detail, liked songs): toggle rendered
+/// rows by text match and show a "No matches" line when nothing survives.
+/// The row indices never change, so playback and menus keep their targets.
+function wireRowFilter(input, container, rowSel) {
+  if (!input || !container || input.dataset.filterWired) return;
+  input.dataset.filterWired = "1";
+  input.addEventListener("input", () => {
+    const term = input.value.trim().toLowerCase();
+    let visible = 0;
+    container.querySelectorAll(rowSel).forEach((r) => {
+      const ok = !term || r.textContent.toLowerCase().includes(term);
+      r.classList.toggle("hidden", !ok);
+      if (ok) visible += 1;
+    });
+    let none = container.querySelector("[data-filter-empty]");
+    if (!term || visible > 0) {
+      none?.remove();
+      return;
+    }
+    if (!none) {
+      none = document.createElement("div");
+      none.setAttribute("data-filter-empty", "");
+      none.className = "py-6 text-center font-body-sm text-secondary italic";
+      none.textContent = "No matches";
+      container.appendChild(none);
+    }
+  });
 }
 
 async function mountHome() {
@@ -232,9 +331,24 @@ async function mountHome() {
     }
   }
 
-  // Charts are playlists too, and the design has no shelf of their own — fold
-  // them into the curated carousel so every chart is reachable and playable.
-  const curated = [...(feed.charts || []), ...(feed.playlists || [])].filter(
+  // 1. Dedicated Top Charts shelf
+  const charts = feed.charts || [];
+  const chartsSec = m.querySelector('[data-shelf="charts"]');
+  if (chartsSec) {
+    const c = chartsSec.querySelector("[data-charts-carousel]");
+    if (c && charts.length) {
+      setList("charts", charts);
+      c.innerHTML = charts
+        .slice(0, 10)
+        .map((p, i) => plCardHTML(p, i, entityNav("playlist", p)))
+        .join("");
+    } else if (!charts.length) {
+      chartsSec.classList.add("hidden");
+    }
+  }
+
+  // 2. Curated Playlists shelf
+  const curated = (feed.playlists && feed.playlists.length ? feed.playlists : (feed.charts || [])).filter(
     (p, i, all) => p && p.id && all.findIndex((x) => x && x.id === p.id) === i,
   );
   const curS = sectionFor("Curated Playlists");
@@ -295,9 +409,52 @@ async function mountHome() {
     [...artS.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent))?.remove();
   }
 
-  // Two shelves the feed already returns but the shell never painted: new
-  // releases and the daily-updating playlists. Built in JS so the design
-  // fragment stays untouched.
+  // Wire Genre Cards to search
+  m.querySelectorAll("#home-genres-grid .genre-card").forEach((gc) => {
+    gc.addEventListener("click", () => {
+      const gq = gc.dataset.genreQ;
+      if (gq) go(`search?q=${encodeURIComponent(gq)}`);
+    });
+  });
+
+  // Wire Category Filter Chips
+  const chipContainer = m.querySelector("#home-category-chips");
+  if (chipContainer) {
+    const chips = chipContainer.querySelectorAll(".home-cat-chip");
+    chips.forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const cat = chip.dataset.homeCat || "all";
+        // Update active chip pill appearance
+        chips.forEach((c) => {
+          c.className = "home-cat-chip px-4 py-1.5 rounded-full font-label-sm text-label-sm whitespace-nowrap transition-all font-medium active:scale-95 border border-surface-container-high/60 bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface";
+        });
+        chip.className = "home-cat-chip px-4 py-1.5 rounded-full font-label-sm text-label-sm whitespace-nowrap shadow-sm font-semibold active:scale-95 transition-all bg-primary text-on-primary";
+
+        // Map category to shelf visibility
+        const allShelves = m.querySelectorAll("section[data-shelf]");
+        allShelves.forEach((s) => {
+          const key = s.dataset.shelf;
+          if (cat === "all") {
+            s.classList.remove("hidden");
+          } else if (cat === "charts") {
+            s.classList.toggle("hidden", key !== "charts");
+          } else if (cat === "playlists") {
+            s.classList.toggle("hidden", key !== "curated" && key !== "tm-shelf-daily");
+          } else if (cat === "albums") {
+            s.classList.toggle("hidden", key !== "spotlight" && key !== "tm-shelf-albums");
+          } else if (cat === "artists") {
+            s.classList.toggle("hidden", key !== "artists");
+          } else if (cat === "genres") {
+            s.classList.toggle("hidden", key !== "genres");
+          } else if (cat === "jump") {
+            s.classList.toggle("hidden", key !== "jump" && key !== "qp");
+          }
+        });
+      });
+    });
+  }
+
+  // Two shelves the feed already returns: new releases and daily playlists
   const root = m.querySelector("section")?.parentElement;
   const shelves = [
     ["tm-shelf-albums", "New Releases", (feed.albums || []).map((a, i) => plCardHTML(a, i, entityNav("album", a)))],
@@ -321,6 +478,52 @@ async function mountHome() {
     if (box) box.innerHTML = cards.slice(0, 12).join("");
   }
 
+  // Made For You from the local play log (Spotify parity). Each shelf owns a
+  // setList entry so row taps play through the global delegation; empty
+  // shelves are dropped instead of standing with mock cards.
+  if (root) {
+    const allPlays = load(PLAYS_KEY, []);
+    const mfy = [
+      ["tm-shelf-onrepeat", "mfy-repeat", "On Repeat", onRepeatMix(allPlays, 10)],
+      ["tm-shelf-recently", "mfy-recent", "Recently Played", recentlyPlayed(allPlays, 10)],
+      ["tm-shelf-dailymix", "mfy-daily", "Daily Mix", dailyMix(allPlays, 12)],
+    ];
+    for (const [key, listName, title, tracks] of mfy) {
+      let sec = root.querySelector(`[data-shelf="${key}"]`);
+      if (!tracks.length) {
+        sec?.remove();
+        continue;
+      }
+      if (!sec) {
+        sec = document.createElement("section");
+        sec.dataset.shelf = key;
+        sec.className = "flex flex-col space-y-space-sm";
+        sec.innerHTML = `<div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">${title}</h2></div><div class="flex flex-col gap-1" data-cards></div>`;
+        root.appendChild(sec);
+      }
+      setList(listName, tracks);
+      const box = sec.querySelector("[data-cards]");
+      if (box) box.innerHTML = tracks.map((t, i) => rowHTML(listName, i, t)).join("");
+    }
+  }
+
+  // Genre/mood grid fallback: the fragment may not ship one — inject eight
+  // chips wired exactly like the design's own genre cards (search the term).
+  if (root && !m.querySelector("#home-genres-grid")) {
+    const terms = ["Pop", "Hip-Hop", "Lo-Fi", "Workout", "Chill", "Party", "Devotional", "Retro"];
+    const gsec = document.createElement("section");
+    gsec.dataset.shelf = "genres";
+    gsec.className = "flex flex-col space-y-space-sm";
+    gsec.innerHTML = `<div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Genres &amp; Moods</h2></div><div id="home-genres-grid" class="grid grid-cols-4 gap-2">${terms.map((t) => `<button type="button" class="genre-card px-3 py-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/60 font-label-md text-label-md text-on-surface font-medium active:scale-95 transition-all" data-genre-q="${esc(t)}">${esc(t)}</button>`).join("")}</div>`;
+    root.appendChild(gsec);
+    gsec.querySelectorAll(".genre-card").forEach((gc) => {
+      gc.addEventListener("click", () => {
+        const gq = gc.dataset.genreQ;
+        if (gq) go(`search?q=${encodeURIComponent(gq)}`);
+      });
+    });
+  }
+
   // SEE ALL: Jump Back In → the history it is drawn from; Curated → lift the
   // 12-card cap for this session.
   const jumpSeeAll = jump && [...jump.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent));
@@ -337,11 +540,22 @@ async function mountHome() {
   paintFavs();
 }
 
+// The search screen's auto-load observer survives between mounts only as a
+// handle to disconnect — each mount replaces it with its own button.
+let smMoreIO = null;
+
 async function mountSearch(query) {
   const m = main();
   if (!m) return;
   const q = (query && query.get("q")) || "";
   const cat = (query && query.get("cat")) || "all";
+  // The sort chip rides in the URL: `go()` with an unchanged hash never
+  // remounts, so a chip that only advanced module state looked dead.
+  const sortParam = query && query.get("s");
+  if (sortParam && SORT_LABEL[sortParam]) searchSort = sortParam;
+  // Declared before the chip wiring below: the sort chip's guard reads it, and
+  // a const is in its temporal dead zone until this line.
+  const entityKinds = { albums: "album", artists: "artist", playlists: "playlist" };
   const input = document.getElementById("search-input");
   if (input) input.value = q;
   // The field is white on a near-white surface; a hairline makes it read as an
@@ -505,6 +719,32 @@ async function mountSearch(query) {
     });
   });
 
+  // Sort chip: cycles relevance → quality → popular → length → A–Z and
+  // re-runs the query so the whole page comes back in the new order.
+  const chipsRow = m.querySelector("#filter-chips-container");
+  if (chipsRow && !entityKinds[cat] && cat !== "hires") {
+    let sortBtn = chipsRow.querySelector("[data-sort]");
+    if (!sortBtn) {
+      sortBtn = document.createElement("button");
+      sortBtn.type = "button";
+      sortBtn.dataset.sort = "";
+      sortBtn.className = "filter-chip shrink-0 bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md font-medium";
+      chipsRow.appendChild(sortBtn);
+      sortBtn.addEventListener("click", () => {
+        searchSort = nextSort(searchSort);
+        // Read the live query/category from the address bar (not this
+        // mount's closure) and append `s` so the hash always changes — an
+        // identical hash would skip the remount and the chip would look dead.
+        const cur = new URLSearchParams(location.hash.split("?")[1] || "");
+        const live = (document.getElementById("search-input")?.value || cur.get("q") || q || "").trim();
+        const liveCat = cur.get("cat") || cat;
+        go(`search?q=${encodeURIComponent(live)}${liveCat !== "all" ? `&cat=${liveCat}` : ""}&s=${searchSort}`);
+      });
+    }
+    sortBtn.textContent = `↕ ${SORT_LABEL[searchSort]}`;
+    sortBtn.setAttribute("aria-label", `Sort: ${SORT_LABEL[searchSort]}`);
+  }
+
   const bay = document.getElementById("recent-queries-bay");
   const paintBay = () => {
     if (!bay) return;
@@ -536,30 +776,70 @@ async function mountSearch(query) {
   });
 
   const topSec = [...m.querySelectorAll("section")].find((s) => s.textContent.includes("Top result"));
-  const entityKinds = { albums: "album", artists: "artist", playlists: "playlist" };
   const navOf = (it, k) => entityNav(k, it);
 
   let results = [];
+  let page = 1;
+  let pageFull = false;
   // One-query snapshot: the offline fallback repaints the last successful
   // search verbatim (mirrors the desktop's tm-search behaviour).
   const SEARCH_SNAP_KEY = "tm-search-snap";
   const snapKey = `${q}::${cat}`;
+  // The results host is created before the fetch, and seeded with a
+  // skeleton — while the query is in flight the design's mock spotlight
+  // ("Midnight City Lights") must not masquerade as real data.
+  let box = document.getElementById("sm-results");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "sm-results";
+    (topSec || m.firstElementChild).insertAdjacentElement("afterend", box);
+  }
+  const head = '<div class="font-label-mono text-label-sm text-secondary uppercase tracking-wider px-1 pt-3 pb-1">Results</div>';
+  const skeletonHTML = () =>
+    entityKinds[cat]
+      ? `<div class="grid grid-cols-2 gap-3">${Array.from(
+            { length: 6 },
+            () =>
+              '<div class="rounded-2xl border border-surface-container-high/70 p-2.5 space-y-2"><div class="aspect-square rounded-xl tm-skeleton"></div><div class="h-3.5 w-3/4 rounded tm-skeleton"></div><div class="h-3 w-1/2 rounded tm-skeleton"></div></div>',
+          ).join("")}</div>`
+      : Array.from(
+            { length: 6 },
+            () =>
+              '<div class="flex items-center gap-3 p-2.5"><div class="w-11 h-11 rounded-lg tm-skeleton shrink-0"></div><div class="flex flex-col gap-1.5 flex-1 min-w-0"><div class="h-3.5 w-2/5 rounded tm-skeleton"></div><div class="h-3 w-1/4 rounded tm-skeleton"></div></div></div>',
+          ).join("");
+  if (q && invoke) {
+    topSec?.classList.add("hidden");
+    box.className = entityKinds[cat] ? "flex flex-col gap-3" : "flex flex-col gap-1";
+    box.innerHTML = head + skeletonHTML();
+  }
   if (q && invoke) {
     try {
       if (netMode() === "offline") throw new Error("offline");
       if (entityKinds[cat]) {
         const r = await invoke("search_entities", { query: q, kind: entityKinds[cat], limit: 30, page: 1 });
         results = r.items || [];
+        pageFull = !!r.page_full;
       } else {
         const r = await invoke("search_songs", { query: q, limit: cat === "hires" ? 50 : 30, page: 1 });
         results = r.tracks || [];
+        pageFull = !!r.page_full;
         // Hi-Res chip: the catalog already tags each track, so the chip
         // filters this page instead of asking a different endpoint.
         if (cat === "hires") results = results.filter((t) => t.hq);
+        else results = rankTracks(q, results, searchSort);
+        pushDiag("search_songs", true, `${results.length} results · ${cat} · ${searchSort}`);
       }
       pushHistory(q);
       save(SEARCH_SNAP_KEY, { key: snapKey, results });
+      // SQLite song cache for offline lists (tracks only, not entity cards).
+      if (!entityKinds[cat] && results.length) {
+        try {
+          const page = results.slice(0, 50);
+          import("../store_db.js").then((m) => m.cacheSongs(page).catch(() => {}));
+        } catch {}
+      }
     } catch (e) {
+      pushDiag("search", false, String(e).split("\n")[0].slice(0, 90));
       const snap = load(SEARCH_SNAP_KEY, null);
       if (snap && snap.key === snapKey && Array.isArray(snap.results) && snap.results.length) {
         results = snap.results;
@@ -570,6 +850,9 @@ async function mountSearch(query) {
         else toast("You're offline — search needs a network", 3500, "info");
       }
     }
+    // Typo recovery only makes sense when the catalog answered with nothing —
+    // never while an offline snapshot or another category is on screen.
+    if (!results.length && !entityKinds[cat] && cat !== "hires") offerTypoFix(q);
   }
 
   if (topSec) {
@@ -586,7 +869,23 @@ async function mountSearch(query) {
       if (h3) h3.textContent = first.title || "";
       const p = topSec.querySelector("p");
       if (p) p.textContent = [first.artist || first.subtitle, first.year].filter(Boolean).join(" • ") || p.textContent;
-      const card = topSec.querySelector('div[class*="rounded-xl"]');
+      // Anchor on the action buttons, not a class substring: the fragment's
+      // inner thumbnail is also "rounded-xl" and matched first, so data-list
+      // landed on a sibling of the Play button and the delegation never
+      // resolved a row (dead top-result Play/Favorite). `card` must be the
+      // container that actually wraps the buttons.
+      const card = (() => {
+        const btn = topSec.querySelector('button[aria-label="Play Song"], button[aria-label]');
+        return (btn && btn.closest("div.rounded-2xl, div[class*='rounded-']")) || topSec.querySelector('div[class*="rounded-xl"]');
+      })();
+      // A reused fragment can carry the previous query's wiring on the old
+      // thumbnail — strip it so only `card` resolves.
+      topSec.querySelectorAll("[data-list],[data-idx],[data-nav]").forEach((el) => {
+        if (el === card) return;
+        delete el.dataset.list;
+        delete el.dataset.idx;
+        delete el.dataset.nav;
+      });
       if (card && kind) {
         delete card.dataset.list;
         delete card.dataset.idx;
@@ -616,25 +915,88 @@ async function mountSearch(query) {
     }
   }
 
-  let box = document.getElementById("sm-results");
-  if (!box) {
-    box = document.createElement("div");
-    box.id = "sm-results";
-    (topSec || m.firstElementChild).insertAdjacentElement("afterend", box);
+  const renderResults = () => {
+    if (!q || !results.length) {
+      box.className = "flex flex-col gap-1";
+      box.innerHTML = q ? '<div class="font-body-sm text-secondary py-4 text-center">No matches</div>' : "";
+    } else if (entityKinds[cat]) {
+      // The "Results" label lives above the grid: as a grid child it ate the
+      // first cell (the report's empty first card). The cards are shelf-sized
+      // (w-48/w-56), which overflows a half-width cell and overlaps the
+      // neighbour — in a grid they must fill the cell instead.
+      box.className = "flex flex-col gap-3";
+      box.innerHTML =
+        head +
+        `<div class="grid grid-cols-2 gap-3">${results
+          .map((e, i) => (entityKinds[cat] === "artist" ? artistCardHTML(e, i, navOf(e, "artist")) : plCardHTML(e, i, navOf(e, entityKinds[cat]))))
+          .join("")}</div>`;
+      box.querySelectorAll("[data-pl-idx]").forEach((el) => {
+        el.classList.remove("w-48", "w-56");
+        el.classList.add("w-full");
+      });
+    } else {
+      box.className = "flex flex-col gap-1";
+      setList("sres", results);
+      box.innerHTML = head + results.slice(1).map((t, i) => rowHTML("sres", i + 1, t)).join("");
+    }
+    paintFavs();
+  };
+  renderResults();
+
+  // --- load more ---------------------------------------------------------
+  // Same contract as the desktop's #load-more: the backend's `page_full`
+  // flag (measured before dedup shrank the page) says another page exists.
+  document.getElementById("sm-more")?.remove();
+  smMoreIO?.disconnect();
+  if (q && invoke && pageFull) {
+    const more = document.createElement("button");
+    more.id = "sm-more";
+    more.type = "button";
+    more.className = "self-center mt-3 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors flex items-center gap-1.5 shadow-sm";
+    more.textContent = "Load more results";
+    box.insertAdjacentElement("afterend", more);
+    // Scrolling near the bottom pulls the next page automatically; the
+    // button remains as the manual fallback and as the observer's target.
+    smMoreIO = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) if (en.isIntersecting && !more.disabled) more.click();
+      },
+      { rootMargin: "300px 0px" },
+    );
+    smMoreIO.observe(more);
+    more.addEventListener("click", async () => {
+      more.disabled = true;
+      more.textContent = "Loading…";
+      try {
+        const next = page + 1;
+        let got;
+        if (entityKinds[cat]) {
+          const r = await invoke("search_entities", { query: q, kind: entityKinds[cat], limit: 30, page: next });
+          got = r.items || [];
+          pageFull = !!r.page_full;
+        } else {
+          const r = await invoke("search_songs", { query: q, limit: cat === "hires" ? 50 : 30, page: next });
+          got = r.tracks || [];
+          if (cat === "hires") got = got.filter((t) => t.hq);
+          pageFull = !!r.page_full;
+        }
+        if (!got.length) pageFull = false;
+        page = next;
+        results = results.concat(got);
+        save(SEARCH_SNAP_KEY, { key: snapKey, results });
+        renderResults(); // identical heights above → scroll position holds
+        if (pageFull) {
+          more.disabled = false;
+          more.textContent = "Load more results";
+        } else more.remove();
+      } catch (e) {
+        console.error(e);
+        more.disabled = false;
+        more.textContent = "Load more results";
+        toast(String(e).split("\n")[0].slice(0, 70), 5000, "error");
+      }
+    });
   }
-  const head = '<div class="font-label-mono text-label-sm text-secondary uppercase tracking-wider px-1 pt-3 pb-1">Results</div>';
-  if (!q || !results.length) {
-    box.className = "flex flex-col gap-1";
-    box.innerHTML = q ? '<div class="font-body-sm text-secondary py-4 text-center">No matches</div>' : "";
-  } else if (entityKinds[cat]) {
-    box.className = "grid grid-cols-2 gap-3 items-start";
-    box.innerHTML = head + results.map((e, i) => (entityKinds[cat] === "artist" ? artistCardHTML(e, i, navOf(e, "artist")) : plCardHTML(e, i, navOf(e, entityKinds[cat])))).join("");
-  } else {
-    box.className = "flex flex-col gap-1";
-    setList("sres", results);
-    box.innerHTML = head + results.slice(1).map((t, i) => rowHTML("sres", i + 1, t)).join("");
-  }
-  paintFavs();
 }
 
 // Library screen state, kept across re-mounts (create-playlist re-runs the
@@ -647,6 +1009,12 @@ let libAlpha = false;
 let libGrid = false;
 let libMenu = null;
 
+// Downloads screen state, kept across re-mounts (progress ticks repaint via
+// hooks.repaintDownload, which re-runs the mount — the filter must survive).
+let dlFilter = "all";
+let dlSort = "recent";
+let dlQuery = "";
+
 /// Items shown in the Library list: the two pins' contents, saved entities and
 /// recently played songs, so the shelf is real instead of design mock rows.
 function libraryItems(favs, entries) {
@@ -658,6 +1026,7 @@ function libraryItems(favs, entries) {
   for (const e of load(LIBRARY_KEY, [])) {
     const kind = e.kind || (e.token ? "album" : "playlist");
     items.push({
+      id: e.id,
       cat: kind,
       title: e.title || "",
       sub: e.local ? `${(e.tracks || []).length} songs` : e.subtitle || "Saved",
@@ -739,6 +1108,47 @@ async function mountLibrary() {
       </div>`;
     })
     .join("");
+
+  // Followed artists (Spotify parity): artist rows that resolve to the
+  // artist screen, mirroring the feed cards' entityNav navigation. They are
+  // plain .library-item rows so the filter/sort below treat them like the
+  // rest of the shelf.
+  {
+    const follows = loadFollows();
+    if (follows.length && !cont.querySelector("[data-follows-group]")) {
+      cont.insertAdjacentHTML(
+        "beforeend",
+        `<div data-follows-group class="px-space-xs pt-2"><span class="font-label-mono text-[11px] text-secondary uppercase tracking-wider">Followed artists</span></div>` +
+          follows
+            .map(
+              (f, i) => `<div data-follow-idx="${i}" class="library-item flex items-center justify-between p-space-xs rounded-xl border border-transparent hover:bg-surface-container-low cursor-pointer transition-colors" data-title="${esc(f.title || "")}" data-category="artist" data-downloaded="false" data-ts="${Date.now()}">
+        <div class="flex items-center gap-space-md min-w-0 flex-1">
+          <div class="relative w-12 h-12 rounded-full overflow-hidden bg-surface-container-highest shrink-0"><img alt="" class="w-full h-full object-cover" ${art(f.image)}></div>
+          <div class="flex flex-col min-w-0">
+            <span class="font-body-md font-medium text-on-surface truncate">${esc(f.title || "")}</span>
+            <span class="flex items-center gap-1.5 text-secondary font-label-sm text-label-sm"><span class="material-symbols-outlined text-[14px]">person</span>Followed</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-space-xs flex-shrink-0 ml-space-sm text-secondary">
+          <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+        </div>
+      </div>`,
+            )
+            .join(""),
+      );
+    }
+  }
+  // One listener for the follows rows (guarded: create-playlist re-runs this
+  // mount on the same DOM, and the handler must not stack).
+  if (!cont.dataset.followsWired) {
+    cont.dataset.followsWired = "1";
+    cont.addEventListener("click", (e) => {
+      const row = e.target.closest("[data-follow-idx]");
+      if (!row || e.target.closest("[data-libmenu]")) return;
+      e.stopPropagation();
+      openFollowArtist(loadFollows()[Number(row.dataset.followIdx)] || null);
+    });
+  }
 
   const applyFilter = () => {
     const term = (document.getElementById("filterInput")?.value || "").toLowerCase().trim();
@@ -831,11 +1241,20 @@ async function mountLibrary() {
   window.closeItemMenu = () => {};
   window.handleMenuAction = () => window.__tmLibraryMenu?.(libMenu);
   window.promptCreatePlaylist = () => {
+    // Native prompt() never opens in the Android WebView — use the shared
+    // bottom-sheet input (menus.js). Fall back to prompt only on desktop web.
+    if (window.__tmCreatePlaylist) return window.__tmCreatePlaylist([], "");
+    const name = prompt("Playlist name:", "");
+    if (name == null) return;
+    const clean = name.trim();
+    if (!clean) return toast("Give the playlist a name", 4000, "error");
     const saved = load(LIBRARY_KEY, []);
-    const n = saved.filter((x) => x.local).length + 1;
-    saved.unshift({ id: `local-${Date.now()}`, local: true, kind: "playlist", title: `New Playlist ${n}`, subtitle: "0 songs", tracks: [], image: "", ts: Date.now() });
+    if (saved.some((x) => x.local && String(x.title).toLowerCase() === clean.toLowerCase())) {
+      return toast("You already have a playlist with that name", 4000, "error");
+    }
+    saved.unshift({ id: `local-${Date.now()}`, local: true, kind: "playlist", title: clean, subtitle: "0 songs", tracks: [], image: "", ts: Date.now() });
     save(LIBRARY_KEY, saved);
-    window.showToast(`Created "New Playlist ${n}"`);
+    window.showToast(`Created "${clean}"`);
     mountLibrary();
   };
 
@@ -847,6 +1266,10 @@ async function mountLibrary() {
     window.openItemMenu(e, libMenu?.title || "");
   });
   document.getElementById("filterInput")?.addEventListener("input", applyFilter);
+  // The fragment's inline oninput calls filterLibraryList on window, but the
+  // generated screen script keeps its own copy inside an IIFE — publish a
+  // window shim so the handler resolves instead of throwing per keystroke.
+  window.filterLibraryList = () => applyFilter();
 
   // Restore the active chip and view for this mount. Podcasts have no source
   // in this catalog, so that chip would only ever show an empty shelf.
@@ -880,6 +1303,26 @@ async function mountLibrary() {
   window.setViewMode(libGrid ? "grid" : "list");
   applyFilter();
   paintFavs();
+}
+
+/// A followed artist back to its screen: direct entityNav when the record
+/// carries a token, otherwise resolve by name exactly like app.js
+/// resolveEntity does, falling back to the artist search.
+async function openFollowArtist(f) {
+  if (!f) return;
+  if (f.token) return go(entityNav("artist", { token: f.token, title: f.title, image: f.image }));
+  const name = String(f.title || "").split(",")[0].trim();
+  if (invoke && name) {
+    try {
+      const r = await invoke("search_entities", { query: name, kind: "artist", limit: 8, page: 1 });
+      const hit = (r && r.items && r.items[0]) || null;
+      if (hit && (hit.token || hit.id)) return go(entityNav("artist", hit));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  if (f.id) return go(entityNav("artist", { id: f.id, title: f.title, image: f.image }));
+  if (name) go(`search?q=${encodeURIComponent(name)}&cat=artists`);
 }
 
 async function openLib(item) {
@@ -938,6 +1381,7 @@ function mountLiked() {
     dl.replaceWith(fresh);
     fresh.addEventListener("click", () => downloadAll(favs, "liked tracks", fresh));
   }
+  wireRowFilter(document.getElementById("liked-filter"), listBox, '[data-list="favs"]');
   paintFavs();
 }
 
@@ -956,13 +1400,179 @@ async function mountDownload() {
       toast(`Couldn't load downloads: ${String(e).split("\n")[0].slice(0, 60)}`, 5000, "error");
     }
   }
-  if (activeBlock) activeBlock.classList.add("hidden");
+  const active = getActiveDownloads();
+
+  // ---- In-Transit: live progress rows with cancel (was always hidden) ----
+  if (activeBlock) {
+    if (!active.length) {
+      activeBlock.classList.add("hidden");
+      // Drop the rows, not just the block: a cancel leaves its row node
+      // behind otherwise, and row counters (plus the next paint) see ghosts.
+      const stale = activeBlock.querySelector("[data-dl-active-list]");
+      if (stale) stale.innerHTML = "";
+    } else {
+      activeBlock.classList.remove("hidden");
+      const countPill = activeBlock.querySelector("span.bg-primary");
+      if (countPill) countPill.textContent = String(active.length);
+      let list = activeBlock.querySelector("[data-dl-active-list]");
+      if (!list) {
+        list = document.createElement("div");
+        list.dataset.dlActiveList = "";
+        list.className = "flex flex-col gap-2";
+        activeBlock.appendChild(list);
+      }
+      list.innerHTML = active
+        .map((p) => {
+          const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0;
+          const mb = `${(Number(p.received) / 1048576).toFixed(1)} / ${p.total ? `${(Number(p.total) / 1048576).toFixed(1)} MB` : "? MB"}`;
+          return `<div class="p-3 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 shadow-sm flex flex-col gap-2">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-11 h-11 rounded-lg bg-surface-container-highest overflow-hidden shrink-0"><img alt="" class="w-full h-full object-cover" ${art(p.image)}></div>
+              <div class="flex flex-col min-w-0 flex-1">
+                <span class="font-body-md text-[13px] font-semibold text-on-surface truncate">${esc(p.title || "")}</span>
+                <span class="font-label-mono text-[10px] text-secondary truncate">${esc([p.artist, p.quality].filter(Boolean).join(" · "))} · ${esc(mb)}</span>
+              </div>
+              <span class="font-label-mono text-[11px] text-on-surface font-semibold shrink-0">${pct}%</span>
+              <button type="button" data-dl-cancel="${esc(p.id)}" aria-label="Cancel download" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-error active:scale-90 transition-all shrink-0"><span class="material-symbols-outlined text-[19px]">close</span></button>
+            </div>
+            <div class="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full transition-all duration-200" style="width:${pct}%"></div></div>
+          </div>`;
+        })
+        .join("");
+      // Pause wiring + label live below the block (they must also run with
+      // zero active rows — see below).
+      if (!activeBlock.dataset.cancelWired) {
+        activeBlock.dataset.cancelWired = "1";
+        activeBlock.addEventListener("click", (e) => {
+          const btn = e.target.closest("[data-dl-cancel]");
+          if (!btn) return;
+          e.stopPropagation();
+          cancelDownload(btn.dataset.dlCancel);
+        });
+      }
+    }
+  }
+  // The pause control must mirror batchPausedNow() even with zero active
+  // rows: pausing as the last file drains left a stale "Pause All" label and
+  // hid the paused state from the next mount.
+  if (pauseBtn) {
+    if (!pauseBtn.dataset.dlWired) {
+      pauseBtn.dataset.dlWired = "1";
+      pauseBtn.addEventListener("click", () => {
+        const pausing = !batchPausedNow();
+        setBatchPaused(pausing);
+        toast(pausing ? "Batch paused — current file finishes, rest stop" : "Batch resumed", 3000, "info");
+        mountDownload();
+      });
+    }
+    const label = pauseBtn.querySelector("span:last-child");
+    if (label) label.textContent = batchPausedNow() ? "Resume All" : "Pause All";
+    const icon = pauseBtn.querySelector(".material-symbols-outlined");
+    if (icon) icon.textContent = batchPausedNow() ? "play_circle" : "pause_circle";
+  }
+
+  // ---- Toolbar: storage summary + wifi-only + search (injected once) ----
+  const topStrip = m.querySelector("div.flex.items-center.justify-between.pt-1");
+  if (topStrip && !topStrip.dataset.dlToolsWired) {
+    topStrip.dataset.dlToolsWired = "1";
+  }
+  let tools = m.querySelector("[data-dl-tools]");
+  if (!tools && topStrip) {
+    tools = document.createElement("div");
+    tools.dataset.dlTools = "";
+    tools.className = "w-full flex flex-col gap-2 pt-1";
+    topStrip.insertAdjacentElement("afterend", tools);
+  }
+  const paintDlListRef = { fn: null };
+  if (tools) {
+    const bytes = entries.reduce((s, e) => s + (Number(e.bytes) || 0), 0);
+    const mb = bytes >= 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GB` : bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(0, Math.round(bytes / 1024))} KB`;
+    const on = wifiOnly();
+    // Progress ticks re-run this mount many times per second — rebuilding the
+    // search input would steal focus mid-typing, so build once and patch.
+    if (!tools.querySelector("[data-dl-search]")) {
+      tools.innerHTML = `
+      <div class="flex items-center justify-between gap-2 px-1">
+        <span data-dl-count class="font-label-mono text-[11px] text-secondary">${entries.length} track${entries.length === 1 ? "" : "s"} · ${mb} vaulted</span>
+        <button type="button" data-dl-wifi role="switch" aria-checked="${on}" class="flex items-center gap-1.5 font-label-mono text-[11px] ${on ? "text-primary" : "text-secondary"} hover:text-on-surface transition-colors">
+          <span class="material-symbols-outlined text-[15px]">${on ? "wifi" : "wifi_off"}</span><span>${on ? "Wi-Fi only ON" : "Wi-Fi only OFF"}</span>
+        </button>
+        <button type="button" data-dl-verify class="flex items-center gap-1.5 font-label-mono text-[11px] text-secondary hover:text-on-surface transition-colors" title="Re-hash every saved file against the vault ledger">
+          <span class="material-symbols-outlined text-[15px]">verified_user</span><span>Verify</span>
+        </button>
+      </div>
+      <div class="relative w-full flex items-center bg-surface-container-lowest border border-surface-container-high/80 rounded-2xl px-3.5 py-1 shadow-sm">
+        <span class="material-symbols-outlined text-secondary text-[19px] mr-2">search</span>
+        <input data-dl-search class="w-full h-9 bg-transparent text-on-surface font-body-md text-body-md placeholder-secondary focus:outline-none" placeholder="Search downloads…" value="${esc(dlQuery)}" type="text" />
+      </div>`;
+      tools.querySelector("[data-dl-wifi]")?.addEventListener("click", () => {
+        const next = !wifiOnly();
+        setWifiOnly(next);
+        toast(next ? "Wi-Fi only on — downloads pause on cellular" : "Wi-Fi only off", 3000, "info");
+        mountDownload();
+      });
+      tools.querySelector("[data-dl-search]")?.addEventListener("input", (e) => {
+        dlQuery = String(e.target.value || "").toLowerCase().trim();
+        try {
+          paintDlListRef.fn?.();
+        } catch {}
+      });
+      // Verify: re-hash every saved file on a worker thread (the command is
+      // report-only — nothing is deleted), then say what did not match.
+      tools.querySelector("[data-dl-verify]")?.addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        const label = btn.querySelector("span:last-child");
+        const was = label?.textContent;
+        if (label) label.textContent = "Checking…";
+        try {
+          const r = await invoke("verify_vault");
+          const bad = Number(r?.mismatch || 0) + Number(r?.missing || 0);
+          pushDiag("verify_vault", !bad, `${r.ok} ok · ${r.mismatch} mismatch · ${r.missing} missing`);
+          if (!bad) toast(`Vault verified — ${r.ok} file${r.ok === 1 ? "" : "s"} intact`, 3500, "success");
+          else toast(`Vault problems: ${r.mismatch} changed, ${r.missing} missing`, 5000, "error");
+        } catch (err) {
+          pushDiag("verify_vault", false, String(err));
+          toast(`Verify failed: ${String(err).split("\n")[0].slice(0, 70)}`, 5000, "error");
+        } finally {
+          btn.disabled = false;
+          if (label) label.textContent = was || "Verify";
+        }
+      });
+    } else {
+      const count = tools.querySelector("[data-dl-count]");
+      if (count) count.textContent = `${entries.length} track${entries.length === 1 ? "" : "s"} · ${mb} vaulted`;
+      const wifiBtn = tools.querySelector("[data-dl-wifi]");
+      if (wifiBtn) {
+        wifiBtn.setAttribute("aria-checked", String(on));
+        wifiBtn.className = `flex items-center gap-1.5 font-label-mono text-[11px] ${on ? "text-primary" : "text-secondary"} hover:text-on-surface transition-colors`;
+        const ic = wifiBtn.querySelector(".material-symbols-outlined");
+        if (ic) ic.textContent = on ? "wifi" : "wifi_off";
+        const lbl = wifiBtn.querySelector("span:last-child");
+        if (lbl) lbl.textContent = on ? "Wi-Fi only ON" : "Wi-Fi only OFF";
+      }
+      const input = tools.querySelector("[data-dl-search]");
+      if (input && document.activeElement !== input && input.value !== dlQuery) input.value = dlQuery;
+    }
+  }
 
   const box = [...m.querySelectorAll("div")].find((d) => d.className.includes("rounded-xl") && d.className.includes("p-space-xs"));
-  setList("dls", entries);
-  if (box) {
-    box.innerHTML = entries.length
-      ? entries
+  const paintDlList = () => {
+    if (!box) return;
+    const q = dlQuery;
+    const kbps = (s) => Number(String(s || "").replace(/\D/g, "")) || 0;
+    let shown = entries.filter((e) => {
+      if (dlFilter === "hq" && kbps(e.quality) < 320) return false;
+      if (dlFilter === "std" && kbps(e.quality) >= 320) return false;
+      if (q && ![e.title, e.artist, e.album].join(" ").toLowerCase().includes(q)) return false;
+      return true;
+    });
+    if (dlSort === "name") shown = [...shown].sort((a, b) => String(a.title || "").localeCompare(String(b.title || "")));
+    else if (dlSort === "size") shown = [...shown].sort((a, b) => Number(b.bytes || 0) - Number(a.bytes || 0));
+    else shown = [...shown].sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
+    setList("dls", shown);
+    box.innerHTML = shown.length
+      ? shown
           .map(
             (e, i) => `<div data-list="dls" data-idx="${i}" class="flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-low cursor-pointer transition-colors">
           <div class="flex items-center gap-space-sm min-w-0 flex-1">
@@ -973,15 +1583,79 @@ async function mountDownload() {
             </div>
           </div>
           <div class="flex items-center gap-1 flex-shrink-0">
-            <button type="button" data-rm="${esc(e.path)}" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors" aria-label="Remove"><span class="material-symbols-outlined text-[18px]">delete</span></button>
-            <button type="button" aria-label="More options" class="w-8 h-8 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
-            <button type="button" class="w-9 h-9 flex items-center justify-center rounded-full text-on-surface" aria-hidden="true"><span class="material-symbols-outlined text-[20px]">play_arrow</span></button>
+            <button type="button" data-rm="${esc(e.path)}" class="w-10 h-10 flex items-center justify-center text-secondary hover:text-on-surface transition-colors" aria-label="Remove"><span class="material-symbols-outlined text-[18px]">delete</span></button>
+            <button type="button" aria-label="More options" class="w-10 h-10 flex items-center justify-center text-secondary hover:text-on-surface transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
+            <button type="button" class="w-10 h-10 flex items-center justify-center rounded-full text-on-surface" aria-hidden="true"><span class="material-symbols-outlined text-[20px]">play_arrow</span></button>
           </div>
         </div>`,
           )
           .join("")
-      : '<div class="py-space-md text-center font-body-sm text-secondary">No downloads yet</div>';
+      : `<div class="py-space-md text-center font-body-sm text-secondary">${entries.length ? "No downloads match this filter." : "No downloads yet"}</div>`;
+  };
+  // Exposed for the search input above (same tick, no remount).
+  paintDlListRef.fn = paintDlList;
+  m._paintDlList = paintDlList;
+  paintDlList();
+
+  // ---- Filter pills: All / HQ / Standard (design said Albums/Playlists, but
+  // vault rows carry no source — quality is the honest split) ----
+  const pills = [...m.querySelectorAll(".filter-pill")];
+  if (pills.length && !m.dataset.dlPillsWired) {
+    m.dataset.dlPillsWired = "1";
+    const defs = [
+      ["all", "All"],
+      ["hq", "HQ 320"],
+      ["std", "Standard"],
+    ];
+    pills.forEach((pill, idx) => {
+      const [key, label] = defs[idx] || ["all", "All"];
+      pill.dataset.dlFilter = key;
+      pill.textContent = label.trim();
+      pill.addEventListener("click", () => {
+        dlFilter = key;
+        pills.forEach((p) => {
+          const activePill = p === pill;
+          p.classList.toggle("bg-primary", activePill);
+          p.classList.toggle("text-on-primary", activePill);
+          p.classList.toggle("bg-surface-container-low", !activePill);
+          p.classList.toggle("text-secondary", !activePill);
+        });
+        paintDlList();
+      });
+    });
+    // Restore active pill across remounts (progress ticks remount).
+    pills.forEach((p) => {
+      const activePill = p.dataset.dlFilter === dlFilter;
+      p.classList.toggle("bg-primary", activePill);
+      p.classList.toggle("text-on-primary", activePill);
+      p.classList.toggle("bg-surface-container-low", !activePill);
+      p.classList.toggle("text-secondary", !activePill);
+    });
+  } else if (pills.length) {
+    pills.forEach((p) => {
+      const activePill = p.dataset.dlFilter === dlFilter;
+      p.classList.toggle("bg-primary", activePill);
+      p.classList.toggle("text-on-primary", activePill);
+    });
   }
+
+  // ---- Sort toggle: Recent → Name → Size ----
+  const sortBtn = [...m.querySelectorAll("button")].find((b) => b.textContent.includes("RECENT") || b.textContent.includes("SORT"));
+  if (sortBtn && !sortBtn.dataset.dlWired) {
+    sortBtn.dataset.dlWired = "1";
+    sortBtn.addEventListener("click", () => {
+      dlSort = dlSort === "recent" ? "name" : dlSort === "name" ? "size" : "recent";
+      const label = sortBtn.querySelector("span");
+      if (label) label.textContent = dlSort === "recent" ? "RECENT" : dlSort === "name" ? "NAME" : "SIZE";
+      paintDlList();
+      toast(`Sorted by ${dlSort}`, 2500);
+    });
+  }
+  if (sortBtn) {
+    const label = sortBtn.querySelector("span");
+    if (label) label.textContent = dlSort === "recent" ? "RECENT" : dlSort === "name" ? "NAME" : "SIZE";
+  }
+
   // The header's refresh icon only spun itself; re-run the mount so the vault
   // list is actually re-read. Storage opens the real settings screen.
   const sync = document.getElementById("refreshSyncBtn");
@@ -1226,6 +1900,58 @@ async function mountArtist(m, token, meta) {
       if (spans[1]) spans[1].textContent = v;
     });
   }
+  // Follow toggle (Spotify parity): artist.html ships #followBtn with a dead
+  // inline onclick — rebind it to the real toggle and paint the state.
+  {
+    const fq = new URLSearchParams(location.hash.split("?")[1] || "");
+    const fid = token || fq.get("token") || fq.get("id") || name;
+    const paintFollow = (btn) => {
+      const on = isFollowing(fid);
+      const tx = btn.querySelector("#followText");
+      const ic = btn.querySelector("#followIcon");
+      if (tx) tx.textContent = on ? "Following" : "Follow";
+      if (ic) ic.textContent = on ? "check" : "add";
+    };
+    const fb = m.querySelector("#followBtn");
+    if (fb) {
+      fb.removeAttribute("onclick");
+      paintFollow(fb);
+      if (!fb.dataset.followWired) {
+        fb.dataset.followWired = "1";
+        const fresh = fb.cloneNode(true);
+        fresh.removeAttribute("onclick");
+        fb.replaceWith(fresh);
+        fresh.addEventListener("click", () => {
+          const on = toggleFollow({ id: fid, title: name, image: image || "" });
+          haptic(12);
+          paintFollow(fresh);
+          toast(on ? `Following ${name}` : `Unfollowed ${name}`, 3000, "success");
+        });
+      }
+    }
+  }
+
+  // Similar Artists shelf from the overview payload, when the backend sends one.
+  {
+    const raw = overview.similar || overview.similar_artists || overview.related || overview.list || [];
+    const sim = (Array.isArray(raw) ? raw : []).map((r) => r && (r.item || r)).filter((a) => a && (a.token || a.id) && a.title);
+    let ssec = m.querySelector('[data-shelf="similar"]');
+    if (!sim.length) ssec?.remove();
+    else {
+      if (!ssec) {
+        ssec = document.createElement("section");
+        ssec.dataset.shelf = "similar";
+        ssec.className = "flex flex-col mb-space-xl";
+        ssec.innerHTML = `<div class="flex items-center justify-between mb-space-xs px-1"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Similar Artists</h2></div><div class="flex gap-space-sm overflow-x-auto pb-2 no-scrollbar -mx-gutter px-gutter" data-cards></div>`;
+        const featSec = sectionFor("Featuring");
+        if (featSec) featSec.insertAdjacentElement("afterend", ssec);
+        else m.appendChild(ssec);
+      }
+      const sbox = ssec.querySelector("[data-cards]");
+      if (sbox) sbox.innerHTML = sim.slice(0, 10).map((a, i) => artistCardHTML(a, i, entityNav("artist", a))).join("");
+    }
+  }
+
   wirePlayAll(m, tracks);
   wireShuffleHeader(m);
   wireShareHeader(m, () => shareThing({ title: name, text: "Artist" }));
@@ -1391,6 +2117,7 @@ async function mountDetail(kind, query) {
         meta.title ? meta : { title: rec.title, subtitle: rec.subtitle, image: rec.image, count: String((rec.tracks || []).length) },
       );
       wireHeaderDownload(m, "playlist tracks");
+      wireLocalPlaylistTools(m, kind, query, rec.id);
     } else if (kind === "playlist") {
       paintDetail(m, kind, asTracks(await withSnap(`playlist:${id}`, () => invoke("playlist_tracks", { id }))), meta);
       wireHeaderDownload(m, "playlist tracks");
@@ -1399,6 +2126,99 @@ async function mountDetail(kind, query) {
     console.error(e);
     if (String(e) === "Error: offline") toast("You're offline — open this again after connecting", 4000, "info");
     else toast(String(e).slice(0, 100), 5000, "error");
+  }
+  // Album fragments carry the filter in their toolbar, playlist fragments in
+  // the tracklist header; both address the rows fillRows just rendered.
+  wireRowFilter(m.querySelector("#detail-filter"), trackSection(m), '[data-list="detail"]');
+}
+
+/// Local-playlist editing (Spotify parity): header Edit + Offline toggle plus
+/// per-track Remove / Up / Down. Local records only — server playlists stay
+/// read-only. Idempotent per mount: the header bar is injected once and the
+/// row buttons are skipped when already present.
+function wireLocalPlaylistTools(m, kind, query, plId) {
+  if (!m || !plId) return;
+  if (!m.querySelector("[data-pl-edit]")) {
+    const h1 = m.querySelector("h1");
+    const anchor = h1 && h1.parentElement;
+    if (anchor) {
+      const off = playlistOffline(plId);
+      const bar = document.createElement("div");
+      bar.className = "flex items-center gap-2 pt-2";
+      bar.innerHTML =
+        `<button type="button" data-pl-edit class="px-3.5 py-1.5 rounded-full bg-surface-container-low border border-surface-container-high/60 font-label-sm text-label-sm text-on-surface font-medium active:scale-95 transition-all">Edit</button>` +
+        `<button type="button" data-pl-offline role="switch" aria-checked="${off}" class="px-3.5 py-1.5 rounded-full border font-label-sm text-label-sm font-medium active:scale-95 transition-all ${off ? "bg-primary text-on-primary border-transparent" : "bg-surface-container-low border-surface-container-high/60 text-secondary"}">${off ? "Available offline" : "Save offline"}</button>`;
+      anchor.appendChild(bar);
+    }
+  }
+  const editBtn = m.querySelector("[data-pl-edit]");
+  if (editBtn && !editBtn.dataset.wired) {
+    editBtn.dataset.wired = "1";
+    editBtn.addEventListener("click", () => {
+      const rec = load(LIBRARY_KEY, []).find((x) => x && x.id === plId);
+      if (!rec) return toast("Playlist not found", 4000, "error");
+      const title = prompt("Playlist name", rec.title || "");
+      if (title == null) return;
+      const desc = prompt("Description", rec.subtitle || rec.desc || "");
+      if (desc == null) return;
+      const clean = String(title).trim();
+      if (!clean) return toast("Give the playlist a name", 4000, "error");
+      if (!updatePlaylistMeta(plId, { title: clean, desc: String(desc) })) return toast("Nothing changed", 3000);
+      toast("Playlist updated", 3000, "success");
+      mountDetail(kind, query);
+    });
+  }
+  const offBtn = m.querySelector("[data-pl-offline]");
+  if (offBtn && !offBtn.dataset.wired) {
+    offBtn.dataset.wired = "1";
+    offBtn.addEventListener("click", () => {
+      const on = !playlistOffline(plId);
+      setPlaylistOffline(plId, on);
+      offBtn.setAttribute("aria-checked", String(on));
+      offBtn.textContent = on ? "Available offline" : "Save offline";
+      offBtn.className = `px-3.5 py-1.5 rounded-full border font-label-sm text-label-sm font-medium active:scale-95 transition-all ${on ? "bg-primary text-on-primary border-transparent" : "bg-surface-container-low border-surface-container-high/60 text-secondary"}`;
+      toast(on ? "Playlist saved for offline" : "Offline copy off", 3000, "success");
+    });
+  }
+  const sec = trackSection(m);
+  const rows = [...(sec || m).querySelectorAll('[data-list="detail"]')];
+  const tracks = store.detail || [];
+  rows.forEach((row, i) => {
+    if (row.querySelector("[data-pl-rm]")) return;
+    const cluster = row.querySelector("[data-menu-list]")?.parentElement || row.lastElementChild || row;
+    const t = tracks[i] || {};
+    const tid = t.id != null ? String(t.id) : "";
+    const btn = (attr, icon, label) =>
+      `<button type="button" ${attr} aria-label="${label}" title="${label}" class="w-8 h-8 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[18px]">${icon}</span></button>`;
+    cluster.insertAdjacentHTML(
+      "afterbegin",
+      btn(`data-pl-down="${i}"`, "arrow_downward", "Move down") + btn(`data-pl-up="${i}"`, "arrow_upward", "Move up") + btn(`data-pl-rm="${esc(tid)}"`, "close", "Remove from playlist"),
+    );
+  });
+  if (sec && !sec.dataset.plToolsWired) {
+    sec.dataset.plToolsWired = "1";
+    sec.addEventListener("click", (e) => {
+      const rm = e.target.closest("[data-pl-rm]");
+      const up = e.target.closest("[data-pl-up]");
+      const dn = e.target.closest("[data-pl-down]");
+      if (!rm && !up && !dn) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const list = store.detail || [];
+      if (rm) {
+        if (!removePlaylistTrack(plId, rm.dataset.plRm)) return toast("Couldn't remove that track", 4000, "error");
+        toast("Removed from playlist", 3000, "success");
+      } else if (up) {
+        const from = Number(up.dataset.plUp);
+        if (!Number.isInteger(from) || from <= 0) return;
+        if (!movePlaylistTrack(plId, from, from - 1)) return toast("Couldn't move that track", 4000, "error");
+      } else if (dn) {
+        const from = Number(dn.dataset.plDown);
+        if (!Number.isInteger(from) || from < 0 || from >= list.length - 1) return;
+        if (!movePlaylistTrack(plId, from, from + 1)) return toast("Couldn't move that track", 4000, "error");
+      }
+      mountDetail(kind, query);
+    });
   }
 }
 
@@ -1498,12 +2318,55 @@ async function ensureLyrics() {
     const r = await invoke("get_lyrics", { id: t.id, title: t.title || "", artist: t.artist || "", album: t.album || "", duration: t.duration_secs || 0 });
     if (token !== lyricToken) return; // a newer track already fetched its own
     renderLyrics(box, r || {});
+    maybeAiLyrics(box, t, r);
   } catch (e) {
     console.error(e);
     if (token !== lyricToken) return;
     lyricsFailed.add(t.id);
     box.innerHTML = LYRICS_UNAVAILABLE;
+    maybeAiLyrics(box, t, null);
   }
+}
+
+/// Gemini fallback: when the cascade returns nothing for a track, offer a
+/// one-tap AI generation (key set) or a nudge to Settings (no key). Rendered
+/// as plain unsynced lines with an AI label — never presented as verified.
+function maybeAiLyrics(box, t, r) {
+  try {
+    if (!box || !t || box.querySelector("[data-ai-lyrics]")) return;
+    const synced = r && Array.isArray(r.synced) ? r.synced : [];
+    const plain = r && typeof r.plain === "string" ? r.plain.trim() : "";
+    if (synced.length || plain) return; // real lyrics won — nothing to do
+    const wrap = document.createElement("div");
+    wrap.setAttribute("data-ai-lyrics", "1");
+    wrap.className = "pt-1";
+    if (hasGeminiKey()) {
+      wrap.innerHTML = `<button type="button" data-ai-go class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high font-label-mono text-[11px] text-on-surface font-semibold transition-colors active:scale-95"><span class="material-symbols-outlined text-[15px]">auto_awesome</span>No lyrics found — get AI lyrics</button>`;
+      const btn = wrap.querySelector("[data-ai-go]");
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          const id = t.id;
+          btn.disabled = true;
+          btn.innerHTML = `<span class="font-label-mono text-[11px]">Asking Gemini…</span>`;
+          try {
+            const { text } = await fetchAiLyrics(t);
+            if (lyricsFor !== id || lyricsBox !== box || !box.isConnected) return; // moved on
+            renderLyrics(box, { plain: text, copyright: aiCopyright() });
+            try {
+              haptic(12);
+            } catch {}
+          } catch (e) {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[15px]">auto_awesome</span>No lyrics found — get AI lyrics`;
+            toast(String((e && e.message) || e).slice(0, 120), 5000, "error");
+          }
+        });
+      }
+    } else {
+      wrap.innerHTML = `<button type="button" data-nav="settings" class="font-body-sm text-[12px] text-secondary underline underline-offset-2">No lyrics found — add a Gemini key in Settings for AI lyrics</button>`;
+    }
+    box.appendChild(wrap);
+  } catch {}
 }
 
 let upNextKey = "";
@@ -1592,8 +2455,10 @@ function paintNowplaying(st) {
   const key = `${st.qi}:${st.queue.length}:${t ? t.id : ""}`;
   if (key !== upNextKey) {
     upNextKey = key;
-    const row0 = m.querySelector('div[class*="p-2 rounded-xl"]');
-    const host = row0 && row0.parentElement;
+    // The host is explicit (`data-upnext-list` in nowplaying.html). The
+    // old row-class probe silently missed when the design markup changed
+    // its padding/radius, leaving the mock rows on screen forever.
+    const host = m.querySelector("[data-upnext-list]");
     if (host) {
       const rest = st.queue.slice(st.qi + 1);
       host.innerHTML = rest.length
@@ -1606,6 +2471,7 @@ function paintNowplaying(st) {
                 <span class="font-body-sm text-[11px] text-secondary truncate">${esc(x.artist || "")}</span>
               </div>
             </div>
+            <span class="font-label-mono text-[11px] text-secondary font-medium shrink-0">${x.duration_secs ? fmtTime(x.duration_secs) : esc(x.duration || "")}</span>
             <button type="button" aria-label="More options" class="w-8 h-8 flex items-center justify-center flex-shrink-0 text-secondary hover:text-on-surface active:bg-surface-container rounded-lg transition-colors"><span class="material-symbols-outlined text-[18px]">more_vert</span></button>
           </div>`,
           )
@@ -1627,19 +2493,126 @@ function paintRadioBtn(btn, on) {
   btn.setAttribute("aria-pressed", String(!!on));
 }
 
+/// Queue overlay (menus.js owns it and is edited concurrently): reached ONLY
+/// through this guarded dynamic import so this file stays link-safe when the
+/// overlay is absent — scrollQueue is the fallback in every failure path.
+function openQueueOverlay(m) {
+  import("./menus.js")
+    .then((mod) => {
+      if (mod && typeof mod.openQueue === "function") mod.openQueue();
+      else scrollQueue(m);
+    })
+    .catch(() => scrollQueue(m));
+}
+
 /// Smooth-scroll the Up Next list into view (transport Queue button and the
 /// header's "View Queue" link both land here).
 function scrollQueue(m) {
-  const row0 = m.querySelector('div[class*="p-2 rounded-xl"]');
-  const host = row0 && row0.parentElement;
-  if (host) host.scrollIntoView({ behavior: "smooth", block: "end" });
+  const host = m.querySelector("[data-upnext-list]");
+  if (host && host.querySelector("[data-list]")) host.scrollIntoView({ behavior: "smooth", block: "end" });
   else toast("Nothing queued", 2500);
+}
+
+/// NowPlaying extras injected per mount (fresh DOM every navigation):
+/// volume slider, speed select, and the header more-options menu.
+/// Sleep lives in the utility bar ([data-sleep] → app.js + shared sleep.js),
+/// so it is not duplicated here. Idempotent per mount.
+function ensureNpExtras(m) {
+  // Volume row after the transport controls.
+  const playBtn = document.getElementById("master-play-pause");
+  const transport = playBtn?.closest("div.px-margin") || playBtn?.parentElement?.parentElement;
+  if (transport && !m.querySelector("#m-np-vol")) {
+    const wrap = document.createElement("div");
+    wrap.className = "px-margin mt-3 flex items-center gap-2.5";
+    wrap.innerHTML = `<span class="material-symbols-outlined text-[18px] text-on-surface-variant shrink-0">volume_up</span>
+      <input id="m-np-vol" type="range" min="0" max="100" value="100" aria-label="Volume" class="flex-1 accent-black h-1.5" />
+      <span id="m-np-volval" class="font-label-mono text-[11px] text-secondary w-9 text-right shrink-0">100%</span>`;
+    transport.insertAdjacentElement("afterend", wrap);
+  }
+  const vol = m.querySelector("#m-np-vol");
+  if (vol && !vol.dataset.wired) {
+    vol.dataset.wired = "1";
+    try {
+      // Missing key = keep the markup's default (100%). `Number(null)` is 0,
+      // which would otherwise clamp the slider — and playback — to silence.
+      const raw = localStorage.getItem("tm-mobile-vol");
+      if (raw != null && raw !== "") {
+        const saved = Number(raw);
+        if (Number.isFinite(saved)) {
+          vol.value = String(Math.round(Math.min(1, Math.max(0, saved)) * 100));
+          if (mAudio) mAudio.volume = Math.min(1, Math.max(0, saved));
+        }
+      }
+    } catch {}
+    const lbl = m.querySelector("#m-np-volval");
+    if (lbl) lbl.textContent = `${vol.value}%`;
+    vol.addEventListener("input", () => {
+      const v = Math.min(1, Math.max(0, Number(vol.value) / 100));
+      try {
+        if (mAudio) mAudio.volume = v;
+        localStorage.setItem("tm-mobile-vol", String(v));
+      } catch {}
+      if (lbl) lbl.textContent = `${vol.value}%`;
+    });
+  }
+  // Speed row after the utility bar (AirPlay row). Sleep is the utility-bar
+  // bedtime button (app.js), not duplicated here.
+  const routeBtn = document.getElementById("device-route-btn");
+  const utilBar = routeBtn?.closest("div.px-margin");
+  if (utilBar && !m.querySelector("#m-np-speed")) {
+    const row = document.createElement("div");
+    row.className = "px-margin mt-3 flex items-center gap-2";
+    row.innerHTML = `
+      <div class="flex-1 bg-surface-container-low/90 border border-surface-container-high/80 rounded-2xl px-3.5 py-2.5 flex items-center justify-between">
+        <span class="font-body-sm text-[12px] font-medium text-on-surface flex items-center gap-2"><span class="material-symbols-outlined text-[18px]">speed</span>Speed</span>
+        <select id="m-np-speed" class="bg-transparent font-label-mono text-[12px] text-on-surface focus:outline-none">
+          <option value="0.75">0.75x</option><option value="0.9">0.9x</option><option value="1">1x</option><option value="1.1">1.1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option>
+        </select></div>`;
+    utilBar.insertAdjacentElement("afterend", row);
+  }
+  const speedSel = m.querySelector("#m-np-speed");
+  if (speedSel && !speedSel.dataset.wired) {
+    speedSel.dataset.wired = "1";
+    try {
+      speedSel.value = localStorage.getItem("tm-play-speed") || "1";
+    } catch {}
+    speedSel.addEventListener("change", () => {
+      try {
+        localStorage.setItem("tm-play-speed", speedSel.value);
+        if (mAudio) mAudio.playbackRate = Number(speedSel.value) || 1;
+      } catch {}
+      toast(`Speed ${Number(speedSel.value)}x`, 2500, "success");
+    });
+  }
+  // Header more-options was dead chrome — open the full track menu.
+  const more = document.getElementById("more-options-btn");
+  if (more && !more.dataset.npWired) {
+    more.dataset.npWired = "1";
+    more.addEventListener("click", () => {
+      const t = playerState().track;
+      if (!t) return toast("Nothing is playing", 3000, "error");
+      trackMenu(t);
+    });
+  }
+  // Bookmark-add button was dead chrome — same add-to-playlist sheet.
+  const add = document.getElementById("playlist-add-btn");
+  if (add && !add.dataset.npWired) {
+    add.dataset.npWired = "1";
+    add.addEventListener("click", () => {
+      const t = playerState().track;
+      if (!t) return toast("Nothing is playing", 3000, "error");
+      trackMenu(t);
+    });
+  }
 }
 
 function mountNowplaying() {
   const m = main();
   if (!m) return;
   wireBack(m);
+  // Every mount gets a fresh DOM, so the Up Next key guard must re-run:
+  // an unchanged queue would otherwise leave the new container empty.
+  upNextKey = "";
   const sc = document.getElementById("scrubber-container");
   if (sc) {
     const fresh = sc.cloneNode(true);
@@ -1680,7 +2653,7 @@ function mountNowplaying() {
   if (fullBtn && !fullBtn.dataset.fullWired) {
     fullBtn.dataset.fullWired = "1";
     fullBtn.addEventListener("click", () => {
-      const card = fullBtn.closest("div.rounded-xl");
+      const card = fullBtn.closest("div.rounded-2xl, div.rounded-xl");
       if (!card) return;
       const on = card.classList.toggle("tm-lyrics-full");
       fullBtn.textContent = on ? "Close" : "Full View";
@@ -1703,19 +2676,200 @@ function mountNowplaying() {
     const fresh = queueBtn.cloneNode(true);
     fresh.dataset.qWired = "1";
     queueBtn.replaceWith(fresh);
-    fresh.addEventListener("click", () => scrollQueue(m));
+    fresh.addEventListener("click", () => openQueueOverlay(m));
   }
-  // The header's "View Queue" link — same target as the transport button.
+  // Swipe the header down to collapse NowPlaying (drag-to-dismiss). Header
+  // only: a gesture on <main> would fight the page's own scroll.
+  const hdr = document.querySelector("#screen header");
+  if (hdr && !hdr.dataset.swipeWired) {
+    hdr.dataset.swipeWired = "1";
+    let y0 = null;
+    hdr.addEventListener("touchstart", (e) => {
+      y0 = e.touches[0].clientY;
+    }, { passive: true });
+    hdr.addEventListener("touchend", (e) => {
+      if (y0 == null) return;
+      const dy = e.changedTouches[0].clientY - y0;
+      y0 = null;
+      if (dy > 60) history.back();
+    });
+  }
+  // Drag-down-to-dismiss for the whole screen: a downward swipe on the body
+  // of NowPlaying (art, title, cards, Up Next) slides header + content down
+  // and collapses it — the header chevron's gesture, extended. Armed only
+  // from the very top of the page so it never fights scrolling, and never
+  // from the scrubber or the lyrics card, which own their own gestures.
+  // The header keeps its own swipe: it is a sibling of <main>, so its
+  // touches never reach these listeners anyway.
+  const parts = [hdr, m].filter(Boolean);
+  let gY0 = 0;
+  let gX0 = 0;
+  let gT0 = 0;
+  let gOn = false;
+  let gTaken = false;
+  const springBack = () => {
+    for (const p of parts) {
+      p.style.transition = "transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.26s";
+      p.style.transform = "";
+      p.style.opacity = "";
+    }
+    setTimeout(() => {
+      for (const p of parts) p.style.transition = "";
+    }, 300);
+  };
+  m.addEventListener(
+    "touchstart",
+    (e) => {
+      const t = e.target;
+      if (t.closest && t.closest("#scrubber-container, [data-lyrics], .tm-lyrics-full, button, a, input")) return;
+      if (window.scrollY > 1) return; // scrolled content owns its own swipes
+      gOn = true;
+      gTaken = false;
+      gY0 = e.touches[0].clientY;
+      gX0 = e.touches[0].clientX;
+      gT0 = Date.now();
+      for (const p of parts) p.style.transition = "none";
+    },
+    { passive: true },
+  );
+  m.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!gOn) return;
+      const dy = e.touches[0].clientY - gY0;
+      const dx = e.touches[0].clientX - gX0;
+      if (!gTaken) {
+        if (dy < 12 || dy < Math.abs(dx)) return; // wait for a clear downward swipe
+        gTaken = true;
+      }
+      e.preventDefault(); // non-passive listener: hold the page still mid-drag
+      const h = window.innerHeight || 700;
+      for (const p of parts) {
+        p.style.transform = `translateY(${dy}px)`;
+        p.style.opacity = String(Math.max(0.35, 1 - dy / h));
+      }
+    },
+    { passive: false },
+  );
+  const gEnd = (e) => {
+    if (!gOn) return;
+    const dy = (e.changedTouches ? e.changedTouches[0].clientY : 0) - gY0;
+    const v = dy / Math.max(1, Date.now() - gT0);
+    const wasTaken = gTaken;
+    gOn = false;
+    gTaken = false;
+    if (!wasTaken) {
+      for (const p of parts) p.style.transition = "";
+      return;
+    }
+    const h = window.innerHeight || 700;
+    if (dy > Math.min(160, h * 0.25) || v > 0.6) {
+      // Commit: finish the slide off-screen, then collapse the route.
+      for (const p of parts) {
+        p.style.transition = "transform 0.24s cubic-bezier(0.4, 0, 1, 1), opacity 0.24s";
+        p.style.transform = `translateY(${h}px)`;
+        p.style.opacity = "0.4";
+      }
+      const before = location.hash;
+      setTimeout(() => {
+        history.back();
+        // No history entry to pop (deep-linked boot): restore the screen.
+        setTimeout(() => {
+          if (location.hash === before) springBack();
+        }, 150);
+      }, 240);
+    } else {
+      springBack();
+    }
+  };
+  m.addEventListener("touchend", gEnd);
+  m.addEventListener("touchcancel", gEnd);
+  // The output row's device button was static chrome — say where audio goes
+  // instead of pretending to open a route picker.
+  const routeBtn = document.getElementById("device-route-btn");
+  if (routeBtn && !routeBtn.dataset.rtWired) {
+    routeBtn.dataset.rtWired = "1";
+    routeBtn.addEventListener("click", () => toast("Audio plays on this device — switch speakers or Bluetooth from the system media controls", 4000));
+  }
+  // The header's "View Queue" link — full overlay, same as the transport button.
   const viewQueue = m.querySelector("[data-queue-scroll]");
   if (viewQueue && !viewQueue.dataset.qWired) {
     viewQueue.dataset.qWired = "1";
-    viewQueue.addEventListener("click", () => scrollQueue(m));
+    viewQueue.addEventListener("click", () => openQueueOverlay(m));
+  }
+  // "Play Next" — pick the next Up Next row and insert it straight after the
+  // playing track. Re-clicking moves it further back in the same order, which
+  // is what the gesture means on other players.
+  const playNextBtn = m.querySelector("[data-queue-playnext]");
+  if (playNextBtn && !playNextBtn.dataset.pnWired) {
+    playNextBtn.dataset.pnWired = "1";
+    playNextBtn.addEventListener("click", () => {
+      const st = playerState();
+      const upNext = st.queue.slice(st.qi + 1);
+      if (!upNext.length) {
+        toast("Nothing queued to move up", 2500, "info");
+        return;
+      }
+      try {
+        haptic(12);
+      } catch {}
+      insertNext(upNext[0]);
+      // The Up Next list repaints from playerState on the next paint tick, so
+      // the count only needs nudging here to feel immediate.
+      const host = m.querySelector("[data-queue-count]");
+      if (host) host.textContent = String(Math.max(0, st.queue.length - st.qi - 1));
+      toast(`“${upNext[0].title || "Track"}” plays next`, 2500, "success");
+    });
+  }
+  // Long-press a lyric line to share it as a card (550ms hold, <10px drift).
+  const lyrBox = m.querySelector("[data-lyrics]");
+  if (lyrBox && !lyrBox.dataset.lyrShareWired) {
+    lyrBox.dataset.lyrShareWired = "1";
+    let lpTimer = 0;
+    let lpX = 0;
+    let lpY = 0;
+    let lpTarget = null;
+    lyrBox.addEventListener(
+      "touchstart",
+      (e) => {
+        const t = e.touches[0];
+        lpX = t.clientX;
+        lpY = t.clientY;
+        lpTarget = e.target && e.target.closest ? e.target.closest(".lyric-line") : null;
+        clearTimeout(lpTimer);
+        lpTimer = setTimeout(() => {
+          const line = lpTarget && lpTarget.isConnected ? lpTarget.textContent.trim() : "";
+          const tr = playerState().track;
+          if (!line || !tr) return;
+          haptic(12);
+          shareCard({ title: tr.title, subtitle: line, image: tr.image, badge: "LYRICS" });
+        }, 550);
+      },
+      { passive: true },
+    );
+    lyrBox.addEventListener(
+      "touchmove",
+      (e) => {
+        const t = e.touches[0];
+        if (Math.hypot(t.clientX - lpX, t.clientY - lpY) > 10) clearTimeout(lpTimer);
+      },
+      { passive: true },
+    );
+    const lpClear = () => clearTimeout(lpTimer);
+    lyrBox.addEventListener("touchend", lpClear);
+    lyrBox.addEventListener("touchcancel", lpClear);
   }
   document.getElementById("master-play-pause")?.addEventListener("click", () => toggle());
   m.querySelector('[aria-label="Next"]')?.addEventListener("click", () => next());
   m.querySelector('[aria-label="Previous"]')?.addEventListener("click", () => prev());
-  document.getElementById("shuffle-btn")?.addEventListener("click", () => toggleShuffle());
-  document.getElementById("repeat-btn")?.addEventListener("click", () => cycleRepeat());
+  document.getElementById("shuffle-btn")?.addEventListener("click", () => {
+    haptic(10);
+    toggleShuffle();
+  });
+  document.getElementById("repeat-btn")?.addEventListener("click", () => {
+    haptic(10);
+    cycleRepeat();
+  });
   const radioBtn = document.getElementById("radio-btn");
   if (radioBtn) {
     const fresh = radioBtn.cloneNode(true); // drop the design's cosmetic node
@@ -1739,8 +2893,22 @@ function mountNowplaying() {
   }
   document.getElementById("favorite-btn")?.addEventListener("click", () => {
     const t = playerState().track;
-    if (t) toggleFav(t);
+    if (t) {
+      haptic(10);
+      toggleFav(t);
+    }
   });
+  const badgeEl = m.querySelector("[data-badge]");
+  if (badgeEl && !badgeEl.dataset.wiredCredits) {
+    badgeEl.dataset.wiredCredits = "1";
+    badgeEl.style.cursor = "pointer";
+    badgeEl.addEventListener("click", () => {
+      const t = playerState().track;
+      if (t) detailsSheet(t);
+      else toast("Nothing playing", 2500, "info");
+    });
+  }
+  ensureNpExtras(m);
   upNextKey = "";
   paintNowplaying(playerState());
 }
@@ -1895,6 +3063,29 @@ function mountAnalytics() {
       }
     });
   }
+  // Share Wrapped card (Spotify parity): the same summary as an image card.
+  if (exportBtn && !m.querySelector("[data-share-wrapped]")) {
+    const wb = document.createElement("button");
+    wb.type = "button";
+    wb.dataset.shareWrapped = "";
+    wb.className = exportBtn.className;
+    wb.innerHTML = `<span class="material-symbols-outlined text-[18px]">ios_share</span><span>Share Wrapped</span>`;
+    exportBtn.insertAdjacentElement("afterend", wb);
+    wb.addEventListener("click", async () => {
+      try {
+        const lines = [
+          `Listening summary — ${new Date().toLocaleDateString()}`,
+          `Total: ${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m across ${totalPlays} plays`,
+          "",
+          "Top artists:",
+          ...top.map((a, i) => `${i + 1}. ${a.name} — ${a.plays} plays (${fmtDur(a.sec)})`),
+        ];
+        await shareCard({ title: "My Listening", subtitle: lines[1], image: (top[0] && top[0].image) || "", badge: "WRAPPED" });
+      } catch {
+        toast("Sharing is unavailable here", 4000, "error");
+      }
+    });
+  }
   // Share Insights is the same summary through the same sheet.
   const insights = [...m.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Share Insights");
   if (insights && !insights.dataset.insWired) {
@@ -2001,7 +3192,12 @@ function mountNotification() {
     el.dataset.wired = "1";
     el.addEventListener("click", fn);
   };
-  const findBtn = (re) => [...m.querySelectorAll("button")].find((b) => re.test(b.getAttribute("aria-label") || ""));
+  // Screen scope, not main: Clear all / Notification settings live in the
+  // fragment header, outside <main>.
+  const findBtn = (re) => {
+    const scope = (m && m.closest && m.closest("#screen")) || document;
+    return [...scope.querySelectorAll("button")].find((b) => re.test(b.getAttribute("aria-label") || ""));
+  };
   wire(findBtn(/clear all/i), () => {
     save(EVENTS_KEY, []);
     toast("Notifications cleared");
@@ -2104,6 +3300,11 @@ function paintSettings(m) {
   const name = m.querySelector("#set-name");
   if (name) name.value = load(NAME_KEY, "") || "";
 
+  // Never clobber the key field while it is being typed — paintSettings
+  // re-runs on unrelated pref changes (chips, restores).
+  const gk = m.querySelector("#set-gemini-key");
+  if (gk && document.activeElement !== gk) gk.value = getGeminiKey();
+
   const chips = m.querySelector("#set-langs");
   if (chips) {
     const on = prefLangs();
@@ -2132,7 +3333,7 @@ function paintSettings(m) {
 }
 
 /// tauri.conf.json "version" — the design export shipped a mock v2.4.0.
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.4.0";
 
 function paintVersion(m) {
   const head = m.querySelector("header span");
@@ -2179,6 +3380,180 @@ function wireLegal(m) {
   }
 }
 
+/// Mobile copy of the desktop's new Playback / Appearance / Lyrics prefs.
+/// Same localStorage keys (raw strings, not JSON) so backups restore across
+/// desktop ↔ mobile. Injected once — the static fragment has no such rows.
+const mGet = (k, dflt) => {
+  try {
+    const v = localStorage.getItem(k);
+    return v == null ? dflt : v;
+  } catch {
+    return dflt;
+  }
+};
+const mSet = (k, v) => {
+  try {
+    localStorage.setItem(k, String(v));
+  } catch {}
+};
+function applyMobileTheme() {
+  const t = mGet("tm-theme", "system");
+  const dark = t === "dark" ? true : t === "light" ? false : window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  document.documentElement.classList.toggle("dark", !!dark);
+  try {
+    document.body.dataset.density = mGet("tm-density", "comfortable");
+  } catch {}
+}
+function ensureMobilePrefs(m) {
+  if (!m || m.querySelector("#tm-m-playback")) return;
+  const row = (icon, title, sub, control) =>
+    `<div class="p-3.5 flex items-center gap-3 hover:bg-surface-container-low transition-colors"><span class="w-8 h-8 shrink-0 rounded-lg bg-surface-container border border-surface-container-high/60 flex items-center justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[18px]">${icon}</span></span><span class="flex flex-col min-w-0 flex-1"><span class="font-body-md text-[14px] text-on-surface font-semibold tracking-tight">${title}</span><span class="font-body-sm text-[12px] text-on-surface-variant truncate mt-0.5">${sub}</span></span>${control}</div>`;
+  const sel = (id, opts) => `<select id="${id}" class="max-w-[10rem] shrink-0 rounded-xl border border-surface-container-high bg-surface-container-low px-3 py-1.5 font-body-sm text-body-sm text-on-surface focus:outline-none">${opts}</select>`;
+  const sw = (id) =>
+    `<button type="button" id="${id}" role="switch" aria-checked="true" class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors bg-primary"><span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform translate-x-5"></span></button>`;
+  const sec = (id, head, tag, inner) =>
+    `<div class="flex flex-col space-y-2" id="${id}"><div class="flex items-center justify-between px-1"><h2 class="font-label-mono text-[10.5px] uppercase tracking-[0.16em] text-secondary font-semibold">${head}</h2><span class="font-label-mono text-[9.5px] text-secondary font-medium px-2 py-0.5 rounded-full bg-surface-container">${tag}</span></div><div class="bg-surface-container-lowest rounded-2xl border border-surface-container-high/70 shadow-sm overflow-hidden flex flex-col divide-y divide-surface-container-high/60">${inner}</div></div>`;
+  const html =
+    sec(
+      "tm-m-playback",
+      "Playback & Audio",
+      "AUDIO",
+      row("stream", "Streaming quality", "Requested for each track", sel("m-stream-q", "")) +
+        row("wifi", "Streaming Wi-Fi", "Quality on Wi-Fi", sel("m-stream-wifi", "")) +
+        row("signal_cellular_alt", "Streaming Cellular", "Quality on mobile data", sel("m-stream-cell", "")) +
+        row("data_saver_on", "Data Saver", "Force low quality everywhere", sw("m-datasaver")) +
+        row("explicit", "Hide explicit", "Skip explicit-tagged tracks", sw("m-explicit")) +
+        row("equalizer", "EQ preset", "Tone shaping", sel("m-eq", "")) +
+        row("volume_up", "Normalize volume", "Even out loudness", sw("m-normalize")) +
+        row("download_for_offline", "Smart downloads", "Auto-save mixes offline", sw("m-smart")) +
+        row("all_inclusive", "Gapless playback", "No pause between tracks", sw("m-gapless")) +
+        row("history", "Remember position", "Resume where you stopped", sw("m-remember")) +
+        row("speed", "Playback speed", "Applies immediately", sel("m-speed", "")),
+    ) +
+    sec(
+      "tm-m-appearance",
+      "Appearance & Theme",
+      "THEME",
+      row("palette", "Theme", "System follows your OS", sel("m-theme", "")) +
+        row("density_medium", "Density", "Compact fits more rows", sel("m-density", "")),
+    ) +
+    sec(
+      "tm-m-lyrics",
+      "Lyrics & Karaoke",
+      "KARAOKE",
+      row("unfold_more", "Auto-scroll", "Follow the playhead", sw("m-lyr-auto")) +
+        row("mic", "Karaoke highlight", "Words light up as sung", sw("m-lyr-kara")) +
+        row("format_size", "Lyric text size", "Base size for lines", sel("m-lyr-size", "")),
+    );
+  const wrap = m.querySelector("div.space-y-6") || m.firstElementChild || m;
+  // Before the Legal block when it exists so prefs stay together.
+  const legalH = [...wrap.querySelectorAll("h2")].find((h) => /Legal/i.test(h.textContent));
+  const anchor = legalH ? legalH.closest("div.flex.flex-col.space-y-2") : null;
+  if (anchor) anchor.insertAdjacentHTML("beforebegin", html);
+  else wrap.insertAdjacentHTML("beforeend", html);
+  // Wire once (guarded by settingsWired on the parent, but these nodes are new).
+  const q = (id) => m.querySelector(`#${id}`);
+  q("m-stream-q")?.addEventListener("change", (e) => {
+    mSet("tm-stream-quality", e.target.value);
+    toast(`Streaming: ${e.target.selectedOptions[0]?.textContent}`, 3000, "success");
+  });
+  q("m-speed")?.addEventListener("change", (e) => {
+    mSet("tm-play-speed", e.target.value);
+    try {
+      const a = document.getElementById("audio");
+      if (a) a.playbackRate = Number(e.target.value) || 1;
+    } catch {}
+    toast(`Speed ${Number(e.target.value)}x`, 3000, "success");
+  });
+  q("m-theme")?.addEventListener("change", (e) => {
+    mSet("tm-theme", e.target.value);
+    applyMobileTheme();
+    toast(`Theme: ${e.target.selectedOptions[0]?.textContent}`, 3000, "success");
+  });
+  q("m-density")?.addEventListener("change", (e) => {
+    mSet("tm-density", e.target.value);
+    applyMobileTheme();
+    toast(`Density: ${e.target.selectedOptions[0]?.textContent}`, 3000, "success");
+  });
+  q("m-lyr-size")?.addEventListener("change", (e) => {
+    mSet("tm-lyrics-size", e.target.value);
+    toast(`Lyric size: ${e.target.selectedOptions[0]?.textContent}`, 3000, "success");
+  });
+  q("m-stream-wifi")?.addEventListener("change", (e) => {
+    setEffStreamWifi(e.target.value);
+    toast(`Wi-Fi streaming: ${e.target.selectedOptions[0]?.textContent || e.target.value || "Auto"}`, 3000, "success");
+  });
+  q("m-stream-cell")?.addEventListener("change", (e) => {
+    setEffStreamCell(e.target.value);
+    toast(`Cellular streaming: ${e.target.selectedOptions[0]?.textContent || e.target.value || "Auto"}`, 3000, "success");
+  });
+  q("m-eq")?.addEventListener("change", (e) => {
+    setEqPreset(e.target.value);
+    toast(`EQ: ${e.target.value}`, 3000, "success");
+  });
+  const flipShared = (id, get, set, msg) => {
+    q(id)?.addEventListener("click", () => {
+      const on = !get();
+      set(on);
+      paintMobilePrefs(m);
+      toast(msg(on), 3000, "success");
+    });
+  };
+  flipShared("m-datasaver", dataSaver, setDataSaver, (on) => (on ? "Data Saver on — low quality everywhere" : "Data Saver off"));
+  flipShared("m-explicit", explicitHidden, setExplicitHidden, (on) => (on ? "Explicit tracks hidden" : "Explicit tracks shown"));
+  flipShared("m-normalize", normalizeOn, setNormalize, (on) => (on ? "Volume normalization on" : "Normalization off"));
+  flipShared("m-smart", smartDlOn, setSmartDl, (on) => (on ? "Smart downloads on" : "Smart downloads off"));
+  const flip = (id, key, msg) => {
+    q(id)?.addEventListener("click", () => {
+      const on = mGet(key, "1") !== "1";
+      mSet(key, on ? "1" : "0");
+      paintMobilePrefs(m);
+      toast(msg(on), 3000, "success");
+    });
+  };
+  flip("m-gapless", "tm-gapless", (on) => (on ? "Gapless on" : "Gapless off"));
+  flip("m-remember", "tm-remember-pos", (on) => (on ? "Resume on" : "Resume off"));
+  flip("m-lyr-auto", "tm-lyrics-autoscroll", (on) => (on ? "Lyrics follow you" : "Lyrics stay put"));
+  flip("m-lyr-kara", "tm-lyrics-gloss", (on) => (on ? "Karaoke on" : "Karaoke off"));
+  applyMobileTheme();
+}
+function paintMobilePrefs(m) {
+  if (!m || !m.querySelector("#tm-m-playback")) return;
+  const fill = (id, opts, cur) => {
+    const el = m.querySelector(`#${id}`);
+    if (!el) return;
+    el.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(l)}</option>`).join("");
+  };
+  fill("m-stream-q", [["320kbps", "320 kbps — max"], ["160kbps", "160 kbps"], ["96kbps", "96 kbps"], ["64kbps", "64 kbps — saver"]], mGet("tm-stream-quality", "320kbps"));
+  fill(
+    "m-stream-wifi",
+    [["", "Auto"], ["320kbps", "320 kbps — max"], ["160kbps", "160 kbps"], ["96kbps", "96 kbps"], ["64kbps", "64 kbps — saver"]],
+    effStreamWifi(),
+  );
+  fill(
+    "m-stream-cell",
+    [["", "Auto"], ["320kbps", "320 kbps — max"], ["160kbps", "160 kbps"], ["96kbps", "96 kbps"], ["64kbps", "64 kbps — saver"]],
+    effStreamCell(),
+  );
+  fill(
+    "m-eq",
+    [["flat", "Flat"], ["bass", "Bass"], ["bassboost", "Bass Boost"], ["pop", "Pop"], ["bright", "Bright"], ["vocal", "Vocal"]],
+    eqPreset(),
+  );
+  fill("m-speed", [["0.75", "0.75x"], ["0.9", "0.9x"], ["1", "1x"], ["1.1", "1.1x"], ["1.25", "1.25x"], ["1.5", "1.5x"]], mGet("tm-play-speed", "1"));
+  fill("m-theme", [["system", "System"], ["light", "Light"], ["dark", "Dark"]], mGet("tm-theme", "system"));
+  fill("m-density", [["comfortable", "Comfortable"], ["compact", "Compact"]], mGet("tm-density", "comfortable"));
+  fill("m-lyr-size", [["s", "Small"], ["m", "Medium"], ["l", "Large"]], mGet("tm-lyrics-size", "m"));
+  for (const [id, key, dflt] of [["m-gapless", "tm-gapless", "0"], ["m-remember", "tm-remember-pos", "1"], ["m-lyr-auto", "tm-lyrics-autoscroll", "1"], ["m-lyr-kara", "tm-lyrics-gloss", "1"]]) {
+    const btn = m.querySelector(`#${id}`);
+    if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
+  }
+  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-normalize", normalizeOn()], ["m-smart", smartDlOn()]]) {
+    const btn = m.querySelector(`#${id}`);
+    if (btn) paintSwitch(btn, !!on);
+  }
+}
+
 function mountSettings() {
   const m = main();
   if (!m) return;
@@ -2186,9 +3561,57 @@ function mountSettings() {
   paintSettings(m);
   paintVersion(m);
   wireLegal(m);
+  ensureMobilePrefs(m);
+  paintMobilePrefs(m);
   pushPrefs();
   if (m.dataset.settingsWired) return;
   m.dataset.settingsWired = "1";
+
+  // Diagnostics row: the desktop shows the last backend calls on the Search
+  // screen; mobile injects it here instead of editing the generated markup.
+  const diagRow = (() => {
+    const host = [...m.querySelectorAll("div.bg-surface-container-lowest")].pop();
+    if (!host) return null;
+    const row = document.createElement("button");
+    row.type = "button";
+    row.dataset.diag = "";
+    row.className = "p-3.5 w-full flex items-center gap-3 hover:bg-surface-container-low transition-colors text-left";
+    row.innerHTML = `<span class="w-8 h-8 shrink-0 rounded-lg bg-surface-container border border-surface-container-high/60 flex items-center justify-center text-on-surface-variant"><span class="material-symbols-outlined text-[18px]">bug_report</span></span><span class="flex flex-col min-w-0 flex-1"><span class="font-body-md text-[14px] text-on-surface font-semibold tracking-tight">Diagnostics</span><span data-diag-count class="font-body-sm text-[12px] text-on-surface-variant truncate mt-0.5">No backend calls logged yet</span></span><span class="material-symbols-outlined text-secondary shrink-0">chevron_right</span>`;
+    host.appendChild(row);
+    return row;
+  })();
+  if (diagRow)
+    diagRow.addEventListener("click", () => {
+      const entries = readDiag();
+      openSheet({
+        title: "Diagnostics",
+        sub: entries.length ? `Last ${entries.length} backend calls` : "Nothing logged yet",
+        rows: entries.map((d) => [
+          `${d.ok === true ? "ok" : d.ok === false ? "fail" : "note"} · ${d.name}`,
+          d.msg || "—",
+        ]),
+        items: entries.length
+          ? [
+              {
+                label: "Clear log",
+                icon: "delete_sweep",
+                action: () => {
+                  clearDiag();
+                  toast("Diagnostics cleared", 2500, "success");
+                  paintDiagCount();
+                },
+              },
+            ]
+          : [],
+      });
+    });
+  const paintDiagCount = () => {
+    const el = m.querySelector("[data-diag-count]");
+    if (!el) return;
+    const n = readDiag().length;
+    el.textContent = n ? `${n} backend call${n === 1 ? "" : "s"} logged` : "No backend calls logged yet";
+  };
+  paintDiagCount();
 
   const name = m.querySelector("#set-name");
   if (name)
@@ -2197,6 +3620,17 @@ function mountSettings() {
       save(NAME_KEY, value);
       name.value = value;
       toast(value ? `Display name: ${value}` : "Display name cleared", 3000, "success");
+    });
+
+  // Gemini key for AI lyrics: stored on-device only, shown as dots, applied
+  // on change (no save button — typing it in is the whole gesture).
+  const gk = m.querySelector("#set-gemini-key");
+  if (gk)
+    gk.addEventListener("change", () => {
+      const value = gk.value.trim();
+      setGeminiKey(value);
+      gk.value = value;
+      toast(value ? "Gemini key saved — AI lyrics unlocked" : "Gemini key cleared", 3000, "success");
     });
 
   const chips = m.querySelector("#set-langs");

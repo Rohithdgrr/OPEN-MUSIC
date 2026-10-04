@@ -42,6 +42,7 @@ $RECYCLE.BIN/
 .env.local
 
 app/src-tauri/.google-client-id
+app/src-tauri/.spotify-client-id
 
 
 # Android release signing — never commit the keystore

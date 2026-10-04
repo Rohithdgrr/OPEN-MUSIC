@@ -38,7 +38,6 @@ single cross-platform view.
 - **Smart playlists.** "Top 50 last 30 days", "favourited but never downloaded". Data is in
   `localStorage` — needs a query, not a system.
 - **Playlist import / export.** M3U, PLS, CSV in; M3U8 + JSON backup out.
-- **Sleep timer.** `setTimeout` + volume ramp.
 
 ### Mobile
 
@@ -67,6 +66,10 @@ single cross-platform view.
   *legal* default alongside the main catalog.
 - **Mobile background playback hardening** — audio focus, headset buttons, call ducking.
 - **Mobile download manager UX** — pause/resume, Wi-Fi-only, per-track quality.
+- **Spotify Canvas** — looping track video behind Now Playing art. Unofficial
+  (`sp_dc` cookie, no OAuth path), keyed on ISRC from the Spotify import,
+  cached in `moka`, mobile-first (metered-data toggle, album-art fallback).
+  Full plan → [`mobile/08-future-scope.md`](mobile/08-future-scope.md).
 - **Offline-first search/history** when the catalog is unreachable.
 
 ---

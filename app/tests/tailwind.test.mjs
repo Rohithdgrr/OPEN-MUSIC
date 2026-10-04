@@ -23,8 +23,9 @@ test("no runtime Tailwind CDN references remain", () => {
   assert.deepEqual(hits, []);
 });
 
-test("built tailwind.css exists and carries key utilities", () => {
-  const css = fs.readFileSync(path.join(src, "tailwind.css"), "utf8");
+test("built tailwind.css and desktop styles.css exist and carry key utilities", () => {
+  const mobileCss = fs.readFileSync(path.join(src, "tailwind.css"), "utf8");
+  const desktopCss = fs.readFileSync(path.join(src, "styles.css"), "utf8");
   for (const sel of [
     ".bg-surface",
     ".text-on-surface",
@@ -34,20 +35,22 @@ test("built tailwind.css exists and carries key utilities", () => {
     ".font-headline-md",
     ".hover\\:bg-surface-container-high",
   ]) {
-    assert.ok(css.includes(sel), `missing ${sel}`);
+    assert.ok(mobileCss.includes(sel), `mobile missing ${sel}`);
+    assert.ok(desktopCss.includes(sel), `desktop missing ${sel}`);
   }
 });
 
 test("shells link the local stylesheet", () => {
-  // The root shell may use either href form; the nested mobile shell must be
-  // root-absolute — a relative href would resolve to mobile/tailwind.css (404).
+  // Desktop is pure vanilla CSS (styles.css) without any Tailwind build dependency.
   const index = fs.readFileSync(path.join(src, "index.html"), "utf8");
   assert.ok(
-    index.includes('href="tailwind.css"') || index.includes('href="/tailwind.css"'),
-    "index.html does not link tailwind.css",
+    index.includes('href="styles.css"') || index.includes('href="/styles.css"'),
+    "index.html must link styles.css",
   );
+  assert.ok(!index.includes('href="tailwind.css"'), "index.html should not link tailwind.css");
   assert.ok(!index.includes("cdn.tailwindcss.com"), "index.html still references the CDN");
 
+  // Mobile keeps its static local tailwind stylesheet.
   const mobile = fs.readFileSync(path.join(src, "mobile", "index.html"), "utf8");
   assert.ok(mobile.includes('href="/tailwind.css"'), "mobile/index.html must link /tailwind.css");
   assert.ok(!mobile.includes("cdn.tailwindcss.com"), "mobile/index.html still references the CDN");
