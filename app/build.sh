@@ -5,6 +5,8 @@
 #   ./build.sh            verify + every target available here
 #   ./build.sh check      lint + css + tests only
 #   ./build.sh android    release APKs, split per ABI (aarch64 + x86_64)
+#   ./build.sh android-universal
+#                           one signed universal APK (arm64 + armv7 + x86_64)
 #   ./build.sh linux      .deb + .AppImage (Linux only)
 #   ./build.sh windows    MSI + NSIS (delegates to build-windows.ps1)
 #   ./build.sh macos      .app + .dmg (macOS only)
@@ -69,6 +71,14 @@ cmd_android() {
   tauri_android "${args[@]}"
 }
 
+cmd_android_universal() {
+  # Release, universal: one signed APK carrying arm64-v8a + armeabi-v7a +
+  # x86_64 — installs on every real phone (ARM) and the x86_64 emulator,
+  # no per-architecture choice at download time.
+  local args=(android build --target aarch64 armv7 x86_64 --apk --ci)
+  tauri_android "${args[@]}"
+}
+
 cmd_linux() {
   [[ $IS_WIN == 1 || $IS_MAC == 1 ]] && die "Linux build needs Linux — use release.yml (tag v*) instead"
   linux_deps_ok || ensure_linux_deps
@@ -104,11 +114,12 @@ show_artifacts() { # $1 = stamp file taken before the build started
   echo "(tag v* pushes build Windows/Linux/macOS installers in CI)"
 }
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
 
 case "${1:-all}" in
   check)   cmd_check ;;
   android) stamp=$(mktemp); touch "$stamp"; cmd_android; show_artifacts "$stamp" ;;
+  android-universal) stamp=$(mktemp); touch "$stamp"; cmd_android_universal; show_artifacts "$stamp" ;;
   linux)   stamp=$(mktemp); touch "$stamp"; cmd_linux;   show_artifacts "$stamp" ;;
   windows) cmd_windows ;;
   macos)   cmd_macos ;;

@@ -95,7 +95,11 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-          targets: aarch64-apple-ios-sim, x86_64-apple-ios
+          # The action's input is `target` (comma-separated). It accepts a
+          # misspelled `targets:` without failing and only warns, which left
+          # aarch64-apple-ios-sim uninstalled and broke `cargo check` below
+          # with E0463 (can't find crate for `std`).
+          target: aarch64-apple-ios-sim,x86_64-apple-ios
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

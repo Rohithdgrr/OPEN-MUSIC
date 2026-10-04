@@ -650,9 +650,9 @@ pub async fn search_songs(
     limit: u32,
     page: u32,
 ) -> Result<SearchPage, String> {
-    let pages = futures::future::join_all(upstream_pages(page).map(|p| {
-        fetch_search_page(client, query, limit, p)
-    }))
+    let pages = futures::future::join_all(
+        upstream_pages(page).map(|p| fetch_search_page(client, query, limit, p)),
+    )
     .await;
 
     let mut raw: Vec<Track> = Vec::new();

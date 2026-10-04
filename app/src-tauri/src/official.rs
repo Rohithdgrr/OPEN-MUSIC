@@ -1305,6 +1305,11 @@ mod tests {
 
     /// The live flow endless playback leans on: seed a station from a real
     /// search hit, read its first batch. Skipped when `OP_OFFLINE` is set.
+    ///
+    /// Retried like `proxy::tests::live_song_id`: upstream intermittently
+    /// answers a freshly-created station with "No new song found for current
+    /// radio." rather than a batch, which is a flake and not a regression.
+    /// Each attempt seeds a NEW station, so a drained cursor is never reused.
     #[tokio::test]
     async fn live_radio_station_yields_songs() {
         if std::env::var("OP_OFFLINE").is_ok() {
@@ -1313,7 +1318,24 @@ mod tests {
         let client = crate::jiosaavn::api_client();
         let hits = search(&client, "trance", 5, 1).await.expect("search");
         let seed = hits.first().expect("a seed song").id.clone();
-        let page = recommend(&client, Some(&seed), None).await.expect("radio");
+
+        let mut last = String::from("radio: no attempt made");
+        let mut page = None;
+        for attempt in 0..3u32 {
+            match recommend(&client, Some(&seed), None).await {
+                Ok(p) if !p.tracks.is_empty() => {
+                    page = Some(p);
+                    break;
+                }
+                Ok(p) => last = format!("radio: station {} returned no tracks", p.station),
+                Err(e) => last = e,
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(
+                500 * u64::from(attempt + 1),
+            ))
+            .await;
+        }
+        let page = page.unwrap_or_else(|| panic!("{last}"));
         assert!(!page.station.is_empty(), "a station id comes back");
         assert!(!page.tracks.is_empty(), "the first batch carries songs");
         assert!(

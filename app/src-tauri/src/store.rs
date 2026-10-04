@@ -269,7 +269,7 @@ impl AppStore {
             .prepare_cached(sql)
             .map_err(|e| format!("songs list: {e}"))?;
         let rows = stmt
-            .query_map(params![limit.max(1).min(200)], row_to_song)
+            .query_map(params![limit.clamp(1, 200)], row_to_song)
             .map_err(|e| format!("songs list: {e}"))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| format!("songs list: {e}"))
@@ -580,10 +580,12 @@ impl AppStore {
     pub fn outbox_list(&self, limit: i64) -> Result<Vec<OutboxEntry>, String> {
         let conn = self.lock()?;
         let mut stmt = conn
-            .prepare_cached("SELECT id, op, payload, created_at FROM outbox ORDER BY id ASC LIMIT ?1")
+            .prepare_cached(
+                "SELECT id, op, payload, created_at FROM outbox ORDER BY id ASC LIMIT ?1",
+            )
             .map_err(|e| format!("outbox list: {e}"))?;
         let rows = stmt
-            .query_map(params![limit.max(1).min(500)], |r| {
+            .query_map(params![limit.clamp(1, 500)], |r| {
                 Ok(OutboxEntry {
                     id: r.get(0)?,
                     op: r.get(1)?,
@@ -836,7 +838,9 @@ mod tests {
         // Op/payload validation.
         assert!(s.outbox_push("", "x").is_err());
         assert!(s.outbox_push("has space", "x").is_err());
-        assert!(s.outbox_push("sync", &"x".repeat(OUTBOX_PAYLOAD_MAX + 1)).is_err());
+        assert!(s
+            .outbox_push("sync", &"x".repeat(OUTBOX_PAYLOAD_MAX + 1))
+            .is_err());
         assert!(s.outbox_ack(&[1; 501]).is_err());
     }
 

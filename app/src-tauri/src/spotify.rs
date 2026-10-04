@@ -532,14 +532,18 @@ pub async fn spotify_import_top(
         "short_term" => "short_term",
         "medium_term" => "medium_term",
         "long_term" => "long_term",
-        _ => return Err("invalid time_range: must be short_term, medium_term, or long_term".to_string()),
+        _ => {
+            return Err(
+                "invalid time_range: must be short_term, medium_term, or long_term".to_string(),
+            )
+        }
     };
 
     let limit = limit.clamp(1, 50);
 
     let resp = state
         .http
-        .get(&format!("{}/me/top/tracks", API_BASE))
+        .get(format!("{}/me/top/tracks", API_BASE))
         .bearer_auth(&token)
         .query(&[("time_range", time_range), ("limit", &limit.to_string())])
         .send()

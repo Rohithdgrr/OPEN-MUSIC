@@ -576,7 +576,10 @@ impl AppState {
     }
 
     fn is_cancelled(&self, id: &str) -> bool {
-        self.cancel.lock().map(|set| set.contains(id)).unwrap_or(false)
+        self.cancel
+            .lock()
+            .map(|set| set.contains(id))
+            .unwrap_or(false)
     }
 
     /// Delete a file by the path we recorded for it — paths from the IPC

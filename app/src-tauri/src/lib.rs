@@ -19,7 +19,7 @@ mod store;
 // mod audius; // Temporarily disabled
 
 // Re-export Spotify commands
-pub use spotify::{spotify_is_signedin, spotify_signin, spotify_signout, spotify_import_top};
+pub use spotify::{spotify_import_top, spotify_is_signedin, spotify_signin, spotify_signout};
 #[allow(dead_code)] // parked with its commands (see generate_handler)
 mod sysvol;
 mod transcode;
@@ -272,7 +272,7 @@ async fn cache_clear(state: State<'_, Arc<AppState>>) -> Result<cache::CacheStat
 /// All of these are best-effort caches — the frontend keeps its localStorage
 /// fallback, so a disabled / corrupt store degrades instead of breaking.
 /// Audio bytes are never stored here; `track` is frontend track JSON only.
-
+///
 /// Cache one song's metadata (upsert, counters preserved).
 #[tauri::command]
 fn store_song(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Result<(), String> {
@@ -285,7 +285,10 @@ fn store_song(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Resu
 
 /// Cache many songs at once (search pages, playlist loads). Capped at 500.
 #[tauri::command]
-fn store_songs(tracks: Vec<serde_json::Value>, state: State<'_, Arc<AppState>>) -> Result<usize, String> {
+fn store_songs(
+    tracks: Vec<serde_json::Value>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<usize, String> {
     state
         .inner()
         .store()
@@ -295,14 +298,20 @@ fn store_songs(tracks: Vec<serde_json::Value>, state: State<'_, Arc<AppState>>) 
 
 /// One cached song by id (metadata + play/fav counters), if present.
 #[tauri::command]
-fn store_song_get(id: String, state: State<'_, Arc<AppState>>) -> Result<Option<store::SongRow>, String> {
+fn store_song_get(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<store::SongRow>, String> {
     check_id(&id)?;
     state.inner().store().map_err(|e| e.clone())?.get_song(&id)
 }
 
 /// Recently played songs (needs `store_play` calls to fill up).
 #[tauri::command]
-fn store_recent(limit: Option<u32>, state: State<'_, Arc<AppState>>) -> Result<Vec<store::SongRow>, String> {
+fn store_recent(
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::SongRow>, String> {
     state
         .inner()
         .store()
@@ -312,7 +321,10 @@ fn store_recent(limit: Option<u32>, state: State<'_, Arc<AppState>>) -> Result<V
 
 /// Favorite songs (needs `store_fav` calls to fill up).
 #[tauri::command]
-fn store_favs(limit: Option<u32>, state: State<'_, Arc<AppState>>) -> Result<Vec<store::SongRow>, String> {
+fn store_favs(
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::SongRow>, String> {
     state
         .inner()
         .store()
@@ -336,7 +348,11 @@ fn store_most_played(
 /// Record one play: caches metadata + bumps play_count / last_played.
 #[tauri::command]
 fn store_play(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Result<u64, String> {
-    state.inner().store().map_err(|e| e.clone())?.record_play(&track)
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .record_play(&track)
 }
 
 /// Mirror the favorite flag into the store (for offline fav lists).
@@ -346,7 +362,11 @@ fn store_fav(
     fav: bool,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    state.inner().store().map_err(|e| e.clone())?.set_fav(&track, fav)
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .set_fav(&track, fav)
 }
 
 /// Small important prefs (queue backup, last position). 64 KB value cap.
@@ -357,7 +377,11 @@ fn store_kv_get(key: String, state: State<'_, Arc<AppState>>) -> Result<Option<S
 
 #[tauri::command]
 fn store_kv_put(key: String, value: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    state.inner().store().map_err(|e| e.clone())?.kv_put(&key, &value)
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .kv_put(&key, &value)
 }
 
 /// Persistent search cache (6h TTL, 200 newest). Key format is the caller's
@@ -380,7 +404,11 @@ fn store_search_get(
     key: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<serde_json::Value>, String> {
-    state.inner().store().map_err(|e| e.clone())?.search_get(&key)
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .search_get(&key)
 }
 
 /// Store usage counters + file size for Settings.
@@ -410,7 +438,11 @@ fn store_lyrics_get(
     key: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<serde_json::Value>, String> {
-    state.inner().store().map_err(|e| e.clone())?.lyrics_get(&key)
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .lyrics_get(&key)
 }
 
 /// Detail payload cache: album / playlist / artist responses (24h TTL,
@@ -433,7 +465,11 @@ fn store_entity_get(
     key: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Option<serde_json::Value>, String> {
-    state.inner().store().map_err(|e| e.clone())?.entity_get(&key)
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .entity_get(&key)
 }
 
 /// Offline op queue (Drive-sync requests made while offline). FIFO, 500 cap.
@@ -464,11 +500,12 @@ fn outbox_list(
 }
 
 #[tauri::command]
-fn outbox_ack(
-    ids: Vec<i64>,
-    state: State<'_, Arc<AppState>>,
-) -> Result<u64, String> {
-    state.inner().store().map_err(|e| e.clone())?.outbox_ack(&ids)
+fn outbox_ack(ids: Vec<i64>, state: State<'_, Arc<AppState>>) -> Result<u64, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .outbox_ack(&ids)
 }
 
 /// Clear cached songs (non-favorites) + search rows. Favorites, KV and the
