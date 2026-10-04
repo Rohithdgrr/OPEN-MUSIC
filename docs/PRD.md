@@ -1,17 +1,17 @@
-# PRD — Open Player
+# PRD — TRANCE MUSIC
 
-**An open-source, logged-out, lightweight music streaming desktop app for Windows (Tauri)**
+**An open-source, logged-out, lightweight music streaming player for Windows, Linux, macOS and Android (Tauri)**
 
 | Field | Value |
 |---|---|
 | Document | `PRD.md` (product requirements) |
-| Companion docs | `architecture.md` · `ui.md` · `task.md` |
-| Date | 2026-09-28 (UTC) |
-| Status | **Active build** — backend verified on the wire, minimal UI shipped, full playback verification in progress |
-| Workspace | `C:\Users\rohit\Downloads\test` |
-| App root | `app/` (`app/src` = frontend, `app/src-tauri` = Rust backend) |
+| Companion docs | `architecture.md` · `ui.md` · `task.md` · `feature-list.md` · `future-scope.md` |
+| Date | 2026-09-28 (UTC) · **last reviewed 2026-10-04** |
+| Status | **v0.3.0 shipped** — Windows/Linux/macOS releases + Android shell + iOS CI |
+| Workspace | `C:\Users\rohit\Music\OPEN MUSIC` |
+| App root | `app/` (`app/src` = desktop front end, `app/src/mobile` = mobile shell, `app/src-tauri` = Rust core) |
 | Languages in shipped code | **HTML, CSS, JavaScript, Rust** (hard project constraint — no Python/Node/Go sidecars at runtime) |
-| Target platform | Windows 10/11 desktop (WebView2), packaged via Tauri bundler |
+| Target platform | Windows 10/11, Linux, macOS 13+, Android (WebView2 / WebKitGTK / system WebView) |
 
 ---
 
@@ -57,26 +57,35 @@ Building a small, honest, open-source music player is hard for two separate reas
 
 ## 3. Scope
 
-### In scope
+### In scope (shipped or in progress)
 
-- Catalog search (songs; albums/artists/playlists in later phases)
+- Catalog search (songs, albums, artists, playlists) with unlimited paging
 - Track resolution to per-quality direct stream URLs
 - Range-qualification of every stream before promising playback
 - Localhost byte-range relay into the WebView
-- Native `<audio>` playback: play, pause, seek, volume
-- Queue, play-all, search history, diagnostics panel
-- Windows packaging (NSIS/MSI via Tauri bundler)
+- Native `<audio>` playback: play, pause, seek, volume, queue, shuffle, repeat
+- Offline vault with SQLite ledger, SHA-256 verification, quality promotion
+- Synced lyrics (LRCLIB → JioSaavn → LRCLIB), karaoke on mobile
+- Library, playlists, history, charts, endless radio
+- Desktop widget, tray, global Hyper shortcuts, system media keys
+- Mobile shell: 13 screens, lock-screen transport, hardware back
+- Windows / Linux / macOS packaging (signed installers) and Android APK/AAB
+- Self-updater on desktop (check, install, rollback); store-driven on mobile
 - Honest failure reporting
 
-### Out of scope (current release)
+### Out of scope
 
 - Accounts, login, subscriptions, personalization
-- Offline downloads / offline mode / caching to disk
 - DRM content
-- Lyrics rendering (endpoint exists; deferred)
-- Mobile builds (Tauri mobile is supported by the shell but not targeted yet)
+- Real DSP / EQ, gapless playback (see [`future-scope.md`](future-scope.md);
+  crossfade *is* implemented on desktop)
+- Lyrics translation (toggle exists, not wired)
+- Light theme
 - Cross-device sync, scrobbling, social features
 - Legal/ToS clearance — **explicitly the integrator's responsibility** (see §17 Risk Factors)
+
+Per-platform coverage of everything above is tabulated in
+[`feature-list.md`](feature-list.md).
 
 ---
 
@@ -102,9 +111,10 @@ Building a small, honest, open-source music player is hard for two separate reas
 | Serialization | **serde / serde_json / url** | Wire payloads, query encoding |
 | Frontend | **Vanilla HTML/CSS/JS (ES modules)** | Project constraint; no framework, no bundler, no node_modules at runtime |
 | Web runtime | **WebView2 Runtime** (Chromium) | Native media stack for `audio/mp4` |
-| Catalog source | **`saavn.sumit.co`** — community mirror of `sumitkolhe/jiosaavn-api` (TypeScript/Hono, MIT) | Already-decrypted JSON, stable route shape, CORS-enabled |
+| Catalog source | **`www.jiosaavn.com/api.php`** — JioSaavn's own first-party endpoint (primary); community mirrors of `sumitkolhe/jiosaavn-api` (MIT) as fallback | No community quota, real pagination; mirrors only reached if the primary call fails |
 | Media CDN | **`aac.saavncdn.com`** (audio), **`c.saavncdn.com`** (artwork) | Static files, full-range `206`, ISO-BMFF/MP4 |
-| Tests | `cargo test` (12 tests, network-backed) | Regression net across parsing, resolution, qualification, proxy |
+| Mobile web runtime | Android system WebView / iOS WKWebView | Same Rust core, `rustls-tls` on Android |
+| Tests | `cargo test` — **138 tests**, 13 live-network ones gated behind `OP_OFFLINE=1` | Regression net across parsing, resolution, qualification, vault, lyrics, cache |
 
 **Release profile:** `lto = true`, `codegen-units = 1`, `opt-level = 3`, `panic = "abort"`, `strip = true`.
 
@@ -298,12 +308,19 @@ Base: `https://saavn.sumit.co` — community deployment of [`sumitkolhe/jiosaavn
 
 ### 8.2 Internal Tauri IPC commands
 
+**48 commands** are registered (`app/src-tauri/src/lib.rs:1353`); 4 are
+`#[cfg(desktop)]`-only. The authoritative per-platform table — including which
+commands return explicit errors on mobile — is
+[`feature-list.md`](feature-list.md). The four original commands that every
+stream path goes through:
+
 | Command | Args | Returns | Notes |
 |---|---|---|---|
-| `search_songs` | `query: String, limit?: u32` | `Track[]` | clamps limit to 1–50, default 20 |
+| `search_songs` | `query: String, limit?: u32, page?: u32` | `Track[]` | clamps limit to 1–50, default 20; real upstream paging |
 | `resolve_song` | `id: String, quality?: String` | `PlayableAudio` | runs the qualification probe |
 | `qualify_url` | `url: String` | `RangeStatus` | https + media-host validated first |
 | `proxy_base` | — | `String` | `http://127.0.0.1:<port>` |
+| `api_version` | — | `u32` (= `1`) | checked once at boot by both shells |
 
 **DTOs (serde, `snake_case` on the wire):**
 
@@ -564,12 +581,17 @@ This project integrates a **third-party community API** with a service the API d
 | Target | Mechanism | Status |
 |---|---|---|
 | Dev | `npm run tauri dev` | ✅ |
-| Windows installer | `npm run tauri build` → NSIS `.exe` / MSI | ✅ cut, signed, attached to the v0.1.0 release |
-| Portable | single `app.exe` from `target/release` | build profile configured |
-| CI | `cargo build && cargo test` (network required) | to be added |
+| Windows installer | `npm run tauri build` → NSIS `.exe` / MSI | ✅ signed, attached to releases |
+| Linux / macOS | `release.yml` matrix → deb, AppImage, DMG | ✅ |
+| Android | `npx tauri android build` → APK/AAB (per ABI) | ✅ build locally; **no workflow yet** |
+| iOS | `ios.yml` on macOS runners → signed `.ipa` or unsigned simulator `.app` | ✅ |
+| CI | `.github/workflows/ci.yml` | ✅ `cargo fmt --check`, `clippy -D warnings`, `OP_OFFLINE=1 cargo test`, `cargo audit`, ESLint, syntax check |
+| Release | `.github/workflows/release.yml` | ✅ builds, uploads, **verifies updater manifest URLs**, then publishes |
 | Self-hosted catalog | deploy `sumitkolhe/jiosaavn-api` to Vercel/Cloudflare Workers, add its URL to `MIRRORS` | documented, one line |
 
-**CI caveat:** the test suite is contract-level and hits the live internet. Provide an env-gated "offline" mode (`OP_OFFLINE=1`) that skips network tests, so CI without egress still validates parsing/unit tests.
+**CI caveat:** the contract tests hit the live internet. `OP_OFFLINE=1` skips
+the 13 `live_*` tests (125 of 138 still run), so CI without egress validates
+parsing, resolution, the proxy and the vault.
 
 ---
 
@@ -602,7 +624,7 @@ The app is a **client**; scale concerns split into three planes.
 
 ```
         ┌──────────────┐   JSON    ┌────────────────────────┐
-        │ Open Player  │──────────►│ Mirror A (region 1)   │
+        │ TRANCE MUSIC │──────────►│ Mirror A (region 1)   │
         │  (Tauri)     │           ├────────────────────────┤
         │              │           │ Mirror B (region 2)   │
         │  /stream ────┼──────────►└────────────────────────┘
@@ -713,23 +735,28 @@ The app is a **client**; scale concerns split into three planes.
 
 ## 25. Future Scope
 
-| Phase | Item |
+The roadmap now lives in **[`future-scope.md`](future-scope.md)** — one
+cross-platform file, tiered near / mid / far / out-of-scope, with the mobile
+items alongside the desktop ones.
+
+Items from the original version of this section and their status:
+
+| Item | Status |
 |---|---|
-| Near | Album / artist / playlist browsing (`/api/albums?id=`, `/api/artists/{id}/songs`) |
-| Near | Quality picker in the player UI (surfacing `qualities[]`) |
-| Near | Seek bar with buffered-ranges display |
-| Near | Album-art cache on disk |
-| Near | `OP_OFFLINE=1` test gate + CI workflow |
-| Mid | Media Session API (OS media keys, lock-screen controls) |
-| Mid | Global hotkeys, tray icon, mini-player window |
-| Mid | Lyrics (`?lyrics=true` once the route is verified) |
-| Mid | Multiple source adapters behind one `Catalog` trait |
-| Mid | On-disk library of "recently played" with cover art |
-| Far | Cross-platform packaging (macOS/Linux CI matrix, Tauri mobile) |
-| Far | Plugin system for community source adapters |
-| Far | Optional self-hosted catalog mode (ship the reference server) |
-| Far | Scrobbling (ListenBrainz/Last.fm), equalizer, gapless playback |
-| Never | DRM, account-gated streaming, telemetry/analytics |
+| Album / artist / playlist browsing | ✅ shipped |
+| Album-art cache on disk | ✅ shipped |
+| `OP_OFFLINE=1` test gate + CI workflow | ✅ shipped |
+| Media Session API (lock-screen controls) | ✅ shipped (mobile) |
+| Global hotkeys, tray icon | ✅ shipped (desktop) |
+| Lyrics | ✅ shipped (LRCLIB → JioSaavn → LRCLIB) |
+| Cross-platform packaging (macOS/Linux/mobile) | ✅ shipped |
+| Quality picker in the player UI | ⬜ open — see [`future-scope.md`](future-scope.md) 🔜 |
+| Seek bar with buffered-ranges display | ⬜ open |
+| Multiple source adapters behind one `Catalog` trait | ⬜ open — 🔭 far |
+| On-disk library of "recently played" | ⬜ open — 📅 mid |
+| Plugin system, self-hosted catalog mode | ⬜ open — 🔭 far |
+| Scrobbling, equalizer, gapless | ⬜ open — 📅 mid |
+| DRM, account-gated streaming, telemetry | ⛔ never |
 
 ---
 
@@ -741,13 +768,15 @@ Detailed task breakdown, acceptance criteria and live status live in **`task.md`
 |---|---|---|
 | 0 | Requirement & source verification spike | ✅ done |
 | 1 | Erase YouTube completely | ✅ done |
-| 2 | JioSaavn Rust backend + contract tests | ✅ done (12/12) |
+| 2 | JioSaavn Rust backend + contract tests | ✅ done (138 tests) |
 | 3 | Minimal functional UI (search → play) | ✅ done |
-| 4 | End-to-end playback verification | 🟡 in progress |
-| 5 | Browsing (albums/artists/playlists) + quality picker | ⬜ planned |
-| 6 | UX polish, accessibility, keyboard, theming | ⬜ planned |
-| 7 | Hardening: CSP, offline test gate, CI | ⬜ planned |
-| 8 | Packaging, cross-platform, future scope | ⬜ planned |
+| 4 | End-to-end playback verification | ✅ done (byte-count tests in CI) |
+| 5 | Browsing (albums/artists/playlists) | ✅ done · quality picker ⬜ |
+| 6 | UX polish, accessibility, keyboard, theming | 🟡 shortcuts/widget done; light theme + a11y open |
+| 7 | Hardening: CSP, offline test gate, CI | ✅ done |
+| 8 | Packaging, cross-platform | ✅ Windows/Linux/macOS |
+| 9 | Android shell | ✅ done · Android CI ⬜ |
+| 10 | iOS shell + CI | ✅ done (macOS runners) |
 
 ---
 
@@ -756,12 +785,14 @@ Detailed task breakdown, acceptance criteria and live status live in **`task.md`
 1. Ship the default mirror URL, or require users to configure one (cleaner legally)?
 2. Should `restricted_first_mb` results auto-downgrade quality and retry, or surface the choice to the user?
 3. Do we add an Audius/Creative-Commons adapter as a *legal default* alongside the main catalog?
-4. Is a persistent "recently played" store wanted before or after browsing features?
+4. Which comes first: Android CI, or the quality picker? (Both are small — see [`task.md`](task.md) §5.)
 
 ---
 
 ## 28. Related Documents
 
-- **`architecture.md`** — components, data flows, module contracts, concurrency, trust boundaries.
-- **`ui.md`** — screens, components, states, tokens, accessibility, responsive behaviour.
-- **`task.md`** — phase-by-phase task list with acceptance criteria and live status.
+- **[`architecture.md`](architecture.md)** — components, data flows, module contracts, concurrency, trust boundaries.
+- **[`ui.md`](ui.md)** — screens, components, states, tokens, accessibility, responsive behaviour.
+- **[`task.md`](task.md)** — phase-by-phase task list with acceptance criteria and live status.
+- **[`feature-list.md`](feature-list.md)** — what exists on desktop vs mobile, and what is absent from each.
+- **[`future-scope.md`](future-scope.md)** — tiered roadmap plus what is explicitly out of scope.

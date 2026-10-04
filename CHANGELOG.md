@@ -6,14 +6,93 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The first release, **v0.1.0**, was cut on 2026-09-30: signed MSI and NSIS
-installers are attached to the GitHub release. Work landing after that tag
-sits in `Unreleased`.
+installers are attached to the GitHub release. **v0.3.0** is the first
+mobile-capable tree; there is no v0.2.0 (the number was skipped, not lost).
+Work landing after the latest tag sits in `Unreleased`.
 
 ---
 
 ## [Unreleased]
 
-No unreleased changes — everything below shipped in 0.1.0.
+No unreleased changes — everything below shipped in 0.3.0.
+
+---
+
+## [0.3.0]
+
+First mobile-capable release (tag `v0.3.0`). Desktop installers plus an
+Android shell and an iOS workflow.
+
+### Added
+
+**Android & iOS**
+
+- **Mobile shell** — `app/src/mobile/`: a hash-router app with 13 screens
+  (home, search, library, liked-songs, album, artist, playlist, nowplaying,
+  download, history, notification, analytics, settings), its own `<audio>`
+  player, `navigator.mediaSession` lock-screen transport, karaoke lyrics, and a
+  persistent widget-style mini player. See
+  [`docs/mobile/README.md`](docs/mobile/README.md).
+- **Config overlays** — `tauri.android.conf.json` + `tauri.ios.conf.json`
+  carry only what differs from the base config; desktop plugins are confined to
+  `cfg(not(android/ios))` so the mobile targets link.
+- **iOS CI** (`.github/workflows/ios.yml`) — signed `.ipa` or unsigned simulator
+  `.app`, with the build log posted to an issue on failure.
+- Mobile-accurate stubs: `open_external`, `autostart_set`,
+  `open_bluetooth_settings` and the Drive commands return an explicit
+  `Err("…not supported on Android yet")` rather than failing oddly.
+- Android builds link `reqwest` with `rustls-tls` (no system OpenSSL to link
+  against).
+
+**Vault, cache & sync**
+
+- **Vault relocated** to the app's own data folder
+  (`%LOCALAPPDATA%` / `~/.local/share` / `~/Library/Application Support` →
+  `TRANCE MUSIC`); a legacy `Downloads/TRANCE MUSIC` vault is migrated once on
+  first launch (`lib.rs::migrate_vault`).
+- **SQLite download ledger** — `downloads.db` replaces the JSON manifest;
+  concurrent downloads serialise their writes so no row is lost. SHA-256 is
+  recorded per track (`sha256.rs`).
+- **Cache tree** in the app cache dir, with `cache_stats` / `cache_set_budget`
+  (100 MB – 5 GB) / `cache_clear`. Clearing cache never touches the vault.
+- **moka caches** for resolved songs, range probes, search and lyrics — bounded
+  capacity with TTL, replacing unbounded `HashMap`s.
+- **Backup / CSV / M3U export**, import manifest, and Google Drive sync
+  scaffolding (`gdrive.rs`).
+- `promote_song` — re-download a vault track at a higher quality.
+
+**Desktop**
+
+- **Caps Lock Hyper shortcuts** with `Ctrl+Alt` fallbacks, detected at startup
+  (`shortcuts.rs`, `docs/shortcuts.md`).
+- **System tray** with Play/Pause/Next/Previous and a settings entry.
+- **Widget pin**, click-through toggle, and drag repositioning.
+- **Fuzzy search** (`fuzzy.js`) and filters merged into the sort menu.
+- **Network status** — online / degraded / offline state machine with a
+  reachability probe (`net_ping`).
+
+**Quality**
+
+- **CI** (`.github/workflows/ci.yml`): `cargo fmt --check`,
+  `cargo clippy --all-targets -- -D warnings`, `OP_OFFLINE=1 cargo test`,
+  `cargo audit`, ESLint and the 58 frontend tests.
+- **Release pipeline** — installers upload, the updater manifest URLs are
+  verified after upload (GitHub stores asset names with spaces as dots), then
+  the release publishes.
+- Front-end **module split**: `main.js` is now a 159-line entry point importing
+  28 feature modules.
+- **CSP hardening**: `default-src 'self'`, `frame-src 'none'`,
+  `object-src 'none'`; script hashes for the two inline boot scripts only.
+
+### Fixed
+
+- Metadata `NULL` handling in the catalog parser (shared core — mobile inherits).
+- iOS target compile: dialog commands gated to `#[cfg(desktop)]`; the workflow
+  uses the official `--no-sign --target aarch64-apple-ios-sim` flags instead of
+  pbxproj hacks.
+- Updater manifest URLs broken by GitHub rewriting asset names (spaces → dots).
+- Review-driven hardening across parsing, path containment and error paths
+  (see [`review.md`](review.md)).
 
 ---
 

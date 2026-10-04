@@ -56,9 +56,12 @@ The interesting part is not the chrome — it is what happens underneath:
   mirrors as fallback.
 - **Five quality tiers** — 96 kbps to 320 kbps FLAC/DSD paths; every track
   resolves to a complete file, never a preview.
-- **Offline vault** — save anything to `~/Downloads/TRANCE MUSIC` and play it
-  with the network off; the Downloads view filters, searches, reveals and
-  deletes.
+- **Offline vault** — save anything to the app's own data folder
+  (`%LOCALAPPDATA%\TRANCE MUSIC` on Windows, `~/.local/share/TRANCE MUSIC` on
+  Linux, `~/Library/Application Support/TRANCE MUSIC` on macOS) and play it with
+  the network off; the Downloads view filters, searches, reveals and deletes.
+  A vault left behind in `Downloads/TRANCE MUSIC` by an older build is migrated
+  across once on first launch.
 - **Synced lyrics** — LRCLIB first, JioSaavn second, with auto-scroll, manual
   offset and click-to-seek.
 - **Now Playing that means it** — queue with play-next, add-to-queue and
@@ -73,8 +76,14 @@ The interesting part is not the chrome — it is what happens underneath:
 - **Self-updating** — `Settings → Updates` checks GitHub once a day, installs
   the signed package with a live progress bar, and can revert to any earlier
   release.
-- **Android shell** — the mobile front end lives in `app/src/mobile` and builds
-  with the Tauri Android toolchain; desktop remains the primary target.
+- **Android & iOS** — a separate 13-screen mobile shell lives in
+  `app/src/mobile`, sharing the same Rust core; lock-screen transport, hardware
+  back and safe-area insets are built in. iOS builds on macOS runners only.
+
+The full feature-by-feature platform matrix (what exists on desktop, what
+exists on mobile, and what is absent from each) is in
+**[docs/feature-list.md](docs/feature-list.md)**; the roadmap is in
+**[docs/future-scope.md](docs/future-scope.md)**.
 
 ## Contents
 
@@ -88,6 +97,12 @@ The interesting part is not the chrome — it is what happens underneath:
 - [Contributing](#contributing)
 - [License](#license)
 - [Support](#support)
+- [Cross-Platform CI](docs/cross-platform-ci.md)
+
+**Docs index:** [Feature list (desktop vs mobile)](docs/feature-list.md) ·
+[Task plan](docs/task.md) · [Future scope](docs/future-scope.md) ·
+[Architecture](docs/architecture.md) · [UI spec](docs/ui.md) ·
+[Shortcuts](docs/shortcuts.md) · [Mobile docs](docs/mobile/README.md)
 
 ## Screenshots
 
@@ -163,8 +178,8 @@ To **build from source**:
    | `TRANCE.MUSIC_0.3.0_aarch64.dmg` | ~6.8 MB | Drag to Applications (Apple Silicon) |
 
    Existing installs upgrade in place — the identifier
-   `com.openmusic.trancemusic` never changes, and your vault in
-   `~/Downloads/TRANCE MUSIC` is never touched by installing or updating.
+   `com.openmusic.trancemusic` never changes, and your vault in the app data
+   folder is never touched by installing or updating.
 
 2. Launch it. Home loads the curated feed, charts and your playlists; the
    header search is one click (or `Ctrl+K`) away.
@@ -204,38 +219,93 @@ Tailwind is prebuilt to a static file (`npm run css` → `app/src/tailwind.css`)
 `tauri dev` runs the watcher and `tauri build` regenerates it first. Run
 `npm run css` by hand after adding utility classes outside those commands.
 
+> All `npm` commands above run from `app/`. They are also forwarded from the
+> repo root, so `npm run tauri dev` works in either directory. If you see
+> `Missing script: "tauri"`, you are on a checkout without the root
+> forwarding `package.json` — `cd app` and retry.
+
 ### Tests
 
 ```bash
-# Rust — 138 offline tests, exactly what CI gates on
+# Rust — 138 tests, 125 of them run offline; this is what CI gates on
 cd app/src-tauri
-OP_OFFLINE=1 cargo test
-cargo test                  # adds the live-network tests
+OP_OFFLINE=1 cargo test   # skips the 13 live-network tests
+cargo test                # adds the live-network tests
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo audit
 
 # Frontend — 58 tests, lint, syntax check
 cd .. && npm test && npm run lint
+
+# Smoke tests — verify installed builds work correctly
+npm run test:smoke
 ```
+
+### Cross-Platform CI
+
+The project uses GitHub Actions to build and test on Linux and macOS:
+
+- **Linux** (`.github/workflows/linux.yml`):
+  - Builds Debian packages and AppImages
+  - Runs Rust tests, Node.js tests, and smoke tests
+  - Verifies build artifacts are valid
+
+- **macOS** (`.github/workflows/macos.yml`):
+  - Builds .app bundles and DMGs
+  - Runs Rust tests, Node.js tests, and smoke tests
+  - Verifies app structure and binary
+
+Both workflows:
+- Cache cargo registry, index, and build artifacts for faster builds
+- Install platform-specific dependencies
+- Upload build artifacts as GitHub Actions artifacts (7-day retention)
+- Generate build summaries with artifact information
+
+**Running CI locally:**
+
+```bash
+# Linux (requires Docker or native environment)
+cd app
+npm ci
+npm run css
+cd src-tauri
+cargo test --release
+
+# macOS
+cd app
+npm ci
+npm run css
+cd src-tauri
+cargo test --release
+```
+
+**Smoke tests** verify that:
+- Binary/executable exists
+- Binary is executable (Linux/macOS) or valid (Windows)
+- Application launches successfully
+- Configuration files are present
+- Frontend assets are bundled correctly
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ WebView (app/src)                                           │
-│   index.html  — 8 views, one <audio>, Tailwind link         │
-│   main.js     — ES-module entry importing the feature set   │
-│   mobile/     — the Android shell (same Rust core)          │
-│   tailwind.css— prebuilt utilities (`npm run css`)          │
+│   index.html   — 8 views + Settings dialog, one <audio>     │
+│   main.js      — 159-line ES-module entry → 28 feature mods │
+│   mobile/      — 13-screen Android/iOS shell (same core)    │
+│   widget.html  — always-on-top desktop widget               │
+│   tailwind.css — prebuilt utilities (`npm run css`)         │
 └────────────────────────────┬────────────────────────────────┘
-                             │ Tauri IPC — 40 command handlers
+                             │ Tauri IPC — 48 command handlers
 ┌────────────────────────────▼────────────────────────────────┐
-│ Rust core (app/src-tauri/src)                               │
+│ Rust core (app/src-tauri/src, 15 files)                     │
 │   official.rs / jiosaavn.rs — catalog adapters              │
 │   proxy.rs    — axum byte-range relay + offline vault       │
 │   lyrics.rs   — LRCLIB, then JioSaavn, then LRCLIB search   │
 │   update.rs   — GitHub release checks (desktop + Android)   │
+│   gdrive.rs / sync.rs / db.rs — backup, Drive, ledger       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -263,8 +333,10 @@ cites by section.
    one fresh resolution is attempted, so a dead link does not end the session.
    Artwork goes through the same relay's `/art` route with an origin guard
    (http/https only, private networks refused) and a 10 MB cap.
-6. **The vault** — `download_song` writes into `~/Downloads/TRANCE MUSIC`;
-   downloaded tracks keep playing when the network mode flips to offline.
+6. **The vault** — `download_song` writes into the app data folder
+   (`…/TRANCE MUSIC`), byte-count checked and SHA-256 recorded in a SQLite
+   ledger; downloaded tracks keep playing when the network mode flips to
+   offline.
 
 ## Changelog
 
@@ -280,8 +352,11 @@ maintainer's machine, not the runner. The *update* package is signed with the
 project release key and the app verifies it before running anything.
 
 **Where do my downloads live?**
-`~/Downloads/TRANCE MUSIC`. The Downloads view lists them, plays them with no
-network at all, and can reveal or delete them.
+In the app's own data folder — `%LOCALAPPDATA%\TRANCE MUSIC` on Windows,
+`~/.local/share/TRANCE MUSIC` on Linux, `~/Library/Application Support/TRANCE
+MUSIC` on macOS. The Downloads view lists them, plays them with no network at
+all, and can reveal or delete them. Older builds saved to
+`Downloads/TRANCE MUSIC`; that folder is migrated automatically on first launch.
 
 **Does the WebView ever talk to a music CDN directly?**
 No. Media streams only through the local `127.0.0.1` relay; artwork goes
@@ -293,9 +368,11 @@ The resolved URL passed a three-probe range qualification before playback was
 offered. It is not a measurement of your output device.
 
 **Is iOS or Android supported?**
-Desktop is the shipped product. The Android shell lives in `app/src/mobile` and
-builds with `tauri android build`; the iOS workflow is manual and
-simulator-only and is never part of a release.
+Android is built and shipped (APK/AAB); iOS builds on macOS runners only and is
+never part of a desktop release. The mobile shell is `app/src/mobile` with its
+own 13 screens; see
+[docs/feature-list.md](docs/feature-list.md) for what each platform does and
+does not have.
 
 **Do I need to be online?**
 Only for streaming. Anything saved to the vault plays offline, and offline mode

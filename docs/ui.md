@@ -1,4 +1,4 @@
-# UI / UX Specification — Open Player
+# UI / UX Specification — TRANCE MUSIC
 
 Companion to `PRD.md` and `architecture.md`. Governs `app/src/`:
 `index.html`, `main.js` (entry) and its feature modules, `styles.css`.
@@ -21,7 +21,7 @@ Single page, top-to-bottom, no routing:
 
 ```
 ┌─────────────────────────────────────────────┐
-│ HEADER      Open Player          JioSaavn · 127.0.0.1:64398
+│ HEADER      TRANCE MUSIC        JioSaavn · 127.0.0.1:64398
 ├─────────────────────────────────────────────┤
 │ SEARCH      [ Search songs, artists… ] [Search]
 ├─────────────────────────────────────────────┤

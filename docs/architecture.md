@@ -1,34 +1,35 @@
-# Architecture — Open Player
+# Architecture — TRANCE MUSIC
 
-Companion to `PRD.md`. This document describes the **structure** of the system: components, contracts, data flows, concurrency, trust boundaries, and the design techniques behind them.
+Companion to `PRD.md`. This document describes the **structure** of the system: components, contracts, data flows, concurrency, trust boundaries, and the design techniques behind them. Cross-platform feature coverage lives in [`feature-list.md`](feature-list.md).
 
 ---
 
 ## 1. Style
 
-A **three-layer client architecture** with an **in-process reverse proxy** in front of media:
+A **three-layer client architecture** with an **in-process reverse proxy** in front of media, and two front ends over one Rust core:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  PRESENTATION   app/src  (HTML / CSS / vanilla ES modules)          │
-│                 index.html · styles.css · main.js + 17 modules     │
+│  PRESENTATION                                                        │
+│   DESKTOP  app/src/index.html + main.js → 28 ES modules (+ widget)   │
+│   MOBILE   app/src/mobile/index.html → hash router, 13 screens       │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │  Tauri IPC  (window.__TAURI__.core.invoke)
 ┌───────────────────────────────▼─────────────────────────────────────┐
 │  APPLICATION    app/src-tauri/src/lib.rs                            │
-│                 command surface · DTO shaping · lifecycle           │
+│                 48 commands · DTO shaping · lifecycle · cfg gates   │
 └──────────────┬───────────────────────────────┬──────────────────────┘
                │                               │
 ┌──────────────▼──────────────┐  ┌─────────────▼──────────────────────┐
 │  DOMAIN / PORT              │  │  TRANSPORT                        │
-│  jiosaavn.rs                │  │  proxy.rs (axum, 127.0.0.1)       │
-│  catalog protocol           │  │  /stream  Range relay             │
-│  models · probes · quality  │  │  AppState: caches + clients       │
+│  official.rs (primary)      │  │  proxy.rs (axum, 127.0.0.1)       │
+│  jiosaavn.rs (mirror)       │  │  /stream · /art · vault reads     │
+│  models · probes · quality  │  │  AppState: moka caches + clients  │
 └──────────────┬──────────────┘  └─────────────┬──────────────────────┘
                │                               │
                ▼                               ▼
-     https://saavn.sumit.co          https://aac.saavncdn.com
-        (JSON metadata)                 (audio bytes)
+     https://www.jiosaavn.com          https://*.saavncdn.com
+      (+ MIRRORS fallback)                 (audio bytes)
 ```
 
 Chosen for: **small surface, no build step, one process, one state object, testable at every seam.**
@@ -39,13 +40,14 @@ Chosen for: **small surface, no build step, one process, one state object, testa
 
 | Component | File | Responsibility | Must NOT do |
 |---|---|---|---|
-| **Window shell** | `index.html` | DOM structure, load order | contain logic |
-| **Controller** | `app/src/*.js` (main.js entry + 17 feature modules) | render, queue, history, telemetry, IPC calls | know wire formats |
-| **Theme** | `styles.css` | tokens, layout, states | hard-code content |
-| **Command surface** | `lib.rs` | register commands, assemble DTOs, own app lifecycle | talk HTTP directly |
+| **Desktop shell** | `index.html` | DOM structure, 8 views, load order | contain logic |
+| **Desktop controller** | `app/src/main.js` (159-line entry) + 28 feature modules | render, queue, history, telemetry, IPC calls | know wire formats |
+| **Mobile shell** | `app/src/mobile/index.html` + `router.js` | hash routing, 13 screens, hardware back | duplicate desktop logic |
+| **Theme** | `styles.css` + `tailwind.css` | tokens, layout, states | hard-code content |
+| **Command surface** | `lib.rs` | register commands, assemble DTOs, own app lifecycle, `cfg(desktop)` gates | talk HTTP directly |
 | **First-party source** | `official.rs` | `www.jiosaavn.com` search/details, DES media-url decryption, rendition synthesis | know about HTTP servers |
 | **Catalog adapter** | `jiosaavn.rs` | source failover (official → mirrors), models, quality selection, range probing | know about HTTP servers |
-| **Media relay** | `proxy.rs` | localhost server, Range forwarding, caches, client policy | parse catalog JSON beyond what resolve needs |
+| **Media relay** | `proxy.rs` | localhost server, Range forwarding, moka caches, vault, SQLite ledger | parse catalog JSON beyond what resolve needs |
 | **Entry** | `main.rs` | `app_lib::run()` only | anything else |
 
 ### 2.1 `AppState` — the single shared state
@@ -55,12 +57,15 @@ pub struct AppState {
     pub client:   reqwest::Client,   // metadata + probes: 25 s TOTAL timeout
     pub media:    reqwest::Client,   // bodies: connect/read timeouts only
     pub port:     u16,               // ephemeral, known before window load
-    pub resolved: Mutex<HashMap<String, String>>,  // song id -> CDN URL
-    pub qualified: Mutex<HashMap<String, Probe>>,  // CDN URL  -> probe result
+    pub vault:    PathBuf,           // app data dir / "TRANCE MUSIC"
+    pub resolved: moka::Cache<String, Song>,    // id  -> song  (L1, 6 h TTL)
+    pub qualified: moka::Cache<String, Probe>,  // url -> probe (L2, expires with url)
+    pub search_cache:  moka::Cache<String, Vec<Track>>,
+    pub lyrics_cache:  moka::Cache<String, Lyrics>,
 }
 ```
 
-`Arc<AppState>` is registered with `app.manage(...)` **and** given to `axum::serve`. One allocation, two consumers — the Tauri command path and the proxy path share the same caches, so a resolve performed by the UI is instantly visible to the relay and vice versa.
+`Arc<AppState>` is registered with `app.manage(...)` **and** given to `axum::serve`. One allocation, two consumers — the Tauri command path and the proxy path share the same caches, so a resolve performed by the UI is instantly visible to the relay and vice versa. Caches are **bounded** (capacity + TTL), so a long session cannot grow memory without limit.
 
 ---
 
@@ -111,12 +116,17 @@ Mirror JSON is navigated with `serde_json::Value` + helpers (`text()`, `number()
 
 ### 4.1 IPC commands (frontend ⇄ Rust)
 
+**48 commands** are registered in `generate_handler!` (`lib.rs:1353`). The full
+list, including which are `#[cfg(desktop)]` and which return explicit errors on
+mobile, is tabulated in [`feature-list.md`](feature-list.md). Core commands:
+
 | Command | Args | Returns | Errors |
 |---|---|---|---|
-| `search_songs` | `query`, `limit?` | `Track[]` | `"empty query"`, mirror HTTP/decode errors |
-| `resolve_song` | `id`, `quality?` | `PlayableAudio` | invalid id, not found, no qualities, mirror errors |
+| `search_songs` | `query`, `limit?`, `page?` | `Track[]` | `"empty query"`, source HTTP/decode errors |
+| `resolve_song` | `id`, `quality?` | `PlayableAudio` | invalid id, not found, no qualities, source errors |
 | `qualify_url` | `url` | `RangeStatus` | non-https, non-allow-listed host |
 | `proxy_base` | — | `String` | — |
+| `api_version` | — | `u32` (currently `1`) | — |
 
 **Conventions**
 
@@ -124,6 +134,15 @@ Mirror JSON is navigated with `serde_json::Value` + helpers (`text()`, `number()
 - Field names are `snake_case` on the wire (`#[serde(rename_all = "snake_case")]`).
 - Optional args are omitted by the caller, not sent as `null`.
 - No command accepts a raw URL except `qualify_url`, which validates before use.
+- The frontend checks `api_version()` once at boot; a renamed or missing
+  command fails loudly instead of silently.
+
+### 4.1b Platform gating
+
+Commands that need a desktop-only plugin are compiled out of mobile builds with
+`#[cfg(desktop)]`; the rest exist everywhere but return an honest
+`Err("…not supported on Android yet")` where the OS owns the concept. Plugins
+themselves are confined to `cfg(not(android/ios))` in `Cargo.toml`.
 
 ### 4.2 Proxy routes
 
@@ -281,12 +300,18 @@ This is guarded by `proxy::tests::stream_delivers_the_entire_body`, which stream
 
 | Cache | Key | Value | Lifetime | Rationale |
 |---|---|---|---|---|
-| `resolved` | song id | CDN URL | process | CDN URLs are static per quality; avoids a mirror round-trip on every seek |
-| `qualified` | CDN URL | `Probe` | process | Probing costs 2–3 requests; results don't change within a session |
-| (future) artwork | image URL | bytes on disk | persistent | Big win: rows re-render constantly |
-| (future) search | query+limit | `Track[]` | 5 min | Searches are repeat-heavy while browsing |
+| `resolved` | song id | full `Song` | moka, 6 h TTL + capacity | CDN URLs are static per quality; avoids a source round-trip on every seek |
+| `qualified` | CDN url | `Probe` | moka, expires with the url | Probing costs 2–3 requests; results don't change within a session |
+| `search_cache` | `query:limit:page` | `Track[]` | moka, bounded | Searches are repeat-heavy while browsing |
+| `lyrics_cache` | track key | `Lyrics` | moka, bounded | Lyrics never change once fetched |
+| artwork + L3/L4 files | url | bytes on disk | app cache dir, budgeted (100 MB–5 GB) | Rows re-render constantly; `cache_clear` never touches the vault |
 
 **Explicitly not cached:** the media bytes themselves. The browser's HTTP cache handles that (`Cache-Control` is relayed), and duplicating 10 MB in Rust would be pure waste.
+
+All four in-memory caches are **`moka` with capacity + TTL** — they were
+unbounded `HashMap`s once, which let a long session grow memory without limit.
+`cache_stats` / `cache_set_budget` / `cache_clear` expose the disk tree to the
+Settings screen.
 
 ---
 
@@ -407,8 +432,13 @@ Any new panel talks only to the four IPC commands. No new coupling to HTTP.
 - **No secrets exist**, so there is no key management, no token storage, no leak surface.
 - **No open relay:** localhost-bound, scheme-checked, host-checked.
 - **No injection:** ids validated, queries encoded, no string-built headers.
-- **No remote code:** the mirror returns data, never instructions.
-- **Current gap:** CSP is `null` for development convenience — tracked as a Phase 7 item.
+- **No remote code:** the source returns data, never instructions.
+- **CSP is live and strict** in `tauri.conf.json`: `default-src 'self'`,
+  `frame-src 'none'`, `object-src 'none'`, `form-action 'self'`, and only the
+  four inline boot scripts are hashed in. `media-src` is `'self'` plus
+  `127.0.0.1:*` — the WebView never talks to a CDN directly.
+- **Vault containment:** reads and deletes only touch paths the app itself
+  wrote, re-checked against the vault root first.
 
 ---
 
@@ -446,11 +476,19 @@ No server component is deployed. The optional self-hosted catalog is an *indepen
 
 ## 16. Known Architectural Debt
 
-| # | Debt | Payoff phase |
+| # | Debt | Status |
 |---|---|---|
-| 1 | CSP is `null` | Phase 7 (hardening) |
-| 2 | Single mirror, no circuit breaker | Phase 7 (multi-mirror + health check) |
-| 3 | Network-only tests, no offline gate | Phase 7 (`OP_OFFLINE=1`) |
-| 4 | `Catalog` trait not extracted yet (single adapter) | Phase 5 (when source #2 arrives) |
-| 5 | Diagnostics kept only in DOM, not persisted | Phase 6 |
-| 6 | No artwork disk cache | Phase 5 |
+| 1 | CSP was `null` | ✅ paid — strict CSP shipped (`tauri.conf.json:43`) |
+| 2 | Single mirror, no circuit breaker | ✅ paid — first-party source primary, one-request `429` failover |
+| 3 | Network-only tests, no offline gate | ✅ paid — `OP_OFFLINE=1` in `ci.yml` |
+| 4 | `Catalog` trait not extracted | ⬜ paid when source #2 lands |
+| 5 | Diagnostics kept only in DOM | ⬜ desktop only; mobile has none |
+| 6 | No artwork disk cache | ✅ paid — cache tree + budget |
+| 7 | Unbounded in-memory caches | ✅ paid — moka with capacity + TTL |
+| 8 | Mobile JS not covered by CI | ⬜ open — `ci.yml` still checks `src/*.js` only |
+| 9 | Android builds are local-only | ⬜ open — no Android workflow yet |
+| 10 | Front-end `main.js` monolith | ✅ paid — split into 28 modules (entry is 159 lines) |
+
+Anything still ⬜ above is tracked with an owner in
+[`task.md`](task.md); the roadmap for new work is
+[`future-scope.md`](future-scope.md).

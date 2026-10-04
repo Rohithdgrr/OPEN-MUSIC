@@ -17,6 +17,14 @@
 | 09 | [Problems & Solutions](09-problems-solutions.md) | Known mobile bugs/gotchas + fixes |
 | 10 | [Do's & Don'ts](10-dos-donts.md) | What to do / what not to do when touching mobile |
 
+**Also relevant** (repo root / `docs/`):
+
+- [Feature list — desktop vs mobile](../feature-list.md) — the full platform
+  matrix, including everything mobile does *not* have.
+- [Future scope](../future-scope.md) — cross-platform roadmap; mobile items are
+  tiered alongside desktop ones.
+- [Task plan](../task.md) — phase status covering Android (9) and iOS (10).
+
 ## Mobile in one paragraph
 
 TRANCE MUSIC is a **Tauri 2** app. Desktop serves `app/src/index.html`;
