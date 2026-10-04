@@ -98,11 +98,14 @@ jobs:
           # tauri-cli 2.11, PR #15061): `--no-sign` archives without a
           # development team and pulls the .app out of the .xcarchive, so no
           # exportArchive step runs ("No Team Found" was the old failure).
-          # `--target aarch64-apple-ios-sim` selects the simulator SDK -
-          # there is no `--simulator` flag (it errors as unexpected argument).
+          # `--target aarch64-sim` selects the simulator SDK. The CLI takes
+          # its own short names — [aarch64, aarch64-sim, x86_64] — NOT the
+          # Rust triple `aarch64-apple-ios-sim`, which clap rejects as an
+          # invalid value. (There is no `--simulator` flag either; it errors
+          # as an unexpected argument.)
           # The CLI must stay the driver: the project has a build phase that
           # reads .tauri/cli-options-server.json, live only while it runs.
-          npx tauri ios build --ci --verbose --no-sign --target aarch64-apple-ios-sim 2>&1 | tee ios-build.log
+          npx tauri ios build --ci --verbose --no-sign --target aarch64-sim 2>&1 | tee ios-build.log
 
       - name: Report the failure where it can be read
         if: failure()
