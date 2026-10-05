@@ -58,6 +58,12 @@ jobs:
       - name: Run Rust tests
         working-directory: ./app/src-tauri
         run: cargo test --release
+        env:
+          # Same policy as ci.yml's "Cargo Unit Tests": the 17 `OP_OFFLINE`
+          # -gated tests reach the live JioSaavn upstream, which serves
+          # degraded answers to GitHub's shared runner IPs (empty radio
+          # stations, missing Home-feed rows). They still run locally.
+          OP_OFFLINE: "1"
 
       - name: Run Node.js tests
         working-directory: ./app
