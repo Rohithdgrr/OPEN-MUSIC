@@ -24,7 +24,12 @@ const REVOKE_URL: &str = "https://oauth2.googleapis.com/revoke";
 const DRIVE_FILES: &str = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD: &str = "https://www.googleapis.com/upload/drive/v3/files";
 
+// Only the desktop keychain paths below name these; on iOS/Android the
+// `cfg(not(mobile))` functions are compiled out, so an ungated const is dead
+// code and `-D warnings` fails the iOS `cargo check`.
+#[cfg(not(mobile))]
 const KEYRING_SERVICE: &str = "TRANCE MUSIC";
+#[cfg(not(mobile))]
 const KEYRING_USER: &str = "gdrive-refresh-token";
 
 /// Mirrors sync.js: pushes bigger than this are refused before uploading.

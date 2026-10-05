@@ -1306,10 +1306,12 @@ mod tests {
     /// The live flow endless playback leans on: seed a station from a real
     /// search hit, read its first batch. Skipped when `OP_OFFLINE` is set.
     ///
-    /// Retried like `proxy::tests::live_song_id`: upstream intermittently
-    /// answers a freshly-created station with "No new song found for current
-    /// radio." rather than a batch, which is a flake and not a regression.
-    /// Each attempt seeds a NEW station, so a drained cursor is never reused.
+    /// Upstream sometimes answers a freshly-created station with "No new song
+    /// found for current radio." instead of a batch, and *which* seed triggers
+    /// that varies by egress IP — retrying the same seed failed identically on
+    /// every attempt in CI. So every search hit gets its own station, and the
+    /// whole set is retried with backoff, mirroring the retry
+    /// `proxy::tests::live_song_id` applies to a drained search page.
     #[tokio::test]
     async fn live_radio_station_yields_songs() {
         if std::env::var("OP_OFFLINE").is_ok() {
@@ -1317,23 +1319,22 @@ mod tests {
         }
         let client = crate::jiosaavn::api_client();
         let hits = search(&client, "trance", 5, 1).await.expect("search");
-        let seed = hits.first().expect("a seed song").id.clone();
+        assert!(!hits.is_empty(), "search returns a seed song");
 
-        let mut last = String::from("radio: no attempt made");
+        let mut last = String::from("radio: no seed attempted");
         let mut page = None;
-        for attempt in 0..3u32 {
-            match recommend(&client, Some(&seed), None).await {
-                Ok(p) if !p.tracks.is_empty() => {
-                    page = Some(p);
-                    break;
+        'rounds: for round in 0..3u32 {
+            for hit in &hits {
+                match recommend(&client, Some(&hit.id), None).await {
+                    Ok(p) if !p.tracks.is_empty() => {
+                        page = Some(p);
+                        break 'rounds;
+                    }
+                    Ok(p) => last = format!("station {} came back empty", p.station),
+                    Err(e) => last = e,
                 }
-                Ok(p) => last = format!("radio: station {} returned no tracks", p.station),
-                Err(e) => last = e,
             }
-            tokio::time::sleep(std::time::Duration::from_millis(
-                500 * u64::from(attempt + 1),
-            ))
-            .await;
+            tokio::time::sleep(std::time::Duration::from_millis(750 * u64::from(round + 1))).await;
         }
         let page = page.unwrap_or_else(|| panic!("{last}"));
         assert!(!page.station.is_empty(), "a station id comes back");

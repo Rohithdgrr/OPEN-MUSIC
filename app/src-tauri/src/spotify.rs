@@ -21,7 +21,11 @@ const API_BASE: &str = "https://api.spotify.com/v1";
 
 const SCOPES: &str = "user-top-read user-library-read playlist-read-private";
 
+// Desktop-only: every reader sits behind `cfg(not(mobile))`, so on iOS and
+// Android an ungated const is dead code and `-D warnings` fails the build.
+#[cfg(not(mobile))]
 const KEYRING_SERVICE: &str = "TRANCE MUSIC";
+#[cfg(not(mobile))]
 const KEYRING_USER: &str = "spotify-refresh-token";
 
 /// How long the browser has to finish consent before sign-in gives up.
@@ -580,6 +584,9 @@ pub async fn spotify_import_top(
 
 #[cfg(test)]
 mod tests {
+    // The only test below that reads it is itself `cfg(not(mobile))`, so the
+    // import must be gated too or it dangles on iOS/Android.
+    #[cfg(not(mobile))]
     use super::KEYRING_SERVICE;
 
     /// The load path in production always uses a *fresh* `Entry` (status check
