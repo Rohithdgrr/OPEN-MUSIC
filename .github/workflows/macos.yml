@@ -23,7 +23,11 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 20's `--test` does not expand the `tests/**/*.test.mjs`
+          # glob `npm test` passes, so the runner reported
+          # "Could not find .../tests/**/*.test.mjs" and exited 1. Every other
+          # workflow already pins 22.
+          node-version: '22'
 
       - name: Install system dependencies
         run: |
