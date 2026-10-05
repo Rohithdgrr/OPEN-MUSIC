@@ -87,7 +87,12 @@ jobs:
         # 2. Job logs need admin (403) on this repo, so the real error is
         #    unreadable. Annotations ARE public — emit the log tail as one,
         #    otherwise a failure here is permanently undiagnosable.
+        # 3. pipefail is mandatory — `npx tauri build | tee` without it returns
+        #    tee's 0, so the if/else would report success on any failure and
+        #    the annotation would never fire. Caught after the same wrapper
+        #    masked a real Linux failure in run #16.
         run: |
+          set -o pipefail
           for v in APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE \
                    APPLE_CERTIFICATE_PASSWORD APPLE_PROVISIONING_PROFILE \
                    TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do

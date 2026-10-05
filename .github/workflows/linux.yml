@@ -85,7 +85,11 @@ jobs:
         # the way release.yml does.
         # Annotations are public; job logs need admin (403). Surface the tail
         # as an annotation so a future failure is diagnosable at all.
+        # pipefail is mandatory: without it the pipeline's status is `tee`'s
+        # 0 and the if/else always takes the success branch, turning every
+        # build failure into a green run with no annotation. Verified locally.
         run: |
+          set -o pipefail
           if npx tauri build 2>&1 | tee /tmp/tauri-build.log; then
             echo "✓ tauri build succeeded"
           else
@@ -149,7 +153,13 @@ jobs:
         working-directory: ./app
         # Run #15 failed here with no annotation, so the cause had to be
         # inferred from the step name. Emit the tail so it is self-reporting.
+        #
+        # pipefail is NOT optional here. Without it, `npm ... | tee` reports
+        # tee's 0, so this step printed "✓ smoke tests passed" in run #16
+        # while the script it invoked did not exist — a green run that
+        # tested nothing. See docs/cross-platform-ci.md.
         run: |
+          set -o pipefail
           if npm run test:smoke 2>&1 | tee /tmp/smoke.log; then
             echo "✓ smoke tests passed"
           else
