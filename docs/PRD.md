@@ -10,7 +10,7 @@
 | Status | **v0.3.0 shipped** — Windows/Linux/macOS releases + Android shell + iOS CI |
 | Workspace | `C:\Users\rohit\Music\OPEN MUSIC` |
 | App root | `app/` (`app/src` = desktop front end, `app/src/mobile` = mobile shell, `app/src-tauri` = Rust core) |
-| Languages in shipped code | **HTML, CSS, JavaScript, Rust** (hard project constraint — no Python/Node/Go sidecars at runtime) |
+| Languages in shipped code | **HTML, CSS, JavaScript, Rust** (hard project constraint — no Python/Node/Go sidecars at runtime). Carve-out: the app may *talk to* a user-installed localhost service (e.g. metroserver on `127.0.0.1`, see `docs/sidecar.md`) but never bundles, spawns or vendors it — the shipped runtime stays HTML/CSS/JS/Rust |
 | Target platform | Windows 10/11, Linux, macOS 13+, Android (WebView2 / WebKitGTK / system WebView) |
 
 ---

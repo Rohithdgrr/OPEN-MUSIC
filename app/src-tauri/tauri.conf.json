@@ -37,7 +37,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'sha256-0vFZcfQai3P/JrMzFmplPIdxbJMTlh7a0dWHPiLsYTQ=' 'sha256-aiS0oQHx9UBA3eHh7IrpZaALa3vKkxPBjVrCrmoTSrY=' 'sha256-Q2J7SxS7AOiRfhe9vlIMBtufp0sIWQXcIxPzyHdVWgE=' 'sha256-BM+vEPj7dmUmWRqNHvuUltb+6S0o8rOyYYERLAGOauo=' 'sha256-DSfWu9R9cSSqr829tukVPJ+GyycoqsCRqWmJbFmwDFs=' 'sha256-V2gitOYuqY+3vNsinSwyuc7Kw5WvE9FU1Z0GZyYjIts='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.saavncdn.com https://saavncdn.com https://*.jiosaavn.com https://lh3.googleusercontent.com http://127.0.0.1:*; font-src 'self' https://fonts.gstatic.com; media-src 'self' http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://tauri.localhost http://127.0.0.1:*; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'self'"
+      "csp": "default-src 'self'; script-src 'self' 'sha256-0vFZcfQai3P/JrMzFmplPIdxbJMTlh7a0dWHPiLsYTQ=' 'sha256-aiS0oQHx9UBA3eHh7IrpZaALa3vKkxPBjVrCrmoTSrY=' 'sha256-Q2J7SxS7AOiRfhe9vlIMBtufp0sIWQXcIxPzyHdVWgE=' 'sha256-BM+vEPj7dmUmWRqNHvuUltb+6S0o8rOyYYERLAGOauo=' 'sha256-DSfWu9R9cSSqr829tukVPJ+GyycoqsCRqWmJbFmwDFs=' 'sha256-V2gitOYuqY+3vNsinSwyuc7Kw5WvE9FU1Z0GZyYjIts='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://*.saavncdn.com https://saavncdn.com https://*.jiosaavn.com https://lh3.googleusercontent.com http://127.0.0.1:*; font-src 'self' https://fonts.gstatic.com; media-src 'self' http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost http://tauri.localhost http://127.0.0.1:* ws://127.0.0.1:*; object-src 'none'; base-uri 'self'; frame-src 'none'; form-action 'self'"
     }
   },
   "bundle": {

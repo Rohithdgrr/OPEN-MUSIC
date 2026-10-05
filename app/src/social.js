@@ -1,12 +1,15 @@
-// social.js — Social Now Playing shell (Phase 3).
-// Local state only: no socket, no sidecar, no network. Every count, message
-// and vote this module shows is produced by this client — see
-// docs/social-nowplaying.md §6 (truthfulness rules) and §7 (constraints).
+// social.js — Social Now Playing shell (Phase 3 + 4a glue).
+// Local state, plus a thin mirror of sidecar.js into the Jam/QR/header slots:
+// this module opens no sockets of its own (the bridge lives in sidecar.js),
+// and every count, message and vote it shows is either produced by this
+// client or decoded from a server frame — see docs/social-nowplaying.md §6
+// (truthfulness rules) and docs/sidecar.md §5.
 import { diag, toast } from "./core.js";
 import { $, $$, audio } from "./dom.js";
 import { loadPlays } from "./home.js";
 import { loadFavs } from "./library.js";
 import { enqueue, queue } from "./queue.js";
+import { createSidecar, readPort, STATUS } from "./sidecar.js";
 import { step } from "./transport.js";
 import { entryTrack, vaultEntries } from "./vault.js";
 
@@ -18,6 +21,151 @@ const GRACE_SECS = 3;
 
 let votes = 0;
 let graceTimer = 0;
+
+// --------------------------------------------------------------- sidecar glue -
+// The connection itself lives in sidecar.js (DOM-free, unit-tested there);
+// this section only mirrors its state into the Jam pane, the QR overlay and
+// the header room chip. Nothing is enabled or shown before the server's own
+// frame has proved it (docs/sidecar.md §5).
+const ROOM_SLOTS = ["soc-room-code", "qr-room-code", "jam-room-id"];
+const DEFAULT_SIDECAR_NOTE = "Local 127.0.0.1 process; ships unbundled.";
+
+let sidecar = null;
+let paintedRoom = "";
+
+function paintRoomCode(code) {
+  const text = code || "NO ROOM";
+  for (const id of ROOM_SLOTS) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+}
+
+function paintSidecarState(s) {
+  const cell = $("#jam-sidecar");
+  const note = $("#jam-sidecar-note");
+  const open = $("#btn-open-room");
+  const copyInvite = $("#btn-copy-invite");
+  const copyQr = $("#btn-qr-copy");
+
+  paintRoomCode(s.roomCode);
+
+  if (note) {
+    note.textContent = s.message || DEFAULT_SIDECAR_NOTE;
+  }
+  if (open) {
+    // Offered only while a real handshake is done and no room exists yet.
+    open.disabled = s.status !== STATUS.CONNECTED || !!s.roomCode;
+    open.title = s.status === STATUS.CONNECTED ? "Ask the sidecar for a room code" : "Connect the local sidecar first";
+  }
+  const haveCode = !!s.roomCode;
+  if (copyInvite) {
+    copyInvite.disabled = !haveCode;
+    copyInvite.title = haveCode ? "Copy the room code to the clipboard" : "Available once a room code exists";
+  }
+  if (copyQr) copyQr.disabled = !haveCode;
+
+  if (cell) {
+    cell.classList.remove("is-off", "is-ok");
+    let text;
+    switch (s.status) {
+      case STATUS.PROBING:
+        text = "Probing…";
+        cell.classList.add("is-off");
+        break;
+      case STATUS.OFFLINE:
+      case STATUS.IDLE:
+        text = "Not connected";
+        cell.classList.add("is-off");
+        break;
+      case STATUS.CONNECTING:
+      case STATUS.HANDSHAKING:
+        text = "Connecting…";
+        break;
+      case STATUS.CONNECTED:
+        text = s.serverVersion ? `Connected (v${s.serverVersion})` : "Connected";
+        cell.classList.add("is-ok");
+        break;
+      case STATUS.ROOM:
+        text = "Connected";
+        cell.classList.add("is-ok");
+        break;
+      case STATUS.ERROR:
+        text = `Error: ${s.errorCode || "failed"}`;
+        cell.classList.add("is-off");
+        break;
+      default:
+        text = "Not connected";
+        cell.classList.add("is-off");
+    }
+    cell.textContent = text;
+  }
+
+  if (s.roomCode && s.roomCode !== paintedRoom) {
+    paintedRoom = s.roomCode;
+    toast(`Room ${s.roomCode} open — share the code with someone on this server.`, "success", 5000);
+    diag("sidecar", true, `room ${s.roomCode}`);
+  } else if (!s.roomCode) {
+    paintedRoom = "";
+  }
+}
+
+async function startSidecar() {
+  if (sidecar) return;
+  const ua = $("#jam-ua");
+  // The server's default policy allow-lists User-Agents, so we print ours
+  // verbatim for the operator to paste into ua_policy.json (docs/sidecar.md
+  // §4.5). Display only — this app never alters its own UA.
+  if (ua) ua.textContent = `This client's UA: ${navigator.userAgent}`;
+
+  sidecar = createSidecar({
+    port: readPort(window.localStorage),
+    onChange: paintSidecarState,
+  });
+  paintSidecarState(sidecar.state);
+  const up = await sidecar.probe();
+  if (up && isSocial()) sidecar.connect();
+}
+
+function stopSidecar() {
+  if (!sidecar) return;
+  sidecar.stop();
+  sidecar = null;
+  paintSidecarState({
+    status: STATUS.IDLE,
+    message: DEFAULT_SIDECAR_NOTE,
+    roomCode: "",
+    errorCode: "",
+    serverVersion: "",
+  });
+}
+
+function openRoom() {
+  if (!sidecar) return;
+  const name = (() => {
+    try {
+      return window.localStorage.getItem("tm-username") || "You";
+    } catch {
+      return "You";
+    }
+  })();
+  const res = sidecar.createRoom(name);
+  if (!res.ok) {
+    toast("Connect the local sidecar before opening a room.", "info", 3500);
+  }
+}
+
+async function copyInvite() {
+  const code = sidecar && sidecar.state.roomCode;
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+    toast(`Room code ${code} copied.`, "success", 2500);
+    diag("sidecar", true, "invite copied");
+  } catch {
+    toast(`Clipboard unavailable — the room code is ${code}.`, "info", 4000);
+  }
+}
 
 const isSocial = () => document.body.classList.contains("soc-social");
 
@@ -60,8 +208,12 @@ function setMode(social) {
   $("#btn-mode-social")?.classList.toggle("active", social);
 
   if (social) {
-    toast(`Social mode — local room for ${MEMBERS} (you). The sidecar is not connected.`, "info");
+    toast(
+      `Social mode — local room for ${MEMBERS} (you). Probing the sidecar on 127.0.0.1 …`,
+      "info",
+    );
     diag("social mode", true, "social");
+    startSidecar();
     return;
   }
 
@@ -71,6 +223,7 @@ function setMode(social) {
   if (active && (active.dataset.npTab === "chat" || active.dataset.npTab === "jam")) {
     setActiveTab("tab-btn-lyrics");
   }
+  stopSidecar();
   resetVotes();
   closeQr();
   hideGrace();
@@ -316,6 +469,16 @@ export function initSocial() {
     if (e.key === "Escape") closeQr();
   });
 
+  $("#btn-open-room")?.addEventListener("click", openRoom);
+  $("#btn-copy-invite")?.addEventListener("click", copyInvite);
+  $("#btn-qr-copy")?.addEventListener("click", copyInvite);
+  paintSidecarState({
+    status: STATUS.IDLE,
+    message: DEFAULT_SIDECAR_NOTE,
+    roomCode: "",
+    errorCode: "",
+    serverVersion: "",
+  });
 
   $("#btn-skip-vote")?.addEventListener("click", castVote);
   $("#btn-chat-send")?.addEventListener("click", sendChat);

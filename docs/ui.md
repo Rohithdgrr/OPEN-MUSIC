@@ -399,4 +399,6 @@ Next, **Live Chat**, **Jam Active**). All of it is hand-written CSS in
 See **`docs/social-nowplaying.md`** for the phase plan, class inventory,
 element id contract, visibility contract (`body.soc-social` /
 `.soc-social-only` / `.soc-solo-only`) and the truthfulness rules that keep
-this UI honest while the sidecar is not connected.
+this UI honest while the sidecar is not connected. The optional
+`metroserver` connection itself (probe, handshake, real room codes) is
+specified in **`docs/sidecar.md`**.

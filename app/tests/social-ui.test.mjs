@@ -12,14 +12,14 @@ const css = fs.readFileSync(path.join(src, "styles.css"), "utf8");
 
 // Elements Phase 3 wires up; renaming any of these breaks social.js.
 const IDS = [
-  // header
-  "btn-mode-solo", "btn-mode-social", "soc-room-chip", "soc-avatar",
+  // header (the room code slot is filled only by a room_created frame)
+  "btn-mode-solo", "btn-mode-social", "soc-room-chip", "soc-room-code", "soc-avatar",
   // artwork overlay + QR
   "np-trackline", "np-quality", "track-title-heading", "track-artist-heading",
   "track-fav-btn", "fav-icon", "np-download-btn", "np-add-btn", "np-share-btn",
   "np-album", "np-artist-tile", "np-length", "np-format", "spinning-vinyl-icon",
   "np-sleep", "np-speed", "np-room-members",
-  "btn-qr", "qr-overlay", "qr-room-code", "qr-pin", "qr-members-count",
+  "btn-qr", "qr-overlay", "qr-room-code", "qr-members-count",
   "btn-qr-copy", "btn-qr-close",
   // reactions + transport
   "reaction-bar", "reaction-note", "sync-clock-label", "soc-grace", "grace-timer",
@@ -34,8 +34,9 @@ const IDS = [
   "chat-rate-note",
   // jam
   "np-panel-jam", "jam-room-id", "jam-mode-label", "jam-session-mode",
-  "jam-sync-value", "jam-vote-ratio", "jam-sidecar", "auto-level-toggle",
-  "jam-members", "jam-members-note", "btn-copy-invite", "btn-leave-room",
+  "jam-sync-value", "jam-vote-ratio", "jam-sidecar", "jam-sidecar-note", "jam-ua",
+  "auto-level-toggle", "jam-members", "jam-members-note",
+  "btn-open-room", "btn-copy-invite", "btn-leave-room",
 ];
 
 test("every social / artwork-overlay class in index.html has a styles.css rule", () => {
@@ -114,3 +115,47 @@ test("chat composer appends text nodes, never markup", () => {
   assert.match(social, /new MutationObserver/, "reactions must reset when the track changes");
 });
 
+// ---------------------------------------------------------------- Phase 4a -
+test("no fabricated room codes or PINs remain in the markup", () => {
+  assert.ok(!html.includes("TRNC-8241"), "room codes come from room_created only");
+  assert.ok(!html.includes("0451"), "the preview PIN was a fabrication; the protocol has none");
+  assert.match(html, /id="qr-room-code">NO ROOM</, "QR code must start empty");
+  assert.match(html, /id="jam-room-id">NO ROOM</, "jam room id must start empty");
+  assert.match(html, /id="soc-room-code">NO ROOM</, "header room chip must start empty");
+  assert.match(html, /id="btn-open-room"[^>]*\sdisabled/, "room creation needs a live connection");
+});
+
+test("social.js drives the sidecar bridge instead of opening sockets itself", () => {
+  const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
+  assert.match(social, /import \{ createSidecar, readPort, STATUS \} from "\.\/sidecar\.js";/);
+  assert.match(social, /startSidecar\(\);/, "entering Social must probe for the sidecar");
+  assert.match(social, /stopSidecar\(\);/, "leaving Social must tear the sidecar down");
+  assert.match(social, /#btn-open-room"\)\?\.addEventListener\("click", openRoom\)/);
+  assert.match(social, /#btn-copy-invite"\)\?\.addEventListener\("click", copyInvite\)/);
+  for (const api of ["fetch(", "WebSocket", "EventSource", "XMLHttpRequest", "sendBeacon"]) {
+    assert.ok(!social.includes(api), `social.js must not use ${api}; the bridge lives in sidecar.js`);
+  }
+});
+
+test("sidecar bridge is loopback-only and fails closed", () => {
+  const bridge = fs.readFileSync(path.join(src, "sidecar.js"), "utf8");
+  assert.match(bridge, /const LOOPBACK = "127\.0\.0\.1";/, "loopback constant missing");
+  // every URL is built from LOOPBACK — no other host may appear after a scheme
+  assert.ok(
+    !/(https?|wss?):\/\/(?!127\.0\.0\.1|\$\{LOOPBACK\})/.test(bridge),
+    "sidecar.js must address 127.0.0.1 only",
+  );
+  assert.ok(!/\.innerHTML\s*=/.test(bridge), "no innerHTML in the bridge");
+  // A room code may only exist once the server sent one.
+  assert.match(bridge, /case "room_created"/, "room codes must come from the server frame");
+  assert.match(bridge, /state\.roomCode = room\.roomCode;/);
+});
+
+test("the ws scheme is in the Tauri CSP, health probes were already allowed", () => {
+  const conf = fs.readFileSync(
+    path.join(src, "..", "src-tauri", "tauri.conf.json"),
+    "utf8",
+  );
+  assert.match(conf, /connect-src[^;]*ws:\/\/127\.0\.0\.1:\*/, "ws:// loopback missing from connect-src");
+  assert.match(conf, /connect-src[^;]*http:\/\/127\.0\.0\.1:\*/, "http:// loopback missing from connect-src");
+});
