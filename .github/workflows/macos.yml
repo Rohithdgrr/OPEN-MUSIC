@@ -228,9 +228,12 @@ jobs:
             mkdir -p "$MOUNT"
             if hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null 2>&1; then
               echo "✓ DMG mounted"
-              echo "::notice title=DMG verification::mounted and found TRANCE MUSIC.app inside — $(basename "$DMG")"
               if [ -d "$MOUNT/TRANCE MUSIC.app" ]; then
                 echo "✓ TRANCE MUSIC.app present inside the DMG"
+                # Notice emitted only AFTER the check it describes. Emitting
+                # it earlier would let a success annotation coexist with a
+                # failure annotation for the same fact.
+                echo "::notice title=DMG verification::mounted and found TRANCE MUSIC.app inside — $(basename "$DMG")"
               else
                 echo "✗ TRANCE MUSIC.app missing from the DMG"; FAIL=1
                 echo "::error title=DMG verification (macOS)::DMG mounted but TRANCE MUSIC.app is not inside it: $(basename "$DMG")"
