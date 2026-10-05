@@ -80,7 +80,10 @@ jobs:
 
       - name: Build Tauri app
         working-directory: ./app
-        run: cargo tauri build
+        # `cargo tauri` needs `cargo-tauri` on PATH, which is not installed —
+        # the CLI is the @tauri-apps/cli devDependency, so drive it with npx
+        # the way release.yml does.
+        run: npx tauri build
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
