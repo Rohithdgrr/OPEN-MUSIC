@@ -6,13 +6,22 @@ presence and playback sync are Phase 4b/5. Research source: the published
 [metroproto](https://github.com/metrolistgroup/metroproto) repositories
 (`metroproto @ e7c5e3d` submodule), read 2026-10-05.
 
+> **2026-10-06 — demoted to a dormant interop path.** The default transport
+> for real two-device rooms is now the **in-app Rust room server**
+> (`app/src-tauri/src/room.rs`, spec in `docs/listen-together.md`), because
+> (a) metroserver's dispatcher answers `unknown_message_type` to any frame it
+> doesn't know — chat is impossible without patching that GPL Go server —
+> (b) it ships no prebuilt binaries, so hosting needs Go or Docker, and
+> (c) hosting is UA-allowlisted, which refuses our WebView UA by default.
+> The code and tests below still work against a user-run metroserver and are
+> kept as-is; nothing new is built on them in the meantime.
+
 ## 1. What this is
 
 `metroserver` is a Go WebSocket server for Metrolist's "Listen Together"
-feature: protobuf messages over binary WebSocket frames, optional gzip. It is
-the only realistic transport for this app's room feature, so the desktop app
-speaks its protocol **directly over `127.0.0.1`** — no relay, no cloud, no
-bundled binary.
+feature: protobuf messages over binary WebSocket frames, optional gzip. The
+desktop app can speak its protocol directly over `127.0.0.1` — no relay, no
+cloud, no bundled binary.
 
 ## 2. Licensing and PRD stance (decisions, not open questions)
 
@@ -21,7 +30,7 @@ bundled binary.
 | Is the sidecar bundled with the app? | **No.** `docs/PRD.md` keeps its hard constraint: shipped runtime is HTML/CSS/JS/Rust only. The user runs metroserver themselves (or not at all). |
 | Does GPL-3.0 contaminate this MIT app? | **No** — no Go source, no compiled binary and no derived code is copied into this repo. The app is an independent client speaking a network protocol, which is not a derivative work. |
 | What if the user never runs it? | The app says `Not connected`. Every social feature that needs a peer degrades to its local-only behavior (see `docs/social-nowplaying.md` §3a/§6). |
-| Where does it listen? | `127.0.0.1` only. The app never opens a non-loopback address. |
+| Where does it listen? | `127.0.0.1` only. (This bridge never opens a non-loopback address. The *room server* of `docs/listen-together.md` is a different component — it binds the LAN, opt-in while a room is open.) |
 
 The PRD's shipped-languages row was amended to record this carve-out
 ("may *talk to* a user-installed localhost service; never bundles, spawns or

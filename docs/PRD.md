@@ -564,6 +564,8 @@ This project integrates a **third-party community API** with a service the API d
 | Area | Control |
 |---|---|
 | Proxy exposure | Bound to `127.0.0.1` only, ephemeral port |
+| Room server exposure (Listen Together) | Bound to `0.0.0.0` **only while a room is open**, default port 8787, stopped on `room_close`/exit; opt-in, never started at launch |
+| Room trust model | No TLS/auth by design — LAN-trust; 8-symbol code (~140 bits) as bearer; crosses only display name, chat text, track id/title/artist/position. See `docs/listen-together.md` §7 |
 | Open-relay risk | `https` + `*.saavncdn.com` allow-list enforced in Rust |
 | Path traversal | Song ids validated: `[A-Za-z0-9_]`, length ≤ 32 |
 | Query injection | Query strings percent-encoded via `url::form_urlencoded` |

@@ -13,6 +13,8 @@ mod jiosaavn;
 mod lyrics;
 mod official;
 mod proxy;
+mod qr;
+mod room;
 mod sha256;
 mod spotify;
 mod store;
@@ -1606,6 +1608,8 @@ pub fn run() {
             app.manage(crate::gdrive::GDriveState::new());
             // Optional Spotify integration: dormant until sign-in.
             app.manage(crate::spotify::SpotifyState::new());
+            // Listen Together room server/client state (docs/listen-together.md).
+            app.manage(crate::room::RoomState::new());
 
             // Design: enforce the disk budget at boot (first tick fires
             // immediately) and every 10 minutes after that.
@@ -1641,6 +1645,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            qr::qr_symbol,
+            room::room_open,
+            room::room_join,
+            room::room_chat,
+            room::room_playback,
+            room::room_report,
+            room::room_close,
+            room::room_info,
             search_songs,
             search_entities,
             search_suggestions,

@@ -22,7 +22,11 @@ thiserror = "1"
 hex = "0.4"
 tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
+# Listen Together room client (docs/listen-together.md §6): the guest side of
+# the room protocol. Same crate axum's own `ws` feature uses server-side, so
+# one copy of the tungstenite codec lands in the lockfile.
+tokio-tungstenite = "0.26"
 url = "2"
 futures = "0.3"
 # JioSaavn encrypts `encrypted_media_url` with DES-ECB before base64.
@@ -37,6 +41,10 @@ moka = { version = "0.12", features = ["future"] }
 # Vault ledger (review 4.5): WAL-mode SQLite, bundled so no system SQLite
 # is required on user machines.
 rusqlite = { version = "0.37", features = ["bundled"] }
+# Room QR symbol (app/src/qrview.js). Only the module matrix is needed — the
+# frontend paints it to a canvas — so the default `image`/`svg`/`pic` encoders
+# are switched off; they would drag the whole `image` crate into the build.
+qrcode = { version = "0.14.1", default-features = false }
 
 # Desktop-only plugins. None of them has a mobile implementation, and pulling
 # them into the iOS/Android targets fails the mobile build, so they live here
@@ -89,5 +97,6 @@ opt-level = 3
 strip = true
 
 [dev-dependencies]
+rqrr = "0.10.1"
 # Local mock server for the offline transport tests (review 5.1).
 wiremock = "0.6"
