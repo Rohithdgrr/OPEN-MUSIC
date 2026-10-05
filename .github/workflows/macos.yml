@@ -170,6 +170,8 @@ jobs:
           if-no-files-found: warn
 
       - name: Smoke test - Verify app bundle
+        # Each exit 1 below is annotated: these logs are unreachable (403), so
+        # an unannotated failure here is undiagnosable.
         run: |
           APP_BUNDLE="app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app"
           if [ -d "$APP_BUNDLE" ]; then
@@ -179,6 +181,7 @@ jobs:
               echo "✓ Info.plist found"
             else
               echo "✗ Info.plist missing"
+              echo "::error title=app bundle smoke test (macOS)::Info.plist missing inside $APP_BUNDLE/Contents"
               exit 1
             fi
             if [ -f "$APP_BUNDLE/Contents/MacOS/trance-music" ]; then
@@ -191,10 +194,12 @@ jobs:
               fi
             else
               echo "✗ Binary not found"
+              echo "::error title=app bundle smoke test (macOS)::Contents/MacOS/trance-music missing inside $APP_BUNDLE"
               exit 1
             fi
           else
             echo "✗ App bundle not found"
+            echo "::error title=app bundle smoke test (macOS)::bundle not found at $APP_BUNDLE"
             exit 1
           fi
 
@@ -210,22 +215,30 @@ jobs:
           FAIL=0
 
           # 1. DMG must mount and contain the app (the literal "does it open")
+          # Annotations, not log lines, are the only output channel readable
+          # from outside this repo (job logs 403). The run being green already
+          # proves mount+launch succeeded -- but ONLY if a DMG existed, so the
+          # "no DMG" branch must announce itself or green stays ambiguous.
           if [ -n "$DMG" ]; then
             mkdir -p "$MOUNT"
             if hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null 2>&1; then
               echo "✓ DMG mounted"
+              echo "::notice title=DMG verification::mounted and found TRANCE MUSIC.app inside — $(basename "$DMG")"
               if [ -d "$MOUNT/TRANCE MUSIC.app" ]; then
                 echo "✓ TRANCE MUSIC.app present inside the DMG"
               else
                 echo "✗ TRANCE MUSIC.app missing from the DMG"; FAIL=1
+                echo "::error title=DMG verification (macOS)::DMG mounted but TRANCE MUSIC.app is not inside it: $(basename "$DMG")"
                 ls -la "$MOUNT" || true
               fi
               hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true
             else
               echo "✗ hdiutil attach failed — the DMG is not mountable"; FAIL=1
+              echo "::error title=DMG verification (macOS)::hdiutil attach failed, DMG is not mountable: $(basename "$DMG")"
             fi
           else
             echo "⚠ No DMG produced; skipping mount check"
+            echo "::warning title=No DMG produced::bundle/dmg/*.dmg absent, so the mount check was skipped and this run does NOT prove the image opens"
           fi
 
           # 2. The binary must survive launch (catches dyld / @rpath faults)
@@ -236,6 +249,7 @@ jobs:
             sleep 12
             if kill -0 "$APP_PID" 2>/dev/null; then
               echo "✓ App still running after 12s (pid $APP_PID)"
+              echo "::notice title=App launch verification::binary alive after 12s (pid $APP_PID) — dyld/rpath OK"
               kill "$APP_PID" 2>/dev/null || true
               sleep 2
               kill -9 "$APP_PID" 2>/dev/null || true
@@ -243,9 +257,13 @@ jobs:
               echo "✗ App exited early — launch failed"
               echo "--- launch log ---"; cat /tmp/app-launch.log || true
               FAIL=1
+              # dyld and @rpath faults print to this log; carry them into the
+              # annotation because the log itself is unreachable (403).
+              echo "::error title=App launch (macOS)::binary exited within 12s: $(tail -c 800 /tmp/app-launch.log | tr '\n' ' ')"
             fi
           else
             echo "✗ Binary not executable"; FAIL=1
+            echo "::error title=App launch (macOS)::binary missing or not executable: $BIN"
           fi
 
           # 3. Codesign: ADVISORY only. An unsigned CI build is expected to
