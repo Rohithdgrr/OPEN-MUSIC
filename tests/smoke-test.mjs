@@ -2,7 +2,7 @@
 // Tests that the application launches and responds to basic commands
 
 import { spawn } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -34,26 +34,48 @@ function recordTest(name, passed, message = '') {
 }
 
 // Platform-specific binary paths
+//
+// NEVER hardcode an artifact filename. Tauri names bundles from `productName`
+// + `version` (both read from tauri.conf.json -- "TRANCE MUSIC" / "0.4.0"), so
+// a pinned path like `trance-music.AppImage` or `TRANCE MUSIC_0.3.0_*.msi`
+// misses the real file after any version bump or rename. Glob the extension.
+//
+// The old hardcoded Linux path silently fell through to a bare PATH lookup
+// ('trance-music'), which exists on a user's machine but not on a CI runner,
+// producing `spawn trance-music ENOENT` while the .AppImage sat right there
+// in the bundle directory.
+function firstMatch(dir, ext) {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.name.toLowerCase().endsWith(ext))
+      .map((e) => join(dir, e.name))[0];
+  } catch {
+    // Directory absent (not built here) -- treat as "no match".
+    return undefined;
+  }
+}
+
 function getBinaryPath() {
+  const bundle = join(__dirname, '../app/src-tauri/target/release/bundle');
+
   if (PLATFORM === 'linux') {
-    // Check for AppImage first, then try to find installed binary
-    const appimagePath = join(__dirname, '../app/src-tauri/target/release/bundle/appimage/trance-music.AppImage');
-    if (existsSync(appimagePath)) {
-      return appimagePath;
-    }
-    // Fallback to system binary
+    // e.g. "TRANCE MUSIC_0.4.0_amd64.AppImage"
+    const appimage = firstMatch(join(bundle, 'appimage'), '.appimage');
+    if (appimage) return appimage;
+    // Fallback: a system binary, present only if the app is installed.
     return 'trance-music';
-  } else if (PLATFORM === 'darwin') {
-    const appPath = join(__dirname, '../app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app');
-    if (existsSync(appPath)) {
-      return appPath;
-    }
+  }
+  if (PLATFORM === 'darwin') {
+    // e.g. "TRANCE MUSIC.app"
+    const app = firstMatch(join(bundle, 'macos'), '.app');
+    if (app) return app;
     return '/Applications/TRANCE MUSIC.app';
-  } else if (PLATFORM === 'win32') {
-    const exePath = join(__dirname, '../app/src-tauri/target/release/bundle/msi/TRANCE MUSIC_0.3.0_x64_en-US.msi');
-    if (existsSync(exePath)) {
-      return exePath;
-    }
+  }
+  if (PLATFORM === 'win32') {
+    // e.g. "TRANCE MUSIC_0.4.0_x64_en-US.msi" -- was pinned to 0.3.0 while
+    // the app is at 0.4.0, so this branch never matched either.
+    const msi = firstMatch(join(bundle, 'msi'), '.msi');
+    if (msi) return msi;
     return 'C:\\Program Files\\TRANCE MUSIC\\trance-music.exe';
   }
   throw new Error(`Unsupported platform: ${PLATFORM}`);
