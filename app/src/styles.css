@@ -7371,3 +7371,2128 @@ html:not(.dark) input[type="search"]:focus {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06), inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
 }
 
+
+
+/* ==========================================================================
+   PART 5: SOCIAL NOW PLAYING — Listen Together / Jam Mode shell
+   --------------------------------------------------------------------------
+   Ported by hand from design/screens/social nowplaying screen/code.html
+   (Tailwind CDN markup) into vanilla CSS. Every component class below is
+   scoped to the desktop stage or the header, carries NO Tailwind dependency,
+   and is themed twice: light first, then re-stated under
+   `.dark …` selectors in section 9.
+
+   Naming:
+     .soc-*     social / room-only chrome (chat, jam, reactions, votes)
+     .np-art-*  artwork overlay chrome (moved out of the right-column meta card)
+
+   Visibility contract (driven by social.js, see docs/social-nowplaying.md):
+     body.soc-social   → social chrome visible
+     .soc-social-only  → hidden unless body.soc-social
+     .soc-solo-only    → hidden while body.soc-social
+   ========================================================================== */
+
+/* --- Visibility contract ------------------------------------------------- */
+body:not(.soc-social) .soc-social-only {
+  display: none !important;
+}
+
+body.soc-social .soc-solo-only {
+  display: none !important;
+}
+
+/* ==========================================================================
+   1. HEADER — Solo / Social switch, room chip, member avatar
+   ========================================================================== */
+
+.soc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.soc-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: #eeeef0;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
+}
+
+.soc-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  color: #5f5e61;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.soc-mode-btn:hover {
+  color: #1a1c1d;
+}
+
+.soc-mode-btn.active {
+  background: #18181b;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.soc-mode-btn .soc-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.85);
+  animation: np-pulse 2.2s infinite ease-in-out;
+}
+
+.soc-room-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9999px;
+  background: #eeeef0;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: #47464b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: default;
+  user-select: none;
+}
+
+.soc-room-chip .material-symbols-outlined {
+  font-size: 14px;
+  color: #15803d;
+}
+
+.soc-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: #1a1c1d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   2. ARTWORK OVERLAY — title / artist / actions / telemetry strip
+   Sits on top of the album cover: dark-glass in BOTH themes because the
+   surface behind it is always the artwork.
+
+   The band is a VERTICAL GRADIENT, not a slab: opaque at the bottom edge
+   where the baseline text sits, fully transparent by the time it reaches
+   the top of the band. No border-top — a hairline across a photo reads as
+   a UI box parked on the artwork. See docs/social-nowplaying.md §6a.
+   ========================================================================== */
+
+.np-art-overlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.35rem 1rem 0.9rem;
+  background: transparent;
+  color: #ffffff;
+}
+
+/* The glass lives on a pseudo-element, not on .np-art-overlay itself.
+   `backdrop-filter` paints over the element's whole box, so a blurred
+   rectangle would show a hard top edge even where the gradient is fully
+   transparent — masking .np-art-overlay directly would fix the edge but
+   also fade the eyebrow text out along with it. Separating the layer means
+   the mask touches only the glass. z-index:-1 keeps it behind the flex
+   children (positioned, so it would otherwise paint over them). */
+.np-art-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    to top,
+    rgba(6, 6, 8, 0.94) 0%,
+    rgba(6, 6, 8, 0.86) 34%,
+    rgba(6, 6, 8, 0.6) 62%,
+    rgba(6, 6, 8, 0.22) 84%,
+    rgba(6, 6, 8, 0) 100%
+  );
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+  -webkit-mask-image: linear-gradient(to top, #000 82%, transparent 100%);
+  mask-image: linear-gradient(to top, #000 82%, transparent 100%);
+  pointer-events: none;
+}
+
+.np-art-overlay-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.np-art-overlay-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.np-art-trackline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.np-art-eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #d4d4d8;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.np-art-quality {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.np-art-title {
+  margin: 3px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np-art-artist {
+  margin-top: 2px;
+  margin-bottom: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e4e4e7;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.np-art-artist:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.np-art-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* 28px, not 34px: four squares at 34px outweighed the 22px title. */
+.np-art-action {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.np-art-action:hover {
+  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.np-art-action:active {
+  transform: scale(0.92);
+}
+
+.np-art-action:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.8);
+  outline-offset: 2px;
+}
+
+/* Telemetry strip: ALBUM · ARTIST · LENGTH · ROOM · FORMAT · sleep · speed */
+.np-art-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.9rem;
+  flex-wrap: wrap;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #d4d4d8;
+}
+
+.np-art-info-group {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.np-art-info-group:last-child {
+  flex: 0 0 auto;
+}
+
+.np-art-info-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  /* Opt out of the default shrink-to-zero so only the long values clip. */
+  flex: 0 1 auto;
+}
+
+/* ALBUM / ARTIST are the two fields with prose-length values: let them
+   absorb the slack instead of cutting LENGTH or FORMAT mid-word. */
+.np-art-info-item--wide {
+  flex: 1 1 9rem;
+  min-width: 4.5rem;
+}
+
+.np-art-info-item .np-art-info-label {
+  flex: 0 0 auto;
+  color: #a1a1aa;
+  font-weight: 400;
+}
+
+.np-art-info-value {
+  font-weight: 500;
+  color: #f4f4f5;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.np-art-info-value:hover {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.np-art-info-sep {
+  color: #52525b;
+}
+
+/* Transparent selects that live on the dark overlay. Scoped under
+   `#now-playing-stage .np-art-overlay` on purpose: both the universal
+   `select` rule and the dark-theme `#now-playing-stage select` rule carry
+   `!important`, and a bare `.np-art-select` (0,1,0) loses to
+   `html.dark #now-playing-stage select` (1,1,2). Those rules set an opaque
+   background, 2.2rem right padding and a 14px chevron, which is what made
+   these read as chunky white boxes on the cover. */
+#now-playing-stage .np-art-overlay .np-art-select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-color: transparent !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-opacity='0.65' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.2rem center !important;
+  background-size: 11px 11px !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  padding: 2px 1.3rem 2px 0.45rem !important;
+  margin: 0;
+  min-width: 0;
+  color: #ffffff !important;
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: 10.5px !important;
+  font-weight: 500 !important;
+  line-height: 1.5 !important;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+#now-playing-stage .np-art-overlay .np-art-select:hover {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+  transform: none;
+}
+
+#now-playing-stage .np-art-overlay .np-art-select:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.55) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12) !important;
+}
+
+#now-playing-stage .np-art-overlay .np-art-select option {
+  background: #18181b;
+  color: #ffffff;
+}
+
+/* --- Room QR ------------------------------------------------------------ */
+.np-qr-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(9, 9, 11, 0.62);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #ffffff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.np-qr-btn:hover {
+  background: rgba(9, 9, 11, 0.82);
+}
+
+.np-qr-btn:active {
+  transform: scale(0.96);
+}
+
+.np-qr-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+  background: rgba(9, 9, 11, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #ffffff;
+  text-align: center;
+}
+
+.np-qr-overlay.hidden {
+  display: none !important;
+}
+
+.np-qr-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.np-qr-head-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a1a1aa;
+}
+
+.np-qr-head-label .soc-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.9);
+  animation: np-pulse 2.2s infinite ease-in-out;
+}
+
+.np-qr-count {
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+}
+
+.np-qr-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.np-qr-plate {
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+.np-qr-plate svg {
+  display: block;
+  width: 160px;
+  height: 160px;
+}
+
+.np-qr-code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.np-qr-pin {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.np-qr-pin strong {
+  color: #e4e4e7;
+  font-weight: 600;
+}
+
+.np-qr-actions {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.np-qr-copy {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #18181b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.np-qr-copy:hover {
+  background: #e4e4e7;
+}
+
+.np-qr-close {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.np-qr-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================================================
+   3. TRACK REACTIONS — fixed set (fire, heart, clap, wow, note, cry)
+   ========================================================================== */
+
+.soc-reaction-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.soc-reaction-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+  background: #ffffff;
+  color: #47464b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.soc-reaction-pill:hover {
+  background: #f3f3f5;
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+.soc-reaction-pill:active {
+  transform: scale(0.95);
+}
+
+.soc-reaction-pill.active {
+  background: #18181b;
+  border-color: #18181b;
+  color: #ffffff;
+}
+
+.soc-reaction-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.soc-reaction-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.soc-reaction-note {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #717075;
+}
+
+/* ==========================================================================
+   4. TRANSPORT ADDITIONS — sync clock, skip vote, pause grace period
+   ========================================================================== */
+
+.soc-sync-clock {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8a8a91;
+}
+
+.soc-skip-vote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: #eeeef0;
+  color: #1a1c1d;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.soc-skip-vote:hover {
+  background: #e2e2e4;
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+.soc-skip-vote:active {
+  transform: scale(0.96);
+}
+
+.soc-skip-vote.is-done {
+  background: #18181b;
+  border-color: #18181b;
+  color: #ffffff;
+}
+
+.soc-vote-ratio {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #717075;
+  font-variant-numeric: tabular-nums;
+}
+
+.soc-vote-ratio.is-hot {
+  color: #15803d;
+  font-weight: 600;
+}
+
+/* Pause grace period pill (democratic window) */
+.soc-grace {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid rgba(180, 83, 9, 0.35);
+  border-radius: 9999px;
+  background: rgba(180, 83, 9, 0.08);
+  color: #b45309;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.soc-grace.hidden {
+  display: none !important;
+}
+
+.soc-grace-timer {
+  min-width: 2.4em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   5. DECK TABS — live dot on Chat / Jam Active tabs (np-deck-tab reused)
+   ========================================================================== */
+
+.soc-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #16a34a;
+  box-shadow: 0 0 6px rgba(22, 163, 74, 0.75);
+  animation: np-pulse 2.2s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+.np-deck-tab .soc-live-dot {
+  background: #22c55e;
+}
+
+/* ==========================================================================
+   6. COLLAB QUEUE PANE
+   ========================================================================== */
+
+.soc-qhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.soc-qhead-left,
+.soc-qhead-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.soc-qhead-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1a1c1d;
+}
+
+.soc-badge {
+  padding: 3px 7px;
+  border: 1px solid rgba(21, 128, 61, 0.3);
+  border-radius: 4px;
+  background: rgba(22, 163, 74, 0.08);
+  color: #15803d;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.soc-badge.is-locked {
+  border-color: rgba(185, 28, 28, 0.3);
+  background: rgba(185, 28, 28, 0.08);
+  color: #b91c1c;
+}
+
+.soc-qbtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 6px;
+  background: #f3f3f5;
+  color: #47464b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.soc-qbtn:hover {
+  background: #e2e2e4;
+  color: #1a1c1d;
+  border-color: rgba(0, 0, 0, 0.14);
+}
+
+.soc-qbtn.is-on {
+  background: #18181b;
+  border-color: #18181b;
+  color: #ffffff;
+}
+
+/* Queue rows (rendered by queue.js) — social variants */
+.soc-qrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  background: #ffffff;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.soc-qrow:hover {
+  background: #f7f7f8;
+}
+
+.soc-qrow.is-now {
+  background: #f3f3f5;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+.soc-qrow-main {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.soc-qindex,
+.soc-drag {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #717075;
+  flex-shrink: 0;
+}
+
+.soc-drag {
+  cursor: grab;
+  opacity: 0.55;
+}
+
+.soc-qrow:hover .soc-drag {
+  opacity: 1;
+}
+
+.soc-qthumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #e2e2e4;
+  flex-shrink: 0;
+}
+
+.soc-qtext {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.soc-qtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #17171a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soc-now-badge {
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: #18181b;
+  color: #ffffff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.soc-qbio {
+  font-size: 11px;
+  color: #717075;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soc-added-by {
+  margin-top: 2px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: #8a8a91;
+}
+
+.soc-added-by strong {
+  color: #47464b;
+  font-weight: 600;
+}
+
+.soc-qrow-side {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.soc-qdur {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #717075;
+  font-variant-numeric: tabular-nums;
+}
+
+.soc-qremove {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a8a91;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.soc-qrow:hover .soc-qremove {
+  opacity: 1;
+}
+
+.soc-qremove:hover {
+  background: #e2e2e4;
+  color: #b91c1c;
+}
+
+/* Append-to-room row */
+.soc-qappend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.soc-qinput {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: #f3f3f5;
+  color: #1a1c1d;
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.soc-qinput::placeholder {
+  color: #8a8a91;
+}
+
+.soc-qinput:focus {
+  outline: none;
+  border-color: rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+}
+
+.soc-qinput:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.soc-qappend-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 13px;
+  border: none;
+  border-radius: 8px;
+  background: #18181b;
+  color: #ffffff;
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.soc-qappend-btn:hover {
+  background: #27272a;
+}
+
+.soc-qappend-btn:active {
+  transform: scale(0.97);
+}
+
+/* ==========================================================================
+   7. LIVE CHAT PANE
+   ========================================================================== */
+
+.soc-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.soc-pane-head-left,
+.soc-pane-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.soc-pane-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #1a1c1d;
+}
+
+.soc-stat-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  background: #eeeef0;
+  color: #717075;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+}
+
+.soc-stat-chip.is-live {
+  border-color: rgba(21, 128, 61, 0.28);
+  background: rgba(22, 163, 74, 0.08);
+  color: #15803d;
+}
+
+.soc-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.soc-chat-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.soc-chat-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16);
+  border-radius: 9999px;
+}
+
+.soc-chat-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.soc-chat-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  background: #18181b;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.soc-chat-msg.mine .soc-chat-avatar {
+  background: #52525b;
+}
+
+.soc-chat-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 85%;
+  padding: 9px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  background: #f3f3f5;
+}
+
+.soc-chat-msg.mine .soc-chat-bubble {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+.soc-chat-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: #8a8a91;
+}
+
+.soc-chat-user {
+  color: #17171a;
+  font-weight: 600;
+}
+
+.soc-tag-host {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #18181b;
+  color: #ffffff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.soc-chat-time {
+  margin-left: auto;
+  color: #a3a3a8;
+}
+
+.soc-chat-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #26262a;
+  word-break: break-word;
+}
+
+.soc-chat-reacts {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+}
+
+.soc-chat-react {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 9999px;
+  background: #ffffff;
+  color: #47464b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.soc-chat-react:hover {
+  background: #f7f7f8;
+}
+
+/* Typing indicator: three dots */
+.soc-typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: #8a8a91;
+}
+
+.soc-typing i {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #a3a3a8;
+  animation: soc-blink 1.2s infinite ease-in-out;
+}
+
+.soc-typing i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.soc-typing i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes soc-blink {
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* Compose row */
+.soc-chat-compose {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.soc-emoji-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 8px;
+  background: #f3f3f5;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.soc-emoji-btn:hover {
+  background: #e2e2e4;
+}
+
+.soc-chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1a1c1d;
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.soc-chat-input::placeholder {
+  color: #8a8a91;
+}
+
+.soc-chat-input:focus {
+  outline: none;
+  border-color: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
+}
+
+.soc-chat-send {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #18181b;
+  color: #ffffff;
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.soc-chat-send:hover {
+  background: #27272a;
+}
+
+.soc-chat-send:active {
+  transform: scale(0.97);
+}
+
+.soc-chat-quote {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 8px;
+  background: #f3f3f5;
+  color: #47464b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.soc-chat-quote:hover {
+  background: #e2e2e4;
+  color: #1a1c1d;
+}
+
+/* Empty state (no messages yet) */
+.soc-empty {
+  padding: 1.5rem 0.5rem;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #8a8a91;
+}
+
+/* ==========================================================================
+   8. JAM STATUS PANE — session control, members, room actions
+   ========================================================================== */
+
+.soc-section-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a8a91;
+}
+
+.soc-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.soc-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0.7rem;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  background: #f3f3f5;
+}
+
+.soc-tile-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.soc-tile-label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: #52525b;
+}
+
+.soc-tile-value {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #18181b;
+  color: #ffffff;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.soc-tile-value.is-ok {
+  padding: 0;
+  background: transparent;
+  color: #15803d;
+  font-size: 11px;
+}
+
+.soc-tile-value.is-off {
+  padding: 0;
+  background: transparent;
+  color: #8a8a91;
+  font-size: 11px;
+}
+
+.soc-tile-note {
+  margin: 0;
+  font-size: 11px;
+  color: #8a8a91;
+  line-height: 1.35;
+}
+
+.soc-mode-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+  background: #ffffff;
+  color: #47464b;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.soc-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.soc-member {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.25rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.soc-member:last-child {
+  border-bottom: none;
+}
+
+.soc-member-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  background: #18181b;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.soc-member-avatar.is-you {
+  background: #52525b;
+}
+
+.soc-member-name {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #17171a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soc-member-role {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: #8a8a91;
+  flex-shrink: 0;
+}
+
+/* Secondary / solid / leave buttons */
+.soc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 13px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: transparent;
+  color: #1a1c1d;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.soc-btn:hover {
+  background: #f3f3f5;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+.soc-btn:active {
+  transform: scale(0.97);
+}
+
+.soc-btn-solid {
+  background: #18181b;
+  border-color: #18181b;
+  color: #ffffff;
+}
+
+.soc-btn-solid:hover {
+  background: #27272a;
+  border-color: #27272a;
+}
+
+.soc-btn-danger {
+  border-color: rgba(185, 28, 28, 0.35);
+  color: #b91c1c;
+}
+
+.soc-btn-danger:hover {
+  background: rgba(185, 28, 28, 0.07);
+  border-color: rgba(185, 28, 28, 0.55);
+}
+
+.soc-btn:disabled,
+.soc-qappend-btn:disabled,
+.soc-chat-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Solo-mode invitation prompt */
+.soc-solo-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 0.9rem;
+  border: 1px dashed rgba(0, 0, 0, 0.16);
+  border-radius: 12px;
+  background: #f7f7f8;
+}
+
+.soc-solo-prompt-text {
+  margin: 0;
+  font-size: 12px;
+  color: #52525b;
+  line-height: 1.45;
+}
+
+.soc-solo-prompt-text strong {
+  color: #17171a;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   9. DARK MODE — every social component restated for the inverted theme
+   ========================================================================== */
+
+.dark .soc-mode-switch,
+html.dark .soc-mode-switch {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.dark .soc-mode-btn,
+html.dark .soc-mode-btn {
+  color: #a1a1aa;
+}
+
+.dark .soc-mode-btn:hover,
+html.dark .soc-mode-btn:hover {
+  color: #ffffff;
+}
+
+.dark .soc-mode-btn.active,
+html.dark .soc-mode-btn.active {
+  background: #ffffff;
+  color: #000000;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.dark .soc-room-chip,
+html.dark .soc-room-chip {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #d4d4d8;
+}
+
+.dark .soc-room-chip .material-symbols-outlined,
+html.dark .soc-room-chip .material-symbols-outlined {
+  color: #4ade80;
+}
+
+.dark .soc-avatar,
+html.dark .soc-avatar {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.dark .soc-reaction-pill,
+html.dark .soc-reaction-pill {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+}
+
+.dark .soc-reaction-pill:hover,
+html.dark .soc-reaction-pill:hover {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark .soc-reaction-pill.active,
+html.dark .soc-reaction-pill.active {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-reaction-note,
+html.dark .soc-reaction-note {
+  color: #a1a1aa;
+}
+
+.dark .soc-sync-clock,
+html.dark .soc-sync-clock {
+  color: #8f8f97;
+}
+
+.dark .soc-skip-vote,
+html.dark .soc-skip-vote {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.dark .soc-skip-vote:hover,
+html.dark .soc-skip-vote:hover {
+  background: #3f3f46;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.dark .soc-skip-vote.is-done,
+html.dark .soc-skip-vote.is-done {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-vote-ratio,
+html.dark .soc-vote-ratio {
+  color: #a1a1aa;
+}
+
+.dark .soc-vote-ratio.is-hot,
+html.dark .soc-vote-ratio.is-hot {
+  color: #4ade80;
+}
+
+.dark .soc-grace,
+html.dark .soc-grace {
+  background: rgba(180, 83, 9, 0.16);
+  border-color: rgba(217, 161, 59, 0.4);
+  color: #fbbf24;
+}
+
+.dark .soc-qhead,
+.dark .soc-pane-head,
+.dark .soc-chat-compose,
+.dark .soc-qappend,
+html.dark .soc-qhead,
+html.dark .soc-pane-head,
+html.dark .soc-chat-compose,
+html.dark .soc-qappend {
+  border-color: rgba(255, 255, 255, 0.07);
+}
+
+.dark .soc-qhead-title,
+.dark .soc-pane-title,
+html.dark .soc-qhead-title,
+html.dark .soc-pane-title {
+  color: #ffffff;
+}
+
+.dark .soc-badge,
+html.dark .soc-badge {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+}
+
+.dark .soc-badge.is-locked,
+html.dark .soc-badge.is-locked {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.dark .soc-qbtn,
+html.dark .soc-qbtn {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+}
+
+.dark .soc-qbtn:hover,
+html.dark .soc-qbtn:hover {
+  background: #3f3f46;
+  color: #ffffff;
+}
+
+.dark .soc-qbtn.is-on,
+html.dark .soc-qbtn.is-on {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-qrow,
+html.dark .soc-qrow {
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .soc-qrow:hover,
+html.dark .soc-qrow:hover {
+  background: #1f1f23;
+}
+
+.dark .soc-qrow.is-now,
+html.dark .soc-qrow.is-now {
+  background: #202024;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dark .soc-qtitle,
+html.dark .soc-qtitle {
+  color: #f4f4f5;
+}
+
+.dark .soc-now-badge,
+html.dark .soc-now-badge {
+  background: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-qbio,
+.dark .soc-qdur,
+html.dark .soc-qbio,
+html.dark .soc-qdur {
+  color: #a1a1aa;
+}
+
+.dark .soc-added-by,
+html.dark .soc-added-by {
+  color: #8f8f97;
+}
+
+.dark .soc-added-by strong,
+html.dark .soc-added-by strong {
+  color: #d4d4d8;
+}
+
+.dark .soc-qindex,
+.dark .soc-drag,
+html.dark .soc-qindex,
+html.dark .soc-drag {
+  color: #a1a1aa;
+}
+
+.dark .soc-qremove,
+html.dark .soc-qremove {
+  color: #a1a1aa;
+}
+
+.dark .soc-qremove:hover,
+html.dark .soc-qremove:hover {
+  background: #3f3f46;
+  color: #f87171;
+}
+
+.dark .soc-qinput,
+html.dark .soc-qinput {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.dark .soc-qinput::placeholder,
+html.dark .soc-qinput::placeholder {
+  color: #8f8f97;
+}
+
+.dark .soc-qinput:focus,
+html.dark .soc-qinput:focus {
+  background: #202024;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.dark .soc-qappend-btn,
+.dark .soc-chat-send,
+.dark .soc-btn-solid,
+html.dark .soc-qappend-btn,
+html.dark .soc-chat-send,
+html.dark .soc-btn-solid {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
+.dark .soc-qappend-btn:hover,
+.dark .soc-chat-send:hover,
+.dark .soc-btn-solid:hover,
+html.dark .soc-qappend-btn:hover,
+html.dark .soc-chat-send:hover,
+html.dark .soc-btn-solid:hover {
+  background: #e4e4e7;
+}
+
+.dark .soc-stat-chip,
+html.dark .soc-stat-chip {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #a1a1aa;
+}
+
+.dark .soc-stat-chip.is-live,
+html.dark .soc-stat-chip.is-live {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+}
+
+.dark .soc-chat-list::-webkit-scrollbar-thumb,
+html.dark .soc-chat-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.dark .soc-chat-avatar,
+html.dark .soc-chat-avatar {
+  background: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-chat-msg.mine .soc-chat-avatar,
+html.dark .soc-chat-msg.mine .soc-chat-avatar {
+  background: #52525b;
+  color: #ffffff;
+}
+
+.dark .soc-chat-bubble,
+html.dark .soc-chat-bubble {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .soc-chat-msg.mine .soc-chat-bubble,
+html.dark .soc-chat-msg.mine .soc-chat-bubble {
+  background: #27272a;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dark .soc-chat-meta,
+.dark .soc-chat-time,
+html.dark .soc-chat-meta,
+html.dark .soc-chat-time {
+  color: #8f8f97;
+}
+
+.dark .soc-chat-user,
+html.dark .soc-chat-user {
+  color: #ffffff;
+}
+
+.dark .soc-tag-host,
+html.dark .soc-tag-host {
+  background: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-chat-text,
+html.dark .soc-chat-text {
+  color: #e4e4e7;
+}
+
+.dark .soc-chat-react,
+html.dark .soc-chat-react {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+}
+
+.dark .soc-chat-react:hover,
+html.dark .soc-chat-react:hover {
+  background: #27272a;
+}
+
+.dark .soc-typing,
+html.dark .soc-typing {
+  color: #8f8f97;
+}
+
+.dark .soc-typing i,
+html.dark .soc-typing i {
+  background: #71717a;
+}
+
+.dark .soc-emoji-btn,
+.dark .soc-chat-quote,
+html.dark .soc-emoji-btn,
+html.dark .soc-chat-quote {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #d4d4d8;
+}
+
+.dark .soc-emoji-btn:hover,
+.dark .soc-chat-quote:hover,
+html.dark .soc-emoji-btn:hover,
+html.dark .soc-chat-quote:hover {
+  background: #27272a;
+  color: #ffffff;
+}
+
+.dark .soc-chat-input,
+html.dark .soc-chat-input {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.dark .soc-chat-input::placeholder,
+html.dark .soc-chat-input::placeholder {
+  color: #8f8f97;
+}
+
+.dark .soc-chat-input:focus,
+html.dark .soc-chat-input:focus {
+  background: #202024;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.dark .soc-empty,
+html.dark .soc-empty {
+  color: #8f8f97;
+}
+
+.dark .soc-section-label,
+html.dark .soc-section-label {
+  color: #8f8f97;
+}
+
+.dark .soc-tile,
+html.dark .soc-tile {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .soc-tile-label,
+html.dark .soc-tile-label {
+  color: #a1a1aa;
+}
+
+.dark .soc-tile-value,
+html.dark .soc-tile-value {
+  background: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-tile-value.is-ok,
+html.dark .soc-tile-value.is-ok {
+  background: transparent;
+  color: #4ade80;
+}
+
+.dark .soc-tile-value.is-off,
+html.dark .soc-tile-value.is-off {
+  background: transparent;
+  color: #8f8f97;
+}
+
+.dark .soc-tile-note,
+html.dark .soc-tile-note {
+  color: #8f8f97;
+}
+
+.dark .soc-mode-tag,
+html.dark .soc-mode-tag {
+  background: #1c1c1f;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #d4d4d8;
+}
+
+.dark .soc-member,
+html.dark .soc-member {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.dark .soc-member-avatar,
+html.dark .soc-member-avatar {
+  background: #ffffff;
+  color: #000000;
+}
+
+.dark .soc-member-avatar.is-you,
+html.dark .soc-member-avatar.is-you {
+  background: #52525b;
+  color: #ffffff;
+}
+
+.dark .soc-member-name,
+html.dark .soc-member-name {
+  color: #f4f4f5;
+}
+
+.dark .soc-member-role,
+html.dark .soc-member-role {
+  color: #a1a1aa;
+}
+
+.dark .soc-btn,
+html.dark .soc-btn {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.dark .soc-btn:hover,
+html.dark .soc-btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.dark .soc-btn-danger,
+html.dark .soc-btn-danger {
+  border-color: rgba(248, 113, 113, 0.4);
+  color: #f87171;
+}
+
+.dark .soc-btn-danger:hover,
+html.dark .soc-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+.dark .soc-solo-prompt,
+html.dark .soc-solo-prompt {
+  background: #18181b;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.dark .soc-solo-prompt-text,
+html.dark .soc-solo-prompt-text {
+  color: #a1a1aa;
+}
+
+.dark .soc-solo-prompt-text strong,
+html.dark .soc-solo-prompt-text strong {
+  color: #ffffff;
+}
+
+/* Artwork overlay: dark-glass in both themes. Only the gradient's stops
+   shift for dark. It must target ::before — a flat `background` on
+   .np-art-overlay would paint over the pseudo-element's gradient and
+   re-hide the cover. */
+.dark .np-art-overlay::before,
+html.dark .np-art-overlay::before {
+  background: linear-gradient(
+    to top,
+    rgba(3, 3, 5, 0.95) 0%,
+    rgba(3, 3, 5, 0.87) 34%,
+    rgba(3, 3, 5, 0.62) 62%,
+    rgba(3, 3, 5, 0.24) 84%,
+    rgba(3, 3, 5, 0) 100%
+  );
+}
+
+/* ==========================================================================
+   10. PHASE 2 ADDENDUM — guards the new markup relies on
+   ========================================================================== */
+
+/* QR plate is an icon placeholder until the sidecar issues a real code. */
+.np-qr-plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.np-qr-plate .material-symbols-outlined {
+  font-size: 116px;
+  line-height: 1;
+  color: #18181b;
+}
+
+/* `hidden` must beat the component's own display rule. */
+.soc-typing.hidden,
+.soc-typing[hidden] {
+  display: none !important;
+}
+
+/* The deck carries four tabs now; let them wrap instead of overflowing a
+   narrow window, and keep each label on one line. */
+.np-deck-nav {
+  flex-wrap: wrap;
+}
+
+.np-deck-tab {
+  flex: 1 1 auto;
+  min-width: 118px;
+  white-space: nowrap;
+}
+
+/* Disabled affordances: Undo has no history until the sidecar ships one. */
+.soc-qbtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.soc-qbtn:disabled:hover {
+  background: #f3f3f5;
+  color: #47464b;
+  border-color: rgba(0, 0, 0, 0.07);
+}
+
+.dark .soc-qbtn:disabled:hover,
+html.dark .soc-qbtn:disabled:hover {
+  background: #27272a;
+  color: #d4d4d8;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+

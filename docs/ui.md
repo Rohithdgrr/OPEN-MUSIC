@@ -385,3 +385,18 @@ module that uses the id in the same change.
 | Spinner-only errors | every failure carries a message naming the hop |
 | Auto-playing on launch | playback starts only on explicit user action |
 | Green "success" decoration | green is reserved for verified states |
+
+---
+
+## 17. Social Now Playing (Listen Together shell)
+
+The Now Playing stage carries a Solo / Social mode switch, an artwork overlay
+(title/artist/actions/telemetry moved off the right column), a room QR
+surface, reactions, a skip-vote control and a 4-tab deck (Lyrics, Playing
+Next, **Live Chat**, **Jam Active**). All of it is hand-written CSS in
+`styles.css` under `PART 5: SOCIAL NOW PLAYING`.
+
+See **`docs/social-nowplaying.md`** for the phase plan, class inventory,
+element id contract, visibility contract (`body.soc-social` /
+`.soc-social-only` / `.soc-solo-only`) and the truthfulness rules that keep
+this UI honest while the sidecar is not connected.

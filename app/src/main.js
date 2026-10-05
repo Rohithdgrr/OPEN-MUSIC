@@ -14,6 +14,7 @@ import { setResume } from "./playback.js";
 import { queue, queueIndex, renderQueue, restoreQueue, setRestoredTrack } from "./queue.js";
 import { startNet } from "./net.js";
 import { doSearch } from "./search.js";
+import { initSocial } from "./social.js";
 import { wireShortcuts } from "./shortcuts.js";
 import { applySysPrefs, applyWidget, paintGreeting } from "./settings.js";
 import { step, togglePlay } from "./transport.js";
@@ -105,6 +106,7 @@ toTop();
 applyWidget();
 wireDesktopCard();
 wireShortcuts();
+initSocial();
 renderFavs();
 showView("home"); // open on the Home tab
 // Desktop app jelly wobble on the main window's visible content while the
@@ -160,15 +162,20 @@ autoSyncBoot();
 // --------------------------------------------------- now playing stage deck -
 (() => {
   const npTabs = document.querySelectorAll(".np-deck-tab");
-  const npLyricsCard = document.getElementById("lyrics-card");
-  const npQueuePanel = document.getElementById("np-panel-queue");
+  const npPanels = {
+    lyrics: document.getElementById("lyrics-card"),
+    queue: document.getElementById("np-panel-queue"),
+    chat: document.getElementById("np-panel-chat"),
+    jam: document.getElementById("np-panel-jam"),
+  };
 
   npTabs.forEach((tab) => {
     tab.addEventListener("click", () => {
       const target = tab.dataset.npTab;
       npTabs.forEach((t) => t.classList.toggle("active", t === tab));
-      if (npLyricsCard) npLyricsCard.classList.toggle("hidden", target !== "lyrics");
-      if (npQueuePanel) npQueuePanel.classList.toggle("hidden", target !== "queue");
+      Object.entries(npPanels).forEach(([key, panel]) => {
+        if (panel) panel.classList.toggle("hidden", key !== target);
+      });
     });
   });
 
