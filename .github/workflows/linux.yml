@@ -83,7 +83,16 @@ jobs:
         # `cargo tauri` needs `cargo-tauri` on PATH, which is not installed —
         # the CLI is the @tauri-apps/cli devDependency, so drive it with npx
         # the way release.yml does.
-        run: npx tauri build
+        # Annotations are public; job logs need admin (403). Surface the tail
+        # as an annotation so a future failure is diagnosable at all.
+        run: |
+          if npx tauri build 2>&1 | tee /tmp/tauri-build.log; then
+            echo "✓ tauri build succeeded"
+          else
+            echo "✗ tauri build failed"
+            echo "::error title=tauri build (Linux)::$(tail -c 1500 /tmp/tauri-build.log | tr '\n' ' ')"
+            exit 1
+          fi
         env:
           # Tauri v2 reads only these names; the v1 TAURI_PRIVATE_KEY /
           # TAURI_KEY_PASSWORD are silently ignored and, with
@@ -94,16 +103,21 @@ jobs:
 
       - name: Verify build artifacts
         run: |
-          if [ -f "app/src-tauri/target/release/bundle/deb/trance-music_*.deb" ]; then
-            echo "✓ Debian package built successfully"
+          # `[ -f ".../*.deb" ]` never matches: test -f does not glob a quoted
+          # pattern, so the literal * was tested and this always exited 1.
+          # Resolve the glob into a variable first.
+          DEB=$(ls app/src-tauri/target/release/bundle/deb/*.deb 2>/dev/null | head -1)
+          if [ -n "$DEB" ]; then
+            echo "✓ Debian package built successfully: $DEB"
             ls -lh app/src-tauri/target/release/bundle/deb/
           else
             echo "✗ Debian package not found"
             exit 1
           fi
 
-          if [ -f "app/src-tauri/target/release/bundle/appimage/trance-music_*.AppImage" ]; then
-            echo "✓ AppImage built successfully"
+          APPIMAGE=$(ls app/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -1)
+          if [ -n "$APPIMAGE" ]; then
+            echo "✓ AppImage built successfully: $APPIMAGE"
             ls -lh app/src-tauri/target/release/bundle/appimage/
           else
             echo "✗ AppImage not found"

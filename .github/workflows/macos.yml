@@ -78,7 +78,32 @@ jobs:
         # `cargo tauri` needs `cargo-tauri` on PATH, which is not installed —
         # the CLI is the @tauri-apps/cli devDependency, so drive it with npx
         # the way release.yml does.
-        run: npx tauri build
+        #
+        # Two traps handled here:
+        # 1. An unset GitHub secret expands to "" and is EXPORTED as set-but-
+        #    empty. Rust's env::var returns Ok(""), so Tauri concludes signing
+        #    is configured and fails importing a certificate that isn't there.
+        #    Unset any APPLE_* var that came through empty.
+        # 2. Job logs need admin (403) on this repo, so the real error is
+        #    unreadable. Annotations ARE public — emit the log tail as one,
+        #    otherwise a failure here is permanently undiagnosable.
+        run: |
+          for v in APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE \
+                   APPLE_CERTIFICATE_PASSWORD APPLE_PROVISIONING_PROFILE \
+                   TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [ -z "${!v:-}" ]; then
+              unset "$v"
+              echo "(unset empty: $v)"
+            fi
+          done
+
+          if npx tauri build 2>&1 | tee /tmp/tauri-build.log; then
+            echo "✓ tauri build succeeded"
+          else
+            echo "✗ tauri build failed"
+            echo "::error title=tauri build (macOS)::$(tail -c 1500 /tmp/tauri-build.log | tr '\n' ' ')"
+            exit 1
+          fi
         env:
           # Tauri v2 reads only these two names. The v1-era
           # TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD are silently ignored, and
