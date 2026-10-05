@@ -147,7 +147,16 @@ jobs:
 
       - name: Run smoke tests
         working-directory: ./app
-        run: npm run test:smoke
+        # Run #15 failed here with no annotation, so the cause had to be
+        # inferred from the step name. Emit the tail so it is self-reporting.
+        run: |
+          if npm run test:smoke 2>&1 | tee /tmp/smoke.log; then
+            echo "✓ smoke tests passed"
+          else
+            echo "✗ smoke tests failed"
+            echo "::error title=smoke tests (Linux)::$(tail -c 1200 /tmp/smoke.log | tr '\n' ' ')"
+            exit 1
+          fi
 
       - name: Create build summary
         run: |

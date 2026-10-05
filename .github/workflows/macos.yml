@@ -118,7 +118,14 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
 
       - name: Verify build artifacts
+        # An .app bundle is a DIRECTORY. The old `[ -f "...TRANCE MUSIC.app" ]`
+        # was always false and exited 1 — latent until the build started
+        # succeeding, because every earlier run died at "Build Tauri app".
+        # -e so the check passes for a directory and a file alike.
         run: |
+          set -uo pipefail
+          VERIFY_LOG=/tmp/verify.log
+          {
           if [ -d "app/src-tauri/target/release/bundle/macos" ]; then
             echo "✓ macOS bundle directory exists"
             ls -lh app/src-tauri/target/release/bundle/macos/
@@ -138,12 +145,19 @@ jobs:
             echo "⚠ DMG not found (may require code signing)"
           fi
 
-          if [ -f "app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app" ]; then
+          if [ -e "app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app" ]; then
             echo "✓ .app bundle built successfully"
+            ls -la "app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app/"
           else
             echo "✗ .app bundle not found"
             exit 1
           fi
+          } 2>&1 | tee "$VERIFY_LOG"
+          RC=${PIPESTATUS[0]}
+          if [ "$RC" -ne 0 ]; then
+            echo "::error title=Verify build artifacts (macOS)::$(tail -c 1200 "$VERIFY_LOG" | tr '\n' ' ')"
+          fi
+          exit "$RC"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
