@@ -1,255 +1,610 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"><meta content="mobile_stack" name="shell-type"><link href="https://fonts.googleapis.com" rel="preconnect"><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"><link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"><style>@layer base{html,body{width:100vw;margin:0;padding:0;}body{overscroll-behavior:none;}.pb-safe{padding-bottom:env(safe-area-inset-bottom,0px);}.pt-safe{padding-top:env(safe-area-inset-top,0px);}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script><script id="tailwind-config">tailwind.config = { darkMode: "class", theme: { extend: { colors: { "surface-dim": "#dadadb", "primary-fixed-dim": "#c6c6c6", "on-surface-variant": "#4c4546", "on-primary": "#ffffff", "on-surface": "#1a1c1d", "on-tertiary-fixed": "#1b1b1b", "on-secondary-container": "#656467", "on-secondary": "#ffffff", "primary": "#000000", "surface-container-low": "#f3f3f4", "on-secondary-fixed-variant": "#474649", "on-background": "#1a1c1d", "surface": "#f9f9fb", "secondary-fixed-dim": "#c8c6c9", "surface-container-lowest": "#ffffff", "on-primary-fixed-variant": "#474747", "inverse-on-surface": "#f0f0f2", "surface-container": "#eeeef0", "on-error": "#ffffff", "primary-container": "#1b1b1b", "secondary-container": "#e4e1e5", "tertiary": "#000000", "error": "#ba1a1a", "on-primary-container": "#848484", "outline-variant": "#c8c5cb", "surface-bright": "#f9f9fb", "tertiary-fixed-dim": "#c6c6c6", "on-secondary-fixed": "#1b1b1e", "surface-tint": "#5e5e5e", "surface-container-highest": "#e2e2e4", "tertiary-container": "#1b1b1b", "background": "#f9f9fa", "secondary-fixed": "#e4e1e5", "on-tertiary-fixed-variant": "#474747", "surface-variant": "#e2e2e3", "surface-container-high": "#e8e8ea", "outline": "#77767b", "on-tertiary-container": "#848484", "tertiary-fixed": "#e2e2e2", "inverse-primary": "#c6c6c6", "secondary": "#5f5e61", "primary-fixed": "#e2e2e2", "on-error-container": "#93000a", "on-tertiary": "#ffffff", "on-primary-fixed": "#1b1b1b", "error-container": "#ffdad6", "inverse-surface": "#2f3132" }, borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" }, spacing: { "margin": "1.25rem", "space-xl": "2rem", "space-xs": "0.25rem", "space-sm": "0.5rem", "gutter": "1rem", "space-md": "0.75rem", "space-lg": "1.25rem" }, fontFamily: { "body-sm": ["Geist"], "label-md": ["Geist"], "headline-xl": ["Geist"], "label-sm": ["Geist"], "label-mono": ["JetBrains Mono"], "headline-lg": ["Geist"], "body-lg": ["Geist"], "headline-md": ["Geist"], "body-md": ["Geist"] }, fontSize: { "body-sm": ["12px", { lineHeight: "16px", letterSpacing: "0em", fontWeight: "400" }], "label-md": ["12px", { lineHeight: "16px", letterSpacing: "0.01em", fontWeight: "500" }], "headline-xl": ["32px", { lineHeight: "38px", letterSpacing: "-0.03em", fontWeight: "600" }], "label-sm": ["11px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "500" }], "label-mono": ["11px", { lineHeight: "14px", letterSpacing: "-0.01em", fontWeight: "400" }], "headline-lg": ["22px", { lineHeight: "28px", letterSpacing: "-0.02em", fontWeight: "600" }], "body-lg": ["15px", { lineHeight: "22px", letterSpacing: "-0.01em", fontWeight: "400" }], "headline-md": ["18px", { lineHeight: "24px", letterSpacing: "-0.015em", fontWeight: "500" }], "body-md": ["13px", { lineHeight: "19px", letterSpacing: "-0.005em", fontWeight: "400" }] } } } };</script></head><body class="bg-surface text-on-surface antialiased flex flex-col min-h-screen selection:bg-black selection:text-white">
-<!-- TOP HEADER -->
-<header class="sticky top-0 w-full z-50 bg-surface/90 backdrop-blur-md border-b border-surface-container-high/60 pt-safe transition-all"><div class="h-14 px-margin flex items-center justify-between"><button aria-label="Collapse" class="w-10 h-10 -ml-2 flex items-center justify-center text-on-surface hover:opacity-70 active:scale-95 transition-all" onclick="history.back()"><span class="material-symbols-outlined text-[24px]">keyboard_arrow_down</span></button><div class="flex flex-col items-center justify-center text-center"><span class="font-label-mono text-[10px] uppercase tracking-[0.14em] text-on-surface-variant font-medium">Playing from Playlist</span><span class="font-body-md text-[14px] font-semibold text-on-surface tracking-tight mt-0.5">Late Night Resonance</span></div><div class="flex items-center gap-0.5 -mr-2"><button aria-label="More Options" class="w-9 h-9 flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-colors" id="more-options-btn"><span class="material-symbols-outlined text-[20px]">more_horiz</span></button></div></div></header>
-<main class="flex flex-col w-full bg-surface pb-safe"><div class="flex flex-col w-full text-on-surface select-none pb-8">
-<!-- ALBUM ARTWORK -->
-<div class="px-margin pt-4 pb-2 flex justify-center items-center">
-<div class="relative w-full aspect-square max-w-[320px] rounded-xl overflow-hidden shadow-[0_12px_28px_rgba(0,0,0,0.08)] bg-surface-container-high border border-black/5">
-<img alt="Midnight City Lights - Nocturne Trance Sessions" class="w-full h-full object-cover select-none" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUZnq5OK4osL7GZOzNKJhvk3Gdg8LBWd4g9870SzuysjcR0wErVAh6Yqis7kqV-HSwXwTRBo5eb1fQhF3i6w2l9j3rSpaHGLLcDE-G4ZGQ3BJisajVnxKgP9-PKVfh46yt54LCOb72VRbyBONXs2Rns2egSxoQk6ayclftMEP3DZQmPB4qefUo8QGVJaMTCI5nDh-z9oRipCgwbxDBBvntgDcVnNnkHgOE75B9dM0q2bUsjCtDlHTDAA">
-<div class="absolute inset-0 ring-1 ring-inset ring-black/10 rounded-xl pointer-events-none"></div>
-</div>
-</div>
-<!-- TRACK HEADER & CORE ACTIONS -->
-<div class="px-margin mt-4 flex items-center justify-between">
-<div class="flex flex-col min-w-0 pr-3">
-<h1 class="font-headline-lg text-[21px] font-semibold tracking-tight text-on-surface truncate">Midnight City Lights</h1>
-<div class="flex items-center gap-2 mt-1">
-<p class="font-body-md text-[14px] text-on-surface-variant truncate">Solaris &amp; Kaelen</p>
-<span class="text-outline-variant text-[10px]">•</span>
-<span class="px-1.5 py-[2px] rounded bg-surface-container border border-outline-variant/40 font-label-mono text-[10px] text-on-surface-variant font-medium uppercase tracking-wide">Lossless 24-bit</span>
-</div>
-</div>
-<div class="flex items-center gap-1 shrink-0">
-<button aria-label="Favorite" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all" id="favorite-btn">
-<span class="material-symbols-outlined text-[23px]" id="favorite-icon">favorite_border</span>
+<!DOCTYPE html>
+
+<html lang="en" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
+<meta content="mobile_stack" name="shell-type"/>
+<title>Now Playing</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+    @layer base {
+      html, body {
+        width: 100vw;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        overscroll-behavior: none;
+      }
+      .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom, 16px);
+      }
+      .pt-safe {
+        padding-top: env(safe-area-inset-top, 0px);
+      }
+    }
+    ::-webkit-scrollbar {
+      display: none;
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "secondary-fixed": "#e1e2e7",
+            "on-secondary-container": "#626468",
+            "surface-container-highest": "#e2e2e2",
+            "outline-variant": "#c4c7c7",
+            "secondary-container": "#e1e2e7",
+            "on-primary-container": "#858383",
+            "on-primary-fixed": "#1c1b1b",
+            "on-tertiary": "#ffffff",
+            "on-primary-fixed-variant": "#474646",
+            "on-tertiary-container": "#e65131",
+            "error": "#ba1a1a",
+            "tertiary-fixed": "#ffdad3",
+            "outline": "#747878",
+            "secondary": "#5c5e62",
+            "on-error-container": "#93000a",
+            "tertiary-container": "#3e0500",
+            "inverse-on-surface": "#f1f1f0",
+            "surface-container-high": "#e8e8e7",
+            "inverse-primary": "#c8c6c5",
+            "primary": "#000000",
+            "on-tertiary-fixed": "#3e0500",
+            "primary-fixed": "#e5e2e1",
+            "secondary-fixed-dim": "#c5c6cb",
+            "inverse-surface": "#2f3130",
+            "on-error": "#ffffff",
+            "surface-bright": "#f9f9f8",
+            "primary-container": "#1c1b1b",
+            "surface": "#f9f9f8",
+            "surface-variant": "#e2e2e2",
+            "error-container": "#ffdad6",
+            "tertiary": "#000000",
+            "surface-tint": "#5f5e5e",
+            "surface-container-lowest": "#ffffff",
+            "surface-container": "#eeeeed",
+            "on-secondary": "#ffffff",
+            "surface-dim": "#dadad9",
+            "on-secondary-fixed-variant": "#45474b",
+            "on-tertiary-fixed-variant": "#8c1700",
+            "primary-fixed-dim": "#c8c6c5",
+            "tertiary-fixed-dim": "#ffb4a4",
+            "on-primary": "#ffffff",
+            "background": "#f9f9f8",
+            "surface-container-low": "#f3f4f3",
+            "on-surface": "#1a1c1c",
+            "on-surface-variant": "#444748",
+            "on-background": "#1a1c1c",
+            "on-secondary-fixed": "#191c1f"
+          },
+          borderRadius: {
+            "DEFAULT": "0.125rem",
+            "lg": "0.25rem",
+            "xl": "0.5rem",
+            "full": "0.75rem"
+          },
+          spacing: {
+            "gutter": "0.75rem",
+            "margin": "1rem",
+            "space-xs": "0.25rem",
+            "space-sm": "0.5rem",
+            "space-md": "0.75rem",
+            "space-xl": "2rem",
+            "space-lg": "1.25rem"
+          },
+          fontFamily: {
+            "headline-lg": ["Geist", "sans-serif"],
+            "label-lg": ["JetBrains Mono", "monospace"],
+            "headline-sm": ["Geist", "sans-serif"],
+            "headline-md": ["Geist", "sans-serif"],
+            "display-lg": ["Geist", "sans-serif"],
+            "label-sm": ["JetBrains Mono", "monospace"],
+            "body-lg": ["Geist", "sans-serif"],
+            "label-md": ["JetBrains Mono", "monospace"],
+            "body-sm": ["Geist", "sans-serif"],
+            "body-md": ["Geist", "sans-serif"]
+          },
+          fontSize: {
+            "headline-lg": ["26px", { "lineHeight": "32px", "letterSpacing": "-0.025em", "fontWeight": "600" }],
+            "label-lg": ["13px", { "lineHeight": "16px", "letterSpacing": "0.02em", "fontWeight": "500" }],
+            "headline-sm": ["17px", { "lineHeight": "22px", "letterSpacing": "-0.015em", "fontWeight": "600" }],
+            "headline-md": ["20px", { "lineHeight": "26px", "letterSpacing": "-0.02em", "fontWeight": "500" }],
+            "display-lg": ["36px", { "lineHeight": "40px", "letterSpacing": "-0.03em", "fontWeight": "600" }],
+            "label-sm": ["10px", { "lineHeight": "12px", "letterSpacing": "0.06em", "fontWeight": "600" }],
+            "body-lg": ["16px", { "lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "400" }],
+            "label-md": ["11px", { "lineHeight": "14px", "letterSpacing": "0.04em", "fontWeight": "500" }],
+            "body-sm": ["12px", { "lineHeight": "16px", "letterSpacing": "0em", "fontWeight": "400" }],
+            "body-md": ["14px", { "lineHeight": "20px", "letterSpacing": "-0.005em", "fontWeight": "400" }]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-surface text-on-surface flex flex-col min-h-screen font-body-md antialiased selection:bg-primary selection:text-on-primary">
+<!-- Top App Bar -->
+<header class="fixed top-0 w-full z-50 pt-safe bg-surface/90 backdrop-blur-md border-b border-outline-variant/30">
+<div class="h-14 px-margin flex items-center justify-between">
+<!-- Left: Chevron Down / Minimize -->
+<div class="flex items-center">
+<button aria-label="Collapse player" class="w-10 h-10 -ml-2 flex items-center justify-center text-on-surface hover:text-primary transition-colors active:scale-95" onclick="history.back()" type="button">
+<span class="material-symbols-outlined text-[24px]">keyboard_arrow_down</span>
 </button>
-<button aria-label="Add to Playlist" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all" id="playlist-add-btn">
-<span class="material-symbols-outlined text-[23px]">bookmark_add</span>
+</div>
+<!-- Center: Two-line Header with Interactive Mode Toggle -->
+<button aria-label="Switch between Solo and Social mode" class="flex flex-col items-center justify-center px-2 py-1 rounded-xl hover:bg-surface-container transition-all active:scale-95 group text-center min-w-0 max-w-[220px]" id="modeToggleBtn" type="button">
+<div class="flex items-center gap-1">
+<span class="font-label-sm text-[9px] uppercase tracking-wider font-semibold text-secondary group-hover:text-primary transition-colors" id="headerSubtitle">PLAYING FROM JAM</span>
+<span class="material-symbols-outlined text-[11px] text-secondary group-hover:text-primary transition-transform group-hover:rotate-180">sync_alt</span>
+</div>
+<div class="flex items-center gap-1.5 min-w-0">
+<span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse shrink-0" id="headerModeDot"></span>
+<span class="font-headline-sm text-[13px] font-semibold text-on-surface truncate tracking-tight" id="headerTitle">Late Night Resonance (Social Jam)</span>
+</div>
+</button>
+<!-- Right: Three Dots Overflow Menu (Omitting info icon as requested) -->
+<div class="flex items-center">
+<button aria-label="More options" class="w-10 h-10 -mr-2 flex items-center justify-center text-on-surface hover:text-primary transition-colors active:scale-95" type="button">
+<span class="material-symbols-outlined text-[22px]">more_horiz</span>
 </button>
 </div>
 </div>
-<!-- SEEK / PROGRESS BAR -->
-<div class="px-margin mt-4 flex flex-col gap-1.5">
-<div class="relative w-full py-2.5 cursor-pointer touch-none" id="scrubber-container">
-<div class="w-full h-1 bg-surface-container-highest rounded-full overflow-hidden">
-<div class="h-full bg-primary rounded-full transition-[width] duration-75" id="scrubber-bar" style="width: 40.7%;"></div>
+</header>
+<!-- Main Content Scrollable -->
+<main class="flex flex-col relative w-full pt-14 bg-surface min-h-screen">
+<div class="flex flex-col w-full pb-safe max-w-md mx-auto">
+<!-- 1. Dedicated Jam Session Status Banner (Unobstructed & Clean) -->
+<section class="px-margin pt-3 pb-2 flex flex-col gap-2 transition-all duration-300" id="jamSessionBanner"><div class="flex items-center justify-between bg-surface-container-low border border-outline-variant/30 px-2.5 py-1.5 rounded-xl shadow-xs gap-2"><div class="flex items-center gap-1.5 min-w-0"><span class="relative flex h-2 w-2 shrink-0"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-on-tertiary-container opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-on-tertiary-container"></span></span><span class="material-symbols-outlined text-[15px] text-on-surface shrink-0">podcasts</span><span class="font-label-sm text-[10px] font-mono font-semibold text-on-surface">#OM-904</span><span class="text-outline-variant text-[10px]">•</span><div class="flex items-center gap-1 text-secondary"><span class="material-symbols-outlined text-[14px]">group</span><span class="font-label-sm text-[10px] font-mono font-semibold text-on-surface">4</span></div><span class="text-outline-variant text-[10px]">•</span><div class="flex items-center gap-0.5 text-secondary"><span class="material-symbols-outlined text-[13px] text-on-tertiary-container">bolt</span><span class="font-label-sm text-[10px] font-mono text-secondary">&lt;14ms</span></div></div><div class="flex items-center gap-1.5 shrink-0"><div class="flex -space-x-1.5 items-center"><div class="w-4 h-4 rounded-full bg-primary flex items-center justify-center ring-1 ring-surface shadow-xs"><span class="font-label-sm text-[7px] text-on-primary font-medium">TB</span></div><div class="w-4 h-4 rounded-full bg-secondary flex items-center justify-center ring-1 ring-surface shadow-xs"><span class="font-label-sm text-[7px] text-on-secondary font-medium">FA</span></div><div class="w-4 h-4 rounded-full bg-surface-tint flex items-center justify-center ring-1 ring-surface shadow-xs"><span class="font-label-sm text-[7px] text-on-primary font-medium">+2</span></div></div><button aria-label="Copy room link" class="flex items-center gap-1 bg-surface-container-highest hover:bg-surface-container-high px-2 py-0.5 rounded-full border border-outline-variant/30 text-on-surface active:scale-95 transition-all text-[10px] font-label-sm" id="copyUriBtn"><span class="material-symbols-outlined text-[12px]">content_copy</span><span class="font-label-sm text-[9px] font-mono">Link</span></button></div></div></section>
+<!-- 2. Master Album Artwork: Clean, High-Contrast, Minimalist Architecture -->
+<section class="px-margin pt-1 pb-1">
+<div class="relative w-full aspect-square rounded-2xl overflow-hidden bg-primary-container shadow-md border border-outline-variant/40 flex flex-col justify-between p-4 group">
+<!-- Ambient Architectural Art Background -->
+<img alt="Madhosh - Toxic OST Album Art" class="absolute inset-0 w-full h-full object-cover brightness-[0.92] contrast-[1.05]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDPYcbfLqqUA0ek8R0GB5D2iazPoy3twml6QaLrxE57ZLmtWD1PW663J4ntmY-be6_7YSy0M8bCEk6XIizVRuwoDEEAmtV11IVCCgoBRgeT-2dxiY8bXXgh0fpPxR6khhjJrqM0p9n9f9c6Fma7dm4rEn-zNYl0iX5r2gx5CT1LK7qMBEwWwTmaznY8JvazJxsSt8CEJgdDpq-7ctTM2IrH11FaiqM9gpklYa_TVIlKHDhf3GwXl9s"/>
+<!-- Subtle Dark Gradient Vignette for Legibility -->
+<div class="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80 pointer-events-none"></div>
+<!-- Top Art Badge: Resolution & Storage Status -->
+<div class="relative z-10 flex items-center justify-between w-full">
+<div class="bg-black/60 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse"></span>
+<span class="font-label-sm text-[10px] text-white tracking-wider font-semibold uppercase">FLAC • 24-BIT / 96KHZ</span>
 </div>
-<div class="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-primary rounded-full shadow-sm ring-2 ring-surface transition-[left] duration-75 pointer-events-none" id="scrubber-needle" style="left: calc(40.7% - 7px);"></div>
-</div>
-<div class="flex items-center justify-between font-label-mono text-[11px] text-secondary">
-<span class="text-on-surface font-medium" id="elapsed-time">1:45</span>
-<span class="" id="remaining-time">-2:33</span>
+<div class="bg-black/60 backdrop-blur-md border border-white/10 px-2 py-1 rounded-full shadow-sm">
+<span class="font-label-sm text-[10px] text-surface-container-high font-mono">redb cached (7d)</span>
 </div>
 </div>
-<!-- TRANSPORT PLAYBACK CONTROLS -->
-<div class="px-margin mt-2 flex items-center justify-between max-w-[360px] mx-auto w-full">
-<button aria-label="Shuffle" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all" id="shuffle-btn">
+<!-- Bottom Art Info Badge -->
+<div class="relative z-10 bg-black/60 backdrop-blur-md border border-white/10 rounded-xl p-3 flex flex-col gap-1.5 shadow-md"><div class="flex items-center justify-between"><span class="font-label-sm text-[9px] text-white/70 font-mono uppercase tracking-widest">TRACK 01 • STEREO DIRECT 320KBPS</span><span class="font-label-sm text-[9px] text-on-tertiary-container font-semibold uppercase tracking-wider" id="artworkCollabTag">COLLAB QUEUE</span></div><div class="flex items-center justify-between gap-2"><div class="flex flex-col min-w-0"><h2 class="font-headline-sm text-[16px] font-bold text-white truncate tracking-tight">Madhosh</h2><p class="font-body-sm text-[11px] text-white/80 truncate">Tanishk Bagchi, Faheem Abdullah, Arslan Nizami</p></div><div class="flex items-center gap-1.5 shrink-0"><button aria-label="Favorite" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white active:scale-90 transition-transform" id="favoriteBtn"><span class="material-symbols-outlined text-[18px]" id="favoriteIcon">favorite</span></button><button aria-label="Share" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white active:scale-90 transition-transform"><span class="material-symbols-outlined text-[18px]">ios_share</span></button></div></div></div>
+</div>
+</section>
+<!-- 3. Track Metadata & Action Buttons -->
+<!-- 4. Audiophile Scrubber & Playback Controls -->
+<section class="px-margin pt-3 flex flex-col gap-3">
+<!-- Audiophile Progress Scrubber -->
+<div class="flex flex-col gap-1.5">
+<div class="relative w-full h-6 flex items-center touch-none cursor-pointer" id="scrubberTrack">
+<!-- Full Track Background -->
+<div class="absolute w-full h-1.5 bg-surface-container-highest rounded-full overflow-hidden">
+<!-- Buffered Segment -->
+<div class="w-3/4 h-full bg-secondary-fixed-dim/70 rounded-full"></div>
+</div>
+<!-- Active Played Progress -->
+<div class="absolute h-1.5 bg-primary rounded-full" style="width: 27.7%;"></div>
+<!-- Playhead Thumb -->
+<div class="absolute w-4 h-4 bg-primary rounded-full shadow-md -ml-2 flex items-center justify-center transition-transform hover:scale-110 active:scale-125" style="left: 27.7%;">
+<div class="w-1.5 h-1.5 bg-surface rounded-full"></div>
+</div>
+</div>
+<!-- Scrubber Time stamps & Telemetry note -->
+<div class="flex items-center justify-between font-label-md text-label-md text-on-surface-variant px-0.5">
+<span class="font-mono text-[12px] font-medium text-on-surface">01:08</span>
+<span class="font-mono text-[12px] text-secondary">04:05</span>
+</div>
+</div>
+<!-- Primary Transport Controls Row -->
+<div class="flex items-center justify-between px-1">
+<button aria-label="Shuffle" class="w-10 h-10 flex items-center justify-center text-secondary hover:text-on-surface active:scale-90 transition-transform">
 <span class="material-symbols-outlined text-[20px]">shuffle</span>
 </button>
-<button aria-label="Previous" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all">
-<span class="material-symbols-outlined text-[30px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+<button aria-label="Previous" class="w-10 h-10 flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[28px]">skip_previous</span>
 </button>
-<button aria-label="Play / Pause" class="w-14 h-14 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-95 transition-transform shadow-md" id="master-play-pause">
-<span class="material-symbols-outlined text-[30px] leading-none" id="play-pause-icon" style="font-variation-settings: 'FILL' 1;">pause</span>
+<!-- Large Circular Play/Pause Primary CTA -->
+<button aria-label="Pause" class="w-16 h-16 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg active:scale-90 transition-all hover:bg-black/85" id="mainPlayBtn">
+<span class="material-symbols-outlined text-[34px]" id="playIcon">pause</span>
 </button>
-<button aria-label="Next" class="w-11 h-11 rounded-full flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-all">
-<span class="material-symbols-outlined text-[30px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+<!-- Skip Button with Democratic Vote Badge -->
+<button aria-label="Skip" class="relative w-10 h-10 flex items-center justify-center text-on-surface hover:text-primary active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[28px]">skip_next</span>
+<span class="absolute -top-1 -right-1 font-label-sm text-[8px] bg-surface-container-highest border border-outline-variant/40 px-1 rounded-full text-secondary font-semibold" id="skipVoteBadge">2/4</span>
 </button>
-<button aria-label="Repeat" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface active:scale-95 transition-all" id="repeat-btn">
-<span class="material-symbols-outlined text-[20px]">repeat</span>
+<!-- Volume Indicator & Bar -->
+<button aria-label="Repeat" class="w-10 h-10 flex items-center justify-center text-secondary hover:text-on-surface active:scale-90 transition-transform"><span class="material-symbols-outlined text-[20px]">repeat</span></button>
+</div>
+<!-- Clean Subtle Telemetry Indicator -->
+</section>
+<!-- 5. Bottom Tabs & Collaborative Queue -->
+<section class="mt-4 px-margin flex flex-col gap-3"><!-- Segmented Control Tabs -->
+<div class="flex items-center gap-1 bg-surface-container-low p-1 rounded-full border border-outline-variant/30 shadow-xs" id="tabBar">
+<button class="tab-btn flex-1 bg-primary text-on-primary py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 shadow-xs whitespace-nowrap transition-all" data-tab="queue" onclick="switchTab('queue')">
+<span class="material-symbols-outlined text-[13px]">queue_music</span>
+<span id="queueTabLabel">Queue (4)</span>
+</button>
+<button class="tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors" data-tab="chat" id="chatTabBtn" onclick="switchTab('chat')">
+<span class="material-symbols-outlined text-[13px]">chat_bubble</span>
+<span>Chat</span>
+</button>
+<button class="tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors" data-tab="jam-data" id="jamDataTabBtn" onclick="switchTab('jam-data')">
+<span class="material-symbols-outlined text-[13px]">tune</span>
+<span>Jam Data</span>
+</button>
+<button class="tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors" data-tab="lyrics" onclick="switchTab('lyrics')">
+<span class="material-symbols-outlined text-[13px]">lyrics</span>
+<span>Lyrics</span>
 </button>
 </div>
-<!-- AUDIO OUTPUT & UTILITY BAR -->
-<div class="px-margin mt-5">
-<div class="bg-surface-container-low border border-surface-container-high/80 px-3 py-2 rounded-xl flex items-center justify-between shadow-[0_1px_3px_rgba(0,0,0,0.02)]"><button class="flex items-center gap-2 text-on-surface hover:opacity-80 transition-opacity text-left" id="device-route-btn"><span class="material-symbols-outlined text-[18px] text-on-surface">airplay</span><span class="font-body-sm text-[12px] font-medium text-on-surface">AirPlay / Speaker</span></button><div class="flex items-center gap-0.5"><button aria-label="Download" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="download-btn" title="Download Track"><span class="material-symbols-outlined text-[18px]">download</span></button><button aria-label="Queue" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" title="Queue"><span class="material-symbols-outlined text-[17px]">queue_music</span></button><button aria-label="Share" class="w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-on-surface active:bg-surface-container transition-colors" id="share-utility-btn" title="Share"><span class="material-symbols-outlined text-[17px]">ios_share</span></button></div></div>
+<!-- Tab View 1: Collaborative Queue -->
+<div class="tab-content bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-3 flex flex-col gap-2 shadow-xs" id="view-queue">
+<div class="flex items-center justify-between pb-1 px-1 border-b border-outline-variant/20">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider" id="queueHeaderLabel">Queue</span>
+<span class="font-label-sm text-[10px] text-on-tertiary-container flex items-center gap-1 font-medium" id="queueSyncBadge">
+<span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
+      Synchronized
+    </span>
 </div>
-<!-- LYRICS PREVIEW CARD -->
-<div class="px-margin mt-5">
-<div class="p-3.5 rounded-xl bg-surface-container-low border border-surface-container-high/80 flex flex-col gap-2">
-<div class="flex items-center justify-between">
-<span class="font-label-mono text-[10px] tracking-wider uppercase font-semibold text-secondary">Lyrics</span>
-<button class="font-label-mono text-[11px] text-on-surface hover:underline font-medium">Full View</button>
-</div>
-<div class="flex flex-col gap-1 py-1">
-<p class="font-body-md text-[13px] text-secondary/60 select-none">Static humming across the skyline</p>
-<p class="font-headline-md text-[14px] font-semibold text-on-surface tracking-tight leading-snug">Reflections shatter on the obsidian glass</p>
-<p class="font-body-md text-[13px] text-secondary/60 select-none">Synchronized pulses through the dark</p>
+<!-- Track 01 -->
+<div class="flex items-center justify-between p-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30 shadow-xs">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-5 text-center font-label-sm text-[11px] font-bold text-on-tertiary-container font-mono">01</div>
+<div class="flex flex-col min-w-0">
+<span class="font-headline-sm text-[13px] font-semibold text-on-surface truncate">Madhosh</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant truncate">Tanishk Bagchi, Faheem Abdullah</span>
 </div>
 </div>
+<div class="flex items-center gap-2 shrink-0">
+<span class="font-label-sm text-[9px] bg-on-tertiary-container text-on-tertiary px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider">PLAYING</span>
+<span class="material-symbols-outlined text-[18px] text-secondary">drag_handle</span>
 </div>
-<!-- UP NEXT QUEUE (3 items) -->
-<div class="px-margin mt-5 flex flex-col gap-2.5">
-<div class="flex items-center justify-between">
-<div class="flex items-center gap-1.5">
-<span class="font-body-md text-[14px] font-semibold text-on-surface">Up Next</span>
-<span class="px-1.5 py-0.5 rounded-full bg-surface-container font-label-mono text-[10px] text-on-surface-variant font-medium">3</span>
 </div>
-<button class="font-label-mono text-[11px] text-secondary hover:text-on-surface font-medium transition-colors">View Queue</button>
-</div>
-<div class="flex flex-col gap-1.5">
-<!-- Item 1 -->
-<div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-3 min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 border border-black/5">
-<img alt="Neon Horizons" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBliIRjJBfKDvkI2k4pzq8SsngDz8CxQngwnRi42qboOb0s4NlDXO2gp_VG9371fZ1iDI5ft7pjBxlXpUvPbFwYgxT7H1rsNQS_mycHt9ofd8lQCRrYsYJTEBcc-L0ltnConhD9yxUIJqF1TZvg3GqSVP4oHIRtb7jGj64GxvAu2OMiE97-uix6iXn86dYEgVNMJVQ_A1HRH1qvsVTkFK1EHxknffWiYlYgY0zPn1zkJCD1rQyxrE95FA">
-</div>
+<!-- Track 02 -->
+<div class="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-5 text-center font-label-sm text-[11px] text-secondary font-mono">02</div>
 <div class="flex flex-col min-w-0">
 <span class="font-body-md text-[13px] font-medium text-on-surface truncate">Neon Horizons</span>
-<span class="font-body-sm text-[11px] text-secondary truncate">Aura Sound</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant truncate">Aura Sound</span>
 </div>
 </div>
-<div class="flex items-center gap-2 shrink-0">
-<span class="font-label-mono text-[11px] text-secondary">5:14</span>
-<button aria-label="Reorder" class="w-7 h-7 flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
-<span class="material-symbols-outlined text-[18px]">drag_handle</span>
-</button>
+<div class="flex items-center gap-2.5 shrink-0">
+<span class="font-label-sm text-[11px] text-secondary font-mono">03:42</span>
+<span class="material-symbols-outlined text-[18px] text-secondary">drag_handle</span>
 </div>
 </div>
-<!-- Item 2 -->
-<div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-3 min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 border border-black/5">
-<img alt="Subtle Echoes" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCaHrODJkVBUihd_MJRWTPIDrQP1tn3VPYfjT3l4CvyhI3jYMf_dn9V2mgnoB46hEESBScTgxFd0KSbLVTpJEEb7pWLnxgckUfkORbbx9Zmwp7y1h4p0KxbEsn1s9tiPI9qe8suYhS0ZA8fYm1eXT6vUDJ6peHF7_yKJb5XY3b0XlcoWVfg6aMM2FrmKJT2XnKPNDhdZiLcEWiHHawUa_rXqSW_vciOsuQurPydXzZiDwzesVXHAWUYgw">
-</div>
+<!-- Track 03 -->
+<div class="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-5 text-center font-label-sm text-[11px] text-secondary font-mono">03</div>
 <div class="flex flex-col min-w-0">
 <span class="font-body-md text-[13px] font-medium text-on-surface truncate">Subtle Echoes</span>
-<span class="font-body-sm text-[11px] text-secondary truncate">Mirage Architecture</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant truncate">Mirage</span>
 </div>
 </div>
-<div class="flex items-center gap-2 shrink-0">
-<span class="font-label-mono text-[11px] text-secondary">3:52</span>
-<button aria-label="Reorder" class="w-7 h-7 flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
-<span class="material-symbols-outlined text-[18px]">drag_handle</span>
-</button>
+<div class="flex items-center gap-2.5 shrink-0">
+<span class="font-label-sm text-[11px] text-secondary font-mono">04:18</span>
+<span class="material-symbols-outlined text-[18px] text-secondary">drag_handle</span>
 </div>
 </div>
-<!-- Item 3 -->
-<div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container-high/60 flex items-center justify-between gap-3 active:bg-surface-container-low transition-colors">
-<div class="flex items-center gap-3 min-w-0">
-<div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 border border-black/5">
-<img alt="Crystalline Dispersion" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4aIE7Jec9BWRaMxBFtPrzjgeyccZ3Oz1R_gmlHQBI7isETiIon3ssaSYLGXAJJCftFjyfNohKTDHLMKgWUtIml_Qdo0r7lkReodXH5sFaKus-J_Hghn_1piRkefAPW7VCRLQh1NIlEUq38dnvkLXIaeHI2UGGFU2BIvlXc1sJEsUC9NWnILUuggmiJcWm_oLKsJ1T1-OTo6dWmiizoegHwCVRFl1F-5zy69Mfg3wV0QdLJ9Iy1TpD5A">
-</div>
+<!-- Track 04 -->
+<div class="flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container-low transition-colors">
+<div class="flex items-center gap-2.5 min-w-0">
+<div class="w-5 text-center font-label-sm text-[11px] text-secondary font-mono">04</div>
 <div class="flex flex-col min-w-0">
 <span class="font-body-md text-[13px] font-medium text-on-surface truncate">Crystalline Dispersion</span>
-<span class="font-body-sm text-[11px] text-secondary truncate">Kaelen Solo Archive</span>
+<span class="font-body-sm text-[11px] text-on-surface-variant truncate">Kaelen</span>
 </div>
 </div>
-<div class="flex items-center gap-2 shrink-0">
-<span class="font-label-mono text-[11px] text-secondary">4:47</span>
-<button aria-label="Reorder" class="w-7 h-7 flex items-center justify-center text-outline hover:text-on-surface cursor-grab active:cursor-grabbing">
-<span class="material-symbols-outlined text-[18px]">drag_handle</span>
+<div class="flex items-center gap-2.5 shrink-0">
+<span class="font-label-sm text-[11px] text-secondary font-mono">05:01</span>
+<span class="material-symbols-outlined text-[18px] text-secondary">drag_handle</span>
+</div>
+</div>
+<!-- Search & Append -->
+<div class="mt-1 flex items-center gap-2 bg-surface-container-low border border-outline-variant/30 p-1.5 rounded-xl">
+<span class="material-symbols-outlined text-[18px] text-secondary pl-1.5">search</span>
+<input class="bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-none p-0 focus:ring-0" placeholder="Search track or append to room queue" type="text"/>
+<button class="bg-primary text-on-primary px-3 py-1.5 rounded-lg font-label-sm text-[10px] font-semibold uppercase tracking-wider shrink-0 active:scale-95 transition-transform shadow-xs">
+      + Append
+    </button>
+</div>
+</div>
+<!-- Tab View 2: Jam Data & Telemetry -->
+<div class="tab-content hidden bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-3.5 flex flex-col gap-3.5 shadow-xs" id="view-jam-data">
+<div class="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-xs">
+<span class="material-symbols-outlined text-[15px]">sensors</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-[13px] font-semibold text-on-surface">Jam Room #OM-904</span>
+<span class="font-label-sm text-[9px] bg-primary text-on-primary px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider">Host</span>
+</div>
+<span class="font-label-sm text-[10px] text-secondary font-mono">openmusic://join/om904</span>
+</div>
+</div>
+<button class="flex items-center gap-1 bg-surface-container-low hover:bg-surface-container-high px-2 py-1 rounded-lg border border-outline-variant/30 text-on-surface text-[10px] font-label-sm font-semibold uppercase active:scale-95 transition-all shadow-xs">
+<span class="material-symbols-outlined text-[13px]">share</span>
+<span>Invite</span>
+</button>
+</div>
+<!-- Section 1: Real-time Telemetry Metrics Grid -->
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center justify-between px-0.5">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse"></span>Telemetry
+      </span>
+<span class="font-label-sm text-[10px] text-secondary font-mono flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[12px]">timer</span>14ms Ping
+      </span>
+</div>
+<div class="grid grid-cols-3 gap-1.5 bg-surface-container-low border border-outline-variant/30 rounded-xl p-2 shadow-xs">
+<div class="flex items-center gap-1.5 px-1">
+<span class="material-symbols-outlined text-[16px] text-secondary">speed</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-[9px] text-secondary uppercase font-semibold">Bitrate</span>
+<span class="font-label-md text-[11px] text-on-surface font-semibold font-mono">1.4 KB/s</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-1 border-x border-outline-variant/20">
+<span class="material-symbols-outlined text-[16px] text-on-tertiary-container">show_chart</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-[9px] text-secondary uppercase font-semibold">Jitter</span>
+<span class="font-label-md text-[11px] text-on-surface font-semibold font-mono">0.02 ms</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 px-1">
+<span class="material-symbols-outlined text-[16px] text-secondary">storage</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-[9px] text-secondary uppercase font-semibold">Buffer</span>
+<span class="font-label-md text-[11px] text-on-surface font-semibold font-mono">94%</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-1.5 px-0.5">
+<div class="flex items-center justify-between bg-surface-container-low px-2 py-1 rounded-lg border border-outline-variant/20">
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[12px]">network_ping</span>
+<span class="font-label-sm text-[10px]">Loss:</span>
+</div>
+<span class="font-label-sm text-[10px] font-mono font-semibold text-on-surface">0.00%</span>
+</div>
+<div class="flex items-center justify-between bg-surface-container-low px-2 py-1 rounded-lg border border-outline-variant/20">
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[12px]">timelapse</span>
+<span class="font-label-sm text-[10px]">RTT:</span>
+</div>
+<span class="font-label-sm text-[10px] font-mono font-semibold text-on-surface">12ms</span>
+</div>
+</div>
+</div>
+<!-- Section 2: Sync Clock & Drift Controls -->
+<div class="flex flex-col gap-2 bg-surface-container-low border border-outline-variant/30 rounded-xl p-2.5 shadow-xs">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider">Sync Clock &amp; Drift</span>
+<span class="font-label-sm text-[9px] bg-surface-container-highest border border-outline-variant/40 px-1.5 py-0.2 rounded font-semibold text-secondary font-mono">DEMOCRATIC NTP</span>
+</div>
+<div class="flex items-center justify-between text-body-sm text-[12px] pt-0.5">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface">Auto-Resync Interval</span>
+<span class="text-[10px] text-secondary font-mono">Tolerance threshold: 5.0 seconds</span>
+</div>
+<span class="font-label-md text-label-md font-mono font-semibold text-on-surface bg-surface px-2 py-0.5 rounded border border-outline-variant/20">5s</span>
+</div>
+<div class="flex items-center justify-between text-body-sm text-[12px] border-t border-outline-variant/20 pt-1.5">
+<div class="flex flex-col">
+<span class="font-medium text-on-surface">Max Allowed Jitter</span>
+<span class="text-[10px] text-secondary font-mono">Sub-millisecond audio alignment</span>
+</div>
+<span class="font-label-md text-label-md font-mono font-semibold text-on-surface bg-surface px-2 py-0.5 rounded border border-outline-variant/20">15ms</span>
+</div>
+</div>
+<!-- Section 3: Room & Listener Permissions -->
+<div class="flex flex-col gap-2 bg-surface-container-low border border-outline-variant/30 rounded-xl p-2.5 shadow-xs">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider">Listener Permissions</span>
+<div class="flex items-center justify-between pt-0.5">
+<div class="flex flex-col">
+<span class="font-body-sm text-[12px] font-medium text-on-surface">Guest Queue Append</span>
+<span class="font-label-sm text-[10px] text-secondary">Allow listeners to insert tracks</span>
+</div>
+<button aria-checked="true" class="w-8 h-4 rounded-full bg-primary flex items-center px-0.5 transition-colors" role="switch">
+<span class="w-3 h-3 rounded-full bg-on-primary ml-auto shadow-xs"></span>
+</button>
+</div>
+<div class="flex items-center justify-between border-t border-outline-variant/20 pt-1.5">
+<div class="flex flex-col">
+<span class="font-body-sm text-[12px] font-medium text-on-surface">Democratic Skip Threshold</span>
+<span class="font-label-sm text-[10px] text-secondary">Quorum required to skip: 50%</span>
+</div>
+<span class="font-label-sm text-[11px] font-mono font-semibold text-on-surface bg-surface px-2 py-0.5 rounded border border-outline-variant/20">2 / 4 votes</span>
+</div>
+<div class="flex items-center justify-between border-t border-outline-variant/20 pt-1.5">
+<div class="flex flex-col">
+<span class="font-body-sm text-[12px] font-medium text-on-surface">Live Chat &amp; Reactions</span>
+<span class="font-label-sm text-[10px] text-secondary">In-stream messaging for participants</span>
+</div>
+<button aria-checked="true" class="w-8 h-4 rounded-full bg-primary flex items-center px-0.5 transition-colors" role="switch">
+<span class="w-3 h-3 rounded-full bg-on-primary ml-auto shadow-xs"></span>
 </button>
 </div>
 </div>
+<!-- Section 4: Jam Actions -->
+<div class="flex items-center gap-2 pt-1">
+<button class="flex-1 flex items-center justify-center gap-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 py-2 rounded-xl text-on-surface font-label-sm text-[11px] font-semibold uppercase tracking-wider active:scale-95 transition-all shadow-xs">
+<span class="material-symbols-outlined text-[15px]">logout</span>
+<span>Leave Jam</span>
+</button>
+<button class="flex-1 flex items-center justify-center gap-1.5 bg-error text-on-error py-2 rounded-xl font-label-sm text-[11px] font-semibold uppercase tracking-wider active:scale-95 transition-all shadow-xs">
+<span class="material-symbols-outlined text-[15px]">stop_circle</span>
+<span>End Jam Session</span>
+</button>
+</div>
+</div>
+<!-- Tab View 3: Chat -->
+<div class="tab-content hidden bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-3.5 flex flex-col gap-3 shadow-xs" id="view-chat">
+<div class="flex items-center justify-between pb-1.5 px-0.5 border-b border-outline-variant/20">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider">Room Chat</span>
+<span class="font-label-sm text-[10px] text-secondary font-mono">4 Listeners Active</span>
+</div>
+<div class="flex flex-col gap-2.5 py-1">
+<div class="flex items-start gap-2">
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary text-[9px] font-mono font-semibold shrink-0">TB</div>
+<div class="flex flex-col bg-surface-container-low px-2.5 py-1.5 rounded-xl border border-outline-variant/20 max-w-[85%]">
+<span class="font-label-sm text-[9px] text-secondary font-medium">Tanishk</span>
+<span class="font-body-sm text-[12px] text-on-surface">Lossless master stream locked in! 🎧</span>
+</div>
+</div>
+<div class="flex items-start gap-2">
+<div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-on-secondary text-[9px] font-mono font-semibold shrink-0">FA</div>
+<div class="flex flex-col bg-surface-container-low px-2.5 py-1.5 rounded-xl border border-outline-variant/20 max-w-[85%]">
+<span class="font-label-sm text-[9px] text-secondary font-medium">Faheem</span>
+<span class="font-body-sm text-[12px] text-on-surface">Sound stage depth on this mix is unreal.</span>
 </div>
 </div>
 </div>
+<div class="mt-1 flex items-center gap-2 bg-surface-container-low border border-outline-variant/30 p-1.5 rounded-xl">
+<input class="bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-none p-0 focus:ring-0 pl-1" placeholder="Send reaction or message..." type="text"/>
+<button class="w-7 h-7 rounded-lg bg-primary text-on-primary flex items-center justify-center active:scale-95 transition-transform shadow-xs shrink-0">
+<span class="material-symbols-outlined text-[15px]">send</span>
+</button>
+</div>
+</div>
+<!-- Tab View 4: Lyrics -->
+<div class="tab-content hidden bg-surface-container-lowest border border-outline-variant/30 rounded-2xl p-4 flex flex-col gap-3 shadow-xs" id="view-lyrics">
+<div class="flex items-center justify-between pb-1 px-0.5 border-b border-outline-variant/20">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider">Synced Lyrics</span>
+<span class="font-label-sm text-[10px] text-on-tertiary-container font-mono uppercase font-semibold">Direct Feed</span>
+</div>
+<div class="flex flex-col gap-3 py-2 text-center">
+<p class="font-body-sm text-[12px] text-secondary">Dil ki gehraiyon mein utar ke dekh zara</p>
+<p class="font-headline-sm text-[15px] font-semibold text-on-surface">Madhosh ho gaye hum teri har ada pe</p>
+<p class="font-body-sm text-[12px] text-secondary">Khwaabon ki chhaon mein rooh behak gayi</p>
+</div>
+</div></section>
+</div>
+</main>
 <script>
-  (function() {
-    // Play/Pause master button
-    const playPauseBtn = document.getElementById('master-play-pause');
-    const playPauseIcon = document.getElementById('play-pause-icon');
+    // Play/Pause Micro-interaction
+    const playBtn = document.getElementById('mainPlayBtn');
+    const playIcon = document.getElementById('playIcon');
     let isPlaying = true;
-
-    if (playPauseBtn && playPauseIcon) {
-      playPauseBtn.addEventListener('click', function() {
+    if (playBtn && playIcon) {
+      playBtn.addEventListener('click', () => {
         isPlaying = !isPlaying;
-        playPauseIcon.textContent = isPlaying ? 'pause' : 'play_arrow';
+        playIcon.textContent = isPlaying ? 'pause' : 'play_arrow';
       });
     }
 
-    // Favorite heart toggle
-    const favBtn = document.getElementById('favorite-btn');
-    const favIcon = document.getElementById('favorite-icon');
+    // Favorite Heart Toggle
+    const favBtn = document.getElementById('favoriteBtn');
+    const favIcon = document.getElementById('favoriteIcon');
     let isFav = false;
     if (favBtn && favIcon) {
-      favBtn.addEventListener('click', function() {
+      favBtn.addEventListener('click', () => {
         isFav = !isFav;
-        favIcon.textContent = isFav ? 'favorite' : 'favorite_border';
         favIcon.style.fontVariationSettings = isFav ? "'FILL' 1" : "'FILL' 0";
-        if (isFav) {
-          favIcon.classList.add('text-error');
-        } else {
-          favIcon.classList.remove('text-error');
+        favIcon.classList.toggle('text-error', isFav);
+      });
+    }
+
+    // Copy Join URI
+    const copyBtn = document.getElementById('copyUriBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', () => {
+        const originalContent = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<span class="material-symbols-outlined text-[12px] text-on-tertiary-container">check</span><span class="font-label-sm text-[9px] tracking-wide uppercase font-semibold text-on-tertiary-container">Copied</span>';
+        setTimeout(() => {
+          copyBtn.innerHTML = originalContent;
+        }, 1500);
+      });
+    }
+
+    // Solo vs Social Mode Toggle
+    let isSocialMode = true;
+    const modeToggleBtn = document.getElementById('modeToggleBtn');
+    const headerSubtitle = document.getElementById('headerSubtitle');
+    const headerTitle = document.getElementById('headerTitle');
+    const headerModeDot = document.getElementById('headerModeDot');
+    const jamSessionBanner = document.getElementById('jamSessionBanner');
+    const artworkCollabTag = document.getElementById('artworkCollabTag');
+    const skipVoteBadge = document.getElementById('skipVoteBadge');
+    const chatTabBtn = document.getElementById('chatTabBtn');
+    const jamDataTabBtn = document.getElementById('jamDataTabBtn');
+    const queueSyncBadge = document.getElementById('queueSyncBadge');
+    const queueHeaderLabel = document.getElementById('queueHeaderLabel');
+
+    function applyMode(social) {
+      isSocialMode = social;
+      if (isSocialMode) {
+        headerSubtitle.textContent = 'PLAYING FROM JAM';
+        headerTitle.textContent = 'Late Night Resonance (Social Jam)';
+        headerModeDot.className = 'w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse shrink-0';
+        if (jamSessionBanner) jamSessionBanner.classList.remove('hidden');
+        if (artworkCollabTag) artworkCollabTag.textContent = 'COLLAB QUEUE';
+        if (skipVoteBadge) skipVoteBadge.classList.remove('hidden');
+        if (chatTabBtn) chatTabBtn.classList.remove('hidden');
+        if (jamDataTabBtn) jamDataTabBtn.classList.remove('hidden');
+        if (queueSyncBadge) queueSyncBadge.classList.remove('hidden');
+        if (queueHeaderLabel) queueHeaderLabel.textContent = 'COLLABORATIVE QUEUE';
+      } else {
+        headerSubtitle.textContent = 'PLAYING FROM PLAYLIST';
+        headerTitle.textContent = 'Late Night Resonance (Solo)';
+        headerModeDot.className = 'w-1.5 h-1.5 rounded-full bg-secondary shrink-0';
+        if (jamSessionBanner) jamSessionBanner.classList.add('hidden');
+        if (artworkCollabTag) artworkCollabTag.textContent = 'SOLO PLAYBACK';
+        if (skipVoteBadge) skipVoteBadge.classList.add('hidden');
+        if (chatTabBtn) chatTabBtn.classList.add('hidden');
+        if (jamDataTabBtn) jamDataTabBtn.classList.add('hidden');
+        if (queueSyncBadge) queueSyncBadge.classList.add('hidden');
+        if (queueHeaderLabel) queueHeaderLabel.textContent = 'PERSONAL QUEUE';
+        
+        // If current tab was chat or jam-data, fallback to queue
+        const activeTab = document.querySelector('.tab-btn.bg-primary')?.getAttribute('data-tab');
+        if (activeTab === 'chat' || activeTab === 'jam-data') {
+          switchTab('queue');
         }
-      });
+      }
     }
 
-    // Scrubber interaction
-    const scrubber = document.getElementById('scrubber-container');
-    const progressBar = document.getElementById('scrubber-bar');
-    const needle = document.getElementById('scrubber-needle');
-    const elapsedLabel = document.getElementById('elapsed-time');
-    const remainingLabel = document.getElementById('remaining-time');
-    const totalDurationSeconds = 258; // 4:18
-
-    function updateScrub(e) {
-      const rect = scrubber.getBoundingClientRect();
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clickX = Math.max(0, Math.min(clientX - rect.left, rect.width));
-      const percentage = (clickX / rect.width) * 100;
-      progressBar.style.width = percentage + '%';
-      needle.style.left = 'calc(' + percentage + '% - 7px)';
-
-      const currentSeconds = Math.floor((percentage / 100) * totalDurationSeconds);
-      const remSeconds = totalDurationSeconds - currentSeconds;
-      
-      const curM = Math.floor(currentSeconds / 60);
-      const curS = String(currentSeconds % 60).padStart(2, '0');
-      elapsedLabel.textContent = curM + ':' + curS;
-
-      const remM = Math.floor(remSeconds / 60);
-      const remS = String(remSeconds % 60).padStart(2, '0');
-      remainingLabel.textContent = '-' + remM + ':' + remS;
-    }
-
-    if (scrubber && progressBar && needle && elapsedLabel && remainingLabel) {
-      let isDragging = false;
-      scrubber.addEventListener('mousedown', function(e) {
-        isDragging = true;
-        updateScrub(e);
-      });
-      window.addEventListener('mousemove', function(e) {
-        if (isDragging) updateScrub(e);
-      });
-      window.addEventListener('mouseup', function() {
-        isDragging = false;
-      });
-      scrubber.addEventListener('touchstart', function(e) {
-        isDragging = true;
-        updateScrub(e);
-      }, { passive: true });
-      window.addEventListener('touchmove', function(e) {
-        if (isDragging) updateScrub(e);
-      }, { passive: true });
-      window.addEventListener('touchend', function() {
-        isDragging = false;
+    if (modeToggleBtn) {
+      modeToggleBtn.addEventListener('click', () => {
+        applyMode(!isSocialMode);
       });
     }
-
-    // Shuffle & repeat toggles
-    const shuffleBtn = document.getElementById('shuffle-btn');
-    if (shuffleBtn) {
-      let shuffleActive = false;
-      shuffleBtn.addEventListener('click', function() {
-        shuffleActive = !shuffleActive;
-        shuffleBtn.classList.toggle('text-primary', shuffleActive);
-        shuffleBtn.classList.toggle('text-on-surface-variant', !shuffleActive);
-      });
-    }
-
-    const repeatBtn = document.getElementById('repeat-btn');
-    if (repeatBtn) {
-      let repeatActive = false;
-      repeatBtn.addEventListener('click', function() {
-        repeatActive = !repeatActive;
-        repeatBtn.classList.toggle('text-primary', repeatActive);
-        repeatBtn.classList.toggle('text-on-surface-variant', !repeatActive);
-      });
-    }
-  })();
+  </script>
+<script>
+  function switchTab(targetTab) {
+    const tabs = ['queue', 'chat', 'jam-data', 'lyrics'];
+    tabs.forEach(tab => {
+      const view = document.getElementById('view-' + tab);
+      const btn = document.querySelector(`[data-tab="${tab}"]`);
+      if (tab === targetTab) {
+        if (view) view.classList.remove('hidden');
+        if (btn) {
+          btn.className = 'tab-btn flex-1 bg-primary text-on-primary py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 shadow-xs whitespace-nowrap transition-all';
+        }
+      } else {
+        if (view) view.classList.add('hidden');
+        if (btn) {
+          btn.className = 'tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors';
+        }
+      }
+    });
+  }
 </script>
-</main>
-<div class="fixed inset-0 z-50 transition-opacity duration-200 flex flex-col justify-end pointer-events-none opacity-0" id="track-options-sheet"><div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="sheet-backdrop"></div><div class="relative bg-surface-container-lowest border-t border-surface-container-high/80 rounded-t-xl max-w-lg mx-auto w-full px-5 pt-3 pb-8 shadow-xl transform transition-transform duration-200 flex flex-col gap-3 translate-y-full" id="sheet-content"><div class="w-10 h-1 bg-surface-container-highest rounded-full mx-auto mb-1"></div><div class="flex items-center gap-3 pb-3 border-b border-surface-container-high/60"><div class="w-11 h-11 rounded-lg bg-surface-container-high overflow-hidden shrink-0 border border-black/5"><img alt="Midnight City Lights" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCUZnq5OK4osL7GZOzNKJhvk3Gdg8LBWd4g9870SzuysjcR0wErVAh6Yqis7kqV-HSwXwTRBo5eb1fQhF3i6w2l9j3rSpaHGLLcDE-G4ZGQ3BJisajVnxKgP9-PKVfh46yt54LCOb72VRbyBONXs2Rns2egSxoQk6ayclftMEP3DZQmPB4qefUo8QGVJaMTCI5nDh-z9oRipCgwbxDBBvntgDcVnNnkHgOE75B9dM0q2bUsjCtDlHTDAA"></div><div class="flex flex-col min-w-0"><h3 class="font-headline-md text-[14px] font-semibold text-on-surface truncate">Midnight City Lights</h3><p class="font-body-sm text-[12px] text-on-surface-variant truncate">Solaris &amp; Kaelen</p></div></div><div class="flex flex-col gap-1"><button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-on-surface hover:bg-surface-container transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px] text-on-surface-variant">playlist_play</span><span class="font-body-md text-[14px] font-medium">Play Next</span></button><button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-on-surface hover:bg-surface-container transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px] text-on-surface-variant">queue_music</span><span class="font-body-md text-[14px] font-medium">Add to Queue</span></button><button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-on-surface hover:bg-surface-container transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px] text-on-surface-variant">album</span><span class="font-body-md text-[14px] font-medium">View Album</span></button><button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-on-surface hover:bg-surface-container transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px] text-on-surface-variant">artist</span><span class="font-body-md text-[14px] font-medium">Go to Artist</span></button><button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-on-surface hover:bg-surface-container transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px] text-on-surface-variant">ios_share</span><span class="font-body-md text-[14px] font-medium">Share Track</span></button><button class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-on-surface hover:bg-surface-container transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px] text-on-surface-variant">info</span><span class="font-body-md text-[14px] font-medium">Track Details</span></button></div><button class="w-full py-2.5 mt-1 rounded-xl bg-surface-container font-body-md text-[13px] font-semibold text-on-surface active:bg-surface-container-high transition-colors" id="close-sheet-btn">Close</button></div></div><script>(function(){const moreBtn=document.getElementById('more-options-btn');const sheet=document.getElementById('track-options-sheet');const backdrop=document.getElementById('sheet-backdrop');const content=document.getElementById('sheet-content');const closeBtn=document.getElementById('close-sheet-btn');function openSheet(){if(!sheet)return;sheet.classList.remove('pointer-events-none','opacity-0');sheet.classList.add('pointer-events-auto','opacity-100');content.classList.remove('translate-y-full');content.classList.add('translate-y-0');}function closeSheet(){if(!sheet)return;sheet.classList.remove('pointer-events-auto','opacity-100');sheet.classList.add('pointer-events-none','opacity-0');content.classList.remove('translate-y-0');content.classList.add('translate-y-full');}if(moreBtn)moreBtn.addEventListener('click',openSheet);if(backdrop)backdrop.addEventListener('click',closeSheet);if(closeBtn)closeBtn.addEventListener('click',closeSheet);const headerShuffle=document.getElementById('header-shuffle-btn');const shuffleBtn=document.getElementById('shuffle-btn');if(headerShuffle&&shuffleBtn){headerShuffle.addEventListener('click',function(){shuffleBtn.click();headerShuffle.classList.toggle('text-primary');headerShuffle.classList.toggle('text-on-surface-variant');});}const dlBtn=document.getElementById('download-btn');if(dlBtn){let dlState=false;dlBtn.addEventListener('click',function(){dlState=!dlState;const icon=dlBtn.querySelector('.material-symbols-outlined');if(icon){icon.textContent=dlState?'check':'download';icon.classList.toggle('text-primary',dlState);}});}})();</script>
-
 </body></html>

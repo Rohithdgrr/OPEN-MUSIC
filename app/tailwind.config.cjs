@@ -58,8 +58,12 @@ module.exports = {
       "xl": "0.5rem",
       "full": "0.75rem"
     },
+    "boxShadow": {
+      "xs": "0 1px 2px 0 rgb(0 0 0 / 0.05)"
+    },
     "spacing": {
       "space-xs": "0.25rem",
+      "0.2": "0.05rem",
       "gutter": "1rem",
       "space-md": "0.75rem",
       "space-lg": "1.25rem",
@@ -87,6 +91,9 @@ module.exports = {
         "Geist"
       ],
       "headline-md": [
+        "Geist"
+      ],
+      "headline-sm": [
         "Geist"
       ],
       "headline-lg": [
@@ -151,6 +158,14 @@ module.exports = {
           "lineHeight": "24px",
           "letterSpacing": "-0.015em",
           "fontWeight": "500"
+        }
+      ],
+      "headline-sm": [
+        "17px",
+        {
+          "lineHeight": "22px",
+          "letterSpacing": "-0.015em",
+          "fontWeight": "600"
         }
       ],
       "headline-lg": [

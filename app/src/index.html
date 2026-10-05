@@ -1287,14 +1287,8 @@ addEventListener("DOMContentLoaded", () => {
       <img alt="Album Artwork" id="master-album-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw"/>
       <div class="np-art-gloss"></div>
 
-      <!-- Top Floating Lossless Pill -->
-      <div class="np-stream-pill">
-        <span class="np-pulse-dot"></span>
-        <span id="np-badge" class="text-on-surface font-mono text-[11px] uppercase tracking-wider font-semibold">RESOLVING • 24-BIT / 96kHz</span>
-      </div>
-
-      <!-- Room QR trigger (Social only) -->
-      <button class="np-qr-btn soc-social-only" id="btn-qr" title="Show the room QR code" type="button">
+      <!-- Room QR trigger (mode-independent — visible in Solo too, D-K1): the invite for this room -->
+      <button class="np-qr-btn" id="btn-qr" title="Show the room QR code" type="button">
         <span class="material-symbols-outlined" style="font-size:16px">qr_code_2</span>
         <span>Room QR</span>
       </button>
@@ -1378,28 +1372,35 @@ addEventListener("DOMContentLoaded", () => {
         </div>
       </div>
 
-      <!-- Room QR surface: placeholder art until the local sidecar assigns a real code -->
-      <div class="np-qr-overlay hidden" id="qr-overlay">
-        <div class="np-qr-head">
-          <span class="np-qr-head-label"><span class="soc-live-dot"></span> Room QR</span>
-          <span class="np-qr-count" id="qr-members-count">1 (you)</span>
-        </div>
-        <div class="np-qr-body">
-          <div class="np-qr-plate">
-            <!-- Decorative placeholder: not scannable until the sidecar lands -->
-            <span class="material-symbols-outlined">qr_code_2</span>
+      <!-- Room QR surface: a real, scannable symbol once the sidecar issues a code -->
+      <div class="np-qr-overlay hidden" id="qr-overlay" role="dialog" aria-modal="true" aria-labelledby="np-qr-title">
+        <div class="np-qr-card">
+          <div class="np-qr-head">
+            <span class="np-qr-head-label" id="np-qr-title"><span class="soc-live-dot"></span> Room invite</span>
+            <span class="np-qr-count" id="qr-members-count">1 (you)</span>
           </div>
+
+          <div class="np-qr-frame">
+            <!-- Painted by qrview.js from the Rust `qr_symbol` command. -->
+            <canvas class="np-qr-canvas" id="qr-canvas" width="264" height="264" role="img" aria-label="QR code for this room"></canvas>
+            <div class="np-qr-empty" id="np-qr-empty">
+              <span class="material-symbols-outlined">qr_code_2</span>
+              <p>No room code yet</p>
+            </div>
+          </div>
+
           <div class="np-qr-code" id="qr-room-code">NO ROOM</div>
-          <div class="np-qr-pin">No room yet — a real code appears once the sidecar assigns one.</div>
-        </div>
-        <div class="np-qr-actions">
-          <button class="np-qr-copy" id="btn-qr-copy" title="Available once a room code exists" type="button" disabled>
-            <span class="material-symbols-outlined" style="font-size:14px">content_copy</span>
-            <span>Copy invite</span>
-          </button>
-          <button class="np-qr-close" id="btn-qr-close" title="Close" type="button">
-            <span class="material-symbols-outlined" style="font-size:16px">close</span>
-          </button>
+          <p class="np-qr-note" id="np-qr-note">Codes are issued by the local room server, never by this app.</p>
+
+          <div class="np-qr-actions">
+            <button class="np-qr-copy" id="btn-qr-copy" title="Available once a real room code exists" type="button" disabled>
+              <span class="material-symbols-outlined" style="font-size:15px">content_copy</span>
+              <span>Copy code</span>
+            </button>
+            <button class="np-qr-close" id="btn-qr-close" title="Close" aria-label="Close" type="button">
+              <span class="material-symbols-outlined" style="font-size:18px">close</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1490,18 +1491,6 @@ addEventListener("DOMContentLoaded", () => {
 
 <!-- Right Column: Interactive Deck (Track Meta & Segmented Switcher) -->
 <div class="lg:col-span-6 flex flex-col gap-5">
-
-  <!-- Solo invitation prompt: visible until Social mode is activated -->
-  <div class="soc-solo-prompt soc-solo-only" id="solo-prompt">
-    <p class="soc-solo-prompt-text">
-      <strong>Solo session.</strong> Activate Social to open a local room: shared queue,
-      live chat, reactions and a democratic skip vote — localhost only, no account.
-    </p>
-    <button class="soc-btn soc-btn-solid" id="btn-activate-social" title="Switch to Social mode" type="button">
-      <span class="material-symbols-outlined" style="font-size:15px">group</span>
-      <span>Activate Social</span>
-    </button>
-  </div>
 
   <!-- Segmented Deck Switcher Bar -->
   <div class="np-deck-nav">
@@ -1756,9 +1745,9 @@ addEventListener("DOMContentLoaded", () => {
       <div class="soc-tile">
         <div class="soc-tile-row">
           <span class="soc-tile-label">Sync tolerance</span>
-          <span class="soc-tile-value is-ok" id="jam-sync-value">±0.4s</span>
+          <span class="soc-tile-value is-ok" id="jam-sync-value">—</span>
         </div>
-        <span class="soc-tile-note">Drift is checked every 5 seconds.</span>
+        <span class="soc-tile-note">Drift is checked every second; corrected past ±0.4s.</span>
       </div>
       <div class="soc-tile">
         <div class="soc-tile-row">
@@ -1798,6 +1787,19 @@ addEventListener("DOMContentLoaded", () => {
       </div>
     </div>
     <p class="soc-tile-note" id="jam-members-note">1 (you) — nobody else can join until the local sidecar is running.</p>
+
+    <!-- Join form (contract C-4, docs/listen-together.md §6a): ids
+         room-join-addr / room-join-code / btn-room-join / room-join-note.
+         Wired by social.js (T-104); button starts disabled until then. -->
+    <div class="soc-room-join">
+      <input class="soc-input" id="room-join-addr" type="text" placeholder="Host address — e.g. 192.168.1.5" autocomplete="off" spellcheck="false" />
+      <input class="soc-input soc-input-code" id="room-join-code" type="text" placeholder="CODE" maxlength="8" autocomplete="off" spellcheck="false" />
+      <button class="soc-btn soc-btn-solid" id="btn-room-join" type="button" disabled>
+        <span class="material-symbols-outlined" style="font-size:14px">login</span>
+        <span>Join room</span>
+      </button>
+      <p class="soc-tile-note" id="room-join-note">Enter the host's LAN address and the 8-character room code.</p>
+    </div>
 
     <div class="soc-qappend">
       <button class="soc-btn soc-btn-solid" id="btn-open-room" title="Connect the local sidecar first" type="button" disabled>

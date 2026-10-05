@@ -29,9 +29,9 @@ Explicitly excluded from the port: **SongDNA** and **Concerts Near You**.
 
 | Control | Behavior | Honest fallback |
 |---|---|---|
-| `#btn-mode-social` / `#btn-activate-social` | adds `body.soc-social`, toasts the room size, `diag("social mode")` | toast states the sidecar is not connected |
+| `#btn-mode-social` | adds `body.soc-social`, toasts the room size, `diag("social mode")` | toast states the sidecar is not connected |
 | `#btn-mode-solo` / `#btn-leave-room` | removes the class; if the deck was on Chat/Jam it clicks back to Lyrics (those tabs are social-only), resets votes, closes QR, hides grace | — |
-| `#btn-qr` / `#btn-qr-close` / `Esc` | toggles `#qr-overlay` | Copy invite enables only once a real room code exists |
+| `#btn-qr` / `#btn-qr-close` / `Esc` | toggles `#qr-overlay` and paints the symbol from the current room code | shows the empty state; Copy enables only once a real code exists. The trigger is **mode-independent** (no `soc-social-only`): Solo users must see it too, otherwise the button is invisible on first boot and the surface is unreachable |
 | `.soc-reaction-pill` | `+1/-1` on your own pill, `active` state, note flips to "Your reactions — counts stay local" | counts reset to `0` on a `#track-title-heading` change (`MutationObserver`) |
 | `#btn-skip-vote` | `votes/1`, `is-done`; at a majority it calls `step(1)` after 200 ms and resets | denominator comes from `MEMBERS = 1` |
 | pause (social mode) | shows `#soc-grace` counting `3s → 0`, then hides | pill only appears while `body.soc-social` |
@@ -43,9 +43,9 @@ Explicitly excluded from the port: **SongDNA** and **Concerts Near You**.
 | `#btn-copy-invite`, `#btn-qr-copy` | copy the **real** room code to the clipboard | `disabled` until `room_created` supplies one |
 | `#auto-level-toggle` | untouched | documented as inert for a room of one |
 
-`MEMBERS = 1` is the single source for `#np-room-members`, `#qr-members-count`,
-`#jam-member-pill`, `#chat-online-count` and the vote denominator, so no view
-can drift into claiming an audience that is not there.
+`MEMBERS = 1` is the single source for `#np-room-members`, `#jam-member-pill`,
+`#chat-online-count` and the vote denominator, so no view can drift into
+claiming an audience that is not there.
 
 Guard rails: `app/tests/social-ui.test.mjs` asserts `social.js` contains **no
 network API** (`fetch`/`WebSocket`/`EventSource`/`XMLHttpRequest`/`sendBeacon`)
@@ -56,8 +56,8 @@ and never assigns `innerHTML`.
 | Trigger | Behavior | Honest fallback |
 |---|---|---|
 | entering Social | `GET http://127.0.0.1:<port>/health` (1.5 s), then `ws://…/ws` + `client_capabilities` | no answer → `#jam-sidecar` stays `Not connected` |
-| `server_capabilities` | `#jam-sidecar` → `Connected (v…)`, keepalive `ping` every 15 s | shown only after a decoded frame |
-| `#btn-open-room` (enabled only while connected) | sends `create_room`; `room_created` fills `soc-room-code` + `qr-room-code` + `jam-room-id` with the server's 8-char code, toasts it | refused → the server's `code`/`message` verbatim, all code slots stay `NO ROOM` |
+| `server_capabilities` | `#jam-sidecar` → `Connected (v…)`, keepalive `ping` every 15 s | shown only after a decoded frame; no `server_capabilities` within **5 s** (`handshake: 5000`) → `handshake_timeout` carrying the app's own wording ("No server_capabilities before the timeout."), never a guess |
+| `#btn-open-room` (enabled only while connected) | sends `create_room`; `room_created` fills `soc-room-code` + `qr-room-code` + `jam-room-id` with the server's 8-char code, toasts it, and re-paints the QR symbol | refused → the server's `code`/`message` verbatim, all code slots stay `NO ROOM` |
 | `#jam-ua` | prints this client's `navigator.userAgent` for the operator's `ua_policy.json` | display only — the app never alters its UA |
 | `#btn-copy-invite` / `#btn-qr-copy` | copy the room code | `disabled` until a code exists |
 | leaving Social | `leave_room` (if any) + socket close; all slots reset to `NO ROOM` | — |
@@ -65,6 +65,30 @@ and never assigns `innerHTML`.
 Guard rail: `app/tests/sidecar.test.mjs` drives the state machine with a
 scripted socket and asserts a status never appears before the frame that
 proves it.
+
+### 3b-i. The room-code slot table (one source, one fallback)
+
+Every room code the UI can show lives in exactly three slots, and they are
+painted from a **single** list in `social.js` (`ROOM_SLOTS`), never
+individually:
+
+| slot id | where it shows |
+|---|---|
+| `soc-room-code` | header room chip |
+| `qr-room-code` | QR sheet, under the symbol |
+| `jam-room-id` | Jam panel |
+
+Invariants, all non-negotiable:
+
+- the list and the markup must agree — a slot id in `ROOM_SLOTS` with no
+  matching `id="…"` in `index.html` is a silent dead write;
+- the fallback is the literal string `NO ROOM` (`code || "NO ROOM"`), so a
+  refusal, a disconnect or a leave all blank **every** slot together;
+- no slot may ever hold a placeholder code, PIN or preview value.
+
+`app/tests/social-ui.test.mjs` asserts the table both ways (list → markup and
+markup → starts `NO ROOM`), so renaming a slot or dropping one from the list
+fails the gate instead of shipping a dead write.
 
 ## 3. Visibility contract (driven by `social.js`)
 
@@ -90,12 +114,16 @@ body.soc-social       .soc-solo-only   { display: none !important; }
 shipped it as `class="np-trackline"`, which no rule matched — the flex row
 silently never applied. The class in `index.html` was renamed to match the
 documented inventory; `id="np-trackline"` is unchanged (id contract §5).
-| Room QR | `.np-qr-btn`, `.np-qr-overlay(.hidden)`, `.np-qr-head(-label)`, `.np-qr-count`, `.np-qr-body`, `.np-qr-plate`, `.np-qr-code`, `.np-qr-pin`, `.np-qr-copy`, `.np-qr-close` |
+| Room QR | `.np-qr-btn`, `.np-qr-overlay(.hidden)`, `.np-qr-card`, `.np-qr-head(-label)`, `.np-qr-count`, `.np-qr-frame`, `.np-qr-canvas`, `.np-qr-empty(.hidden)`, `.np-qr-code`, `.np-qr-note`, `.np-qr-actions`, `.np-qr-copy`, `.np-qr-close` |
 | Reactions | `.soc-reaction-bar`, `.soc-reaction-pill(.active)`, `.soc-reaction-emoji`, `.soc-reaction-count`, `.soc-reaction-note` |
 | Transport | `.soc-sync-clock`, `.soc-skip-vote(.is-done)`, `.soc-vote-ratio(.is-hot)`, `.soc-grace(.hidden)`, `.soc-grace-timer` |
 | Collab queue | `.soc-qhead(-left/-actions)`, `.soc-qhead-title`, `.soc-badge(.is-locked)`, `.soc-qbtn(.is-on)`, `.soc-qrow(.is-now)`, `.soc-qindex`, `.soc-drag`, `.soc-qthumb`, `.soc-qtext`, `.soc-qtitle`, `.soc-now-badge`, `.soc-qbio`, `.soc-added-by`, `.soc-qrow-side`, `.soc-qdur`, `.soc-qremove`, `.soc-qappend`, `.soc-qinput`, `.soc-qappend-btn` |
 | Chat | `.soc-pane-head(-left/-right)`, `.soc-pane-title`, `.soc-stat-chip(.is-live)`, `.soc-chat-list`, `.soc-chat-msg(.mine)`, `.soc-chat-avatar`, `.soc-chat-bubble`, `.soc-chat-meta`, `.soc-chat-user`, `.soc-tag-host`, `.soc-chat-time`, `.soc-chat-text`, `.soc-chat-reacts`, `.soc-chat-react`, `.soc-typing` (+ `@keyframes soc-blink`), `.soc-chat-compose`, `.soc-emoji-btn`, `.soc-chat-input`, `.soc-chat-send`, `.soc-chat-quote`, `.soc-empty` |
-| Jam pane | `.soc-section-label`, `.soc-tiles`, `.soc-tile(-row/-label/-value/-note)`, `.soc-tile-value.is-ok/.is-off`, `.soc-mode-tag`, `.soc-members`, `.soc-member(-avatar/-name/-role)`, `.soc-btn(-solid/-danger)`, `.soc-solo-prompt(-text)` |
+| Jam pane | `.soc-section-label`, `.soc-tiles`, `.soc-tile(-row/-label/-value/-note)`, `.soc-tile-value.is-ok/.is-off`, `.soc-mode-tag`, `.soc-members`, `.soc-member(-avatar/-name/-role)`, `.soc-btn(-solid/-danger)`, `.soc-qappend` |
+
+Removed classes: `.np-qr-*` (whole family), `.np-stream-pill`, `.np-pulse-dot`,
+`.soc-solo-prompt(-text)` — see §6b. `@keyframes np-pulse` **stays**: it is not
+part of `.np-stream-pill`, and `.soc-live-dot` still animates with it.
 
 `app/tests/social-ui.test.mjs` asserts every `soc-`/`np-art-`/`np-qr-` class
 used in `index.html` has a rule in `styles.css` (and vice versa).
@@ -108,9 +136,8 @@ Artwork overlay: `np-trackline` `np-quality` `track-title-heading`
 `track-artist-heading` `track-fav-btn` `fav-icon` `np-download-btn`
 `np-add-btn` `np-share-btn` `np-album` `np-artist-tile` `np-length`
 `np-format` `spinning-vinyl-icon` `np-sleep` `np-speed` `np-room-members`
-QR: `btn-qr` `qr-overlay` `qr-room-code` `qr-members-count`
-`btn-qr-copy` `btn-qr-close` (the preview `qr-pin` was dropped in Phase 4a —
-the protocol has no PIN, so showing one was a fabrication)
+Room QR: `btn-qr` `qr-overlay` `qr-canvas` `np-qr-empty` `qr-room-code`
+`qr-members-count` `btn-qr-copy` `btn-qr-close`
 Reactions: `reaction-bar` `reaction-note` (pills are `data-emoji`)
 Transport: `sync-clock-label` `soc-grace` `grace-timer` `btn-skip-vote`
 `skip-vote-label` (plus existing `btn-next`, now `.soc-solo-only`)
@@ -124,8 +151,7 @@ Chat pane: `chat-messages-container` `chat-empty` `chat-input`
 Jam pane: `jam-room-id` `jam-mode-label` `jam-session-mode` `jam-sync-value`
 `jam-vote-ratio` `jam-sidecar` `jam-sidecar-note` `jam-ua`
 `auto-level-toggle` `jam-members` `jam-members-note` `btn-open-room`
-`btn-copy-invite` `btn-leave-room` `btn-activate-social`
-`solo-prompt`
+`btn-copy-invite` `btn-leave-room`
 
 Room-code slots (`soc-room-code` `qr-room-code` `jam-room-id`) all read
 `NO ROOM` until a `room_created` frame supplies a real one — Phase 4a,
@@ -137,7 +163,7 @@ The app never fakes state (see `docs/ui.md` §16):
 
 - member count starts at **`1 (you)`**, reaction counts at **`0`**
 - Jam pane shows **`Not connected`** for the sidecar until a real
-  `127.0.0.1` process answers; QR copy button stays disabled
+  `127.0.0.1` process answers; the invite-copy button stays disabled
 - chat is local-only: messages are echoed by this client, never presented
   as someone else's; typing indicator is hidden until a real peer exists
 - no SongDNA / concert tiles / fabricated "N listeners" decoration
@@ -161,6 +187,80 @@ truncate at ~700px card width. Changes:
 
 Constraints: ids in §5 unchanged, `select` element behaviour untouched (still
 native dropdowns, still keyboard-navigable), no Tailwind.
+
+## 6b. Removed artwork + column chrome (on request)
+
+Three floating pieces of chrome were pulled so the album art and the metadata
+band are the only things on the Now Playing stage:
+
+| Removed | Was | Why it went |
+|---|---|---|
+| `#np-badge` + `.np-stream-pill` / `.np-pulse-dot` | the top-left "RESOLVING • 24-BIT / 96kHz" bitstream pill over the artwork | duplicated the footer bar's own `#bar-badge`, which carries the same honest `FULL SONG` / `PREVIEW` / `UNREACHABLE` state from the measured `RangeStatus` (`docs/ui.md` §16) |
+| `#solo-prompt` / `#btn-activate-social` | the "Solo session → Activate Social" box at the top of the right column | Social is still one click away in the header `Solo`/`Social` switch, which is the primary control |
+
+The Room QR trigger was removed in the same pass and **restored** in §6c.
+
+Cascade of the removal, all of it removed rather than left dangling:
+
+- `social.js`: the `#btn-activate-social` listener.
+- `styles.css`: `.np-stream-pill`, `.np-pulse-dot` and its two dark-theme
+  re-states, plus `.soc-solo-prompt*` and its dark re-states.
+- `@keyframes np-pulse` was deliberately **kept**: it is not part of the pill,
+  and `.soc-live-dot` (mode switch, room chip, jam header) still animates with
+  it. `app/tests/social-ui.test.mjs` asserts both halves of that.
+
+`app/tests/social-ui.test.mjs` has a `the removed artwork chrome stays removed`
+regression test: restoring any of this has to be a deliberate act, not a stray
+block pasted back in.
+
+## 6c. The Room QR is a real symbol (Rust)
+
+The QR surface used to draw a Material Symbols `qr_code_2` glyph. That is a
+*picture of* a QR code: nothing could scan it, and the markup carried a comment
+admitting it was "not scannable until the sidecar lands". Restored, but
+actually scannable.
+
+| Layer | File | Job |
+|---|---|---|
+| Encode | `app/src-tauri/src/qr.rs` | `qr_symbol` command. Byte mode, EC level **M**, versions 1-10. Returns `{ size, modules, version }`, flat row-major `0/1`. |
+| Draw | `app/src/qrview.js` | Rasterises the matrix onto the canvas at device resolution, with the spec's 4-module quiet zone and whole-pixel cell rounding. |
+| Wire | `app/src/social.js` | `paintQrSurface(code)` on open and on every `room_created`. |
+
+Why Rust owns the encoding: the symbol is derived from the sidecar's room code,
+and every other room fact already comes from Rust. Encoding in the same place
+means the invite cannot disagree with the code it encodes, and it puts the
+encoder under `cargo test` instead of leaving it to eyeball.
+
+Why not a JS or CDN library: the desktop frontend has no bundler
+(`app/tests/tailwind.test.mjs` asserts `index.html` links only `styles.css`),
+and the app is offline-first by design — `art.js` keeps `logo.png` local for
+exactly this reason. A CDN QR library would be both a supply-chain risk and a
+hard network dependency on a localhost-only feature.
+
+**Verification** — `cargo test --lib qr::`, 12 tests:
+- structural: square/binary matrix, three finder patterns, timing alternation,
+  the mandatory dark module, distinct payloads → distinct symbols
+- a room code fits **version 1** (21×21) at level M, which is the easiest
+  possible thing for a phone camera to focus on
+- **round trip**: the symbol is decoded back with `rqrr` (an independent
+  decoder, dev-dependency) and the payload compared — across versions 1-10 and
+  for a UTF-8 payload. This is the only check that proves a camera would scan
+  it; everything else is only evidence that it looks right.
+- oversized input **errors instead of truncating** — a truncated invite would
+  encode the wrong room silently.
+
+**Honest empty state.** With no room code there is nothing truthful to encode,
+so `#np-qr-empty` covers the plate and `#np-qr-note` says the code comes from
+the room server. Rendering a scannable-looking plate with nothing scannable
+inside it is the exact lie the glyph told. If encoding itself fails, the note
+reports the error rather than leaving a blank white plate.
+
+**No join URL is encoded.** Nothing in metroserver defines a
+`trancemusic://join/...` scheme, so the symbol carries the room code verbatim —
+exactly what a person could paste into "Add to room".
+
+`app/tests/social-ui.test.mjs` guards the wiring (IPC path, the `!code` branch,
+the empty state, no CDN) and `styles.css` carries every `.np-qr-*` class.
 
 ## 7. Constraints carried forward
 

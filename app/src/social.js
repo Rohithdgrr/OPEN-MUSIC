@@ -10,6 +10,7 @@ import { loadPlays } from "./home.js";
 import { loadFavs } from "./library.js";
 import { enqueue, queue } from "./queue.js";
 import { createSidecar, readPort, STATUS } from "./sidecar.js";
+import { paintQr } from "./qrview.js";
 import { step } from "./transport.js";
 import { entryTrack, vaultEntries } from "./vault.js";
 
@@ -24,7 +25,7 @@ let graceTimer = 0;
 
 // --------------------------------------------------------------- sidecar glue -
 // The connection itself lives in sidecar.js (DOM-free, unit-tested there);
-// this section only mirrors its state into the Jam pane, the QR overlay and
+// this section only mirrors its state into the Jam pane, the QR surface and
 // the header room chip. Nothing is enabled or shown before the server's own
 // frame has proved it (docs/sidecar.md §5).
 const ROOM_SLOTS = ["soc-room-code", "qr-room-code", "jam-room-id"];
@@ -64,6 +65,10 @@ function paintSidecarState(s) {
     copyInvite.title = haveCode ? "Copy the room code to the clipboard" : "Available once a room code exists";
   }
   if (copyQr) copyQr.disabled = !haveCode;
+
+  // The symbol encodes the room code, so it is re-painted whenever that code
+  // changes — including while the surface is open.
+  paintQrSurface(s.roomCode);
 
   if (cell) {
     cell.classList.remove("is-off", "is-ok");
@@ -231,12 +236,51 @@ function setMode(social) {
 }
 
 // ----------------------------------------------------------------- room QR -
+// The symbol is encoded by Rust (`qr_symbol` in src-tauri/src/qr.rs) and painted
+// by qrview.js. Until the sidecar issues a real code there is nothing honest to
+// encode, so the surface shows its empty state instead of a scannable-looking
+// plate with nothing scannable in it — the lie this surface used to tell with a
+// Material Symbols glyph.
+function paintQrSurface(code) {
+  const canvas = $("#qr-canvas");
+  const empty = $("#np-qr-empty");
+  const note = $("#np-qr-note");
+  if (!canvas) return;
+
+  if (!code) {
+    const ctx = canvas.getContext("2d");
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    empty?.classList.remove("hidden");
+    if (note) {
+      note.textContent =
+        "Start a room from the Jam tab — the local room server issues the code.";
+    }
+    return;
+  }
+
+  empty?.classList.add("hidden");
+  if (note) note.textContent = "Scan to join this room, or type the code into “Add to room”.";
+  paintQr(canvas, code).catch((e) => {
+    // Encoding failed: say so rather than leaving a blank white plate that
+    // looks like a broken scanner.
+    empty?.classList.remove("hidden");
+    if (note) note.textContent = `Could not encode the code: ${String(e).slice(0, 120)}`;
+    diag("room qr", false, String(e).slice(0, 160));
+  });
+}
+
 function closeQr() {
   $("#qr-overlay")?.classList.add("hidden");
 }
 
 function toggleQr() {
-  $("#qr-overlay")?.classList.toggle("hidden");
+  const overlay = $("#qr-overlay");
+  if (!overlay) return;
+  const opening = overlay.classList.contains("hidden");
+  overlay.classList.toggle("hidden");
+  // Repaint on open: the canvas is sized from layout, which is only known once
+  // the surface is displayed.
+  if (opening) paintQrSurface(paintedRoom);
 }
 
 // ---------------------------------------------------------------- reactions -
@@ -457,7 +501,6 @@ function addToRoom() {
 export function initSocial() {
   $("#btn-mode-social")?.addEventListener("click", () => setMode(true));
   $("#btn-mode-solo")?.addEventListener("click", () => setMode(false));
-  $("#btn-activate-social")?.addEventListener("click", () => setMode(true));
   $("#btn-leave-room")?.addEventListener("click", () => {
     setMode(false);
     toast("Left the room — back to Solo.", "info", 3000);

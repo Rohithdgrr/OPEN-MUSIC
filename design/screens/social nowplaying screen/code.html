@@ -1,0 +1,626 @@
+<!DOCTYPE html><html lang="en" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<meta content="web_standard" name="shell-type">
+<title>Sona • OPEN-MUSIC Now Playing</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+      main > :first-child { margin-top: 0 !important; }
+      main > :last-child { margin-bottom: 0 !important; }
+    }
+    ::-webkit-scrollbar { display: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .lyric-blur-mask {
+      mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 14%, black 86%, transparent 100%);
+    }
+    @keyframes pulseSoft {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(0.96); }
+    }
+    .status-pulse {
+      animation: pulseSoft 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    .custom-shadow {
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 8px 24px -4px rgba(24, 24, 27, 0.05);
+    }
+    .glass-surface {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            surface: "#f9f9fb",
+            "surface-dim": "#d9dadc",
+            "surface-bright": "#f9f9fb",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f3f3f5",
+            "surface-container": "#eeeef0",
+            "surface-container-high": "#e8e8ea",
+            "surface-container-highest": "#e2e2e4",
+            "on-surface": "#1a1c1d",
+            "on-surface-variant": "#47464b",
+            primary: "#18181b",
+            "on-primary": "#ffffff",
+            outline: "#77767b",
+            "outline-variant": "#c8c5cb"
+          },
+          fontFamily: {
+            sans: ["Geist", "system-ui", "-apple-system", "sans-serif"],
+            mono: ["JetBrains Mono", "monospace"]
+          }
+        }
+      }
+    };
+  </script>
+</head>
+<body class="bg-surface font-sans text-on-surface antialiased relative min-h-screen selection:bg-neutral-200 selection:text-neutral-900">
+<!-- Header Bar -->
+<header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface/85 backdrop-blur-xl border-b border-black/[0.06]"><div class="h-16 w-full max-w-[1240px] mx-auto px-6 sm:px-8 flex items-center justify-between gap-4"><div class="flex items-center gap-3 flex-shrink-0"><div class="w-7 h-7 rounded bg-primary flex items-center justify-center text-white shadow-sm"><span class="material-symbols-outlined text-[16px]">graphic_eq</span></div><div class="flex items-baseline gap-2"><span class="font-semibold text-[15px] tracking-tight text-on-surface select-none">TRANCE MUSIC</span><span class="font-mono text-[10px] text-on-surface-variant tracking-wider">CORE v2.4</span></div></div><div class="hidden md:flex items-center flex-1 max-w-xs mx-2"><div class="w-full flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-container/70 border border-black/[0.06] text-xs"><span class="material-symbols-outlined text-[15px] text-neutral-400">search</span><input class="w-full bg-transparent border-0 p-0 text-xs font-mono uppercase tracking-wider text-on-surface placeholder:text-neutral-400 focus:outline-none focus:ring-0" placeholder="HINDI SONGS, URIs..." type="text"></div></div><nav class="hidden lg:flex items-center p-1 rounded-full bg-surface-container/70 border border-black/[0.05] flex-shrink-0"><a class="px-3.5 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-on-surface transition-colors" href="#">Home</a><a class="px-3.5 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-on-surface transition-colors" href="#">Search</a><a class="px-3.5 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-on-surface transition-colors" href="#">Downloads</a><a aria-current="page" class="px-3.5 py-1.5 rounded-full text-[13px] font-semibold bg-white text-on-surface shadow-sm transition-all" href="#">Now Playing</a><a class="px-3.5 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-on-surface transition-colors" href="#">Library</a><a class="px-3.5 py-1.5 rounded-full text-[13px] font-medium text-on-surface-variant hover:text-on-surface transition-colors" href="#">History</a></nav><div class="flex items-center gap-3 flex-shrink-0"><div class="flex items-center p-1 bg-surface-container/70 border border-black/[0.06] rounded-full shadow-sm" id="listening-mode-toggle"><button class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-neutral-600 hover:text-neutral-900 transition-all" id="btn-mode-solo" type="button"><span class="material-symbols-outlined text-[15px]">headphones</span><span class="">Solo</span></button><button class="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm transition-all" id="btn-mode-social" type="button"><span class="material-symbols-outlined text-[15px]">sensors</span><span class="">Social</span><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 status-pulse"></span></button></div><div class="relative" id="nav-room-badge-wrap"><div class="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container-high border border-black/[0.06] text-[11px] font-mono font-medium text-neutral-700 shadow-sm"><span class="material-symbols-outlined text-[13px] text-emerald-600">group</span><span class="" id="room-mode-tag">#OM-904</span></div></div><div class="w-8 h-8 rounded-full border border-black/[0.08] bg-white flex items-center justify-center text-on-surface shadow-sm cursor-pointer" title="Profile (Alice)"><span class="font-mono text-xs font-semibold">AL</span></div></div></div></header>
+<!-- Main Layout -->
+<main class="relative z-10 w-full pt-16 min-h-[calc(100vh-64px)] pb-12 pb-24">
+<div class="w-full max-w-[1240px] mx-auto px-6 sm:px-8 flex flex-col gap-6 py-4">
+<!-- SOCIAL WORKFLOW STEP BANNER (Interactive Room Lifecycle Status) -->
+<!-- 2-COLUMN MAIN STAGE -->
+<div class="grid grid-cols-1 lg:grid-cols-12 items-start gap-6">
+<!-- LEFT COLUMN: Artwork, Playback Transport, Audio Telemetry, Live Fixed-Emoji Reactions -->
+<div class="lg:col-span-6 flex flex-col gap-3">
+<!-- Master Album Artwork Card -->
+<div class="relative group w-full aspect-square rounded-xl bg-surface-container overflow-hidden shadow-lg shadow-black/5 flex items-center justify-center border border-black/[0.06]"><img alt="Toxic Movie Soundtrack Artwork" class="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]" id="master-album-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw"><div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-white/10 pointer-events-none"></div><div class="absolute bottom-0 left-0 right-0 p-4 bg-black/60 backdrop-blur-md border-t border-white/10 flex flex-col gap-2.5 text-white z-10"><div class="flex items-center justify-between gap-3"><div class="flex flex-col min-w-0"><div class="flex items-center gap-2"><span class="font-mono text-[10px] tracking-wider uppercase text-neutral-300">TRACK 01 • STEREO DIRECT</span><span class="px-1.5 py-0.2 rounded bg-white/20 text-[10px] font-mono text-white">320kbps</span></div><h2 class="text-xl sm:text-2xl font-bold tracking-tight text-white truncate mt-0.5" id="artwork-track-title">Madhosh</h2><p class="text-xs text-neutral-300 font-medium truncate" id="artwork-track-artist">Tanishk Bagchi, Faheem Abdullah, Arslan Nizami</p></div><div class="flex items-center gap-1 flex-shrink-0"><button class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center justify-center" title="Favorite track" type="button"><span class="material-symbols-outlined text-[18px]">favorite</span></button><button class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center justify-center" title="Download offline" type="button"><span class="material-symbols-outlined text-[18px]">download</span></button><button class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center justify-center" title="Bookmark track" type="button"><span class="material-symbols-outlined text-[18px]">bookmark_border</span></button><button class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex items-center justify-center" title="Share track" type="button"><span class="material-symbols-outlined text-[18px]">ios_share</span></button></div></div><div class="flex items-center justify-between pt-2 border-t border-white/10 text-xs gap-3 flex-wrap"><div class="flex items-center gap-3 text-neutral-300 font-mono text-[11px]"><span class="truncate"><strong class="text-neutral-400 font-normal">ALBUM:</strong> Toxic OST</span><span class="truncate"><strong class="text-neutral-400 font-normal">LENGTH:</strong> 4:05</span></div><div class="flex items-center gap-3 ml-auto"><div class="flex items-center gap-1.5 font-mono text-[11px] text-neutral-300"><span class="material-symbols-outlined text-[14px] text-neutral-300">bedtime</span><select class="bg-transparent border-0 p-0 text-[11px] font-mono font-medium text-white focus:ring-0 cursor-pointer"><option class="text-neutral-900">Sleep: Off</option><option class="text-neutral-900">15 min</option><option class="text-neutral-900">30 min</option><option class="text-neutral-900">45 min</option><option class="text-neutral-900">60 min</option></select></div><span class="text-neutral-500">•</span><div class="flex items-center gap-1.5 font-mono text-[11px] text-neutral-300"><span class="material-symbols-outlined text-[14px] text-neutral-300">speed</span><select class="bg-transparent border-0 p-0 text-[11px] font-mono font-medium text-white focus:ring-0 cursor-pointer"><option class="text-neutral-900">1.0x</option><option class="text-neutral-900">0.75x</option><option class="text-neutral-900">1.25x</option><option class="text-neutral-900">1.5x</option></select></div></div></div></div><button class="absolute top-4 right-4 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 text-white text-xs font-mono transition-all shadow-md active:scale-95" id="btn-toggle-qr" type="button"><span class="material-symbols-outlined text-[16px]">qr_code_2</span><span class="">Room QR</span></button><div class="hidden absolute inset-0 z-10 bg-neutral-900/95 backdrop-blur-md p-6 flex flex-col items-center justify-between text-white text-center" id="album-qr-overlay"><div class="flex items-center justify-between w-full"><div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400 status-pulse"></span><span class="font-mono text-xs text-neutral-300 uppercase tracking-wider">Room QR Code</span></div><span class="font-mono text-xs px-2 py-0.5 rounded bg-white/10 text-neutral-300">4 Connected</span></div><div class="flex flex-col items-center gap-3 my-auto"><div class="p-3 bg-white rounded-xl shadow-lg"><svg class="w-40 h-40" fill="currentColor" viewBox="0 0 100 100"><path d="M0 0h32v32H0V0zm4 4v24h24V4H4zm4 4h16v16H8V8zm60-8h32v32H68V0zm4 4v24h24V4H72zm4 4h16v16H76V8zM0 68h32v32H0V68zm4 4v24h24V72H4zm4 4h16v16H8V76zm36-76h4v8h-4V0zm12 0h4v12h-4V0zm-8 12h8v4h-8v-4zm-4 8h8v4h-8v-4zm8 8h4v4h-4v-4zm-8 4h4v8h-4v-8zm16-12h4v8h-4v-8zm8 8h4v4h-4v-4zm0 8h8v4h-8v-4zm-28 8h4v8h-4v-8zm8 4h8v4h-8v-4zm12-4h8v8h-8v-8zm8 8h8v4h-8v-4zm-28 8h4v4h-4v-4zm8 0h4v8h-4v-8zm16 4h4v4h-4v-4zm-20 4h8v4h-8v-4zm16 4h8v4h-8v-4zm-12 4h4v8h-4v-8zm16 0h8v8h-8v-8z" fill="#000"></path></svg></div><div class="flex flex-col items-center gap-0.5"><span class="font-mono text-lg font-bold tracking-wider text-white">#OM-904</span><span class="font-mono text-xs text-neutral-400">Room PIN: <strong class="text-neutral-200 font-semibold">904-712</strong></span></div></div><div class="w-full flex items-center justify-center gap-2"><button class="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-white text-neutral-900 font-mono text-xs font-semibold hover:bg-neutral-100 transition-all" id="btn-qr-copy-link" type="button"><span class="material-symbols-outlined text-[16px]">link</span><span id="qr-copy-link-text" class="">Copy Invite Link</span></button><button class="p-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all" id="btn-close-qr-overlay" type="button"><span class="material-symbols-outlined text-[18px]">close</span></button></div></div></div>
+<!-- FEATURE 3: FIXED-SET TRACK REACTIONS BAR (as specified in OPEN-MUSIC plan: 🔥 ❤️ 👏 😮 🎵 😭) -->
+
+<!-- Transport & Playback Scrubber Card -->
+<div class="bg-surface-container-lowest rounded-xl custom-shadow border border-black/[0.06] flex flex-col gap-4 p-4">
+<!-- Timeline Scrubber -->
+<div class="flex flex-col gap-1.5">
+<div class="relative w-full h-2 bg-surface-container rounded-full cursor-pointer flex items-center group select-none" id="timeline-bar">
+<div class="absolute left-0 top-0 bottom-0 w-[78%] bg-surface-container-high rounded-full pointer-events-none"></div>
+<div class="absolute left-0 top-0 bottom-0 w-[42%] bg-primary rounded-full transition-all duration-75 pointer-events-none" id="progress-bar" style="width: 20.8163%;"></div>
+<div class="absolute left-[42%] w-3.5 h-3.5 bg-primary rounded-full shadow-md -translate-x-1/2 scale-90 group-hover:scale-125 transition-transform pointer-events-none" id="progress-thumb" style="left: 20.8163%;"></div>
+</div>
+<div class="flex justify-between items-center text-on-surface-variant font-mono text-xs">
+<span class="font-medium text-on-surface" id="track-current">00:51</span>
+<span class="text-neutral-400 text-[11px] hidden sm:inline">DEMOCRATIC SYNC CLOCK • 5s DRIFT CHECK</span>
+<span class="" id="track-total">04:05</span>
+</div>
+</div>
+<!-- Transport Controls with Jam Democratic Skip Vote -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2">
+<button class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="btn-shuffle" title="CRDT Shuffle Event">
+<span class="material-symbols-outlined text-[18px]">shuffle</span>
+</button>
+<button class="w-8 h-8 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="btn-repeat" title="Repeat Mode">
+<span class="material-symbols-outlined text-[18px]">repeat</span>
+</button>
+</div>
+<!-- Center Transport Actions -->
+<div class="flex items-center gap-3">
+<button class="w-9 h-9 rounded-lg hover:bg-surface-container text-on-surface transition-colors flex items-center justify-center active:scale-95" id="btn-prev" title="Previous Song">
+<span class="material-symbols-outlined text-[20px]">skip_previous</span>
+</button>
+<!-- Master Play/Pause with Democratic Grace Period -->
+<button class="w-12 h-12 rounded-full bg-primary text-on-primary shadow-md flex items-center justify-center transition-all hover:scale-105 active:scale-90" id="master-play-btn" title="Play/Pause (Space)">
+<span class="material-symbols-outlined text-[26px]" id="master-play-icon">pause</span>
+</button>
+<!-- Democratic Skip Button -->
+<button class="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors active:scale-95 text-xs font-mono font-medium" id="btn-next-vote" title="Skip Track"><span class="material-symbols-outlined text-[18px]">skip_next</span><span class="" id="vote-skip-btn-text">Skip (2/4)</span></button>
+</div>
+<!-- Volume Slider Block -->
+<div class="flex items-center gap-2">
+<button class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="vol-mute-btn" title="Mute Volume">
+<span class="material-symbols-outlined text-[19px]" id="vol-icon">volume_up</span>
+</button>
+<div class="w-20 h-1.5 bg-surface-container rounded-full overflow-hidden flex items-center cursor-pointer relative" id="volume-track">
+<div class="w-[80%] h-full bg-primary rounded-full transition-all duration-75" id="volume-fill"></div>
+</div>
+<span class="font-mono text-[10px] text-neutral-500 w-7 text-right" id="vol-val-tooltip">80%</span>
+</div>
+</div>
+</div>
+<!-- DSP & Latency Quick Strip -->
+</div>
+<!-- RIGHT COLUMN: Workflow Tabs (Queue / Chat / SongDNA / Lyrics) -->
+<div class="lg:col-span-6 flex flex-col gap-3">
+<!-- TAB SWITCHER: 4 Unified Feature Panes -->
+<div class="bg-surface-container-lowest rounded-xl p-1.5 custom-shadow border border-black/[0.06] flex items-center justify-between">
+<div class="flex items-center gap-1 w-full" id="workflow-tabs">
+<button class="workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-primary text-white shadow-sm flex items-center justify-center gap-1.5 transition-all" data-tab="queue">
+<span class="material-symbols-outlined text-[15px]">queue_music</span>
+<span class="">Collab Queue</span>
+<span class="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-mono">4</span>
+</button>
+<button class="workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-surface-container transition-all flex items-center justify-center gap-1.5" data-tab="chat">
+<span class="material-symbols-outlined text-[15px]">forum</span>
+<span class="">Live Chat</span>
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+</button>
+<button class="workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-surface-container transition-all flex items-center justify-center gap-1.5" data-tab="lyrics">
+<span class="material-symbols-outlined text-[15px]">subtitles</span>
+<span class="">Lyrics</span>
+</button>
+<button class="workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-surface-container transition-all flex items-center justify-center gap-1.5" data-tab="jamstatus"><span class="material-symbols-outlined text-[15px] text-emerald-500">sensors</span><span class="">Jam Active</span><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span></button></div>
+</div>
+<!-- PANE 1: COLLABORATIVE PLAYLIST & QUEUE (CRDT Event Log & Drag/Drop Mechanics) -->
+<section class="tab-pane flex flex-col gap-4 bg-surface-container-lowest rounded-xl p-5 custom-shadow border border-black/[0.06]" id="pane-queue">
+<!-- Queue Top Controls -->
+<div class="flex items-center justify-between pb-3 border-b border-black/[0.04]">
+<div class="flex items-center gap-2">
+<span class="font-mono text-xs uppercase font-semibold tracking-wider text-on-surface">CRDT EVENT-SOURCED QUEUE</span>
+<span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200" id="queue-lock-badge">OPEN TO GUESTS</span>
+</div>
+<!-- Queue Actions -->
+<div class="flex items-center gap-2">
+<!-- Undo Last CRDT action -->
+<button class="px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high transition-colors text-xs font-mono text-neutral-700 flex items-center gap-1" id="btn-undo-crdt" title="Undo last action from event log">
+<span class="material-symbols-outlined text-[14px]">undo</span>
+<span class="">Undo</span>
+</button>
+<!-- Host Lock Queue Switch -->
+<button class="px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high transition-colors text-xs font-mono text-neutral-700 flex items-center gap-1" id="btn-lock-queue" title="Lock queue (Host only)">
+<span class="material-symbols-outlined text-[14px]" id="lock-icon">lock_open</span>
+<span class="" id="lock-label">Lock</span>
+</button>
+</div>
+</div>
+<!-- Queue List with "Added by" tags and Reordering Handles -->
+<div class="flex flex-col gap-2" id="queue-container">
+<!-- Track 1 (Current Active) -->
+<div class="queue-item p-3 rounded-xl bg-surface-container-low border border-black/[0.04] flex items-center justify-between">
+<div class="flex items-center gap-3 min-w-0">
+<span class="font-mono text-xs font-bold text-neutral-800 w-4">01</span>
+<div class="w-10 h-10 rounded bg-neutral-200 overflow-hidden flex-shrink-0">
+<img alt="Madhosh" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw">
+</div>
+<div class="flex flex-col min-w-0">
+<div class="flex items-center gap-2">
+<span class="text-xs font-semibold text-neutral-900 truncate">Madhosh</span>
+<span class="px-1.5 py-0.2 rounded-full bg-neutral-900 text-white text-[9px] font-mono">NOW PLAYING</span>
+</div>
+<span class="text-[11px] text-neutral-500 truncate">Tanishk Bagchi • Toxic</span>
+<span class="text-[10px] font-mono text-neutral-400 mt-0.5">Added by Host (Alice)</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="font-mono text-xs text-neutral-500">04:05</span>
+</div>
+</div>
+<!-- Track 2 (Guest Bob added) -->
+<div class="queue-item group p-3 rounded-xl bg-white hover:bg-surface-container-low/60 border border-black/[0.04] flex items-center justify-between transition-all">
+<div class="flex items-center gap-3 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-700 cursor-grab" title="Drag to reorder (CRDT event)">drag_indicator</span>
+<div class="w-10 h-10 rounded bg-neutral-200 overflow-hidden flex-shrink-0">
+<img alt="Neon Horizons" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBQ5BnA0rDVKwQRhHtmz9SyHBU5I_37Q6knxzJ0ropy2HMBCSEmrZGz9_daonA7bMbC1VWAWXRAHjLMkPVsfwgUYrBzOrjyD_7cBMCDEbBxp5L0NJrlhUeMz_rBxQGxN_jhVKWuXAB6_vdvXOqzI6_N_I1qWhEe_W7bQKdLVOj90a6yAOtL3i7xN3SoKi172KAi_KkB0uLj4W2cPmOZmbM_ijmi3w3hfik_GhiqmVu7dSK0yO5H7QHBtg">
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-xs font-semibold text-neutral-900 truncate">Neon Horizons</span>
+<span class="text-[11px] text-neutral-500 truncate">Aura Sound • Monolith Suite</span>
+<span class="text-[10px] font-mono text-neutral-500 mt-0.5">Added by <strong>Bob</strong> (1m ago)</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="queue-remove-btn opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-200 text-neutral-500 text-xs transition-opacity" title="Remove track">✕</button>
+<span class="font-mono text-xs text-neutral-500">05:14</span>
+</div>
+</div>
+<!-- Track 3 (Guest Charlie added) -->
+<div class="queue-item group p-3 rounded-xl bg-white hover:bg-surface-container-low/60 border border-black/[0.04] flex items-center justify-between transition-all">
+<div class="flex items-center gap-3 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-700 cursor-grab" title="Drag to reorder (CRDT event)">drag_indicator</span>
+<div class="w-10 h-10 rounded bg-neutral-200 overflow-hidden flex-shrink-0">
+<img alt="Subtle Echoes" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAZv5Rb-ENTYcGsxdrv5ZqNwURHuU6FfdKfRkGqi2qPalltoW5vaa3o0hrb0KbRawY3tBdf_br98d8Tg9XTqV7fEpMYAeo5W8RduQ15mldx4yAYyJFNC6-8nJWz3IBCc9cu_9wCrG96wWKRJAML313C17iy5AVRdtM_Lf9QYICFpI4_blUpOxr56U6FMcvc1qCWgYSVWspR_tf0UozcGuB7Ys84SDztYfv2An2TJIVr2ob5bGv_NLqSaA">
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-xs font-semibold text-neutral-900 truncate">Subtle Echoes</span>
+<span class="text-[11px] text-neutral-500 truncate">Mirage • Resonant Architectures</span>
+<span class="text-[10px] font-mono text-neutral-500 mt-0.5">Added by <strong>Charlie</strong> (3m ago)</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="queue-remove-btn opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-200 text-neutral-500 text-xs transition-opacity" title="Remove track">✕</button>
+<span class="font-mono text-xs text-neutral-500">03:52</span>
+</div>
+</div>
+<!-- Track 4 (Guest Dev added) -->
+<div class="queue-item group p-3 rounded-xl bg-white hover:bg-surface-container-low/60 border border-black/[0.04] flex items-center justify-between transition-all">
+<div class="flex items-center gap-3 min-w-0">
+<span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-700 cursor-grab" title="Drag to reorder (CRDT event)">drag_indicator</span>
+<div class="w-10 h-10 rounded bg-neutral-200 overflow-hidden flex-shrink-0">
+<img alt="Crystalline Dispersion" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw">
+</div>
+<div class="flex flex-col min-w-0">
+<span class="text-xs font-semibold text-neutral-900 truncate">Crystalline Dispersion</span>
+<span class="text-[11px] text-neutral-500 truncate">Kaelen • Analog Archive</span>
+<span class="text-[10px] font-mono text-neutral-500 mt-0.5">Added by <strong>Dev</strong> (4m ago)</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="queue-remove-btn opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-200 text-neutral-500 text-xs transition-opacity" title="Remove track">✕</button>
+<span class="font-mono text-xs text-neutral-500">04:47</span>
+</div>
+</div>
+</div>
+<!-- Queue Footer: Add Song to Collaborative Queue -->
+<div class="flex items-center gap-2 pt-2 border-t border-black/[0.04]">
+<input class="flex-1 bg-surface-container-low border border-black/[0.08] rounded-lg px-3 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary placeholder:text-neutral-400 font-sans" id="input-add-song" placeholder="Search track or paste URI to append to room queue..." type="text">
+<button class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-neutral-800 transition-colors flex items-center gap-1" id="btn-submit-song">
+<span class="material-symbols-outlined text-[14px]">add</span>
+<span class="">Append</span>
+</button>
+</div>
+</section>
+<!-- PANE 2: REAL-TIME ROOM CHAT (Ring Buffer, 50 Max, Rate-limited 10/10s, No DB) -->
+<section class="tab-pane hidden flex-col gap-3 bg-surface-container-lowest rounded-xl p-5 custom-shadow border border-black/[0.06]" id="pane-chat"><div class="flex items-center justify-between pb-2 border-b border-black/[0.04]"><div class="flex items-center gap-2"><span class="font-mono text-xs uppercase font-semibold text-neutral-900">ROOM LIVE CHAT</span><span class="text-[10px] font-mono px-2 py-0.5 rounded bg-surface-container text-neutral-600">4 online</span></div><div class="flex items-center gap-3"><span class="text-[11px] font-mono text-emerald-600 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 status-pulse"></span>Sync: Live</span><span class="text-[10px] font-mono text-neutral-400">50 msgs limit</span></div></div><div class="flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar py-2" id="chat-messages-container"><div class="flex items-start gap-2.5"><div class="w-7 h-7 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center flex-shrink-0 shadow-sm">AL</div><div class="flex flex-col bg-surface-container-low p-2.5 rounded-lg max-w-[85%] border border-black/[0.03]"><div class="flex items-center justify-between gap-3 text-[10px] font-mono"><div class="flex items-center gap-1.5"><span class="font-semibold text-neutral-900">Alice</span><span class="px-1 rounded bg-neutral-900 text-white text-[9px]">HOST</span></div><span class="text-neutral-400">2m ago</span></div><p class="text-xs text-neutral-900 mt-1">Welcome everyone to the session! Audio is streaming FLAC direct from metroserver.</p><div class="flex items-center gap-1.5 mt-2"><span class="px-1.5 py-0.5 rounded-full bg-white border border-black/[0.06] text-[10px] font-mono text-neutral-700 flex items-center gap-1 cursor-pointer hover:bg-neutral-50">🔥 3</span><span class="px-1.5 py-0.5 rounded-full bg-white border border-black/[0.06] text-[10px] font-mono text-neutral-700 flex items-center gap-1 cursor-pointer hover:bg-neutral-50">❤️ 2</span></div></div></div><div class="flex items-start gap-2.5"><div class="w-7 h-7 rounded-full bg-neutral-600 text-white font-mono text-[10px] flex items-center justify-center flex-shrink-0 shadow-sm">BO</div><div class="flex flex-col bg-surface-container-low p-2.5 rounded-lg max-w-[85%] border border-black/[0.03]"><div class="flex items-center justify-between gap-3 text-[10px] font-mono"><div class="flex items-center gap-1.5"><span class="font-semibold text-neutral-800">Bob</span><span class="px-1 rounded bg-surface-container text-neutral-600 text-[9px]">GUEST</span></div><span class="text-neutral-400">1m ago</span></div><div class="mt-1"><span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-surface-container text-[10px] font-mono text-neutral-700 cursor-pointer hover:bg-neutral-200 mr-1"><span class="material-symbols-outlined text-[11px]">play_circle</span>01:42</span><span class="text-xs text-neutral-900">This drop is incredible! Added Neon Horizons next.</span></div><div class="flex items-center gap-1.5 mt-2"><span class="px-1.5 py-0.5 rounded-full bg-white border border-black/[0.06] text-[10px] font-mono text-neutral-700 flex items-center gap-1 cursor-pointer hover:bg-neutral-50">👏 1</span></div></div></div><div class="flex items-start gap-2.5"><div class="w-7 h-7 rounded-full bg-neutral-400 text-white font-mono text-[10px] flex items-center justify-center flex-shrink-0 shadow-sm">CH</div><div class="flex flex-col bg-surface-container-low p-2.5 rounded-lg max-w-[85%] border border-black/[0.03]"><div class="flex items-center justify-between gap-3 text-[10px] font-mono"><div class="flex items-center gap-1.5"><span class="font-semibold text-neutral-800">Charlie</span><span class="px-1 rounded bg-surface-container text-neutral-600 text-[9px]">GUEST</span></div><span class="text-neutral-400">Just now</span></div><p class="text-xs text-neutral-900 mt-1">Vocal reverb sounds ultra wide in stereo direct mode.</p></div></div></div><div class="flex items-center justify-between pt-1 border-t border-black/[0.04]"><div class="flex items-center gap-1" id="chat-quick-emojis"><span class="text-[10px] font-mono text-neutral-400 mr-1">React:</span><button class="chat-emoji-btn p-1 rounded hover:bg-surface-container text-xs transition-transform active:scale-125" type="button">🔥</button><button class="chat-emoji-btn p-1 rounded hover:bg-surface-container text-xs transition-transform active:scale-125" type="button">❤️</button><button class="chat-emoji-btn p-1 rounded hover:bg-surface-container text-xs transition-transform active:scale-125" type="button">👏</button><button class="chat-emoji-btn p-1 rounded hover:bg-surface-container text-xs transition-transform active:scale-125" type="button">😮</button><button class="chat-emoji-btn p-1 rounded hover:bg-surface-container text-xs transition-transform active:scale-125" type="button">🎵</button><button class="chat-emoji-btn p-1 rounded hover:bg-surface-container text-xs transition-transform active:scale-125" type="button">😭</button></div><div class="text-[10px] font-mono text-neutral-400 flex items-center gap-1" id="chat-typing-indicator"><span class="">Dev is typing...</span></div></div><div class="flex items-center gap-2 pt-1"><button class="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors font-mono text-[10px] text-neutral-700 flex items-center gap-1 flex-shrink-0" id="btn-quote-time" title="Quote current timestamp" type="button"><span class="material-symbols-outlined text-[13px]">schedule</span><span class="">@01:42</span></button><input class="flex-1 bg-surface-container-low border border-black/[0.08] rounded-lg px-3 py-1.5 text-xs text-on-surface focus:outline-none focus:border-primary placeholder:text-neutral-400 font-sans" id="chat-input" placeholder="Chat with 4 room members..." type="text"><button class="px-3.5 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-neutral-800 transition-colors flex items-center gap-1 flex-shrink-0 active:scale-95" id="btn-chat-send"><span class="material-symbols-outlined text-[14px]">send</span><span class="">Send</span></button></div></section>
+<!-- PANE 3: SongDNA (Credits, Samples & Covers Explorer with 7-Day redb Cache) -->
+<!-- PANE 4: SYNCHRONIZED REAL-TIME LYRICS (Auto-scroll & Timecode sync) -->
+<section class="tab-pane hidden flex-col gap-4 bg-surface-container-lowest rounded-xl p-5 custom-shadow border border-black/[0.06]" id="pane-lyrics">
+<div class="flex items-center justify-between pb-3 border-b border-black/[0.04]">
+<div class="flex items-center gap-2">
+<span class="font-mono text-xs uppercase font-semibold text-neutral-900">SYNCHRONIZED SCORE</span>
+<span class="px-2 py-0.5 rounded-full bg-neutral-900 text-white font-mono text-[10px]">LIVE</span>
+</div>
+<button class="px-2.5 py-1 rounded-full bg-surface-container hover:bg-neutral-200 text-[11px] font-mono text-neutral-700 transition-colors flex items-center gap-1.5" id="btn-toggle-autoscroll">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+<span class="" id="autoscroll-label">Auto-Scroll: ON</span>
+</button>
+</div>
+<!-- Scrollable Lyrics Container -->
+<div class="lyrics-container lyric-blur-mask relative max-h-[280px] overflow-y-auto pr-1 flex flex-col gap-3 scroll-smooth py-3" id="lyrics-scroll-box">
+<div class="lyric-line p-2 rounded-lg text-neutral-400 hover:bg-surface-container-low cursor-pointer transition-colors" data-sec="18">
+<span class="font-mono text-[11px] text-neutral-400 mr-2">[00:18]</span>
+<span class="text-sm">Dil yeh madhosh hai tere khumaar mein...</span>
+</div>
+<div class="lyric-line p-2 rounded-lg text-neutral-400 hover:bg-surface-container-low cursor-pointer transition-colors" data-sec="42">
+<span class="font-mono text-[11px] text-neutral-400 mr-2">[00:42]</span>
+<span class="text-sm">Raahein takti hain nigaahein intezaar mein...</span>
+</div>
+<div class="lyric-line p-2.5 rounded-xl bg-surface-container-low border border-black/[0.04] text-neutral-900 font-semibold cursor-pointer active-line" data-sec="102">
+<span class="font-mono text-[11px] text-neutral-900 mr-2">[01:42]</span>
+<span class="text-base text-neutral-900">Yeh hawaayein gungunayein bas tere tarane...</span>
+</div>
+<div class="lyric-line p-2 rounded-lg text-neutral-400 hover:bg-surface-container-low cursor-pointer transition-colors" data-sec="148">
+<span class="font-mono text-[11px] text-neutral-400 mr-2">[02:28]</span>
+<span class="text-sm">Aa ke mil ja tu mujhe is bahaar mein...</span>
+</div>
+<div class="lyric-line p-2 rounded-lg text-neutral-400 hover:bg-surface-container-low cursor-pointer transition-colors" data-sec="195">
+<span class="font-mono text-[11px] text-neutral-400 mr-2">[03:15]</span>
+<span class="text-sm">Silsila yeh na tute kabhi ab kisi morh pe...</span>
+</div>
+</div>
+<div class="flex items-center justify-between text-[11px] font-mono text-neutral-500 pt-1 border-t border-black/[0.04]">
+<span class="">TIMECODE 01:42 / 04:05</span>
+<span class="">Click line to seek (Host / Democratic)</span>
+</div>
+</section>
+<section class="tab-pane hidden flex-col gap-4 bg-surface-container-lowest rounded-xl p-5 custom-shadow border border-black/[0.06]" id="pane-jamstatus"><div class="flex items-center justify-between pb-3 border-b border-black/[0.04]"><div class="flex items-center gap-2"><span class="font-mono text-xs uppercase font-semibold text-neutral-900">JAM SESSION CONTROL</span><span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 status-pulse"></span>HOSTED BY ALICE</span></div><span class="font-mono text-xs text-neutral-500">#OM-904</span></div><div class="flex flex-col gap-4 max-h-[360px] overflow-y-auto pr-1 no-scrollbar"><div class="flex flex-col gap-2"><span class="font-mono text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Listening &amp; Sync Control</span><div class="grid grid-cols-2 gap-2 text-xs"><div class="p-2.5 rounded-lg bg-surface-container-low border border-black/[0.04] flex flex-col gap-1"><div class="flex items-center justify-between"><span class="font-mono text-[11px] text-neutral-600">Session Mode</span><span class="font-mono text-[10px] px-1.5 py-0.2 rounded bg-primary text-white">Democratic</span></div><span class="text-[11px] text-neutral-500">Listeners vote to skip / reorder</span></div><div class="p-2.5 rounded-lg bg-surface-container-low border border-black/[0.04] flex flex-col gap-1"><div class="flex items-center justify-between"><span class="font-mono text-[11px] text-neutral-600">Sync Tolerance</span><span class="font-mono text-[10px] text-emerald-600 font-semibold">±50ms</span></div><span class="text-[11px] text-neutral-500">Active clock drift compensation</span></div></div><div class="p-2.5 rounded-lg bg-surface-container-low border border-black/[0.04] flex items-center justify-between"><div class="flex flex-col"><span class="text-xs font-medium text-neutral-900">Auto-Level Volume</span><span class="text-[10px] font-mono text-neutral-500">Normalize LUFS across guest queues</span></div><span class="material-symbols-outlined text-[18px] text-emerald-600">toggle_on</span></div></div><div class="flex flex-col gap-2"><span class="font-mono text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Songs &amp; Queue Rules</span><div class="flex flex-col gap-2 text-xs"><div class="p-2.5 rounded-lg bg-surface-container-low border border-black/[0.04] flex items-center justify-between"><div class="flex flex-col"><span class="text-xs font-medium text-neutral-900">Who Can Add Songs</span><span class="text-[10px] font-mono text-neutral-500">Current permission setting</span></div><select class="bg-white border border-black/[0.08] rounded px-2 py-1 text-[11px] font-mono text-neutral-800 focus:ring-0 cursor-pointer"><option>All Listeners</option><option>Host Only</option><option>Requires Approval</option></select></div><div class="p-2.5 rounded-lg bg-surface-container-low border border-black/[0.04] flex items-center justify-between"><div class="flex flex-col"><span class="text-xs font-medium text-neutral-900">Democratic Vote-Skip Threshold</span><span class="text-[10px] font-mono text-neutral-500">Required majority: 50% (2 of 4)</span></div><span class="px-2 py-0.5 rounded font-mono text-[11px] bg-white border border-black/[0.08] text-neutral-700">50%</span></div><div class="p-2.5 rounded-lg bg-surface-container-low border border-black/[0.04] flex items-center justify-between"><div class="flex flex-col"><span class="text-xs font-medium text-neutral-900">Duplicate Protection</span><span class="text-[10px] font-mono text-neutral-500">Block duplicate tracks within 60 mins</span></div><span class="material-symbols-outlined text-[18px] text-emerald-600">toggle_on</span></div></div></div><div class="flex flex-col gap-2"><div class="flex items-center justify-between"><span class="font-mono text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">Active Listeners (4)</span><span class="font-mono text-[10px] text-emerald-600">&lt;18ms ping</span></div><div class="flex flex-col gap-1.5"><div class="p-2 rounded-lg bg-surface-container-low flex items-center justify-between text-xs"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center">AL</div><div class="flex flex-col"><span class="font-medium text-neutral-900 leading-tight">Alice (You)</span><span class="text-[10px] font-mono text-neutral-400">MacBook Pro • Exclusive Audio</span></div></div><div class="flex items-center gap-2"><span class="px-1.5 py-0.2 rounded bg-neutral-900 text-white font-mono text-[9px]">HOST</span><span class="font-mono text-[10px] text-emerald-600">0ms</span></div></div><div class="p-2 rounded-lg bg-surface-container-low flex items-center justify-between text-xs"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-neutral-600 text-white font-mono text-[10px] flex items-center justify-center">BO</div><div class="flex flex-col"><span class="font-medium text-neutral-900 leading-tight">Bob</span><span class="text-[10px] font-mono text-neutral-400">Tokyo Node • In-sync</span></div></div><div class="flex items-center gap-2"><span class="font-mono text-[10px] text-emerald-600">14ms</span><button class="p-1 rounded hover:bg-neutral-200 text-neutral-500" title="Mute user" type="button"><span class="material-symbols-outlined text-[13px]">volume_off</span></button></div></div><div class="p-2 rounded-lg bg-surface-container-low flex items-center justify-between text-xs"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-neutral-400 text-white font-mono text-[10px] flex items-center justify-center">CH</div><div class="flex flex-col"><span class="font-medium text-neutral-900 leading-tight">Charlie</span><span class="text-[10px] font-mono text-neutral-400">London Node • In-sync</span></div></div><div class="flex items-center gap-2"><span class="font-mono text-[10px] text-emerald-600">22ms</span><button class="p-1 rounded hover:bg-neutral-200 text-neutral-500" title="Mute user" type="button"><span class="material-symbols-outlined text-[13px]">volume_off</span></button></div></div><div class="p-2 rounded-lg bg-surface-container-low flex items-center justify-between text-xs"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-neutral-500 text-white font-mono text-[10px] flex items-center justify-center">DE</div><div class="flex flex-col"><span class="font-medium text-neutral-900 leading-tight">Dev</span><span class="text-[10px] font-mono text-neutral-400">Mumbai Node • In-sync</span></div></div><div class="flex items-center gap-2"><span class="font-mono text-[10px] text-emerald-600">18ms</span><button class="p-1 rounded hover:bg-neutral-200 text-neutral-500" title="Mute user" type="button"><span class="material-symbols-outlined text-[13px]">volume_off</span></button></div></div></div></div></div><div class="flex items-center justify-between pt-3 border-t border-black/[0.04] gap-2 flex-wrap"><div class="flex items-center gap-2"><button class="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors font-mono text-xs text-neutral-800 flex items-center gap-1.5 active:scale-95" id="btn-lock-session" type="button"><span class="material-symbols-outlined text-[15px]">lock_open</span><span class="">Lock Room</span></button><button class="px-2.5 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high transition-colors font-mono text-xs text-neutral-800 flex items-center gap-1.5 active:scale-95" id="btn-copy-jam-link" type="button"><span class="material-symbols-outlined text-[15px]">share</span><span class="">Invite Link</span></button></div><button class="px-3 py-1.5 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 transition-colors font-mono text-xs font-medium flex items-center gap-1.5 active:scale-95" id="btn-end-session" type="button"><span class="material-symbols-outlined text-[15px] text-red-400">stop_circle</span><span class="">End Session</span></button></div></section><div class="hidden flex-col gap-6" id="solo-right-panel"><div class="bg-surface-container-lowest rounded-xl p-5 custom-shadow border border-black/[0.06] flex flex-col gap-4"><div class="flex items-center justify-between pb-3 border-b border-black/[0.04]"><div class="flex items-center gap-2"><span class="font-mono text-xs uppercase font-semibold text-neutral-900">SYNCHRONIZED SCORE</span><span class="px-2 py-0.5 rounded-full bg-neutral-900 text-white font-mono text-[10px]">PERSONAL</span></div><span class="text-[11px] font-mono text-neutral-500">Solo Audio Engine</span></div><div class="relative max-h-[360px] overflow-y-auto pr-1 flex flex-col gap-3.5 scroll-smooth py-2 lyric-blur-mask"><div class="p-2 text-neutral-400 text-sm"><span class="font-mono text-[11px] mr-2">[00:18]</span>Dil yeh madhosh hai tere khumaar mein...</div><div class="p-2 text-neutral-400 text-sm"><span class="font-mono text-[11px] mr-2">[00:42]</span>Raahein takti hain nigaahein intezaar mein...</div><div class="p-3 rounded-xl bg-surface-container-low border border-black/[0.04] text-neutral-900 font-semibold"><span class="font-mono text-[11px] mr-2">[01:42]</span>Yeh hawaayein gungunayein bas tere tarane...</div><div class="p-2 text-neutral-400 text-sm"><span class="font-mono text-[11px] mr-2">[02:28]</span>Aa ke mil ja tu mujhe is bahaar mein...</div><div class="p-2 text-neutral-400 text-sm"><span class="font-mono text-[11px] mr-2">[03:15]</span>Silsila yeh na tute kabhi ab kisi morh pe...</div></div></div><div class="bg-surface-container-lowest rounded-xl p-5 custom-shadow border border-black/[0.06] flex flex-col gap-3"><span class="font-mono text-xs uppercase font-semibold text-neutral-900">AUDIO STREAM TELEMETRY</span><div class="grid grid-cols-2 gap-3 text-xs"><div class="p-3 rounded-lg bg-surface-container-low flex flex-col gap-1"><span class="text-neutral-400 font-mono text-[10px]">CODEC</span><span class="font-semibold font-mono text-neutral-800">FLAC 24-bit/96kHz</span></div><div class="p-3 rounded-lg bg-surface-container-low flex flex-col gap-1"><span class="text-neutral-400 font-mono text-[10px]">OUTPUT</span><span class="font-semibold font-mono text-neutral-800">Direct Sound (Exclusive)</span></div></div></div></div></div>
+</div>
+</div>
+</main>
+<!-- Clean Minimal Scandinavian Footer -->
+<div class="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl border-t border-black/[0.08] shadow-lg"><div class="max-w-[1240px] mx-auto px-6 sm:px-8 py-3 flex items-center justify-between gap-6"><div class="flex items-center gap-3 w-1/4 min-w-[200px]"><div class="w-10 h-10 rounded-lg overflow-hidden bg-neutral-200 flex-shrink-0 shadow-sm"><img alt="Madhosh" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwae33v4NL3eU-uM3IdGajN2scgCXaXI7pJsRKC_eSruYoPh9IUdgmaYIi4jLRtD93GBkc0iQG7qRYQ1AiSX_LY_RuB9Jff4v7_wmzHNdOoKOEosUagGdwr2nJmIlAIUTul8XUltIMV8tV2NKwvC9XeVVXL7mcBi8Eq1s4ey4efvEQ8KmdQXT-i1cVY5aqqfWtyoo3zDr6AsjEeTKBXjA8TT79BIwF-58LrHS8lQ82DZijY7DLjMpLaw"></div><div class="flex flex-col min-w-0"><div class="flex items-center gap-2"><span class="text-xs font-bold text-neutral-900 truncate">Madhosh</span><span class="px-1 py-0.2 rounded bg-neutral-100 text-[9px] font-mono text-neutral-600">SYNC</span></div><span class="text-[11px] text-neutral-500 truncate">Tanishk Bagchi, Faheem Abdullah...</span></div></div><div class="flex flex-col items-center gap-1.5 flex-1 max-w-xl"><div class="flex items-center gap-4"><button class="text-neutral-500 hover:text-neutral-900 transition-colors"><span class="material-symbols-outlined text-[18px]">shuffle</span></button><button class="text-neutral-700 hover:text-neutral-900 transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px]">skip_previous</span></button><button class="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center hover:scale-105 active:scale-90 transition-all shadow-sm"><span class="material-symbols-outlined text-[20px]">pause</span></button><button class="text-neutral-700 hover:text-neutral-900 transition-colors active:scale-95"><span class="material-symbols-outlined text-[20px]">skip_next</span></button><button class="text-neutral-500 hover:text-neutral-900 transition-colors"><span class="material-symbols-outlined text-[18px]">repeat</span></button></div><div class="w-full flex items-center gap-3 text-xs font-mono text-neutral-500"><span class="text-[11px]">01:42</span><div class="relative flex-1 h-1.5 bg-neutral-200 rounded-full cursor-pointer overflow-hidden"><div class="absolute left-0 top-0 bottom-0 w-[42%] bg-neutral-900 rounded-full"></div></div><span class="text-[11px]">04:05</span></div></div><div class="flex items-center justify-end gap-4 w-1/4 min-w-[200px]"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[18px] text-neutral-600">volume_up</span><div class="w-16 h-1.5 bg-neutral-200 rounded-full overflow-hidden"><div class="w-4/5 h-full bg-neutral-900 rounded-full"></div></div></div><button class="p-1.5 text-neutral-600 hover:text-neutral-900 rounded hover:bg-neutral-100 transition-colors" title="Queue flyout"><span class="material-symbols-outlined text-[20px]">queue_music</span></button></div></div></div><footer class="relative z-10 w-full border-t border-black/[0.06] bg-surface py-5">
+<div class="max-w-[1240px] mx-auto px-6 sm:px-8 flex flex-col sm:flex-row items-center justify-between text-[12px] text-neutral-500 gap-3">
+<span class="">OPEN-MUSIC Engine v2.4 • Redb + Metroserver Sidecar</span>
+<div class="flex items-center gap-6 font-mono text-[11px]">
+<span class="">WS: proto+gzip</span>
+<span class="">LATENCY: 18ms</span>
+<span class="text-neutral-700">DRIFT CORRECTION: ACTIVE</span>
+</div>
+</div>
+</footer>
+<!-- Vanilla JavaScript Workflow Implementation -->
+<script>
+    (function () {
+      // 1. Tab Switching Engine
+      const tabButtons = document.querySelectorAll('.workflow-tab-btn');
+      const tabPanes = document.querySelectorAll('.tab-pane');
+
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const target = btn.getAttribute('data-tab');
+          
+          tabButtons.forEach(b => {
+            b.className = 'workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-surface-container transition-all flex items-center justify-center gap-1.5';
+          });
+          btn.className = 'workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-primary text-white shadow-sm flex items-center justify-center gap-1.5 transition-all';
+
+          tabPanes.forEach(pane => {
+            if (pane.id === `pane-${target}`) {
+              pane.classList.remove('hidden');
+            } else {
+              pane.classList.add('hidden');
+            }
+          });
+        });
+      });
+
+      // 2. Audio Playback & Democratic Grace Period Simulation
+      let isPlaying = true;
+      let currentSec = 102;
+      const totalSec = 245;
+      let graceActive = false;
+      let graceTimerSec = 5;
+      let graceInterval = null;
+
+      const playBtn = document.getElementById('master-play-btn');
+      const playIcon = document.getElementById('master-play-icon');
+      const trackCurrent = document.getElementById('track-current');
+      const progressBar = document.getElementById('progress-bar');
+      const progressThumb = document.getElementById('progress-thumb');
+      const graceIndicator = document.getElementById('grace-period-indicator');
+      const graceTimerEl = document.getElementById('grace-timer');
+
+      function formatTime(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m < 10 ? '0' : ''}${m}:${sec < 10 ? '0' : ''}${sec}`;
+      }
+
+      function updatePlayhead() {
+        const pct = (currentSec / totalSec) * 100;
+        if (progressBar) progressBar.style.width = pct + '%';
+        if (progressThumb) progressThumb.style.left = pct + '%';
+        if (trackCurrent) trackCurrent.textContent = formatTime(currentSec);
+      }
+
+      // Spacebar play/pause shortcut
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        if (e.code === 'Space') {
+          e.preventDefault();
+          playBtn.click();
+        }
+      });
+
+      playBtn.addEventListener('click', () => {
+        if (isPlaying) {
+          // Trigger democratic 5-second grace period as specified in Jam Mode rules
+          isPlaying = false;
+          playIcon.textContent = 'play_arrow';
+          graceActive = true;
+          graceTimerSec = 5;
+          graceIndicator.classList.remove('hidden');
+          graceIndicator.classList.add('flex');
+          graceTimerEl.textContent = `${graceTimerSec}s`;
+
+          if (graceInterval) clearInterval(graceInterval);
+          graceInterval = setInterval(() => {
+            graceTimerSec -= 1;
+            if (graceTimerSec <= 0) {
+              clearInterval(graceInterval);
+              graceIndicator.classList.add('hidden');
+              graceIndicator.classList.remove('flex');
+              graceActive = false;
+            } else {
+              graceTimerEl.textContent = `${graceTimerSec}s`;
+            }
+          }, 1000);
+        } else {
+          // Play clicked - cancel pause grace period
+          isPlaying = true;
+          playIcon.textContent = 'pause';
+          if (graceInterval) clearInterval(graceInterval);
+          graceIndicator.classList.add('hidden');
+          graceIndicator.classList.remove('flex');
+          graceActive = false;
+        }
+      });
+
+      // Playback ticker
+      setInterval(() => {
+        if (isPlaying) {
+          currentSec += 1;
+          if (currentSec > totalSec) currentSec = 0;
+          updatePlayhead();
+        }
+      }, 1000);
+
+      // 3. Democratic Skip Voting Engine (Feature 5)
+      let skipVotes = 2;
+      const totalMembers = 4;
+      const skipBtn = document.getElementById('btn-next-vote');
+      const skipVoteRatio = document.getElementById('skip-vote-ratio');
+      const voteSkipBtnText = document.getElementById('vote-skip-btn-text');
+
+      if (skipBtn) {
+        skipBtn.addEventListener('click', () => {
+          skipVotes += 1;
+          if (skipVotes >= Math.ceil(totalMembers / 2)) {
+            // Majority reached! Skip track broadcast
+            skipVoteRatio.textContent = `${skipVotes}/${totalMembers} votes (Skipping!)`;
+            voteSkipBtnText.textContent = `Skipped!`;
+            setTimeout(() => {
+              skipVotes = 0;
+              currentSec = 0;
+              updatePlayhead();
+              skipVoteRatio.textContent = `0/${totalMembers} votes`;
+              voteSkipBtnText.textContent = `Skip (0/4)`;
+            }, 800);
+          } else {
+            skipVoteRatio.textContent = `${skipVotes}/${totalMembers} votes`;
+            voteSkipBtnText.textContent = `Skip (${skipVotes}/4)`;
+          }
+        });
+      }
+
+      // 4. Fixed-Set Track Reactions Toggle (Feature 3)
+      const reactionPills = document.querySelectorAll('.reaction-pill');
+      reactionPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          const countEl = pill.querySelector('.count');
+          let currentCount = parseInt(countEl.textContent, 10);
+          const isAct = pill.classList.contains('active');
+
+          if (isAct) {
+            pill.classList.remove('active', 'bg-neutral-900', 'text-white', 'border-neutral-800');
+            pill.classList.add('bg-surface-container-low', 'border-black/[0.04]');
+            countEl.classList.remove('text-white');
+            countEl.classList.add('text-neutral-700');
+            countEl.textContent = currentCount - 1;
+          } else {
+            pill.classList.add('active', 'bg-neutral-900', 'text-white', 'border-neutral-800');
+            pill.classList.remove('bg-surface-container-low', 'border-black/[0.04]');
+            countEl.classList.add('text-white');
+            countEl.classList.remove('text-neutral-700');
+            countEl.textContent = currentCount + 1;
+          }
+        });
+      });
+
+      // 5. Collaborative Queue: Undo & Lock Toggle (Feature 2)
+      const btnUndo = document.getElementById('btn-undo-crdt');
+      const btnLock = document.getElementById('btn-lock-queue');
+      const lockIcon = document.getElementById('lock-icon');
+      const lockLabel = document.getElementById('lock-label');
+      const queueLockBadge = document.getElementById('queue-lock-badge');
+      let isLocked = false;
+
+      if (btnLock) {
+        btnLock.addEventListener('click', () => {
+          isLocked = !isLocked;
+          if (isLocked) {
+            lockIcon.textContent = 'lock';
+            lockLabel.textContent = 'Locked';
+            queueLockBadge.textContent = 'LOCKED (HOST ONLY)';
+            queueLockBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-red-50 text-red-800 border border-red-200';
+          } else {
+            lockIcon.textContent = 'lock_open';
+            lockLabel.textContent = 'Lock';
+            queueLockBadge.textContent = 'OPEN TO GUESTS';
+            queueLockBadge.className = 'px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200';
+          }
+        });
+      }
+
+      if (btnUndo) {
+        btnUndo.addEventListener('click', () => {
+          const items = document.querySelectorAll('#queue-container .queue-item');
+          if (items.length > 2) {
+            const last = items[items.length - 1];
+            last.style.opacity = '0';
+            setTimeout(() => last.remove(), 150);
+          }
+        });
+      }
+
+      // 6. Queue Remove Actions
+      const queueContainer = document.getElementById('queue-container');
+      if (queueContainer) {
+        queueContainer.addEventListener('click', (e) => {
+          const removeBtn = e.target.closest('.queue-remove-btn');
+          if (removeBtn) {
+            const item = removeBtn.closest('.queue-item');
+            if (item) {
+              item.style.opacity = '0';
+              setTimeout(() => item.remove(), 150);
+            }
+          }
+        });
+      }
+
+      // 7. Add Song to Queue
+      const inputAddSong = document.getElementById('input-add-song');
+      const btnSubmitSong = document.getElementById('btn-submit-song');
+
+      function appendSong() {
+        const val = inputAddSong.value.trim();
+        if (!val) return;
+        const div = document.createElement('div');
+        div.className = 'queue-item group p-3 rounded-xl bg-white hover:bg-surface-container-low/60 border border-black/[0.04] flex items-center justify-between transition-all';
+        div.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="material-symbols-outlined text-[16px] text-neutral-300 group-hover:text-neutral-700 cursor-grab">drag_indicator</span>
+            <div class="w-10 h-10 rounded bg-neutral-900 text-white flex items-center justify-center font-mono text-xs flex-shrink-0">OM</div>
+            <div class="flex flex-col min-w-0">
+              <span class="text-xs font-semibold text-neutral-900 truncate">${val}</span>
+              <span class="text-[11px] text-neutral-500 truncate">Collab Stream • redb synced</span>
+              <span class="text-[10px] font-mono text-neutral-500 mt-0.5">Added by <strong>Alice</strong> (Just now)</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="queue-remove-btn opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-neutral-200 text-neutral-500 text-xs transition-opacity" title="Remove track">✕</button>
+            <span class="font-mono text-xs text-neutral-500">03:30</span>
+          </div>
+        `;
+        queueContainer.appendChild(div);
+        inputAddSong.value = '';
+      }
+
+      if (btnSubmitSong && inputAddSong) {
+        btnSubmitSong.addEventListener('click', appendSong);
+        inputAddSong.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') appendSong();
+        });
+      }
+
+      // 8. Ring Buffer Chat Messaging (Feature 3)
+      const chatInput = document.getElementById('chat-input');
+      const btnChatSend = document.getElementById('btn-chat-send');
+      const chatContainer = document.getElementById('chat-messages-container');
+
+      function sendChatMessage() {
+        const text = chatInput.value.trim();
+        if (!text) return;
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'flex items-start gap-2.5';
+        msgDiv.innerHTML = `
+          <div class="w-6 h-6 rounded-full bg-neutral-900 text-white font-mono text-[10px] flex items-center justify-center flex-shrink-0">AL</div>
+          <div class="flex flex-col bg-surface-container-low p-2.5 rounded-lg max-w-[85%] border border-black/[0.03]">
+            <div class="flex items-center justify-between gap-3 text-[10px] font-mono text-neutral-500">
+              <span class="font-medium text-neutral-800">Alice (Host)</span>
+              <span>Just now</span>
+            </div>
+            <p class="text-xs text-neutral-900 mt-0.5">${text}</p>
+          </div>
+        `;
+        chatContainer.appendChild(msgDiv);
+        chatInput.value = '';
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+
+      if (btnChatSend && chatInput) {
+        btnChatSend.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') sendChatMessage();
+        });
+      }
+
+      // 9. Copy Invite Link
+      const btnCopy = document.getElementById('btn-copy-invite');
+      if (btnCopy) {
+        btnCopy.addEventListener('click', () => {
+          navigator.clipboard?.writeText('openmusic://join/om904');
+          btnCopy.innerHTML = '<span class="material-symbols-outlined text-[13px] text-emerald-600">check</span><span>Copied!</span>';
+          setTimeout(() => {
+            btnCopy.innerHTML = '<span class="material-symbols-outlined text-[13px]">content_copy</span><span>Copy Link</span>';
+          }, 2000);
+        });
+      }
+
+      // 10. Toggle Jam Mode vs Listen Together
+      const btnToggleJam = document.getElementById('btn-toggle-jam');
+      const jamLabel = document.getElementById('jam-mode-toggle-label');
+      let isJam = true;
+      if (btnToggleJam) {
+        btnToggleJam.addEventListener('click', () => {
+          isJam = !isJam;
+          jamLabel.textContent = isJam ? 'Switch: Host Only' : 'Switch: Jam Mode';
+        });
+      }
+    })();
+  </script>
+<script>(function(){let isSocialMode=true;const toggleBtn=document.getElementById('btn-toggle-social-mode');const toggleIcon=document.getElementById('toggle-mode-icon');const toggleText=document.getElementById('toggle-mode-text');const statusBadge=document.getElementById('mode-status-badge');const socialStrip=document.getElementById('social-meta-strip');const soloPrompt=document.getElementById('solo-meta-prompt');const socialVotePill=document.getElementById('social-vote-pill');const jamToggleBtn=document.getElementById('btn-toggle-jam');const leaveBtn=document.getElementById('btn-leave-room');const skipVoteText=document.getElementById('vote-skip-btn-text');const reactionsGrid=document.getElementById('reaction-bar-container');const reactionsSoloNote=document.getElementById('solo-reactions-note');const quickActivateBtn=document.getElementById('btn-activate-social-quick');const queueLockBadge=document.getElementById('queue-lock-badge');const roomModeTag=document.getElementById('room-mode-tag');const artworkBadge=document.querySelector('#master-album-cover')?.parentElement?.querySelector('.bottom-4 span:first-child');function setSocialState(enable){isSocialMode=enable;if(enable){toggleBtn.className='px-3.5 py-2 rounded-lg bg-neutral-900 text-white hover:bg-neutral-800 transition-all font-mono text-xs font-semibold flex items-center gap-2 shadow-sm active:scale-95';toggleIcon.textContent='group_off';toggleText.textContent='Leave Social / Solo Mode';statusBadge.textContent='JAM MODE ACTIVE';statusBadge.className='px-2.5 py-1 rounded bg-surface-container-low font-mono text-[11px] font-semibold text-neutral-800 border border-black/[0.04]';socialStrip.classList.remove('hidden');soloPrompt.classList.add('hidden');socialVotePill.classList.remove('hidden');jamToggleBtn.classList.remove('hidden');leaveBtn.classList.remove('hidden');if(skipVoteText)skipVoteText.textContent='Skip (2/4)';if(reactionsGrid)reactionsGrid.classList.remove('opacity-40','pointer-events-none');if(reactionsSoloNote)reactionsSoloNote.classList.add('hidden');if(queueLockBadge){queueLockBadge.textContent='OPEN TO GUESTS';queueLockBadge.className='px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200';}if(roomModeTag)roomModeTag.textContent='Room #OM-904';}else{toggleBtn.className='px-3.5 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition-all font-mono text-xs font-semibold flex items-center gap-2 shadow-sm active:scale-95';toggleIcon.textContent='group_add';toggleText.textContent='Go Social (Jam Mode)';statusBadge.textContent='SOLO MODE';statusBadge.className='px-2.5 py-1 rounded bg-neutral-100 font-mono text-[11px] font-semibold text-neutral-600 border border-black/[0.04]';socialStrip.classList.add('hidden');soloPrompt.classList.remove('hidden');soloPrompt.classList.add('flex');socialVotePill.classList.add('hidden');jamToggleBtn.classList.add('hidden');leaveBtn.classList.add('hidden');if(skipVoteText)skipVoteText.textContent='Next Track';if(reactionsGrid)reactionsGrid.classList.add('opacity-40','pointer-events-none');if(reactionsSoloNote)reactionsSoloNote.classList.remove('hidden');if(reactionsSoloNote)reactionsSoloNote.classList.add('flex');if(queueLockBadge){queueLockBadge.textContent='PERSONAL QUEUE';queueLockBadge.className='px-2 py-0.5 rounded text-[10px] font-mono bg-neutral-100 text-neutral-700';}if(roomModeTag)roomModeTag.textContent='Solo Playback';}}if(toggleBtn){toggleBtn.addEventListener('click',()=>setSocialState(!isSocialMode));}if(leaveBtn){leaveBtn.addEventListener('click',()=>setSocialState(false));}if(quickActivateBtn){quickActivateBtn.addEventListener('click',()=>setSocialState(true));}})();</script>
+<script>(function(){const qrBtn=document.getElementById('btn-toggle-qr');const qrOverlay=document.getElementById('album-qr-overlay');const closeQrBtn=document.getElementById('btn-close-qr-overlay');const copyQrLink=document.getElementById('btn-qr-copy-link');const qrLinkText=document.getElementById('qr-copy-link-text');if(qrBtn&&qrOverlay){qrBtn.addEventListener('click',()=>{qrOverlay.classList.toggle('hidden');qrOverlay.classList.toggle('flex');});}if(closeQrBtn&&qrOverlay){closeQrBtn.addEventListener('click',()=>{qrOverlay.classList.add('hidden');qrOverlay.classList.remove('flex');});}if(copyQrLink&&qrLinkText){copyQrLink.addEventListener('click',()=>{navigator.clipboard?.writeText('https://sona.music/jam/OM-904?pin=904712');qrLinkText.textContent='Link Copied!';setTimeout(()=>{qrLinkText.textContent='Copy Invite Link';},2000);});}const quoteBtn=document.getElementById('btn-quote-time');const chatInput=document.getElementById('chat-input');if(quoteBtn&&chatInput){quoteBtn.addEventListener('click',()=>{const cur=document.getElementById('track-current')?.textContent||'01:42';chatInput.value=`[${cur}] `+chatInput.value;chatInput.focus();});}document.querySelectorAll('.chat-emoji-btn').forEach(btn=>{btn.addEventListener('click',()=>{if(chatInput){chatInput.value+=btn.textContent;chatInput.focus();}});});const tabs=document.querySelectorAll('.workflow-tab-btn');const panes=document.querySelectorAll('.tab-pane');tabs.forEach(btn=>{btn.addEventListener('click',()=>{const target=btn.getAttribute('data-tab');tabs.forEach(b=>{b.className='workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-neutral-600 hover:text-neutral-900 hover:bg-surface-container transition-all flex items-center justify-center gap-1.5';});btn.className='workflow-tab-btn flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold bg-primary text-white shadow-sm flex items-center justify-center gap-1.5 transition-all';panes.forEach(pane=>{if(pane.id===`pane-${target}`){pane.classList.remove('hidden');pane.classList.add('flex');}else{pane.classList.add('hidden');pane.classList.remove('flex');}});});});})();</script>
+
+</body></html>

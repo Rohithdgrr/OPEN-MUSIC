@@ -5437,33 +5437,9 @@ body.is-mini .tm-widget__mini {
   pointer-events: none;
 }
 
-/* Top Floating Bitstream Pill */
-.np-stream-pill {
-  position: absolute;
-  top: 1rem;
-  left: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.8rem;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
-  z-index: 2;
-}
-
-.np-pulse-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: #22c55e;
-  box-shadow: 0 0 8px #22c55e;
-  animation: np-pulse 2s infinite ease-in-out;
-}
-
+/* The bitstream pill that used to float here is gone, but @keyframes np-pulse
+   is NOT: .soc-live-dot (mode switch, room chip, jam header) still animates
+   with it. Do not delete the keyframes with the pill. */
 @keyframes np-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.35; transform: scale(0.85); }
@@ -6243,18 +6219,6 @@ html.dark #now-playing-stage #vol-val-tooltip {
 .dark #now-playing-stage #np-quality,
 html.dark #now-playing-stage #np-quality {
   background: #27272a !important;
-  color: #ffffff !important;
-}
-
-.dark #now-playing-stage .np-stream-pill,
-html.dark #now-playing-stage .np-stream-pill {
-  background: rgba(20, 20, 24, 0.88) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  color: #ffffff !important;
-}
-
-.dark #now-playing-stage .np-stream-pill span,
-html.dark #now-playing-stage .np-stream-pill span {
   color: #ffffff !important;
 }
 
@@ -7771,56 +7735,87 @@ body.soc-social .soc-solo-only {
   color: #ffffff;
 }
 
-/* --- Room QR ------------------------------------------------------------ */
+
+/* ==========================================================================
+   1b. ROOM QR — the invite surface
+   The symbol itself is produced by Rust (src-tauri/src/qr.rs, `qr_symbol`) and
+   painted by src/qrview.js; the styles here only frame it. A scanner needs
+   contrast and a clear margin, so the symbol sits on its own white plate and
+   is never tinted, blurred or overlaid.
+   ========================================================================== */
+
+/* Trigger: sits over the artwork, top-right. Compact so it reads as chrome on
+   the cover rather than competing with the metadata band. */
 .np-qr-btn {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: 0.85rem;
+  right: 0.85rem;
   z-index: 4;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 11px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 8px;
-  background: rgba(9, 9, 11, 0.62);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(9, 9, 11, 0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
   color: #ffffff;
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
   transition: background-color 0.15s ease, transform 0.1s ease;
 }
 
 .np-qr-btn:hover {
-  background: rgba(9, 9, 11, 0.82);
+  background: rgba(9, 9, 11, 0.78);
 }
 
 .np-qr-btn:active {
   transform: scale(0.96);
 }
 
+.np-qr-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.85);
+  outline-offset: 2px;
+}
+
+/* Scrim. Dim enough to read the card, soft enough that the artwork behind
+   still registers as context. */
 .np-qr-overlay {
   position: absolute;
   inset: 0;
   z-index: 5;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: center;
   padding: 1.25rem;
-  background: rgba(9, 9, 11, 0.94);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(6, 6, 8, 0.82);
+  backdrop-filter: blur(20px) saturate(120%);
+  -webkit-backdrop-filter: blur(20px) saturate(120%);
   color: #ffffff;
   text-align: center;
 }
 
 .np-qr-overlay.hidden {
   display: none !important;
+}
+
+.np-qr-card {
+  width: 100%;
+  max-width: 20rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1.1rem 1.1rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(20, 20, 24, 0.72);
+  box-shadow: 0 24px 60px -18px rgba(0, 0, 0, 0.7);
 }
 
 .np-qr-head {
@@ -7836,15 +7831,16 @@ body.soc-social .soc-solo-only {
   align-items: center;
   gap: 6px;
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #a1a1aa;
+  letter-spacing: 0.1em;
+  color: #e4e4e7;
 }
 
 .np-qr-head-label .soc-live-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 9999px;
   background: #34d399;
   box-shadow: 0 0 8px rgba(52, 211, 153, 0.9);
@@ -7852,91 +7848,132 @@ body.soc-social .soc-solo-only {
 }
 
 .np-qr-count {
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  color: #d4d4d8;
   font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: #a1a1aa;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
 }
 
-.np-qr-body {
+/* The plate. Pure white with a generous margin: the spec's 4-module quiet zone
+   is drawn inside the canvas by qrview.js, and this padding is the visual
+   breathing room around it. Nothing may be layered over the symbol. */
+.np-qr-frame {
+  position: relative;
+  width: 264px;
+  height: 264px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.np-qr-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Honest empty state: shown until the sidecar issues a real code. It replaces
+   the symbol rather than sitting on top of it — a scannable-looking plate with
+   nothing scannable inside it would be the exact lie this surface used to tell. */
+.np-qr-empty {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.65rem;
-}
-
-.np-qr-plate {
-  padding: 12px;
+  justify-content: center;
+  gap: 0.4rem;
   background: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  color: #52525b;
 }
 
-.np-qr-plate svg {
-  display: block;
-  width: 160px;
-  height: 160px;
+.np-qr-empty.hidden {
+  display: none !important;
+}
+
+.np-qr-empty .material-symbols-outlined {
+  font-size: 56px;
+  line-height: 1;
+  color: #d4d4d8;
+}
+
+.np-qr-empty p {
+  margin: 0;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .np-qr-code {
   font-family: "JetBrains Mono", monospace;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-
-.np-qr-pin {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  color: #a1a1aa;
-}
-
-.np-qr-pin strong {
-  color: #e4e4e7;
+  font-size: 19px;
   font-weight: 600;
+  letter-spacing: 0.22em;
+  text-indent: 0.22em;
+  color: #ffffff;
+}
+
+.np-qr-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #a1a1aa;
+  max-width: 16rem;
 }
 
 .np-qr-actions {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
+  padding-top: 0.15rem;
 }
 
 .np-qr-copy {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 8px 12px;
-  border: none;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
 
-.np-qr-copy:hover {
-  background: #e4e4e7;
+.np-qr-copy:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.np-qr-copy:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .np-qr-close {
+  flex: 0 0 auto;
   width: 34px;
   height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
   cursor: pointer;
   transition: background-color 0.15s ease;
@@ -8382,6 +8419,59 @@ body.soc-social .soc-solo-only {
 
 .soc-qappend-btn:active {
   transform: scale(0.97);
+}
+
+/* Join form (contract C-4, docs/listen-together.md §6a) — light rules
+   first, .dark overrides live in the dark section below. Matches the
+   composer's visual language (.soc-qinput). */
+.soc-room-join {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.soc-input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  background: #f3f3f5;
+  color: #1a1c1d;
+  font-family: "Geist", system-ui, sans-serif;
+  font-size: 12px;
+}
+
+.soc-input::placeholder {
+  color: #8a8a91;
+}
+
+.soc-input:focus {
+  outline: none;
+  border-color: rgba(0, 0, 0, 0.45);
+  background: #ffffff;
+}
+
+.soc-input-code {
+  flex: 0 1 8rem;
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.soc-room-join .soc-btn {
+  flex: 0 0 auto;
+}
+
+.soc-room-join .soc-tile-note {
+  flex: 1 1 100%;
+  margin: 0;
 }
 
 /* ==========================================================================
@@ -8894,30 +8984,8 @@ body.soc-social .soc-solo-only {
   transform: none;
 }
 
-/* Solo-mode invitation prompt */
-.soc-solo-prompt {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.8rem 0.9rem;
-  border: 1px dashed rgba(0, 0, 0, 0.16);
-  border-radius: 12px;
-  background: #f7f7f8;
-}
-
-.soc-solo-prompt-text {
-  margin: 0;
-  font-size: 12px;
-  color: #52525b;
-  line-height: 1.45;
-}
-
-.soc-solo-prompt-text strong {
-  color: #17171a;
-  font-weight: 600;
-}
+/* (the Solo-mode invitation prompt box lived here; removed — Social is
+   reachable from the header Solo/Social switch) */
 
 /* ==========================================================================
    9. DARK MODE — every social component restated for the inverted theme
@@ -9043,6 +9111,12 @@ html.dark .soc-qappend {
   border-color: rgba(255, 255, 255, 0.07);
 }
 
+.dark .soc-room-join,
+html.dark .soc-room-join {
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .dark .soc-qhead-title,
 .dark .soc-pane-title,
 html.dark .soc-qhead-title,
@@ -9161,6 +9235,24 @@ html.dark .soc-qinput::placeholder {
 
 .dark .soc-qinput:focus,
 html.dark .soc-qinput:focus {
+  background: #202024;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
+.dark .soc-input,
+html.dark .soc-input {
+  background: #202024;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+.dark .soc-input::placeholder,
+html.dark .soc-input::placeholder {
+  color: #8f8f97;
+}
+
+.dark .soc-input:focus,
+html.dark .soc-input:focus {
   background: #202024;
   border-color: rgba(255, 255, 255, 0.45);
 }
@@ -9410,22 +9502,6 @@ html.dark .soc-btn-danger:hover {
   border-color: rgba(248, 113, 113, 0.6);
 }
 
-.dark .soc-solo-prompt,
-html.dark .soc-solo-prompt {
-  background: #18181b;
-  border-color: rgba(255, 255, 255, 0.16);
-}
-
-.dark .soc-solo-prompt-text,
-html.dark .soc-solo-prompt-text {
-  color: #a1a1aa;
-}
-
-.dark .soc-solo-prompt-text strong,
-html.dark .soc-solo-prompt-text strong {
-  color: #ffffff;
-}
-
 /* Artwork overlay: dark-glass in both themes. Only the gradient's stops
    shift for dark. It must target ::before — a flat `background` on
    .np-art-overlay would paint over the pseudo-element's gradient and
@@ -9446,18 +9522,7 @@ html.dark .np-art-overlay::before {
    10. PHASE 2 ADDENDUM — guards the new markup relies on
    ========================================================================== */
 
-/* QR plate is an icon placeholder until the sidecar issues a real code. */
-.np-qr-plate {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.np-qr-plate .material-symbols-outlined {
-  font-size: 116px;
-  line-height: 1;
-  color: #18181b;
-}
+/* (the QR plate placeholder rules lived here; removed with the QR surface) */
 
 /* `hidden` must beat the component's own display rule. */
 .soc-typing.hidden,
