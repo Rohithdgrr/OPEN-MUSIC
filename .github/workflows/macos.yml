@@ -80,8 +80,13 @@ jobs:
         # the way release.yml does.
         run: npx tauri build
         env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+          # Tauri v2 reads only these two names. The v1-era
+          # TAURI_PRIVATE_KEY / TAURI_KEY_PASSWORD are silently ignored, and
+          # tauri.conf.json sets bundle.createUpdaterArtifacts: true, which
+          # makes the key mandatory — wrong names = build fails at bundling
+          # while the vars look set. Matches release.yml.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -97,8 +102,12 @@ jobs:
             exit 1
           fi
 
-          if [ -f "app/src-tauri/target/release/bundle/dmg/TRANCE MUSIC_*.dmg" ]; then
-            echo "✓ DMG built successfully"
+          # Glob must be resolved into a variable first: `test -f` does not
+          # expand a quoted pattern, so the old literal `*.dmg` test was
+          # always false and reported "DMG not found" even on success.
+          DMG=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
+          if [ -n "$DMG" ]; then
+            echo "✓ DMG built successfully: $DMG"
             ls -lh app/src-tauri/target/release/bundle/dmg/
           else
             echo "⚠ DMG not found (may require code signing)"
@@ -150,9 +159,73 @@ jobs:
             exit 1
           fi
 
-      - name: Run smoke tests
-        working-directory: ./app
-        run: npm run test:smoke
+      - name: Verify DMG mounts and app launches
+        # Structure checks only prove files exist. This proves the artifact
+        # runs: mount the disk image, launch the binary, assert it survives.
+        run: |
+          set -uo pipefail
+          APP_BUNDLE="app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app"
+          BIN="$APP_BUNDLE/Contents/MacOS/trance-music"
+          DMG=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
+          MOUNT=/tmp/dmg-verify
+          FAIL=0
+
+          # 1. DMG must mount and contain the app (the literal "does it open")
+          if [ -n "$DMG" ]; then
+            mkdir -p "$MOUNT"
+            if hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null 2>&1; then
+              echo "✓ DMG mounted"
+              if [ -d "$MOUNT/TRANCE MUSIC.app" ]; then
+                echo "✓ TRANCE MUSIC.app present inside the DMG"
+              else
+                echo "✗ TRANCE MUSIC.app missing from the DMG"; FAIL=1
+                ls -la "$MOUNT" || true
+              fi
+              hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true
+            else
+              echo "✗ hdiutil attach failed — the DMG is not mountable"; FAIL=1
+            fi
+          else
+            echo "⚠ No DMG produced; skipping mount check"
+          fi
+
+          # 2. The binary must survive launch (catches dyld / @rpath faults)
+          if [ -x "$BIN" ]; then
+            echo "Launching $BIN"
+            "$BIN" >/tmp/app-launch.log 2>&1 &
+            APP_PID=$!
+            sleep 12
+            if kill -0 "$APP_PID" 2>/dev/null; then
+              echo "✓ App still running after 12s (pid $APP_PID)"
+              kill "$APP_PID" 2>/dev/null || true
+              sleep 2
+              kill -9 "$APP_PID" 2>/dev/null || true
+            else
+              echo "✗ App exited early — launch failed"
+              echo "--- launch log ---"; cat /tmp/app-launch.log || true
+              FAIL=1
+            fi
+          else
+            echo "✗ Binary not executable"; FAIL=1
+          fi
+
+          # 3. Codesign: ADVISORY only. An unsigned CI build is expected to
+          #    fail Gatekeeper — this diagnoses, it does not gate.
+          codesign --verify --deep --strict "$APP_BUNDLE" \
+            && echo "✓ codesign verify passed" \
+            || echo "⚠ codesign: not signed or signature invalid (expected on an unsigned CI build)"
+          spctl -a -vv -t exec "$APP_BUNDLE" \
+            && echo "✓ Gatekeeper assessment passed" \
+            || echo "⚠ Gatekeeper rejected it (expected without notarisation — this is why a Mac reports 'damaged')"
+
+          # 4. CI-built bundles must not carry a quarantine flag
+          if xattr -p com.apple.quarantine "$APP_BUNDLE" >/dev/null 2>&1; then
+            echo "⚠ quarantine xattr present"
+          else
+            echo "✓ no quarantine xattr"
+          fi
+
+          exit $FAIL
 
       - name: Create build summary
         run: |
