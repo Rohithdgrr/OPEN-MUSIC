@@ -389,3 +389,55 @@ Docs-first record: `docs/toolchain-mcp-skills.md` (written before installing).
   added to `.gitignore`. Temp clones deleted.
 - **Evidence:** `opencode mcp list` (5× connected), in-session skill/tool
   advertisement, `pip check` (clean), repo/API 404 checks per the doc table.
+
+## 2026-10-07 — Android Settings made real + §10 frontend backlog (commit `31bab3c`, NOT pushed)
+
+Spec first: `docs/feature-list.md` §10 (rewritten with acceptance criteria) +
+`docs/mobile/06-features.md`. What landed (12 files, 621+/34−):
+
+| Item | Where |
+|---|---|
+| Cellular "Auto" quality 96 → **320 kbps** (Data Saver 64 + explicit picks unchanged) | `mobile/shared.js effectiveStreamQuality` |
+| Vault quota + LRU eviction, pure + **6 unit tests** | new `mobile/quota.js` (`pickEvictVictims`), hooked after `refreshVault()` in `downloadTrack`; picker is DOM-free on purpose |
+| Byte-prefetch next queued track (off on cellular/Data Saver, `tm-prefetch`) | `prefetchTrackBytes` in shared.js; called from `prefetchBytesNext()` at both play-start sites in `player.js` |
+| `tm-remember-pos` actually resumes (was desktop-only logic) | `player.js`: throttled 2s save on timeupdate + force on pause/pagehide/visibility-hidden, restore for same id in `start()`, `removeItem` on natural `ended()` |
+| `tm-smart-dl` actually auto-vaults (was dead everywhere) | `pushPlay()` → quiet `downloadTrack`, gated `invoke && smartDlOn() && !isVaulted && !onCellular()` |
+| Lyrics offset ±100ms / reset, per-track `tm-lyrics-offsets`, clamp ±2s, desktop's exact `currentTime + offset/1000` | `mobile/lyrics.js` (`setLyricTrack`/`setLyricOffset`/`lyricOffsetMs`), controls in `nowplaying.html` lyrics header, wired next to the Full-view button |
+| Room QR on Jam Data tab (same invite string as Copy) | `mobile/jam.js paintQrSurface` — repaint only when invite **or canvas element** changes (remount guard); `qrview.js paintQr(canvas, text, doInvoke)` now takes an optional invoke |
+| Exportify CSV import in Settings | `importer.js`: core.js import moved **inside** `importCsvToPlaylist` as lazy default (`doInvoke` param) so mobile can import the pure parsers; row + hidden file input in Storage section |
+| Settings → Storage & Data: quota select, prefetch switch, cache stats/budget/clear (`cache_stats`/`cache_set_budget`/`cache_clear` had **zero** mobile hits despite docs claiming ✅) | injected by `ensureMobilePrefs` in `binders.js` |
+
+- **Gates:** `npm test` **226/226** (was 225 + 1 pre-existing WIP fail, fixed
+  by its author mid-session; +6 new quota tests), `npm run lint` clean,
+  `node --check` clean. Staged tree verified separately via
+  `git checkout-index -a --prefix=…` + `node --test imports+vault-quota` (7/7)
+  and `node --check` on the exported copies.
+- **Parallel-WIP staging technique (repeatable):** `binders.js` (1402 dirty
+  lines) and `shared.js` (167) also carried another session's uncommitted
+  searchkit/recommend work. Split `git diff` into hunks, classify by content
+  anchors, write a patch of **only my hunks**, then
+  `git apply --cached <patch>`; mixed import hunk hand-rebuilt against HEAD.
+  Verified both directions: `theirs-in-staged = 0`, `mine-in-unstaged = 0`.
+  Their files (`query.js`, `tailwind.css`, `jiosaavn.rs`, `spotify.rs`,
+  `package.json`, recommend/searchkit, …) stay dirty and uncommitted.
+- **`git apply --recount` is a trap on this repo** — plain `--cached`
+  applied hunks that `--cached --recount` rejected ("patch does not apply"
+  at a hunk whose context byte-matches HEAD). Always bisect with
+  `git apply --cached --check` **per hunk**, no `--recount`.
+- **A static `import { invoke } from "./core.js"` in `qrview.js` pulled the
+  ENTIRE desktop graph into the mobile shell** (`core.js → dom.js →
+  library.js → … → settings.js`); `dom.js:15` does top-level
+  `audio.volume = 0.75` on a `#audio` that doesn't exist on mobile → throw →
+  **`app.js` module graph dead** (no bindings, injected Settings prefs never
+  rendered). Caught ONLY by driving the UI in a browser — lint,
+  `node --check`, `imports.test` and `npm test` all passed because none of
+  them *executes* the graph. Fix: `qrview.js` resolves core **lazily**
+  (`doInvoke` param / `await import("./core.js")` on the desktop fallback
+  only), and `social-ui.test.mjs:110` now accepts either import style —
+  its intent (invoke from core.js, matrix from `qr_symbol`) is unchanged.
+  **Lesson: any new mobile→src-root import needs a browser boot check, not
+  just the static gates.**
+- PowerShell `>` re-encodes to UTF-16 — never measure bytes of
+  `git cat-file … > file` that way; run node/execSync instead.
+- Not pushed (rule 1). Local history: `31bab3c` ← `4b70280` (other session's
+  docs commit) ← `2108e61`.

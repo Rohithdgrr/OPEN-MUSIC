@@ -3460,7 +3460,7 @@ function ensureMobilePrefs(m) {
       "STORAGE",
       row("database", "Vault quota", "Over quota evicts least-recently played", sel("m-quota", "")) +
         row("downloading", "Prefetch next track", "Save it while you listen (Wi-Fi)", sw("m-prefetch")) +
-        row("cleaning_services", "Cache usage", "Art & lyrics files — vault excluded", `<span id="m-cache-stats" class="shrink-0 max-w-[7.5rem] text-right font-label-mono text-[10px] text-on-surface-variant leading-tight">—</span>`) +
+        row("cleaning_services", "Cache usage", "Art & lyrics files — vault excluded", `<span id="m-cache-stats" class="shrink-0 w-28 text-right font-label-mono text-[10px] text-on-surface-variant leading-tight">—</span>`) +
         row("save", "Cache limit", "Art & lyrics budget (LRU)", sel("m-cache-budget", "")) +
         row("delete_sweep", "Clear cache", "Never touches your downloads", `<button type="button" id="m-cache-clear" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Clear</button>`) +
         row(

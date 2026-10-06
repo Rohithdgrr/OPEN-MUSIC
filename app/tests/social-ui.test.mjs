@@ -107,7 +107,12 @@ test("the room QR is a real symbol encoded in Rust, not a glyph", () => {
   const qrview = fs.readFileSync(path.join(src, "qrview.js"), "utf8");
   const rust = fs.readFileSync(path.join(src, "..", "src-tauri", "src", "qr.rs"), "utf8");
 
-  assert.match(qrview, /import \{ invoke \} from "\.\/core\.js";/, "the renderer must go through Tauri IPC");
+  // core.js may be imported statically or resolved lazily — mobile reuses this
+  // rasterizer without pulling the desktop module graph into the shell
+  // (dom.js's top-level `audio.volume` throws there and kills app.js; the
+  // lazy path was added 2026-10-07). Either way the renderer resolves its
+  // invoke from core.js instead of faking the symbol.
+  assert.match(qrview, /import[^"']*"\.\/core\.js"/, "the renderer must go through Tauri IPC");
   assert.match(qrview, /invoke\("qr_symbol"/, "the matrix must come from the Rust command");
   assert.match(social, /paintQr\(canvas, code\)/, "opening the surface must paint the symbol");
   assert.match(rust, /QrCode::with_error_correction_level\(text, EcLevel::M\)/, "Rust owns the encoding");

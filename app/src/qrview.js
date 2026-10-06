@@ -4,8 +4,13 @@
 // which is covered by cargo test (including a decode round-trip). This file
 // only rasterises it, so there is exactly one QR implementation in the app and
 // no chance of the drawing disagreeing with what Rust encoded.
-
-import { invoke } from "./core.js";
+//
+// core.js is resolved LAZILY (only on the desktop fallback below): a
+// top-level `import … from "./core.js"` drags the whole desktop module graph
+// (dom.js, library.js, settings.js, …) into the mobile shell, where dom.js's
+// top-level `audio.volume` throws on a missing #audio and takes app.js down
+// with it (seen on device 2026-10-07). The mobile shell passes its own
+// invoke (shared.js) as `doInvoke`, so this path never runs on Android.
 
 // The spec requires at least 4 modules of light margin on every side for a
 // scanner to lock on. This is not decoration — dropping it is the single most
@@ -13,10 +18,10 @@ import { invoke } from "./core.js";
 const QUIET = 4;
 
 // Draw `text` as a QR symbol. Returns the symbol descriptor, or throws.
-// `doInvoke` lets the mobile shell pass its own invoke (shared.js) — core.js
-// is desktop's DOM module — so there is still exactly one rasterizer.
 export async function paintQr(canvas, text, doInvoke) {
-  const symbol = doInvoke ? await doInvoke("qr_symbol", { text }) : await invoke("qr_symbol", { text });
+  const symbol = doInvoke
+    ? await doInvoke("qr_symbol", { text })
+    : await (await import("./core.js")).invoke("qr_symbol", { text });
   if (!symbol?.size || !Array.isArray(symbol.modules)) {
     throw new Error("qr_symbol returned an unusable symbol");
   }
