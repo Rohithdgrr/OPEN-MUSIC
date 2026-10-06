@@ -93,7 +93,8 @@ windows = { version = "0.62", features = [
 [profile.release]
 codegen-units = 1
 lto = true
-opt-level = 3
+# Lightweight installer: size over speed (docs/windows-release.md).
+opt-level = "s"
 strip = true
 
 [dev-dependencies]
