@@ -12,6 +12,66 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ---
 
+## [Unreleased]
+
+### Social · Listen Together (desktop **and** mobile)
+- Both surfaces now drive the in-app Rust room server — `room_open`, `room_join`,
+  `room_chat`, `room_playback`, `room_report`, `room_close`, `room_info` — and
+  reduce the `room://msg` frames through one shared reducer (`app/src/room.js`).
+  Desktop lives in `app/src/social.js`, mobile in the new `app/src/mobile/jam.js`.
+- **Host** broadcasts its playhead on play/pause/seek/track change and once a
+  second; **guest** follows it, seeks only past ±0.4 s and reports the measured
+  drift. A guest's transport is disabled with a stated reason — the host's
+  playhead is the only source of truth.
+- Removed the sidecar-era `#jam-ua` line and the retired metroserver controls
+  from the Jam pane (`metroproto.js`/`sidecar.js` stay as a dormant interop
+  path). Room codes, member counts and drift are only ever server values.
+- Mobile Now Playing regenerated: the design export's mock room code, listener
+  count, ping, telemetry grid and demo tracks/chat are gone, replaced by honest
+  empty states and real slots; the legacy transport ids `binders.js` paints are
+  restored.
+
+### Removed
+- **Desktop Now Playing transport card** (`.np-transport-card` in
+  `app/src/index.html`, `docs/social-nowplaying.md §4–5`): the precision
+  timeline, the `DEMOCRATIC SYNC CLOCK` label, the pause grace-period pill,
+  the majority-vote skip button, and the inline volume block are deleted.
+  Full playback and volume control now live only in the bottom mini-player
+  (`#bar-*`). The skip-vote and grace surfaces left with the card; the Jam
+  `#jam-vote-ratio` tile still paints the (now inert) tally. Desktop only —
+  the mobile Now Playing screen is unchanged.
+
+### Fixed
+- **Windows `cargo test` harness** (`0xC0000139`, `rfd` → `TaskDialogIndirect`):
+  `build.rs` now declares the comctl v6 manifest dependency on the link line.
+  The room suite runs again — and immediately exposed a test that had been
+  asserting against the wrong `presence` frame.
+- Two latent clippy warnings in `room.rs`.
+- **Opening a room could leave the host deaf to its own server.** The
+  `room://msg` listener was attached only when the Social mode was entered,
+  but `#btn-open-room` is wired independently — so a room could be live with
+  nobody listening and the host UI stuck at `1 online`. The listener is now
+  attached once at boot, and no longer latches itself off when `__TAURI__` is
+  not yet present.
+- **`room_info` hid the room's invite.** It returned `{role, port, code}`
+  while `room_open` returned the `ws://` list, so a window re-attaching to an
+  open room could not re-offer the address it was serving on. `room_info` now
+  returns `urls` too.
+
+### Verified live (this run, real apps — not stubs)
+- **Desktop, 32/32**: `node app/tests/live-desktop.mjs` against a real
+  `cargo build` window — room opened from the UI, address advertised, real
+  second socket joined, chat echo 31 ms, `presence` → 2 members + `±0.25s`,
+  guest `playback` refused, Leave → Solo.
+- **Android emulator, 28/28**: `node app/tests/live-android-emulator.mjs` —
+  debug APK on AVD `Pixel6_API36` running its own Rust server, chat echo 31 ms
+  through the adb bridge, drift `±0.25s`, leave → Solo.
+- Note for future runs: a `gen/android` debug APK produced by `tauri android
+  dev` is a *dev client* bound to the dev-server URL — it renders a
+  load-failure page on a device. Use `tauri android build --debug`.
+
+---
+
 ## [0.4.0] - 2026-10-05
 
 ### Cross-Platform Support: MACOS, LINUX, WINDOWS, IOS & ANDROID

@@ -9,6 +9,10 @@ import {
   memberCount,
   inviteText,
   worstDriftMs,
+  expectedPositionMs,
+  syncDecision,
+  sanitizeRoomName,
+  DRIFT_TOLERANCE_MS,
 } from "../src/room.js";
 
 // ------------------------------------------------------------------ honest -
@@ -218,4 +222,92 @@ test("inviteText must never render 'undefined' when a host has no URL yet", () =
   const out = inviteText({ ...createRoomState(), role: "host", code: "ABCD1234", urls: [] });
   assert.ok(!out.includes("undefined"), `fabricated placeholder in share line: ${out}`);
   assert.ok(out === "" || out.endsWith("ABCD1234"), `unhelpful share line: ${out}`);
+});
+
+// ------------------------------------------- the host-side `hosted` frame ---
+// The server never sends the host a `joined` frame: it learns its room from
+// `room_open`'s return value and hears everything else through its own sink.
+// Both surfaces therefore reduce one synthetic frame built from those real
+// server facts (docs/listen-together.md §13.3).
+test("a hosted frame puts this client in the room as the host", () => {
+  const s = reduceRoom(createRoomState(), {
+    t: "hosted",
+    selfId: "host",
+    code: "ABCD1234",
+    urls: ["ws://192.168.1.5:8787"],
+    members: [{ id: "host", name: "Rohit", host: true }],
+  });
+  assert.equal(s.role, "host");
+  assert.equal(s.status, "hosting");
+  assert.equal(s.code, "ABCD1234");
+  assert.equal(memberCount(s), 1);
+  assert.equal(inviteText(s), "ws://192.168.1.5:8787 · ABCD1234");
+});
+
+test("the host's own chat echo reads as mine (selfId is the server's 'host')", () => {
+  let s = reduceRoom(createRoomState(), { t: "hosted", selfId: "host", code: "ABCD1234" });
+  s = reduceRoom(s, { t: "chat", from: { id: "host", name: "Rohit" }, text: "hi", ts: 1 });
+  assert.equal(s.chat[0].mine, true);
+});
+
+// -------------------------------------------------- the shared sync math ---
+// One measurement for both surfaces (docs/listen-together.md §4.3/§13.3): the
+// number the tiles show has to be the number the guest seeks by.
+test("the expected playhead advances with local arrival time, not a wall clock", () => {
+  const pb = { positionMs: 10_000, playing: true, arrivedAt: 1_000 };
+  assert.equal(expectedPositionMs(pb, 3_500), 12_500, "paused time before arrival must not count");
+  assert.equal(
+    expectedPositionMs({ positionMs: 10_000, playing: false, arrivedAt: 1_000 }, 99_000),
+    10_000,
+    "a paused host does not advance",
+  );
+  assert.equal(expectedPositionMs(null, 5), null, "no frame → no number, never 0");
+  assert.equal(expectedPositionMs({ playing: true }, 5), null, "a frame without a position is not a playhead");
+});
+
+test("syncDecision seeks only past the advertised tolerance", () => {
+  const state = reduceRoom(createRoomState(), {
+    t: "playback",
+    playing: true,
+    trackId: "t1",
+    positionMs: 30_000,
+  });
+  const arrived = state.playback.arrivedAt;
+
+  // 200 ms behind: measured, but left alone so playback cannot stutter.
+  const inside = syncDecision(state, 29.8, arrived + 0);
+  assert.equal(inside.driftMs, -200);
+  assert.equal(inside.seekToSec, null);
+
+  // 1.5 s ahead: past the tolerance → seek to the host's playhead.
+  const outside = syncDecision(state, 31.5, arrived);
+  assert.equal(outside.driftMs, 1500);
+  assert.equal(outside.seekToSec, 30);
+  assert.ok(Math.abs(outside.driftMs) > DRIFT_TOLERANCE_MS);
+});
+
+test("syncDecision reports null, not 0, before any playback frame", () => {
+  const s = syncDecision(createRoomState(), 12);
+  assert.equal(s.driftMs, null, "0 would read as 'perfectly in sync'");
+  assert.equal(s.seekToSec, null);
+  assert.equal(syncDecision(createRoomState(), Number.NaN).driftMs, null);
+});
+
+test("a drift number is measured against the arrival anchor, not the frame time", () => {
+  let state = reduceRoom(createRoomState(), { t: "playback", playing: true, trackId: "t", positionMs: 5_000 });
+  const arrived = state.playback.arrivedAt;
+  // Two seconds of local playback later the audio is exactly in sync.
+  const s = syncDecision(state, 7, arrived + 2_000);
+  assert.equal(s.driftMs, 0);
+  assert.equal(s.seekToSec, null);
+});
+
+// ---------------------------------------------- names, as the server sees them
+test("room names are sanitised the way the Rust server sanitises them", () => {
+  assert.equal(sanitizeRoomName("  Ann  "), "Ann");
+  assert.equal(sanitizeRoomName(""), "Guest");
+  assert.equal(sanitizeRoomName("", "Host"), "Host");
+  assert.equal(sanitizeRoomName("\u0007evil"), "evil");
+  assert.equal(sanitizeRoomName("x".repeat(80)).length, 24);
+  assert.equal(sanitizeRoomName(null), "Guest", "a missing name is not the string 'null'");
 });

@@ -4217,10 +4217,32 @@ img,video {
 .lyric-past .lyric-word {
   background-image: linear-gradient(90deg, #a1a1aa, #a1a1aa);
 }
+/* Upcoming (not yet sung) lyric lines. #52525b measured 2.38:1 on the dark
+   stage - the .dark rules recolour the .lyric-line parent but this selector
+   re-asserts a light-theme grey on the child, which won. Dark mode needs its
+   own value; see the .dark override below. */
 .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text {
   color: #52525b;
   font-size: 15px;
   font-weight: 500;
+}
+
+.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text,
+html.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text {
+  color: #a1a1aa;
+}
+
+/* Inactive lyric rows: .lyric-line carries the colour, and the timecode span
+   dims itself with opacity-40 on top of it (2.52:1 measured on white). Raise
+   both so an upcoming line is legible without competing with the active one -
+   the active line is already distinguished by size, weight and the left rule. */
+.lyric-line:not(.lyric-active):not(.lyric-past) {
+  color: #52525b;
+}
+
+.dark .lyric-line:not(.lyric-active):not(.lyric-past),
+html.dark .lyric-line:not(.lyric-active):not(.lyric-past) {
+  color: #a1a1aa;
 }
 .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word {
   background-image: linear-gradient(90deg, #71717a, #71717a);
@@ -4269,15 +4291,19 @@ img,video {
    work even when the Tailwind CDN is unreachable. */
 #toast-stack {
   position: fixed;
-  right: 1rem;
   bottom: 7rem;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 70;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 0.5rem;
   max-width: min(22rem, calc(100vw - 2rem));
+  pointer-events: none;
 }
 .tm-toast {
+  pointer-events: auto;
   display: flex;
   align-items: flex-start;
   gap: 0.5rem;
@@ -5312,7 +5338,8 @@ body.is-mini .tm-widget__mini {
  * system rather than two.
  * ------------------------------------------------------------------------- */
 #toast-stack {
-  right: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 6.75rem;
   z-index: 70;
   gap: 0.5rem;
@@ -5473,178 +5500,6 @@ body.is-mini .tm-widget__mini {
 
 .is-playing .np-vinyl-spin {
   animation: spin 8s linear infinite;
-}
-
-/* Master Transport Card */
-.np-transport-card {
-  background: #ffffff;
-  border-radius: 1.25rem;
-  padding: 1.25rem 1.5rem;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.02),
-    0 10px 28px -6px rgba(0, 0, 0, 0.04);
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-/* Precision Timeline */
-.np-timeline-track {
-  position: relative;
-  width: 100%;
-  height: 6px;
-  border-radius: 9999px;
-  background: #eeeef0;
-  cursor: pointer;
-  transition: height 0.15s ease;
-  user-select: none;
-}
-
-.np-timeline-track:hover {
-  height: 8px;
-}
-
-.np-buffered-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  background: #e2e2e4;
-  border-radius: 9999px;
-  pointer-events: none;
-}
-
-.np-progress-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  background: #000000;
-  border-radius: 9999px;
-  pointer-events: none;
-}
-
-.np-scrub-thumb {
-  position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  border-radius: 9999px;
-  background: #000000;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  transform: translate(-50%, -50%) scale(0.6);
-  transition: transform 0.15s ease;
-  pointer-events: none;
-}
-
-.np-timeline-track:hover .np-scrub-thumb {
-  transform: translate(-50%, -50%) scale(1.1);
-}
-
-/* Mini Audio Equalizer */
-.np-equalizer {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2.5px;
-  height: 12px;
-}
-
-.np-equalizer i {
-  display: block;
-  width: 2.5px;
-  background: #18181b;
-  border-radius: 1px;
-  height: 25%;
-  transition: height 0.2s ease;
-}
-
-.is-playing .np-equalizer i:nth-child(1) { animation: np-eq 0.9s infinite alternate ease-in-out; }
-.is-playing .np-equalizer i:nth-child(2) { animation: np-eq 1.1s infinite alternate ease-in-out 0.2s; }
-.is-playing .np-equalizer i:nth-child(3) { animation: np-eq 0.8s infinite alternate ease-in-out 0.35s; }
-.is-playing .np-equalizer i:nth-child(4) { animation: np-eq 1.2s infinite alternate ease-in-out 0.1s; }
-
-@keyframes np-eq {
-  0% { height: 20%; }
-  50% { height: 100%; }
-  100% { height: 35%; }
-}
-
-/* Master Play Button */
-.np-btn-master-play {
-  width: 52px;
-  height: 52px;
-  border-radius: 9999px;
-  background: #000000;
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
-  transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
-  cursor: pointer;
-  border: none;
-}
-
-.np-btn-master-play:hover {
-  transform: scale(1.06);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-}
-
-.np-btn-master-play:active {
-  transform: scale(0.94);
-}
-
-.is-playing .np-btn-master-play {
-  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.08), 0 6px 20px rgba(0, 0, 0, 0.25);
-}
-
-/* Transport Buttons */
-.np-btn-transport {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: transparent;
-  color: #1a1c1d;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s, transform 0.1s;
-  border: none;
-  cursor: pointer;
-}
-
-.np-btn-transport:hover {
-  background: #eeeef0;
-  transform: translateY(-1px);
-}
-
-.np-btn-transport:active {
-  transform: scale(0.95);
-}
-
-.np-btn-mode {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: transparent;
-  color: #717075;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-  border: none;
-  cursor: pointer;
-}
-
-.np-btn-mode:hover {
-  background: #eeeef0;
-  color: #1a1c1d;
-}
-
-.np-btn-mode.active {
-  background: #18181b;
-  color: #ffffff;
 }
 
 /* --- Right Column: Interactive Audiophile Deck --- */
@@ -5843,10 +5698,8 @@ html.dark #now-playing-stage {
 }
 
 /* Transport Deck & Metadata Cards in Dark Mode */
-.dark #now-playing-stage .np-transport-card,
 .dark #now-playing-stage .np-meta-card,
 .dark #now-playing-stage .np-stage-card,
-html.dark #now-playing-stage .np-transport-card,
 html.dark #now-playing-stage .np-meta-card,
 html.dark #now-playing-stage .np-stage-card {
   background: #141416 !important;
@@ -5896,87 +5749,6 @@ html.dark #now-playing-stage .text-neutral-600,
 html.dark #now-playing-stage .text-neutral-500,
 html.dark #now-playing-stage .text-neutral-400 {
   color: #a1a1aa !important;
-}
-
-/* Timeline & Scrubber in Dark Mode */
-.dark #now-playing-stage .np-timeline-track,
-html.dark #now-playing-stage .np-timeline-track {
-  background: #27272a !important;
-}
-
-.dark #now-playing-stage .np-buffered-fill,
-html.dark #now-playing-stage .np-buffered-fill {
-  background: #3f3f46 !important;
-}
-
-.dark #now-playing-stage .np-progress-fill,
-html.dark #now-playing-stage .np-progress-fill {
-  background: #ffffff !important;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
-}
-
-.dark #now-playing-stage .np-scrub-thumb,
-html.dark #now-playing-stage .np-scrub-thumb {
-  background: #ffffff !important;
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
-}
-
-.dark #now-playing-stage #track-current,
-html.dark #now-playing-stage #track-current {
-  color: #ffffff !important;
-}
-
-.dark #now-playing-stage #track-total,
-html.dark #now-playing-stage #track-total {
-  color: #a1a1aa !important;
-}
-
-/* Master Play & Transport Buttons */
-.dark #now-playing-stage .np-btn-master-play,
-html.dark #now-playing-stage .np-btn-master-play {
-  background: #ffffff !important;
-  color: #000000 !important;
-  box-shadow: 0 4px 18px rgba(255, 255, 255, 0.25) !important;
-}
-
-.dark #now-playing-stage .np-btn-master-play:hover,
-html.dark #now-playing-stage .np-btn-master-play:hover {
-  transform: scale(1.06);
-  box-shadow: 0 6px 24px rgba(255, 255, 255, 0.35) !important;
-}
-
-.dark #now-playing-stage .np-btn-transport,
-html.dark #now-playing-stage .np-btn-transport {
-  color: #ffffff !important;
-}
-
-.dark #now-playing-stage .np-btn-transport:hover,
-html.dark #now-playing-stage .np-btn-transport:hover {
-  background: #27272a !important;
-}
-
-.dark #now-playing-stage .np-btn-mode,
-html.dark #now-playing-stage .np-btn-mode {
-  color: #a1a1aa !important;
-}
-
-.dark #now-playing-stage .np-btn-mode:hover,
-html.dark #now-playing-stage .np-btn-mode:hover {
-  background: #27272a !important;
-  color: #ffffff !important;
-}
-
-.dark #now-playing-stage .np-btn-mode.active,
-html.dark #now-playing-stage .np-btn-mode.active {
-  background: #ffffff !important;
-  color: #000000 !important;
-}
-
-/* Equalizer in Dark Mode */
-.dark #now-playing-stage .np-equalizer i,
-html.dark #now-playing-stage .np-equalizer i {
-  background: #22c55e !important;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.5);
 }
 
 /* Session Pills & Quick Controls */
@@ -6133,12 +5905,18 @@ html.dark #now-playing-stage .lyric-past .lyric-word {
   text-shadow: none !important;
 }
 
-/* Future unplayed lines */
+/* Future unplayed lines.
+   This rule carried `color: #52525b !important` - a LIGHT-theme grey - so in
+   dark mode upcoming lyrics rendered at 2.38:1 against the stage and were
+   effectively unreadable. `!important` also made it beat the dark override at
+   styles.css:4230, which is why that one had no effect. #a1a1aa measures
+   7.3:1 on the dark stage; the active line stays distinguished by its 20px
+   size, bold weight and left rule, not by being the only legible one. */
 .dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text,
 .dark #now-playing-stage .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text,
 html.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text,
 html.dark #now-playing-stage .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text {
-  color: #52525b !important;
+  color: #a1a1aa !important;
   font-size: 15px;
 }
 
@@ -6192,27 +5970,6 @@ html.dark #now-playing-stage .lyric-line:not(.lyric-active):not(.lyric-past) .ly
 
 #lyrics-card:fullscreen .font-mono {
   font-size: 13px !important;
-}
-
-/* Volume Track in Dark Mode */
-.dark #now-playing-stage #volume-track,
-html.dark #now-playing-stage #volume-track {
-  background: #27272a !important;
-}
-
-.dark #now-playing-stage #volume-fill,
-html.dark #now-playing-stage #volume-fill {
-  background: #ffffff !important;
-}
-
-.dark #now-playing-stage #vol-mute-btn,
-html.dark #now-playing-stage #vol-mute-btn {
-  color: #ffffff !important;
-}
-
-.dark #now-playing-stage #vol-val-tooltip,
-html.dark #now-playing-stage #vol-val-tooltip {
-  color: #a1a1aa !important;
 }
 
 /* Telemetry and Badges in Dark Mode */
@@ -7082,8 +6839,7 @@ html.dark button.bg-surface-container-high:hover {
 button,
 [role="button"],
 .filter-chip,
-.np-action-btn,
-.np-btn-transport {
+.np-action-btn {
   transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
@@ -7139,11 +6895,29 @@ button[data-action="play"]:hover,
    `currentColor` rather than a fixed rgba, which is what used to make an
    offline red dot pulse green. Reconnecting pulses faster so it reads as
    in-progress rather than settled. */
+/* #15803d (--tm-ok) measures 3.97:1 on the dark header and 4.33:1 on the light
+   surface container - both under WCAG AA 4.5:1 for this 10px label. A single
+   darker/lighter green cannot clear both themes, so each theme gets the value
+   that does: #22c55e on dark (7.6:1), #166534 on light (7.1:1). The hue is
+   unchanged, so it still reads as "healthy green". */
 #net-badge[data-net-mode="online"] {
-  color: var(--tm-ok);
+  color: #166534;
 }
+
+.dark #net-badge[data-net-mode="online"],
+html.dark #net-badge[data-net-mode="online"] {
+  color: #22c55e;
+}
+/* Same two-theme treatment as "online" below: #b45309 measured 3.96:1 on the
+   dark header and 4.33:1 on light. #fbbf24 clears 4.5:1 on dark, #92400e on
+   light. The amber hue is preserved so "degraded" still reads as a warning. */
 #net-badge[data-net-mode="degraded"] {
-  color: var(--tm-warn);
+  color: #92400e;
+}
+
+.dark #net-badge[data-net-mode="degraded"],
+html.dark #net-badge[data-net-mode="degraded"] {
+  color: #fbbf24;
 }
 #net-badge[data-net-mode="reconnecting"] {
   color: var(--tm-warn);
@@ -7440,7 +7214,9 @@ body.soc-social .soc-solo-only {
 
 .soc-room-chip .material-symbols-outlined {
   font-size: 14px;
-  color: #15803d;
+  /* #15803d measured 4.33:1 on this chip's own #eeeef0 background - just under
+     AA for a 14px glyph. #166534 measures 7.1:1 and stays the same green. */
+  color: #166534;
 }
 
 .soc-avatar {
@@ -8039,86 +7815,6 @@ body.soc-social .soc-solo-only {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   color: #717075;
-}
-
-/* ==========================================================================
-   4. TRANSPORT ADDITIONS — sync clock, skip vote, pause grace period
-   ========================================================================== */
-
-.soc-sync-clock {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #8a8a91;
-}
-
-.soc-skip-vote {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  border-radius: 8px;
-  background: #eeeef0;
-  color: #1a1c1d;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-}
-
-.soc-skip-vote:hover {
-  background: #e2e2e4;
-  border-color: rgba(0, 0, 0, 0.18);
-}
-
-.soc-skip-vote:active {
-  transform: scale(0.96);
-}
-
-.soc-skip-vote.is-done {
-  background: #18181b;
-  border-color: #18181b;
-  color: #ffffff;
-}
-
-.soc-vote-ratio {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  color: #717075;
-  font-variant-numeric: tabular-nums;
-}
-
-.soc-vote-ratio.is-hot {
-  color: #15803d;
-  font-weight: 600;
-}
-
-/* Pause grace period pill (democratic window) */
-.soc-grace {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid rgba(180, 83, 9, 0.35);
-  border-radius: 9999px;
-  background: rgba(180, 83, 9, 0.08);
-  color: #b45309;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.soc-grace.hidden {
-  display: none !important;
-}
-
-.soc-grace-timer {
-  min-width: 2.4em;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ==========================================================================
@@ -8966,6 +8662,15 @@ body.soc-social .soc-solo-only {
   border-color: #27272a;
 }
 
+/* Guest transport lock (docs/listen-together.md §13.1): in a room the host's
+   playhead is the only source of truth, so the seek surfaces are inert. The
+   buttons carry `disabled`; these are divs, so they need the pointer taken
+   away — a dimmed handle that still seeks would be the lie. */
+.soc-guest-lock {
+  pointer-events: none !important;
+  opacity: 0.55;
+}
+
 .soc-btn-danger {
   border-color: rgba(185, 28, 28, 0.35);
   color: #b91c1c;
@@ -9056,48 +8761,6 @@ html.dark .soc-reaction-pill.active {
 .dark .soc-reaction-note,
 html.dark .soc-reaction-note {
   color: #a1a1aa;
-}
-
-.dark .soc-sync-clock,
-html.dark .soc-sync-clock {
-  color: #8f8f97;
-}
-
-.dark .soc-skip-vote,
-html.dark .soc-skip-vote {
-  background: #27272a;
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-}
-
-.dark .soc-skip-vote:hover,
-html.dark .soc-skip-vote:hover {
-  background: #3f3f46;
-  border-color: rgba(255, 255, 255, 0.22);
-}
-
-.dark .soc-skip-vote.is-done,
-html.dark .soc-skip-vote.is-done {
-  background: #ffffff;
-  border-color: #ffffff;
-  color: #000000;
-}
-
-.dark .soc-vote-ratio,
-html.dark .soc-vote-ratio {
-  color: #a1a1aa;
-}
-
-.dark .soc-vote-ratio.is-hot,
-html.dark .soc-vote-ratio.is-hot {
-  color: #4ade80;
-}
-
-.dark .soc-grace,
-html.dark .soc-grace {
-  background: rgba(180, 83, 9, 0.16);
-  border-color: rgba(217, 161, 59, 0.4);
-  color: #fbbf24;
 }
 
 .dark .soc-qhead,
@@ -9257,12 +8920,31 @@ html.dark .soc-input:focus {
   border-color: rgba(255, 255, 255, 0.45);
 }
 
+/* Solid controls invert to a white pill in dark mode. The `color` MUST be
+   declared here, and the selector must outrank `.dark .soc-btn`
+   (styles.css:9490, later in the file, same specificity): that base rule sets
+   `color: #fff` and, being later, used to win - painting white text on this
+   white background. "Join room", "Open room" and "Copy invite" shipped
+   invisible (measured contrast 1.0 in a real browser). Doubling the class
+   raises specificity to 0-3-0 so no later rule can silently undo it.
+   app/tests/theme-contrast.test.mjs enforces the invariant. */
+.dark .soc-btn.soc-btn-solid,
+html.dark .soc-btn.soc-btn-solid {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+
+.dark .soc-btn.soc-btn-solid:hover,
+html.dark .soc-btn.soc-btn-solid:hover {
+  background: #e4e4e7;
+  color: #000000;
+}
+
 .dark .soc-qappend-btn,
 .dark .soc-chat-send,
-.dark .soc-btn-solid,
 html.dark .soc-qappend-btn,
-html.dark .soc-chat-send,
-html.dark .soc-btn-solid {
+html.dark .soc-chat-send {
   background: #ffffff;
   color: #000000;
   border-color: #ffffff;
@@ -9270,11 +8952,10 @@ html.dark .soc-btn-solid {
 
 .dark .soc-qappend-btn:hover,
 .dark .soc-chat-send:hover,
-.dark .soc-btn-solid:hover,
 html.dark .soc-qappend-btn:hover,
-html.dark .soc-chat-send:hover,
-html.dark .soc-btn-solid:hover {
+html.dark .soc-chat-send:hover {
   background: #e4e4e7;
+  color: #000000;
 }
 
 .dark .soc-stat-chip,
@@ -9478,6 +9159,10 @@ html.dark .soc-member-role {
   color: #a1a1aa;
 }
 
+/* Base button: transparent background, so a light colour is safe here. It must
+   NOT re-declare `color` for the variants below it in specificity - that is the
+   rule that overrode .soc-btn-solid and blanked those labels. Each variant owns
+   its own background AND text colour; this one only sets the resting text. */
 .dark .soc-btn,
 html.dark .soc-btn {
   border-color: rgba(255, 255, 255, 0.16);
@@ -9490,6 +9175,14 @@ html.dark .soc-btn:hover {
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+/* Safety net for any future `.soc-btn` variant that paints a background but
+   forgets its text colour: restore the inverted pairing. Declared last so it
+   wins, and scoped to the variant class so the base rule stays untouched. */
+.dark .soc-btn.soc-btn-solid:hover,
+html.dark .soc-btn.soc-btn-solid:hover {
+  color: #000000;
+}
+
 .dark .soc-btn-danger,
 html.dark .soc-btn-danger {
   border-color: rgba(248, 113, 113, 0.4);
@@ -9500,6 +9193,13 @@ html.dark .soc-btn-danger {
 html.dark .soc-btn-danger:hover {
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(248, 113, 113, 0.6);
+}
+
+/* Same invariant as .soc-btn-solid, for the danger variant: it paints its own
+   background, so it must out-specify the later `.dark .soc-btn` colour rule. */
+.dark .soc-btn.soc-btn-danger,
+html.dark .soc-btn.soc-btn-danger {
+  color: #f87171;
 }
 
 /* Artwork overlay: dark-glass in both themes. Only the gradient's stops

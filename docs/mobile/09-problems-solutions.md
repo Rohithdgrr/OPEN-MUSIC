@@ -57,6 +57,8 @@ build` when on WSL.
 | P14 | First toast lands under an open panel | Offset applied only on toggle | Apply the stack offset when the stack is **created**, not only on toggle |
 | P15 | Fonts/icons missing offline | Google Fonts / Material Symbols are CDN-only | Expected: falls back to system font / ligature text; layout unaffected because Tailwind ships in `tailwind.css` |
 | P16 | `export_file` / Save dialog does nothing on mobile | Command is `#[cfg(desktop)]` | Expected — use share/export-via-intent workarounds until the SAF/picker work lands (Future Scope) |
+| P24 | NowPlaying's Queue / Chat / Jam Data / Lyrics tabs do nothing **on a device** (they work in a browser) | The regenerated screen (`97b0db8`) added `onclick="switchTab(...)"` **after** the overlay CSP hash list was last written; with `'unsafe-hashes'` an unhashed inline handler is silently refused by the WebView | Bind screen controls with listeners: `screens/nowplaying.js` wires `.tab-btn` via `addEventListener` and keeps `switchTab` global for `jam.js`. If you must add an inline handler, recompute its `sha256` into **both** `tauri.android.conf.json` and `tauri.ios.conf.json` (P7) |
+| P25 | Solo shows the Chat / Jam Data tabs after tapping any tab | `switchTab` rewrote `btn.className` wholesale, clearing the `hidden` class `jam.js` puts on room-only buttons | `switchTab` re-applies `hidden` whenever the button carried it; visibility stays owned by `paintJam`'s `show(…, social, "flex")` |
 
 ## Pipelines / releases
 

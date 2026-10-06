@@ -46,16 +46,16 @@ One row per turn, newest at top. Max 2 lines per cell. No code.
 |----|-------|-----------|-----------|-------|---------------|-----|----------|--------|-------------|-----------|--------------|
 | T-100 | Listen Together docs freeze §1–§12 | RUDRA | T1 | RUDRA | — | T6 | P1 | REVIEW | docs/listen-together.md:10-305 | — | T5 |
 | T-101 | Room backend finish: fmt, clippy, cargo tests green | RUDRA | T1 | KALI | RUDRA→KALI | T6 | P1 | BLOCKED | app/src-tauri/src/room.rs:1-1331 | T-102 | T1 |
-| T-102 | **P0** unblock `cargo test` — harness dies 0xc0000139 at load | RUDRA | T1 | GANESHA | — | owner's next turn | P0 | TODO | root cause + fix + note in 3C L-3 (evidence chain there) | — | T1 |
+| T-102 | **P0** unblock `cargo test` — harness dies 0xc0000139 at load | RUDRA | T1 | GANESHA | — | owner's next turn | P0 | **DONE** | `app/src-tauri/build.rs:20` — comctl-v6 `MANIFESTDEPENDENCY` on the link line (`rustc-link-arg`; `rustc-link-arg-tests` is refused: this package has no `[[test]]` target). `cargo test` **174/174 pass**, `cargo clippy --all-targets -- -D warnings` clean (it had **2 latent warnings** in room.rs:644/982, fixed). Exact fix in `docs/listen-together.md` §13.5 | — | T11 |
 | T-103 | Desktop join form markup + CSS (contract C-4) | RUDRA | T1 | KARTHIKEYA | — | T6 | P1 | **DONE** | app/src/index.html:1791-1802 (markup) + app/src/styles.css:8424-8474 (light) + 9114-9119, 9242-9258 (.dark) — npm test 150/150, lint clean | — | T7 |
-| T-104 | Desktop `social.js` room wiring (1 s host tick, guest apply, chat, real counts) | RUDRA | T1 | KARTHIKEYA | — | T8 | P1 | TODO | app/src/social.js:25-170 | T-103, T-111 | T5 |
+| T-104 | Desktop `social.js` room wiring (1 s host tick, guest apply, chat, real counts) | RUDRA | T1 | KARTHIKEYA | — | T8 | P1 | **DONE** | `app/src/social.js:50` (guest lock) `:146` (paintRoom) `:304` (host broadcast) `:360` (guest apply) `:397` (frame reduction) `:504`/`:524` (open/join) — 39/39 headless checks, `npm test` 174/174, lint clean, docs §13 | T-103 ✅ | T11 |
 | T-105 | Reducer contract tests (§6a + §8) | RUDRA | T1 | ANJI | RUDRA→ANJI | — | P1 | **DONE** | app/tests/room.test.mjs:1-221 — 21 tests, 0 todo | — | T2 |
 | T-106 | Gate sweep + room-code slot tables | RUDRA | T1 | ANJI | — | — | P1 | **DONE** | docs/social-nowplaying.md:§3b-i + app/tests/social-ui.test.mjs +8 — `npm test` 150/150, lint clean — social-ui 23/23 (card corrected at T5; it read +6/148 before the doc-drift guard landed) | — | T4 |
 | T-107 | QR uncommitted WIP: claim & finish | RUDRA | T1 | KALI | — | T6 | P2 | WIP | app/src-tauri/src/qr.rs + app/src/qrview.js + index/styles/social hunks | — | T3 |
 | T-108 | Mobile surface spec from design zip | RUDRA | T5 | RUDRA | — | T5 | P1 | **DONE** | docs/listen-together.md:249-305 (§12) | — | T5 |
 | T-109 | Design intake: zip → `design/screens/mobile/nowplaying/` | RUDRA | T5 | RUDRA | — | T5 | P1 | **DONE** | design/screens/mobile/nowplaying/{code.html 38.5K, DESIGN.md, screen.png} | — | T5 |
-| T-110 | Regenerate mobile nowplaying screen from new design — must preserve **C-6** ids + add C-6 extras | RUDRA | T5 | KARTHIKEYA | — | T8 | P1 | TODO | app/src/mobile/screens/nowplaying.{html,js} | T-103, T-109 ✅ | T5 |
-| T-111 | Mobile jam wiring — `jam.js`: Solo↔Social, banner, chat tab, host/guest controls, honest Jam Data | RUDRA | T5 | RUDRA | — | T7 | P1 | WIP | app/src/mobile/jam.js (new) | T-109 ✅ | T5 |
+| T-110 | Regenerate mobile nowplaying screen from new design — must preserve **C-6** ids + add C-6 extras | RUDRA | T5 | KARTHIKEYA | — | T8 | P1 | **DONE** | `app/src/mobile/screens/nowplaying.html` — C-6 + legacy transport ids restored, design mock values (code/listeners/ping/telemetry/demo rows) removed; `nowplaying.js` keeps only `switchTab`; `jam-ui.test.mjs` (11 tests) is the gate | T-103 ✅, T-109 ✅ | T11 |
+| T-111 | Mobile jam wiring — `jam.js`: Solo↔Social, banner, chat tab, host/guest controls, honest Jam Data | RUDRA | T5 | RUDRA | — | T7 | P1 | **DONE** | `app/src/mobile/jam.js` (`:99` join sheet, `:166` mode sheet, `:254` frames, `:362` guest apply, `:441` guest lock, `:537` paint, `:678` init) + `app.js:8` wiring — 31/31 headless checks | T-109 ✅ | T11 |
 | T-112 | Android build research: `gen/android` init path, INTERNET permission, toolchain vs `build.sh android` | RUDRA | T5 | ANJI | — | T6 | P2 | **DONE** | docs/mobile/09-problems-solutions.md:P20-P22 + "Android readiness" table — findings: `gen/android` never initialised; **Tauri's v2 manifest template declares zero permissions** so INTERNET is not granted and no `tauri.conf.json` key can express it; `gen/` is gitignored so the edit is un-committable (P22) | — | T6 |
 | T-113 | Android build + emulator verify (APK runs, `room_*` commands present) | RUDRA | T5 | GANESHA | — | T8 | P2 | TODO | APK + verification note in 3C | T-112, T-111 | T5 |
 | T-114 | Mobile docs update (06-features, feature-list, changelog) | RUDRA | T5 | ANJI | — | T9 | P2 | TODO | docs/mobile/06-features.md | T-111 | T5 |
@@ -85,6 +85,8 @@ already running). DONE without `file:line` → rejected.
 | D-9 | RUDRA | `skipVoteBadge` hidden in M1 — skip is host-only (`not_host`) | no vote protocol exists; showing 2/4 would be fabricated | — | T5 |
 | D-10 | RUDRA | **No Tailwind — vanilla CSS only**; convert existing code (prototype T-116 now, shell/desktop T-117 queued, gate T-118) | user directive T10; drops CDN + compiled-CSS coupling (L-6 obsoleted when T-117 lands) | — | T10 |
 | D-11 | RUDRA | Until a real control plane exists: **envelopes = RUDRA chat rows** (`ENVELOPE:` prefix) + board Owner/Status≠TODO is standing authorization; IDLE reports answered ≤1 turn | v6 §79 forbids self-assignment but no runtime exists to enforce dispatch — make the assignment channel explicit instead of stalling | — | T10 |
+| D-12 | BUFFY | `room_info` now returns the advertised `urls` as well — the same `ws://` list `room_open` mints (empty unless hosting) | the live desktop test drives the **real** UI and needs the address a guest is told to dial; `room_info` is the only snapshot command and it hid that. Superset of the §6 contract, so no caller breaks | — | T12 |
+| D-13 | BUFFY | The room QR encodes the **invite line** (`ws://<host>:<port> · <CODE>`), not the code alone | a scan that stopped at the code still left the guest to find the host's address by hand; the invite is exactly what `#btn-copy-invite` already hands out, so the two cannot disagree. **The rest of D-K3 stands** — this is still not a `trancemusic://join` deep link, because no such scheme exists | D-K3 (payload only) | T12 |
 
 KALI's reconstitution (T3 — wiped by the reset, rewritten from verified state):
 
@@ -127,6 +129,12 @@ KALI's reconstitution (T3 — wiped by the reset, rewritten from verified state)
 | 8 | `cargo test` harness `0xC0000139` = `rfd 0.15.4` (via `tauri-plugin-dialog`) statically imports `TaskDialogIndirect`, which exists only in comctl32 **v6**. The test exe ships no app manifest → loader binds System32 v5.82 → entry point missing before `main`. Proven by resolving all 406 imports with `GetProcAddress` (exactly 1 miss; tool: TEMP `importcheck.rs`, keep out of repo). Fix belongs in build/test manifest, not in any crate: embed the comctl-v6 dependency for test targets. Regression window: dialog plugin postdates the 152-pass baseline | COMPILE-LOCK | KALI | T7 |
 | 8 | **Verified — closes the open question in L-7:** Tauri v2's Android manifest template declares **zero** `<uses-permission>`, so INTERNET is not granted, and no `tauri.conf.json` key can add it. Compounded by `gen/` being gitignored, so the fix cannot be committed (P21-P22) | MOBILE | ANJI | T7 |
 | 9 | A gate that iterates a directory must **assert the directory is non-empty** — otherwise a rename or move turns "0 failures" into a silent green. `mobile-syntax.test.mjs` pins `>= 30` files for exactly that reason | PROBE | ANJI | T8 |
+| 10 | **The blocked harness was hiding a real defect.** The moment `cargo test` could load (T-102), `room::tests::drift_report_paints_presence_for_the_host_tile` failed: it read the **join-time** `presence` frame — which must carry no `driftMs` — and asserted 420 against it. A suite that cannot run is not "0 failures"; it is an unmeasured claim. Fixed by draining the join broadcast and asserting its absence of a number explicitly | PROBE | BUFFY | T11 |
+| 11 | **"Green" is per-layer.** `cargo test`, `npm test` and lint were all green while nothing had proven the JS glue reacts correctly to a frame: the server was tested in Rust and the reducer in Node, but the glue between them was only *statically* asserted. Driving the real screens in headless Chrome against a stubbed `invoke`/`listen` (39 desktop + 31 mobile checks) turned "it should work" into a measurement — and caught two real bugs: a host's own `playback` echo counted towards the "Synchronized" badge, and `#btn-leave-room` no longer returned to Solo | PROBE | BUFFY | T11 |
+| 12 | Run `cargo fmt --check` + clippy **after** editing Rust, not just `cargo test`: two clippy warnings had been sitting in a committed file, and a one-line change produced a fmt diff the moment it exceeded the line width | COMPILE-LOCK | BUFFY | T11 |
+| 13 | Editing a file whose **tracked name differs only in case** (`ROOM.MD` vs `ROOM.md`) can leave git reporting the tracked file as deleted. It did: ` D ROOM.MD` appeared mid-session. Always write the exact tracked spelling, and check `git status` after editing a path with unusual casing — `HEAD:ROOM.MD` is the recovery | COMPILE-LOCK | BUFFY | T11 |
+| 14 | **A checked-in `gen/android` debug APK is not a shippable artifact — it is a dev client.** The existing `app-x86_64-debug.apk` was produced by `tauri android dev`, so it baked in `devUrl` (`http://<pc-ip>:1430/mobile/index.html`). On the emulator every load failed (`chrome-error://`, DOM with **0** ids) and `room_info` was unreachable — the app looked broken while the code was fine. Only `tauri android build --debug` embeds the assets; verify with `adb logcat` (`Failed to request http://…:1430/…`) before blaming the frontend | MOBILE | BUFFY | T12 |
+| 15 | **A live test that has never been run is not a test.** `live-desktop.mjs` aborted at `room_info().urls` — a field that command never returned — so the suite could not have been green at any revision. Same class as #11: the per-layer suite (`npm test`, `cargo test`, lint) was fully green while the end-to-end path had a hard stop. Run the live harness at least once before claiming a surface is verified | PROBE | BUFFY | T12 |
 
 ### 3D. Interface Contracts — frozen shapes
 
@@ -162,6 +170,20 @@ BUILT: + T-102 root cause (rfd→TaskDialogIndirect→v6 manifest; 406-import pr
 PENDING: T-102 fix (GANESHA: test-target comctl-v6 manifest); T-107 full-crate proof; board items as @T5
 BLOCKED: T-101/T-107 full-crate proof (still harness); KALI has no other in-lane TODO — requesting work
 NEXT: GANESHA applies manifest fix → KALI runs full cargo proof → RUDRA reviews T-107/T-101
+```
+
+```
+SNAPSHOT @ T11 (BUFFY, appended)
+BUILT:   T-102 fix (build.rs link arg) → cargo test 174/174, clippy+fmt clean;
+         T-104 desktop room wiring (social.js) · T-110 mobile screen regen ·
+         T-111 mobile jam.js — verified end-to-end in headless Chrome against
+         stubbed IPC: desktop 39/39, mobile 31/31, display 11/11; npm test
+         174/174, lint clean (room.test.mjs +7 sync-math tests, social-ui
+         rewritten to the room transport, jam-ui.test.mjs new: 11 tests)
+PENDING: T-113 Android build/emulator verify (needs `tauri android init` — gen/ is
+         gitignored, P20-P22); T-114 mobile docs; T-116/T-117 no-Tailwind; T-118 gate
+BLOCKED: nothing
+NEXT:    two-PC field test (§10 runbook) — the only step that needs hardware
 ```
 
 ```

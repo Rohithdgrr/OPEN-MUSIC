@@ -9,7 +9,6 @@ import { fmtBytes, fmtTime, npText } from "./util.js";
 export function setPlayIcon(playing) {
   const glyph = playing ? "pause" : "play_arrow";
   bar.playIcon.textContent = glyph;
-  if (np.playIcon) np.playIcon.textContent = glyph;
   if (np.vinyl) np.vinyl.style.animationPlayState = playing ? "running" : "paused";
 }
 
@@ -51,10 +50,6 @@ function paintProgress() {
   bar.fill.style.width = `${(ratio * 100).toFixed(1)}%`;
   bar.cur.textContent = fmtTime(audio.currentTime);
   bar.total.textContent = fmtTime(d);
-  if (np.progress) np.progress.style.width = `${(ratio * 100).toFixed(1)}%`;
-  if (np.thumb) np.thumb.style.left = `${(ratio * 100).toFixed(1)}%`;
-  if (np.cur) np.cur.textContent = fmtTime(audio.currentTime);
-  if (np.total) np.total.textContent = fmtTime(d);
   emitState();
   npText("lyric-live-time", fmtTime(audio.currentTime));
   syncLyrics();
@@ -66,12 +61,5 @@ audio.addEventListener("seeked", paintProgress);
 // position the playhead was put back to.
 audio.addEventListener("loadedmetadata", paintProgress);
 
-audio.addEventListener("progress", () => {
-  try {
-    if (np.buffered && audio.buffered.length && Number.isFinite(audio.duration)) {
-      const end = audio.buffered.end(audio.buffered.length - 1);
-      np.buffered.style.width = `${((end / audio.duration) * 100).toFixed(1)}%`;
-    }
-  } catch {}
-});
+
 

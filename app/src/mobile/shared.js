@@ -166,8 +166,9 @@ export function toast(msg, ms = 3200, kind = "info", action = null) {
     });
     el.appendChild(btn);
   }
+  // Only one toast at a time — replace whatever is showing.
+  while (toastStack.firstElementChild) toastStack.firstElementChild.remove();
   toastStack.appendChild(el);
-  while (toastStack.children.length > 4) toastStack.firstElementChild.remove();
   const timer = setTimeout(dismiss, ms);
   function dismiss() {
     clearTimeout(timer);

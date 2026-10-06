@@ -2,7 +2,7 @@
 // Split from main.js (Phase 4 M1).
 import { emitState } from "./bridge.js";
 import { diag, openCredits, showError, showView, toast } from "./core.js"; // esc, invoke: Bluetooth parked
-import { $, audio, bar, np } from "./dom.js";
+import { $, audio, bar } from "./dom.js";
 import { loadPlays } from "./home.js";
 import { createLocalPl, openPicker } from "./library.js";
 import { playQueueItem } from "./playback.js";
@@ -41,7 +41,6 @@ export async function togglePlay() {
   }
 }
 bar.play.addEventListener("click", togglePlay);
-np.play?.addEventListener("click", togglePlay);
 
 export function step(dir) {
   const next =
@@ -50,15 +49,13 @@ export function step(dir) {
 }
 bar.prev.addEventListener("click", () => step(-1));
 bar.next.addEventListener("click", () => step(1));
-np.prev?.addEventListener("click", () => step(-1));
-np.next?.addEventListener("click", () => step(1));
 
 export function paintModes() {
-  for (const el of [bar.shuffle, np.shuffle]) {
+  for (const el of [bar.shuffle]) {
     if (el) el.style.opacity = shuffleMode ? "1" : "";
   }
   const glyph = repeatMode === "one" ? "repeat_one" : "repeat";
-  for (const el of [bar.repeat, np.repeat]) {
+  for (const el of [bar.repeat]) {
     const icon = el?.querySelector(".material-symbols-outlined");
     if (icon) icon.textContent = glyph;
     if (el) el.style.opacity = repeatMode === "off" ? "" : "1";
@@ -77,9 +74,7 @@ export function toggleRepeat() {
   emitState(true);
 }
 bar.shuffle.addEventListener("click", toggleShuffle);
-np.shuffle?.addEventListener("click", toggleShuffle);
 bar.repeat.addEventListener("click", toggleRepeat);
-np.repeat?.addEventListener("click", toggleRepeat);
 
 export function seekFromEvent(track, e) {
   const r = track.getBoundingClientRect();
@@ -87,13 +82,9 @@ export function seekFromEvent(track, e) {
   if (Number.isFinite(audio.duration)) audio.currentTime = ratio * audio.duration;
 }
 bar.progress.addEventListener("click", (e) => seekFromEvent(bar.progress, e));
-np.timeline?.addEventListener("click", (e) => seekFromEvent(np.timeline, e));
 
 export function paintVolume() {
   bar.volFill.style.width = `${(audio.volume * 100).toFixed(0)}%`;
-  if (np.volFill) np.volFill.style.width = `${(audio.volume * 100).toFixed(0)}%`;
-  const tip = $("#vol-val-tooltip");
-  if (tip) tip.textContent = `${Math.round(audio.volume * 100)}%`;
   emitState();
 }
 export function volFromEvent(track, e) {
@@ -104,12 +95,6 @@ export function volFromEvent(track, e) {
 }
 
 bar.volTrack.addEventListener("click", (e) => volFromEvent(bar.volTrack, e));
-np.volTrack?.addEventListener("click", (e) => volFromEvent(np.volTrack, e));
-np.volMute?.addEventListener("click", () => {
-  audio.muted = !audio.muted;
-  if (np.volIcon) np.volIcon.textContent = audio.muted ? "volume_off" : "volume_up";
-  emitState(true);
-});
 
 bar.queue.addEventListener("click", () => {
   setQueueTab("next");

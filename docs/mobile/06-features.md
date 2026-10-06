@@ -18,6 +18,16 @@ instead of failing oddly.
   tracks while offline.
 - Lyrics: `get_lyrics` (LRCLIB synced → JioSaavn text → LRCLIB search),
   karaoke paint in `mobile/lyrics.js` + `.lyric-*` CSS in `mobile/index.html`.
+- NowPlaying (`mobile/screens/nowplaying.*`): the artwork card mirrors the
+  desktop overlay's metadata — eyebrow track line (`#np-trackline`),
+  title/artist with favorite / download / add / share actions, and an
+  ALBUM · LENGTH · ROOM telemetry strip (`binders.js:paintNowplaying` paints it
+  from the player state, `jam.js:paintJam` fills the room count). The
+  Queue / Chat / Jam Data / Lyrics tabs are bound with `addEventListener` in
+  the screen script — inline `onclick` is refused by the mobile CSP
+  (09-problems-solutions P24). There is **no in-app volume slider** (removed
+  2026-10-06: system volume keys own it; `tm-mobile-vol` still seeds the level
+  in `player.js`).
 
 ## Library & discovery
 
@@ -46,6 +56,24 @@ instead of failing oddly.
   `cache_clear` (never touches the vault), `net_ping` reachability probe.
 - Backup/restore + Drive sync commands exist (`gdrive_*`), but native
   file pickers are desktop-only (see below).
+
+## Connection banner (minimal, delayed)
+
+- `#net-banner` (`mobile/net.js`) sits **below** the screen header
+  (`top = safe-area + 3.5rem + 8px`), compact pill (`text-[11px]`,
+  `px-3 py-1`, `w-max`, icon `14px`) — never overlapping the app-bar.
+- Delayed show: the banner unhides only after `SHOW_AFTER_MS` (8 s) of
+  sustained non-online state; transient blips stay invisible. The delay
+  matures even without a state change (same-state probes re-check it).
+  Routing (`netMode()` → online/degraded/offline) is unaffected — only
+  visibility is debounced. Recovery hides immediately and resets the timer.
+- Banner vs toast split (mirrors desktop `src/net.js`, which retired its
+  pill for the same reason): the banner owns persistent bad-state display,
+  so probe-driven transitions are toast-`silent`. The bottom toast fires
+  only for recovery (`Back online…` — the banner just vanishes, so the
+  toast is the sole confirmation) and for user-initiated `setModePref`
+  changes. Action feedback toasts (e.g. offline lookup errors) are
+  unaffected — they answer an action, not a state.
 
 ## Deliberately unavailable on mobile (explicit errors)
 

@@ -1,174 +1,554 @@
-// social.js — Social Now Playing shell (Phase 3 + 4a glue).
-// Local state, plus a thin mirror of sidecar.js into the Jam/QR/header slots:
-// this module opens no sockets of its own (the bridge lives in sidecar.js),
-// and every count, message and vote it shows is either produced by this
-// client or decoded from a server frame — see docs/social-nowplaying.md §6
-// (truthfulness rules) and docs/sidecar.md §5.
-import { diag, toast } from "./core.js";
+// social.js — Social Now Playing shell + Listen Together room glue.
+//
+// Two layers live here:
+//   1. Local state (Phase 3): mode switch, reactions, chat echo, skip vote,
+//      queue lock, QR surface — see docs/social-nowplaying.md.
+//   2. The room (docs/listen-together.md §6/§13): this module calls the Rust
+//      `room_*` commands and reduces the `room://msg` frames through the pure
+//      reducer in room.js. It opens **no socket of its own** — both sockets
+//      live in Rust (app/src-tauri/src/room.rs), so the WebView CSP stays
+//      untouched and every wire path is covered by `cargo test`.
+//
+// Every count, message and drift number below is either produced by this
+// client or decoded from a server frame: see docs/listen-together.md §8
+// (truthfulness) and docs/social-nowplaying.md §6.
+import { diag, invoke, toast } from "./core.js";
 import { $, $$, audio } from "./dom.js";
+import { playerSnapshot } from "./bridge.js";
 import { loadPlays } from "./home.js";
 import { loadFavs } from "./library.js";
+import { playQueueItem } from "./playback.js";
 import { enqueue, queue } from "./queue.js";
-import { createSidecar, readPort, STATUS } from "./sidecar.js";
 import { paintQr } from "./qrview.js";
-import { step } from "./transport.js";
+import {
+  createRoomState,
+  inviteText,
+  memberCount,
+  reduceRoom,
+  sanitizeRoomName,
+  syncDecision,
+  worstDriftMs,
+} from "./room.js";
 import { entryTrack, vaultEntries } from "./vault.js";
 
-// A room of one until the local sidecar connects: the member count, the vote
-// denominator and the "online" chip are all derived from this constant, so
-// they can never drift into claiming an audience that is not there.
-const MEMBERS = 1;
-const GRACE_SECS = 3;
+/// The host's sync tick (§4.1). C-5: a state frame on every real change *and*
+/// once a second while playing.
+const HOST_TICK_MS = 1000;
+/// Every room-code surface, painted from one list with one fallback: a
+/// refusal, a disconnect or a leave must blank **all** of them together
+/// (docs/social-nowplaying.md §3b-i).
+const ROOM_SLOTS = ["soc-room-code", "qr-room-code", "jam-room-id"];
+const NO_ROOM = "NO ROOM";
+const DEFAULT_ROOM_NOTE = "Open a room on this device, or join one with its code.";
+
+/// A guest may not drive the room's transport: the host's playhead is the only
+/// source of truth (§4). These are the desktop controls that would otherwise
+/// fight it. Out-of-band changes (global hotkeys) are not a hole — they are
+/// corrected by the next host frame, within one tick.
+const GUEST_LOCK_IDS = [
+  "bar-play", "bar-prev", "bar-next", "bar-shuffle", "bar-repeat",
+];
+const GUEST_SEEK_IDS = ["bar-progress"];
 
 let votes = 0;
-let graceTimer = 0;
 
-// --------------------------------------------------------------- sidecar glue -
-// The connection itself lives in sidecar.js (DOM-free, unit-tested there);
-// this section only mirrors its state into the Jam pane, the QR surface and
-// the header room chip. Nothing is enabled or shown before the server's own
-// frame has proved it (docs/sidecar.md §5).
-const ROOM_SLOTS = ["soc-room-code", "qr-room-code", "jam-room-id"];
-const DEFAULT_SIDECAR_NOTE = "Local 127.0.0.1 process; ships unbundled.";
+// ------------------------------------------------------------------ room ---
+let room = createRoomState();
+let roomPort = 0;
+let joining = false;
+let listenerReady = false;
+let tickTimer = 0; // the 1 s host broadcast / guest apply loop
+let lastDrift = null; // this guest's measured drift, ms
+let guestMirror = ""; // set when the host's track is not on this device
+let guestApplied = ""; // last playback frame key this guest applied
 
-let sidecar = null;
-let paintedRoom = "";
+function el(id) {
+  return document.getElementById(id);
+}
 
-function paintRoomCode(code) {
-  const text = code || "NO ROOM";
-  for (const id of ROOM_SLOTS) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
+function setRoomNote(text) {
+  const note = el("room-join-note");
+  if (note) note.textContent = text;
+}
+
+function roomName() {
+  try {
+    return sanitizeRoomName(window.localStorage.getItem("tm-username") || "", "Host");
+  } catch {
+    return "Host";
   }
 }
 
-function paintSidecarState(s) {
-  const cell = $("#jam-sidecar");
-  const note = $("#jam-sidecar-note");
-  const open = $("#btn-open-room");
-  const copyInvite = $("#btn-copy-invite");
-  const copyQr = $("#btn-qr-copy");
-
-  paintRoomCode(s.roomCode);
-
-  if (note) {
-    note.textContent = s.message || DEFAULT_SIDECAR_NOTE;
+function paintRoomCode(code) {
+  const text = code || NO_ROOM;
+  for (const id of ROOM_SLOTS) {
+    const node = el(id);
+    if (node) node.textContent = text;
   }
-  if (open) {
-    // Offered only while a real handshake is done and no room exists yet.
-    open.disabled = s.status !== STATUS.CONNECTED || !!s.roomCode;
-    open.title = s.status === STATUS.CONNECTED ? "Ask the sidecar for a room code" : "Connect the local sidecar first";
-  }
-  const haveCode = !!s.roomCode;
-  if (copyInvite) {
-    copyInvite.disabled = !haveCode;
-    copyInvite.title = haveCode ? "Copy the room code to the clipboard" : "Available once a room code exists";
-  }
-  if (copyQr) copyQr.disabled = !haveCode;
+}
 
-  // The symbol encodes the room code, so it is re-painted whenever that code
-  // changes — including while the surface is open.
-  paintQrSurface(s.roomCode);
+/// One row of `#jam-members`, built from a real `presence` member — or, with no
+/// room, from the one member this client can prove exists (itself, solo).
+function memberRow(member) {
+  const row = document.createElement("div");
+  row.className = "soc-member";
+
+  const avatar = document.createElement("span");
+  avatar.className = member.host ? "soc-member-avatar is-you" : "soc-member-avatar";
+  avatar.textContent = member.host ? "YOU" : initialsOf(member.name);
+
+  const name = document.createElement("span");
+  name.className = "soc-member-name";
+  name.textContent = member.name || "Guest";
+
+  const role = document.createElement("span");
+  role.className = "soc-member-role";
+  const badge = document.createElement("span");
+  badge.className = "soc-badge";
+  badge.textContent = member.host ? "HOST" : "GUEST";
+  const drift = document.createElement("span");
+  drift.textContent =
+    typeof member.driftMs === "number" ? `${(member.driftMs / 1000).toFixed(2)}s` : "—";
+  role.append(badge, drift);
+
+  row.append(avatar, name, role);
+  return row;
+}
+
+function initialsOf(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  const text = parts.map((p) => p[0]).join("").toUpperCase();
+  return text || "??";
+}
+
+function setGuestLock(locked) {
+  for (const id of GUEST_LOCK_IDS) {
+    const node = el(id);
+    if (!node) continue;
+    node.disabled = locked;
+    node.title = locked ? "The host controls playback in this room" : "";
+  }
+  for (const id of GUEST_SEEK_IDS) {
+    el(id)?.classList.toggle("soc-guest-lock", locked);
+  }
+}
+
+function fmtDrift(ms) {
+  return typeof ms === "number" && Number.isFinite(ms) ? `±${(Math.abs(ms) / 1000).toFixed(2)}s` : "—";
+}
+
+/// Paint every room surface from the reducer's state. Nothing here invents a
+/// value: no room → placeholders; a room → the frames' own numbers.
+function paintRoom() {
+  const idle = room.role === "idle";
+  paintRoomCode(room.code);
+
+  const cell = el("jam-sidecar");
+  const note = el("jam-sidecar-note");
+  const open = el("btn-open-room");
+  const join = el("btn-room-join");
+  const copyInvite = el("btn-copy-invite");
+  const copyQr = el("btn-qr-copy");
 
   if (cell) {
     cell.classList.remove("is-off", "is-ok");
-    let text;
-    switch (s.status) {
-      case STATUS.PROBING:
-        text = "Probing…";
-        cell.classList.add("is-off");
-        break;
-      case STATUS.OFFLINE:
-      case STATUS.IDLE:
-        text = "Not connected";
-        cell.classList.add("is-off");
-        break;
-      case STATUS.CONNECTING:
-      case STATUS.HANDSHAKING:
-        text = "Connecting…";
-        break;
-      case STATUS.CONNECTED:
-        text = s.serverVersion ? `Connected (v${s.serverVersion})` : "Connected";
-        cell.classList.add("is-ok");
-        break;
-      case STATUS.ROOM:
-        text = "Connected";
-        cell.classList.add("is-ok");
-        break;
-      case STATUS.ERROR:
-        text = `Error: ${s.errorCode || "failed"}`;
-        cell.classList.add("is-off");
-        break;
-      default:
-        text = "Not connected";
-        cell.classList.add("is-off");
+    if (joining) {
+      cell.textContent = "Connecting…";
+    } else if (room.role === "host") {
+      cell.textContent = roomPort ? `Listening on :${roomPort}` : "Listening";
+      cell.classList.add("is-ok");
+    } else if (room.role === "guest") {
+      cell.textContent = "Joined";
+      cell.classList.add("is-ok");
+    } else {
+      cell.textContent = "Not in a room";
+      cell.classList.add("is-off");
     }
-    cell.textContent = text;
   }
 
-  if (s.roomCode && s.roomCode !== paintedRoom) {
-    paintedRoom = s.roomCode;
-    toast(`Room ${s.roomCode} open — share the code with someone on this server.`, "success", 5000);
-    diag("sidecar", true, `room ${s.roomCode}`);
-  } else if (!s.roomCode) {
-    paintedRoom = "";
+  if (note) {
+    if (room.error) {
+      note.textContent = room.error;
+    } else if (joining) {
+      note.textContent = "Asking the host to let this device in…";
+    } else if (guestMirror) {
+      note.textContent = guestMirror;
+    } else if (room.role === "host") {
+      const share = inviteText(room);
+      note.textContent = share
+        ? `Guests join at ${share}.`
+        : "Handing out the code…";
+    } else if (room.role === "guest") {
+      note.textContent = "Following the host's playhead; audio stays on this device.";
+    } else {
+      note.textContent = DEFAULT_ROOM_NOTE;
+    }
+  }
+
+  if (open) {
+    const canOpen = idle && !joining;
+    open.disabled = !canOpen;
+    open.title = canOpen ? "Start a room on this device" : "Leave the current room first";
+  }
+  if (join) {
+    const canJoin = idle && !joining;
+    join.disabled = !canJoin;
+    join.title = canJoin ? "Join the room at that address" : "Leave the current room first";
+  }
+  const haveCode = !!room.code;
+  if (copyInvite) {
+    copyInvite.disabled = !haveCode;
+    copyInvite.title = haveCode ? "Copy the invite line" : "Available once a room code exists";
+  }
+  if (copyQr) copyQr.disabled = !haveCode;
+
+  const session = el("jam-session-mode");
+  if (session) {
+    session.textContent =
+      room.role === "host"
+        ? `Hosting${roomPort ? ` on port ${roomPort}` : ""}`
+        : room.role === "guest"
+          ? "Guest — following the host"
+          : "Local room";
+  }
+  const mode = el("jam-mode-label");
+  if (mode) mode.textContent = idle ? "Solo" : room.role === "host" ? "Host" : "Guest";
+
+  const sync = el("jam-sync-value");
+  if (sync) {
+    const measured = room.role === "host" ? worstDriftMs(room) : lastDrift;
+    sync.textContent = fmtDrift(measured);
+    sync.classList.toggle("is-ok", typeof measured === "number");
+    sync.classList.toggle("is-off", typeof measured !== "number");
+  }
+
+  const membersHost = el("jam-members");
+  if (membersHost) {
+    const list =
+      room.members.length > 0
+        ? room.members
+        : [{ id: "self", name: "You", host: true }];
+    membersHost.replaceChildren(...list.map(memberRow));
+  }
+  const membersNote = el("jam-members-note");
+  if (membersNote) {
+    const n = memberCount(room);
+    membersNote.textContent = idle
+      ? "1 (you) — no room is open on this device."
+      : `${n} in the room${room.role === "guest" ? " · the host controls playback" : ""}.`;
+  }
+
+  setGuestLock(room.role === "guest");
+  paintCounts();
+  paintReactionNote();
+}
+
+// ------------------------------------------------------------------ frames -
+function renderChat() {
+  const list = el("chat-messages-container");
+  if (!list) return;
+  list.replaceChildren();
+  const empty = el("chat-empty");
+  if (empty) empty.classList.toggle("hidden", room.chat.length > 0);
+  const typing = el("chat-typing");
+  if (typing) typing.classList.add("hidden"); // no typing protocol exists
+  for (const entry of room.chat) list.append(chatMessage(entry));
+  list.scrollTop = list.scrollHeight;
+}
+
+/// One chat bubble. `entry` comes from the reducer: a `chat` frame (own echo
+/// included) or this client's local echo when no room is open. Built with
+/// createElement + textContent — never innerHTML (docs/social-nowplaying.md §3a).
+function chatMessage(entry) {
+  const mine = !!entry.mine;
+  const msg = document.createElement("div");
+  msg.className = mine ? "soc-chat-msg mine" : "soc-chat-msg";
+
+  const avatar = document.createElement("span");
+  avatar.className = "soc-chat-avatar";
+  avatar.textContent = mine ? "YOU" : initialsOf(entry.from?.name);
+
+  const bubble = document.createElement("div");
+  bubble.className = "soc-chat-bubble";
+
+  const meta = document.createElement("div");
+  meta.className = "soc-chat-meta";
+  const user = document.createElement("span");
+  user.className = "soc-chat-user";
+  user.textContent = mine ? "You" : entry.from?.name || "Guest";
+  const time = document.createElement("span");
+  time.className = "soc-chat-time";
+  time.textContent = clockOf(entry.ts);
+  meta.append(user, time);
+
+  const body = document.createElement("div");
+  body.className = "soc-chat-text";
+  body.textContent = entry.text; // textContent, never innerHTML
+
+  bubble.append(meta, body);
+  msg.append(avatar, bubble);
+  return msg;
+}
+
+function clockOf(ts) {
+  const d = typeof ts === "number" && Number.isFinite(ts) ? new Date(ts) : new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/// Host: broadcast the authoritative playhead (§4.1/§6). No track → nothing to
+/// say, and a guest never calls this (the command refuses with `not_host`).
+function broadcastPlayback() {
+  if (room.role !== "host") return;
+  const snap = playerSnapshot();
+  if (!snap.hasTrack || !snap.id) return;
+  invoke("room_playback", {
+    playing: !snap.paused,
+    trackId: snap.id,
+    title: snap.title || "",
+    artist: snap.artist || "",
+    positionMs: Math.max(0, Math.round((snap.position || 0) * 1000)),
+  }).catch((e) => diag("room playback", false, String(e).slice(0, 160)));
+}
+
+function startHostTick() {
+  if (tickTimer) return;
+  tickTimer = setInterval(() => {
+    if (room.role !== "host" || audio.paused) return;
+    broadcastPlayback();
+  }, HOST_TICK_MS);
+}
+
+function stopHostTick() {
+  if (tickTimer) clearInterval(tickTimer);
+  tickTimer = 0;
+}
+
+/// Guest: find the host's track in what this device already has. Same sources
+/// as the room queue: play history, favourites, vault, plus the live queue.
+function findLocalTrack(id) {
+  if (!id) return null;
+  const idx = queue.findIndex((q) => q.track && q.track.id === id);
+  if (idx >= 0) return { track: queue[idx].track, index: idx };
+  const hit = localTracks().find((t) => t.id === id);
+  return hit ? { track: hit, index: -1 } : null;
+}
+
+async function followHostTrack(pb) {
+  const found = findLocalTrack(pb.trackId);
+  if (!found) {
+    // §4.5: mirror the host's metadata, never claim to be playing it.
+    guestMirror = `Host is on “${pb.title || pb.trackId}” — not on this device.`;
+    paintRoom();
+    return;
+  }
+  guestMirror = "";
+  if (found.index >= 0) {
+    const snap = playerSnapshot();
+    if (snap.id !== pb.trackId) await playQueueItem(found.index);
+  } else {
+    enqueue(found.track);
+    await playQueueItem(queue.length - 1);
+  }
+  paintRoom();
+}
+
+/// Guest tick: apply the host's playhead, measure the drift, report it.
+function guestTick() {
+  if (room.role !== "guest" || !room.playback) return;
+  const pb = room.playback;
+  const snap = playerSnapshot();
+  const key = `${pb.at}:${pb.trackId}:${pb.positionMs}:${pb.playing}`;
+  if (snap.id !== pb.trackId) {
+    // Resolve once per frame; the next tick measures the result.
+    const applyKey = `follow:${key}`;
+    if (guestApplied !== applyKey) {
+      guestApplied = applyKey;
+      followHostTrack(pb).catch((e) => diag("room follow", false, String(e).slice(0, 160)));
+    }
+    return;
+  }
+
+  if (pb.playing && audio.paused) audio.play().catch(() => {});
+  if (!pb.playing && !audio.paused) audio.pause();
+
+  const { driftMs, seekToSec } = syncDecision(room, audio.currentTime);
+  if (seekToSec !== null) {
+    audio.currentTime = seekToSec;
+    diag("room sync", true, `seek ${seekToSec.toFixed(2)}s (drift ${driftMs}ms)`);
+  }
+  if (driftMs !== null) {
+    lastDrift = driftMs;
+    invoke("room_report", { driftMs }).catch(() => {});
+  }
+  paintRoom();
+}
+
+function startGuestTick() {
+  if (tickTimer) return;
+  tickTimer = setInterval(guestTick, HOST_TICK_MS);
+}
+
+/// Reduce one `room://msg` frame and drive the UI from the result. Frame
+/// semantics are the frozen contract in docs/listen-together.md §6a.
+function applyRoomFrame(frame) {
+  if (!frame || typeof frame.t !== "string") return;
+  room = reduceRoom(room, frame);
+
+  switch (frame.t) {
+    case "refresh":
+      // The server asks the host for a fresh playhead the moment someone
+      // joins, so the newcomer never waits a full tick.
+      broadcastPlayback();
+      return;
+    case "hosted":
+    case "joined":
+      joining = false;
+      setRoomNote(
+        room.role === "host"
+          ? `Room ${room.code} open — guests join with the code.`
+          : `Joined room ${room.code}.`,
+      );
+      diag("room", true, `${room.role} ${room.code}`);
+      break;
+    case "history":
+    case "chat":
+      renderChat();
+      break;
+    case "playback":
+      guestTick();
+      break;
+    case "presence":
+      paintRoom();
+      return;
+    case "error":
+      joining = false;
+      // Verbatim: the server's message is the diagnosis (§8).
+      setRoomNote(frame.message || frame.code || "Room error.");
+      toast(frame.message || String(frame.code || "Room error."), "error", 5000);
+      break;
+    case "bye": {
+      joining = false;
+      stopHostTick();
+      guestMirror = "";
+      lastDrift = null;
+      guestApplied = "";
+      roomPort = 0;
+      if (frame.reason && frame.reason !== "left") {
+        toast(String(frame.reason), "info", 4000);
+      }
+      renderChat(); // the reducer emptied the room's chat
+      break;
+    }
+    default:
+      return;
+  }
+
+  if (room.role === "host") startHostTick();
+  else if (room.role === "guest") startGuestTick();
+  else stopHostTick();
+
+  paintRoom();
+}
+
+function startRoomListener() {
+  if (listenerReady) return;
+  const listen = window.__TAURI__?.event?.listen;
+  // No IPC (plain browser): leave the flag clear so a later call can retry
+  // once `__TAURI__` exists. Setting it here would latch the listener off.
+  if (typeof listen !== "function") return;
+  listenerReady = true;
+  listen("room://msg", (e) => applyRoomFrame(e.payload)).catch(() =>
+    diag("room listener", false, "event.listen failed"),
+  );
+}
+
+async function enterSocial() {
+  startRoomListener();
+  // A room server can outlive the window (reload, crash): reconcile before
+  // offering to open a new one, and close anything stale.
+  try {
+    const info = await invoke("room_info");
+    if (info && info.role && info.role !== "idle") await invoke("room_close");
+  } catch {
+    /* no IPC, or nothing to reconcile */
+  }
+  room = createRoomState();
+  roomPort = 0;
+  joining = false;
+  lastDrift = null;
+  guestMirror = "";
+  guestApplied = "";
+  stopHostTick();
+  paintRoom();
+}
+
+async function leaveRoom(note) {
+  stopHostTick();
+  try {
+    await invoke("room_close");
+  } catch {
+    /* nothing was open */
+  }
+  room = createRoomState();
+  roomPort = 0;
+  joining = false;
+  lastDrift = null;
+  guestMirror = "";
+  guestApplied = "";
+  setRoomNote(note || DEFAULT_ROOM_NOTE);
+  paintRoom();
+}
+
+async function openRoom() {
+  if (room.role !== "idle" || joining) return;
+  const name = roomName();
+  try {
+    const info = await invoke("room_open", { name });
+    roomPort = Number(info?.port) || 0;
+    applyRoomFrame({
+      t: "hosted",
+      // The server's own member row is always id "host" (room.rs RoomCore::new).
+      selfId: "host",
+      code: info?.code || "",
+      urls: Array.isArray(info?.urls) ? info.urls : [],
+      members: [{ id: "host", name, host: true }],
+    });
+  } catch (e) {
+    setRoomNote(String(e).slice(0, 200));
+    toast(String(e).slice(0, 160), "error", 5000);
   }
 }
 
-async function startSidecar() {
-  if (sidecar) return;
-  const ua = $("#jam-ua");
-  // The server's default policy allow-lists User-Agents, so we print ours
-  // verbatim for the operator to paste into ua_policy.json (docs/sidecar.md
-  // §4.5). Display only — this app never alters its own UA.
-  if (ua) ua.textContent = `This client's UA: ${navigator.userAgent}`;
-
-  sidecar = createSidecar({
-    port: readPort(window.localStorage),
-    onChange: paintSidecarState,
-  });
-  paintSidecarState(sidecar.state);
-  const up = await sidecar.probe();
-  if (up && isSocial()) sidecar.connect();
-}
-
-function stopSidecar() {
-  if (!sidecar) return;
-  sidecar.stop();
-  sidecar = null;
-  paintSidecarState({
-    status: STATUS.IDLE,
-    message: DEFAULT_SIDECAR_NOTE,
-    roomCode: "",
-    errorCode: "",
-    serverVersion: "",
-  });
-}
-
-function openRoom() {
-  if (!sidecar) return;
-  const name = (() => {
-    try {
-      return window.localStorage.getItem("tm-username") || "You";
-    } catch {
-      return "You";
-    }
-  })();
-  const res = sidecar.createRoom(name);
-  if (!res.ok) {
-    toast("Connect the local sidecar before opening a room.", "info", 3500);
+async function joinRoom() {
+  if (room.role !== "idle" || joining) return;
+  const addr = (el("room-join-addr")?.value || "").trim();
+  const code = (el("room-join-code")?.value || "").trim().toUpperCase();
+  if (!addr || !code) {
+    setRoomNote("Enter the host's address and the 8-character room code.");
+    return;
+  }
+  joining = true;
+  setRoomNote(`Connecting to ${addr}…`);
+  paintRoom();
+  try {
+    // The outcome arrives as frames (`joined` / `error`), not as a return value.
+    await invoke("room_join", { addr, code, name: roomName() });
+  } catch (e) {
+    joining = false;
+    setRoomNote(String(e).slice(0, 200));
+    paintRoom();
   }
 }
 
 async function copyInvite() {
-  const code = sidecar && sidecar.state.roomCode;
-  if (!code) return;
+  const share = inviteText(room) || room.code;
+  if (!share) return;
   try {
-    await navigator.clipboard.writeText(code);
-    toast(`Room code ${code} copied.`, "success", 2500);
-    diag("sidecar", true, "invite copied");
+    await navigator.clipboard.writeText(share);
+    toast(`Invite copied: ${share}`, "success", 2500);
+    diag("room", true, "invite copied");
   } catch {
-    toast(`Clipboard unavailable — the room code is ${code}.`, "info", 4000);
+    toast(`Clipboard unavailable — the invite is ${share}.`, "info", 4000);
   }
 }
 
@@ -176,17 +556,19 @@ const isSocial = () => document.body.classList.contains("soc-social");
 
 // ------------------------------------------------------------- paint helpers -
 function paintCounts() {
+  const idle = room.role === "idle";
+  const members = memberCount(room);
+  const mine = idle ? `${members} (you)` : `${members} in the room`;
   const cells = [
-    ["skip-vote-label", `Skip (${votes}/${MEMBERS})`],
-    ["jam-vote-ratio", `${votes} / ${MEMBERS}`],
-    ["np-room-members", `${MEMBERS} (you)`],
-    ["qr-members-count", `${MEMBERS} (you)`],
-    ["jam-member-pill", String(MEMBERS)],
-    ["chat-online-count", `${MEMBERS} online`],
+    ["jam-vote-ratio", `${votes} / ${members}`],
+    ["np-room-members", mine],
+    ["qr-members-count", mine],
+    ["jam-member-pill", String(members)],
+    ["chat-online-count", `${members} online`],
   ];
   for (const [id, text] of cells) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
+    const node = el(id);
+    if (node) node.textContent = text;
   }
 }
 
@@ -196,9 +578,7 @@ function paintReactionNote() {
   const any = $$(".soc-reaction-pill").some(
     (pill) => Number(pill.querySelector(".soc-reaction-count")?.textContent || 0) > 0,
   );
-  note.textContent = any
-    ? "Your reactions — counts stay local until the sidecar runs."
-    : "Be the first to react";
+  note.textContent = any ? "Your reactions — counts stay on this device." : "Be the first to react";
 }
 
 // ---------------------------------------------------------------------- mode -
@@ -213,12 +593,8 @@ function setMode(social) {
   $("#btn-mode-social")?.classList.toggle("active", social);
 
   if (social) {
-    toast(
-      `Social mode — local room for ${MEMBERS} (you). Probing the sidecar on 127.0.0.1 …`,
-      "info",
-    );
     diag("social mode", true, "social");
-    startSidecar();
+    enterSocial();
     return;
   }
 
@@ -228,19 +604,25 @@ function setMode(social) {
   if (active && (active.dataset.npTab === "chat" || active.dataset.npTab === "jam")) {
     setActiveTab("tab-btn-lyrics");
   }
-  stopSidecar();
-  resetVotes();
+  void leaveRoom(DEFAULT_ROOM_NOTE);
+  votes = 0;
   closeQr();
-  hideGrace();
   diag("social mode", true, "solo");
 }
 
 // ----------------------------------------------------------------- room QR -
 // The symbol is encoded by Rust (`qr_symbol` in src-tauri/src/qr.rs) and painted
-// by qrview.js. Until the sidecar issues a real code there is nothing honest to
+// by qrview.js. Until a room issues a real code there is nothing honest to
 // encode, so the surface shows its empty state instead of a scannable-looking
 // plate with nothing scannable in it — the lie this surface used to tell with a
 // Material Symbols glyph.
+//
+// What it encodes is the **invite line the Copy button already hands out**
+// (`inviteText`): `ws://<host>:<port> · <CODE>`, or the bare code while the
+// address is not known yet. It used to encode the code alone, which left a
+// guest who scanned it still hunting for the host's address by hand. This is
+// *not* a `trancemusic://join` deep link — no such scheme exists, and inventing
+// one would be a fabricated integration; it is the real, dialable string.
 function paintQrSurface(code) {
   const canvas = $("#qr-canvas");
   const empty = $("#np-qr-empty");
@@ -253,13 +635,16 @@ function paintQrSurface(code) {
     empty?.classList.remove("hidden");
     if (note) {
       note.textContent =
-        "Start a room from the Jam tab — the local room server issues the code.";
+        "Start a room from the Jam tab — the room server issues the code.";
     }
     return;
   }
 
   empty?.classList.add("hidden");
-  if (note) note.textContent = "Scan to join this room, or type the code into “Add to room”.";
+  if (note) {
+    note.textContent =
+      "Scan for this room's invite — address and code. Or copy it from the Jam tab.";
+  }
   paintQr(canvas, code).catch((e) => {
     // Encoding failed: say so rather than leaving a blank white plate that
     // looks like a broken scanner.
@@ -280,7 +665,7 @@ function toggleQr() {
   overlay.classList.toggle("hidden");
   // Repaint on open: the canvas is sized from layout, which is only known once
   // the surface is displayed.
-  if (opening) paintQrSurface(paintedRoom);
+  if (opening) paintQrSurface(inviteText(room) || room.code);
 }
 
 // ---------------------------------------------------------------- reactions -
@@ -297,7 +682,8 @@ function wireReactions() {
   }
 
   // Reactions belong to one track: a new title clears them rather than
-  // carrying someone's 🔥 over to the next song.
+  // carrying someone's 🔥 over to the next song. The same observer is the
+  // host's track-change hook for the room (§4.1).
   const title = $("#track-title-heading");
   if (title) {
     new MutationObserver(() => {
@@ -307,98 +693,46 @@ function wireReactions() {
         if (count) count.textContent = "0";
       }
       paintReactionNote();
+      if (room.role === "host") broadcastPlayback();
     }).observe(title, { childList: true, characterData: true, subtree: true });
   }
-}
 
-// ---------------------------------------------------------------- skip vote -
-function resetVotes() {
-  votes = 0;
-  $("#btn-skip-vote")?.classList.remove("is-done");
-  paintCounts();
-}
-
-function castVote() {
-  if (votes >= MEMBERS) return;
-  votes += 1;
-  $("#btn-skip-vote")?.classList.add("is-done");
-  paintCounts();
-  if (votes >= MEMBERS) {
-    // Room of one: your own vote is already a majority, so the track advances
-    // and the tally resets for the next song.
-    setTimeout(() => {
-      step(1);
-      resetVotes();
-    }, 200);
+  // The host's other two transport changes, straight from the element every
+  // other module already listens to.
+  for (const ev of ["play", "pause", "seeked"]) {
+    audio.addEventListener(ev, () => {
+      if (room.role === "host") broadcastPlayback();
+    });
   }
-}
-
-// ------------------------------------------------------------ grace window -
-function hideGrace() {
-  if (graceTimer) clearInterval(graceTimer);
-  graceTimer = 0;
-  $("#soc-grace")?.classList.add("hidden");
-}
-
-function showGrace() {
-  if (!isSocial()) return;
-  const pill = $("#soc-grace");
-  const timer = $("#grace-timer");
-  if (!pill || !timer) return;
-  if (graceTimer) clearInterval(graceTimer);
-  pill.classList.remove("hidden");
-  let left = GRACE_SECS;
-  timer.textContent = `${left}s`;
-  graceTimer = setInterval(() => {
-    left -= 1;
-    timer.textContent = left > 0 ? `${left}s` : "—";
-    if (left <= 0) hideGrace();
-  }, 1000);
 }
 
 // --------------------------------------------------------------------- chat -
-function chatTime() {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
 function sendChat() {
   const input = $("#chat-input");
-  const list = $("#chat-messages-container");
   const text = (input?.value || "").trim();
-  if (!text || !list) return;
+  if (!text) return;
+  if (input) input.value = "";
 
-  $("#chat-empty")?.classList.add("hidden");
+  if (room.role === "host" || room.role === "guest") {
+    // In a room the server relays the line and echoes it back, so the message
+    // is drawn exactly once — from that frame (§5). A refusal (rate limit)
+    // arrives as an `error` frame and is shown verbatim.
+    invoke("room_chat", { text }).catch((e) => {
+      toast(String(e).slice(0, 160), "error", 4000);
+      if (input) input.value = text; // give the text back, don't lose it
+    });
+    return;
+  }
 
-  const msg = document.createElement("div");
-  msg.className = "soc-chat-msg mine";
-
-  const avatar = document.createElement("span");
-  avatar.className = "soc-chat-avatar";
-  avatar.textContent = "YOU";
-
-  const bubble = document.createElement("div");
-  bubble.className = "soc-chat-bubble";
-
-  const meta = document.createElement("div");
-  meta.className = "soc-chat-meta";
-  const user = document.createElement("span");
-  user.className = "soc-chat-user";
-  user.textContent = "You";
-  const time = document.createElement("span");
-  time.className = "soc-chat-time";
-  time.textContent = chatTime();
-  meta.append(user, time);
-
-  const body = document.createElement("div");
-  body.className = "soc-chat-text";
-  body.textContent = text; // textContent, never innerHTML: no markup from the composer
-
-  bubble.append(meta, body);
-  msg.append(avatar, bubble);
-  list.append(msg);
-  list.scrollTop = list.scrollHeight;
-  input.value = "";
+  // Offline fallback, unchanged from Phase 3: this client echoes itself, and
+  // the list is only ever painted from room.chat so the two paths cannot double up.
+  room = reduceRoom({ ...room, selfId: "me" }, {
+    t: "chat",
+    from: { id: "me", name: "You" },
+    text,
+    ts: Date.now(),
+  });
+  renderChat();
 }
 
 function quoteLyric() {
@@ -445,7 +779,7 @@ function toggleQueueLock() {
 
 /// Everything this client can legitimately add to the room right now: what it
 /// has already played, what it has favourited, what it has downloaded. New
-/// tracks would need the sidecar's search, which does not exist yet.
+/// tracks would need a server-side search, which the room protocol has not got.
 function localTracks() {
   const out = [];
   try {
@@ -480,7 +814,7 @@ function addToRoom() {
       String(t.artist || "").toLowerCase().includes(needle),
   );
   if (!hit) {
-    toast(`No local match for "${query}" — finding new tracks needs the local sidecar.`, "info", 5000);
+    toast(`No local match for "${query}" — finding new tracks needs a catalog search.`, "info", 5000);
     return;
   }
 
@@ -488,10 +822,13 @@ function addToRoom() {
   enqueue(hit);
   if (input) input.value = "";
   diag("room queue", true, already ? `duplicate ${hit.id}` : `enqueued ${hit.id}`);
+  // A guest's queue is local: the room's queue has no protocol frame, so this
+  // says "this device" rather than implying the host saw it (§8).
+  const scope = room.role === "guest" ? "this device" : "the queue";
   toast(
     already
-      ? `"${hit.title}" is already in the room queue.`
-      : `Added "${hit.title}" to the room queue (local).`,
+      ? `"${hit.title}" is already in ${scope}.`
+      : `Added "${hit.title}" to ${scope}.`,
     "success",
     3500,
   );
@@ -501,6 +838,8 @@ function addToRoom() {
 export function initSocial() {
   $("#btn-mode-social")?.addEventListener("click", () => setMode(true));
   $("#btn-mode-solo")?.addEventListener("click", () => setMode(false));
+  // The button says "Leave the room and return to Solo", so it leaves the mode
+  // too: setMode(false) tears the room down through leaveRoom().
   $("#btn-leave-room")?.addEventListener("click", () => {
     setMode(false);
     toast("Left the room — back to Solo.", "info", 3000);
@@ -512,18 +851,19 @@ export function initSocial() {
     if (e.key === "Escape") closeQr();
   });
 
-  $("#btn-open-room")?.addEventListener("click", openRoom);
-  $("#btn-copy-invite")?.addEventListener("click", copyInvite);
-  $("#btn-qr-copy")?.addEventListener("click", copyInvite);
-  paintSidecarState({
-    status: STATUS.IDLE,
-    message: DEFAULT_SIDECAR_NOTE,
-    roomCode: "",
-    errorCode: "",
-    serverVersion: "",
-  });
+  $("#btn-open-room")?.addEventListener("click", () => void openRoom());
+  $("#btn-room-join")?.addEventListener("click", () => void joinRoom());
+  for (const id of ["room-join-addr", "room-join-code"]) {
+    el(id)?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        void joinRoom();
+      }
+    });
+  }
+  $("#btn-copy-invite")?.addEventListener("click", () => void copyInvite());
+  $("#btn-qr-copy")?.addEventListener("click", () => void copyInvite());
 
-  $("#btn-skip-vote")?.addEventListener("click", castVote);
   $("#btn-chat-send")?.addEventListener("click", sendChat);
   $("#chat-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -542,10 +882,18 @@ export function initSocial() {
   });
 
   wireReactions();
-  audio.addEventListener("pause", showGrace);
-  audio.addEventListener("play", hideGrace);
 
-  paintCounts();
-  paintReactionNote();
-  diag("social", true, `boot: solo, ${MEMBERS} member`);
+  // Attach the room listener at boot, not on entering Social. `open_room` can
+  // be reached without the mode switch (a restored session, a programmatic
+  // open), and a room whose frames nobody hears is a UI frozen at "1 online".
+  startRoomListener();
+
+  // Boot state: no room, no code, nothing enabled that needs one.
+  paintRoom();
+  renderChat();
+  diag("social", true, "boot: solo, no room");
 }
+
+// Test hook: the gates read this list to prove the markup and this module
+// agree about which controls a guest may not use.
+export const __roomLockIds = { disabled: GUEST_LOCK_IDS, seek: GUEST_SEEK_IDS };

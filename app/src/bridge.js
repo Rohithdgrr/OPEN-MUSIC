@@ -1,6 +1,6 @@
 // bridge.js — desktop-card state bridge (playerSnapshot, emitState)
 // Split from main.js (Phase 4 M1).
-import { audio, np } from "./dom.js";
+import { audio } from "./dom.js";
 import { isFav, toggleFavTrack } from "./library.js";
 import { current, queue, queueIndex, repeatMode, restoredTrack, shuffleMode } from "./queue.js";
 import { paintVolume, step, togglePlay, toggleRepeat, toggleShuffle } from "./transport.js";
@@ -111,7 +111,6 @@ export function wireDesktopCard() {
         break;
       case "mute":
         audio.muted = !audio.muted;
-        if (np.volIcon) np.volIcon.textContent = audio.muted ? "volume_off" : "volume_up";
         paintVolume();
         break;
       case "fav":
@@ -126,7 +125,6 @@ export function wireDesktopCard() {
         if (Number.isFinite(cmd.value)) {
           audio.volume = Math.min(1, Math.max(0, cmd.value));
           audio.muted = false;
-          if (np.volIcon) np.volIcon.textContent = "volume_up";
           paintVolume();
         }
         break;

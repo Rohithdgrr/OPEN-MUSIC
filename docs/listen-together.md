@@ -1,7 +1,9 @@
 # Listen Together — two-device rooms (the receiver side)
 
-Status: **Milestone 1 in progress** (Windows ↔ Windows). Milestone 2 is the
-two-PC field test; milestone 3 brings the repo's mobile shell in as a receiver.
+Status: **Milestone 1 landed on both surfaces** (§13): the desktop Jam pane and
+the mobile Now Playing screen are wired to the Rust room commands. Milestone 2
+(the two-PC field test, §10) is a runbook that needs two machines; milestone 3
+was pulled forward and is done — see §12/§13.
 
 This is the doc that specifies the part `docs/sidecar.md` deliberately did not
 build: the **guest/join role**, **playback synchronization** ("listen to the
@@ -135,7 +137,7 @@ Tauri commands (Rust, `room.rs`):
 | `room_playback` | `{playing, trackId, title, artist, positionMs}` → `{ok}` |
 | `room_report` | `{driftMs}` → `{ok}` |
 | `room_close` | `—` → `{ok}` (host: shuts server down; guest: leaves) |
-| `room_info` | `—` → current role/status snapshot |
+| `room_info` | `—` → current role/status snapshot: `{role, port, code, urls}` (`urls` empty unless this device is hosting; recomputed live, so a re-attached UI can re-offer the same invite) |
 
 Event `room://msg` carries one protocol frame per emit
 (`joined`/`presence`/`chat`/`history`/`playback`/`error`/`bye`), so
@@ -242,9 +244,9 @@ Failure reporting: paste what the Jam pane showed (status line text) and any
 
 | # | Scope | State |
 |---|---|---|
-| M1 | Rust room server + guest client + UI wiring + chat + sync + tests + this doc | **in progress** |
-| M2 | Two-PC field test via §10, fixes from findings, optional approval/kick | next |
-| M3 | `app/src/mobile` as a receiver (same protocol, JS-driven client) | **in progress — pulled forward 2026-10-06** |
+| M1 | Rust room server + guest client + UI wiring + chat + sync + tests + this doc | **landed 2026-10-06 — desktop + mobile, §13** |
+| M2 | Two-PC field test via §10, fixes from findings, optional approval/kick | next (needs two machines) |
+| M3 | `app/src/mobile` as a receiver (same protocol, JS-driven client) | **landed — `app/src/mobile/jam.js`, §12/§13** |
 
 ## 12. Mobile (Android) surface
 
@@ -331,10 +333,166 @@ Drift cell (`jamDriftValue`) and the real member/role/invite readouts.
 `mainPlayBtn`/`scrubberTrack` names would freeze the screen — C-6 covers the
 **social-only** ids (`modeToggleBtn`, header ids, `artworkCollabTag`,
 `skipVoteBadge`, `tabBar`/`view-*`/labels, and the `jam*` set above).
-Generated `nowplaying.js` keeps only `switchTab` (+ its tailwind header);
-the demo mode/transport scripts are dropped — `jam.js` (room + mode chrome)
+Generated `nowplaying.js` keeps only `switchTab` and its `.tab-btn` listener
+binding (+ its tailwind header); the tab buttons must NOT go back to inline
+`onclick` — the mobile CSP hashes never covered them (mobile 09 P24). The demo
+mode/transport scripts are dropped — `jam.js` (room + mode chrome)
 and `binders.js` (local paint/transport) own all behavior.
 
 **Truthfulness (§8) applies verbatim to the mobile UI**: no fake member
 counts, no placeholder pings, no "Synchronized" until a real `playback` frame
 has been received and applied.
+
+## 13. M1 as shipped — who calls what
+
+Both surfaces are glue over the same pieces: the Rust commands of §6, the pure
+reducer of §6a, and the sync math of §4. **Neither surface opens a socket** —
+every byte goes through `room_*` IPC and comes back as a `room://msg` frame.
+
+### 13.1 Desktop — `app/src/social.js`
+
+| Trigger | Call / effect | Honest fallback |
+|---|---|---|
+| entering Social | `room_info` → adopt or reset the room (a reload can leave a stale server) | idle → Solo-style placeholder text, nothing enabled |
+| **Open room** (jam pane) | `room_open {port?, name}` → `{port, code, urls, members}` | error string shown verbatim in the join note; slots stay `NO ROOM` |
+| **Join room** (C-4 form) | `room_join {addr, code, name}`; the outcome arrives as frames | `bad_code`/`connect_failed` etc. verbatim; the button re-enables |
+| `play`/`pause`/`seeked`/track change **+ 1 s tick while playing** (host) | `room_playback {playing, trackId, title, artist, positionMs}` | a guest never calls it — the transport is disabled with a stated reason |
+| chat send | `room_chat {text}`; the line is drawn **only** from the echoed `chat` frame | no room → the local echo of §3a, unchanged |
+| each 1 s tick (guest) | `room_report {driftMs}` from `syncDecision()` (§13.3) | no `playback` frame yet → no report, `#jam-sync-value` stays `—` |
+| **Leave Room** | `room_close` → `bye{left}` → Solo | — |
+
+Slots the desktop paints (all from `room.js` state, never from a literal):
+`#soc-room-code` / `#qr-room-code` / `#jam-room-id` (the §3b-i `ROOM_SLOTS`
+table), `#jam-sidecar` (room-server state: `Not in a room` / `Listening on
+:<port>` / `Joined`), `#jam-sidecar-note` (which side of the room this window
+is on), `#jam-members` (cloned member rows from `presence`), `#jam-members-note`
+(count + who owns the transport), `#jam-session-mode`, `#jam-sync-value`
+(measured drift, §4.4), `#room-join-note` (join status), plus the member
+counts of §3a.
+
+`#jam-ua` was **removed** in this milestone. It existed to paste this app's
+User-Agent into metroserver's `ua_policy.json`; the in-app room server has no
+UA policy, so the line could only tell a user to edit a file that nothing
+reads (the §6b "dead chrome" rule). `metroproto.js`/`sidecar.js` stay in the
+repo and in `npm test` as the dormant interop path — nothing in the UI drives
+them, and `social.js` no longer imports them.
+
+### 13.2 Mobile — `app/src/mobile/jam.js`
+
+One module owns the mobile social layer. It is an ES module (imported by
+`app.js`) because `screens/*.js` are **classic** scripts re-appended by the
+router and cannot `import`. It hooks `smount` (dir `nowplaying`) for the fresh
+DOM and `onPaint` (from `player.js`) for repaints.
+
+| Trigger | Call / effect |
+|---|---|
+| `modeToggleBtn` in Solo | choice sheet: Start a Jam / Join a Jam / Cancel (§12) |
+| Start | `room_open` → host state; `jamSessionBanner`, role badge and invite fill in |
+| Join | sheet accepting a pasted invite line (`ws://ip:port · CODE`) or addr + code → `room_join` |
+| host transport | enabled; broadcasts on play/pause/seek/track change + 1 s tick (§4, C-5) |
+| guest transport | disabled with a stated reason; applies incoming `playback` (§12 guest resolution) and reports `driftMs` per tick |
+| chat | `room_chat` → `history`/`chat` frames; rendered from frames only |
+| `jamLeaveBtn` / `jamEndBtn` | `room_close` → `bye` → Solo |
+
+The desktop's `#btn-leave-room` leaves the **mode** as well as the room (its own
+tooltip says "return to Solo"), while the mobile sheet has separate Leave/End
+actions that do the same thing. A host that is left with no room can still open
+one again — `room_open` is refused with a stated reason, never silently.
+
+Slot ids: the C-6 set (`jamBannerCode`, `jamBannerCount`, `jamBannerDrift`,
+`jamBannerMembers`, `jamMemberValue`, `jamQueueList`, `jamAppendInput`,
+`jamAppendBtn`, `jamChatList`, `jamChatInput`, `jamChatSend`, `jamRoleBadge`,
+`jamRoomTitle`, `jamInviteUri`, `jamInviteCopy`, `jamDriftValue`,
+`jamMemberRow`, `jamLeaveBtn`, `jamEndBtn`) plus the social chrome
+(`modeToggleBtn`, `headerSubtitle`, `headerTitle`, `headerModeDot`,
+`jamSessionBanner`, `copyUriBtn`, `artworkCollabTag`, `skipVoteBadge`, `tabBar`,
+`view-*`, `queueTabLabel`, `queueSyncBadge`, `queueHeaderLabel`) and the
+**legacy** transport ids `binders.js` paints (`master-play-pause`,
+`play-pause-icon`, `scrubber-container`, `scrubber-bar`, `scrubber-needle`,
+`elapsed-time`, `remaining-time`, `favorite-btn`, `favorite-icon`,
+`shuffle-btn`, `repeat-btn`, plus the `aria-label="Next"/"Previous"` buttons).
+
+Ids added beyond C-6 by this milestone (all documented here because a gate
+asserts them): `jamMembersList` (the member rows' host), `jamChatState`,
+`jamAppendNote`, `jamTransportNote` (the guest-lock reason), and the local paint
+hooks `np-art` / `np-title` / `np-artist` / `np-album` — `binders.js` now
+decides by id first and falls back to its old class probes for the older
+screens.
+
+`jamAppendInput`/`jamAppendBtn` ship **disabled** with the reason in their own
+placeholder: M1 has no append frame, so nothing may imply the room heard an add.
+
+**Fabrications removed at generation time** (they were design-mock values, and
+§8 forbids showing them): the banner's `#OM-904` / `4` / `<14ms` trio, the
+member avatar stack, the four demo queue tracks, the two demo chat messages and
+"4 Listeners Active", the `Jam Room #OM-904` title, and the whole telemetry
+grid (bitrate, jitter, buffer %, loss, RTT, `DEMOCRATIC NTP`, 5 s resync,
+15 ms jitter, `2 / 4 votes`) together with the two permission switches no
+protocol backs. `jamRoleBadge` shows the real role; `jamDriftValue` shows the
+**measured** drift; empty states say so.
+
+### 13.3 Shared sync math — `app/src/room.js`
+
+`driftMs` is only honest if both surfaces compute it the same way, so the math
+lives in the reducer module next to the frames (pure, DOM-free, `node --test`):
+
+- `expectedPositionMs(playback, nowMs)` — `positionMs` advanced by the local
+  time since the frame **arrived** (`arrivedAt`), which is why no wall-clock
+  sync between two PCs is needed (§4.1).
+- `syncDecision(state, audioPosSec, nowMs)` → `{driftMs, seekToSec}`: the
+  measured difference, and a seek target **only** past the ±400 ms tolerance
+  (`DRIFT_TOLERANCE_MS`) so playback never stutters for sub-tolerance noise.
+  `driftMs` is `null` — not `0` — before the first `playback` frame.
+
+### 13.4 What was actually verified (and what was not)
+
+| Claim | Evidence |
+|---|---|
+| Room server: join/refuse, presence, chat relay + rate limit, host-only playback, cached playback for late joiners, drift relay, room-full, close, history cap | `cargo test room::` — **10/10 pass** on this machine |
+| The whole Rust suite still passes with the manifest fix | `cargo test` — **174 pass, 0 fail** |
+| Desktop Jam pane drives the room: mode entry, `room_open` → code in all three slots + port + share line, `room_chat` + single-render echo, `presence` → member list + worst drift, `joined` → guest lock on transport and seek surface, leave → `room_close` → Solo | headless Chrome against `app/src/index.html` with a scripted `invoke`/`listen` stub: **39/39 checks** (`room_*` calls, painted values, lock state) |
+| Mobile Now Playing drives the room: Solo default, mode sheet, `room_open` → banner/code/count/invite, chat round trip, `presence` → count/drift/member rows, host ignores incoming playback, guest names an unresolvable track and stays unlocked-from-sync, leave → `room_close` | headless Chrome against `app/src/mobile/index.html` + the real router/binders/screen fragment with the same stub: **31/31 checks** |
+| The two clients speak one protocol | both suites drive the same seven commands and the same `room://msg` frames through `app/src/room.js` |
+| **Desktop — real app window + a second real socket client** | `node tests/live-desktop.mjs` against a self-contained `cargo build` binary (WebView2 remote debugging on `:9222`): **32 pass / 0 fail** — room opened from the UI, code in all three slots, `ws://10.227.158.104:8787` advertised, handshake `joined,history,presence`, chat echo in **31 ms**, guest `playback` refused `not_host`, `presence` → 2 members + `±0.25s`, guest leave → 1 online + `—`, Leave → `NO ROOM` + Solo |
+| **Android — real debug APK on the `Pixel6_API36` emulator + a second real socket client** | `node tests/live-android-emulator.mjs`: **28 pass / 0 fail** — the device's Rust server opened `#6TH5BLFR`, invite `ws://10.0.2.16:8787 · 6TH5BLFR`, chat echo in **31 ms** through the adb forward, `presence` → 2 members + `±0.25s`, second guest line rendered, leave → Solo |
+| **Two real devices over a physical LAN** | **still NOT DONE** — each run proves one real app speaking to a real socket, but on the same machine (desktop) and emulator host (Android). A packet crossing a real LAN between two PCs is the §10 runbook and remains untested. |
+| **A `gen/android` debug APK is a dev client, not a shippable build** | The checked-in `app-x86_64-debug.apk` had been produced by `tauri android dev`, so it baked in `devUrl` (`http://<pc-ip>:1430/mobile/index.html`). On the emulator it rendered a load-failure page (DOM with **0** ids, `Failed to request http://…:1430/…` in `adb logcat`). Only `tauri android build --debug` embeds the frontend; the standalone APK is what the run above used. |
+
+Two defects surfaced only because these two harnesses were run against a real
+app for the first time:
+
+1. **`room_info` hid the invite.** It returned `{role, port, code}` while
+   `room_open` returned the `ws://` list, so a re-attached window could not
+   re-offer the address it was serving on. `room_info` now returns the same
+   `urls` (§6).
+2. **The `room://msg` listener was attached only on entering Social.**
+   `#btn-open-room` lives in the social-only pane, but `openRoom()` did not
+   require the mode — a room could be opened with nobody listening, freezing
+   the host UI at `1 online` forever. The listener is now attached once at
+   boot (`startRoomListener`), and it no longer latches itself off when
+   `__TAURI__` is not yet present.
+
+`live-desktop.mjs` also had to enter Social before touching the Jam pane: those
+controls are `display:none` in Solo, so clicking them from boot was proving a
+state a user cannot reach.
+
+The probes were temporary scaffolding (stub + driver files beside the shell,
+deleted after the run) because the repo has no browser-test dependency and no
+network install is allowed for the gate. They are described here so the numbers
+above can be reproduced or contradicted, not taken on faith.
+
+### 13.5 The `cargo test` harness (P0, fixed here)
+
+The room suite could not run at all before this milestone: the test executable
+carries no application manifest, so the loader bound comctl32 v5.82 and died
+with `0xC0000139` before `main` (`rfd` → `TaskDialogIndirect`, ROOM.md §3C
+L-3). `build.rs` now declares the comctl v6 dependency on the link line
+(`rustc-link-arg`; `rustc-link-arg-tests` is rejected because this package has
+no `[[test]]` target, and the app binary already carries Tauri's own manifest).
+
+The moment the harness loaded, one test failed — proof the block was hiding a
+real defect rather than protecting a green suite:
+`drift_report_paints_presence_for_the_host_tile` read the **join-time** presence
+frame (which must carry no `driftMs`) and asserted 420 against it. The test now
+drains that frame, asserts the absence explicitly, and then reads the report's
+presence.

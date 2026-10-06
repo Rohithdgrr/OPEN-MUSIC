@@ -646,6 +646,11 @@ export async function libraryMenu(item) {
       image: t.image || item.image,
       items: [
         {
+          icon: "playlist_add",
+          label: "Add to Playlist",
+          action: () => addToPlaylist(t),
+        },
+        {
           icon: "playlist_play",
           label: "Play Next",
           action: () => {
@@ -661,13 +666,21 @@ export async function libraryMenu(item) {
             toast(`“${t.title}” added to queue`);
           },
         },
-        { icon: "info", label: "Track Details", action: () => detailsSheet(t) },
-        { icon: "download", label: "Download", action: () => downloadTrack(t) },
+        ...(t.album ? [{ icon: "album", label: "View Album", action: () => viewAlbum(t) }] : []),
+        ...(t.artist || t.artist_ids?.length ? [{ icon: "artist", label: "Go to Artist", action: () => goToArtist(t) }] : []),
         {
           icon: "ios_share",
-          label: "Share",
-          action: () => shareThing({ title: t.title, text: t.artist, url: t.page_url }),
+          label: "Share Track",
+          action: () => shareThing({ title: t.title, text: [t.artist, t.album].filter(Boolean).join(" • "), url: t.page_url }),
         },
+        {
+          icon: "image",
+          label: "Share Card",
+          action: () => shareCard({ title: t.title, subtitle: t.artist, image: t.image, badge: "TRANCE" }),
+        },
+        { icon: "info", label: "Track Details", action: () => detailsSheet(t) },
+        ...(t.id ? [{ icon: "tune", label: "EQ for this track", action: () => { try { if (typeof window.__tmTrackEq === "function") window.__tmTrackEq(t); else toast("EQ panel unavailable", 3000, "error"); } catch {} } }] : []),
+        { icon: "download", label: "Download", action: () => downloadTrack(t) },
         {
           icon: "delete",
           label: "Remove from list",

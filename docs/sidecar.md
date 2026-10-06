@@ -168,7 +168,7 @@ leaving Social / closing the QR → leave_room (if any) + socket.close()
 |---|---|
 | `#jam-sidecar` | `Not connected` / `Connected` / `Error: <code>` |
 | `#jam-sidecar-note` | last server message, or the run-it-yourself hint |
-| `#jam-ua` | this client's `navigator.userAgent` (for the policy file) |
+| `#jam-ua` | this client's `navigator.userAgent` (for the policy file) — **the markup no longer ships this slot**: the Jam pane is driven by the in-app room server, which has no UA policy (`docs/listen-together.md` §13.1). Kept here as the record of what the dormant bridge would need. |
 | `#soc-room-chip` (`#soc-room-code`), `#qr-room-code`, `#jam-room-id` | real `room_code` once `room_created` arrives, else `NO ROOM` (the old preview code and PIN were dropped: the protocol has neither) |
 | `#btn-open-room` | enabled only while connected |
 | `#btn-copy-invite`, `#btn-qr-copy` | enabled only once a real room code exists |

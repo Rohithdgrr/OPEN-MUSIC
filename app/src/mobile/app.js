@@ -4,6 +4,7 @@ import { playList, playPlaylist, toggle, onPaint, playerState, prev, next, seek,
 import { startNet, netMode } from "./net.js";
 import { PRESETS, arm as armSleep } from "../sleep.js";
 import { MOUNT, openLib, entityNav } from "./binders.js";
+import { initJam } from "./jam.js"; // Listen Together: Solo ↔ Social Jam, room chrome, chat
 import { isMenuTrigger, handleMenuTrigger, trackMenu } from "./menus.js";
 import "./native.js"; // Android media surfaces: notification, lockscreen, widget, headset/car
 import "./ux.js"; // Spotify-feel gestures: tab swipe, queue drag, mini-art tap, transitions
@@ -23,6 +24,9 @@ const onSmount = async (e) => {
   }
 };
 document.addEventListener("smount", onSmount);
+// Registered before the queued-mount flush below, so a deep link straight to
+// NowPlaying still gets its jam bindings.
+initJam();
 // The router can paint the first screen before this deferred module runs —
 // that mount was queued, not dispatched (see router.js). Flush it once.
 window.__tmAppReady = true;

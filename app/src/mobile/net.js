@@ -9,6 +9,7 @@ const SLOW_RTT_MS = 300;
 const FAILS_TO_LOST = 2;
 const OKS_TO_ONLINE = 3;
 const MIN_SWITCH_MS = 10000;
+const SHOW_AFTER_MS = 8000; // banner unhides only after 8 s of sustained trouble
 const RETRY_DOWN_MS = 2000;
 const RETRY_OK_MS = 5000;
 
@@ -45,6 +46,7 @@ let lastMode = "online";
 let lastChange = Date.now() - MIN_SWITCH_MS;
 let force = null; // "online" | "offline" | null (auto)
 let timer = 0;
+let firstBadAt = 0; // when the current non-online stretch started (0 = online)
 let banner = null;
 let invoke = null;
 let diag = () => {};
@@ -71,36 +73,62 @@ export function setModePref(v) {
   modeChanged(netMode());
 }
 
-function modeChanged(m) {
+function modeChanged(m, { silent = false } = {}) {
   if (m === lastMode) return;
-  const prev = lastMode;
   lastMode = m;
-  if (!(m === "degraded" && prev === "offline")) toast(MODE_COPY[m].msg, 4000, MODE_COPY[m].kind);
+  if (silent) {
+    // Probe-driven: the banner owns bad-state display, so only recovery
+    // toasts — the banner just vanishes, leaving the toast as the sole
+    // "back online" confirmation.
+    if (m === "online") toast(MODE_COPY[m].msg, 4000, MODE_COPY[m].kind);
+  } else {
+    // User-initiated pref change: always confirm.
+    toast(MODE_COPY[m].msg, 4000, MODE_COPY[m].kind);
+  }
   onMode?.(m);
 }
 
 const bannerBase = (next) =>
-  `fixed top-[calc(env(safe-area-inset-top,24px)+8px)] inset-x-4 max-w-sm mx-auto z-[85] flex items-center justify-center gap-2 px-4 py-2 rounded-full font-medium text-[12px] shadow-xl backdrop-blur-xl border transition-all duration-300 pointer-events-auto ${
+  `fixed top-[calc(env(safe-area-inset-top,0px)+3.5rem+8px)] inset-x-0 mx-auto w-max max-w-[90vw] z-[85] flex items-center justify-center gap-1.5 px-3 py-1 rounded-full font-medium text-[11px] shadow-lg backdrop-blur-xl border transition-all duration-300 pointer-events-auto ${
     next === "lost" ? "bg-red-500/95 text-white border-red-400/30 shadow-red-500/25" : "bg-zinc-900/90 text-zinc-100 border-zinc-700/50 shadow-black/30"
   }`;
 
+function showBanner(next) {
+  const copy = COPY[next];
+  banner.className = bannerBase(next);
+  banner.innerHTML = `<span class="material-symbols-outlined text-[14px]">${copy.icon}</span><span>${copy.msg}</span>`;
+  banner.classList.remove("hidden");
+}
+
 function paint(next) {
-  if (next === state || !banner) return;
+  if (!banner) return;
+  if (next !== "online") {
+    if (!firstBadAt) firstBadAt = Date.now();
+    if (next === state) {
+      // Same bad stretch, no transition: the delayed show may still mature.
+      if (Date.now() - firstBadAt >= SHOW_AFTER_MS) showBanner(next);
+      return;
+    }
+  }
+  if (next === state) return;
   if (Date.now() - lastChange < MIN_SWITCH_MS) return;
   const prev = state;
   state = next;
   lastChange = Date.now();
   const copy = COPY[next];
   if (next === "online") {
+    firstBadAt = 0;
     banner.classList.add("hidden");
     diag("net", true, `recovered from ${prev}`);
   } else {
-    banner.className = bannerBase(next);
-    banner.innerHTML = `<span class="material-symbols-outlined text-[16px]">${copy.icon}</span><span>${copy.msg}</span>`;
-    banner.classList.remove("hidden");
+    showBanner(next);
+    // Delayed show: transient blips (< SHOW_AFTER_MS) never unhide the pill.
+    // (className above wipes classes, so re-hide explicitly while waiting.)
+    if (Date.now() - firstBadAt >= SHOW_AFTER_MS) banner.classList.remove("hidden");
+    else banner.classList.add("hidden");
     diag("net", next === "lost" ? false : null, `${copy.msg} (was ${prev})`);
   }
-  modeChanged(netMode());
+  modeChanged(netMode(), { silent: true });
 }
 
 async function probe() {

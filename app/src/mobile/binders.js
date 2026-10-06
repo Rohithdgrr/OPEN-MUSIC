@@ -2398,14 +2398,20 @@ function paintNowplaying(st) {
 
   const t = st.track;
   if (t) {
-    const title = m.querySelector('[class*="font-headline-lg"]');
+    // Ids first (#np-title/#np-artist, the Social Now Playing screen), then the
+    // original class probes for every older screen.
+    const title = document.getElementById("np-title") || m.querySelector('[class*="font-headline-lg"]');
     if (title && t.title) setTxt(title, t.title);
     // The artist line lives beside the title (p.font-body-md); the only
     // font-headline-md in <main> is the middle lyrics line — painting it
     // would overwrite the lyrics with the artist name.
     const titleEl = m.querySelector("h1.font-headline-lg");
-    const headerArtist = titleEl && titleEl.parentElement && titleEl.parentElement.querySelector("p.font-body-md");
+    const headerArtist =
+      document.getElementById("np-artist") ||
+      (titleEl && titleEl.parentElement && titleEl.parentElement.querySelector("p.font-body-md"));
     const artist = headerArtist || m.querySelector("p.font-body-md");
+    const album = document.getElementById("np-album");
+    if (album && t.album) setTxt(album, t.album);
     if (artist && t.artist) setTxt(artist, t.artist);
     // Only the header credit is stamped: the fallback match can land on a
     // lyric line, and a lyric tap must mean "seek", not "open artist".
@@ -2419,6 +2425,16 @@ function paintNowplaying(st) {
     if (fi) fi.dataset.favIcon = t.id || "";
     paintFavs();
   }
+  // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity): queue
+  // position and total length are real player state — the export's
+  // "STEREO DIRECT" chrome has nothing to stand on here.
+  setTxt(
+    document.getElementById("np-trackline"),
+    t && st.queue.length
+      ? `TRACK ${String(st.qi + 1).padStart(2, "0")} / ${st.queue.length}`
+      : "—",
+  );
+  setTxt(document.getElementById("np-length"), st.dur ? fmtTime(st.dur) : "—");
 
   const bd = document.querySelector("[data-badge]");
   if (bd) {
@@ -2513,48 +2529,13 @@ function scrollQueue(m) {
   else toast("Nothing queued", 2500);
 }
 
-/// NowPlaying extras injected per mount (fresh DOM every navigation):
-/// volume slider, speed select, and the header more-options menu.
-/// Sleep lives in the utility bar ([data-sleep] → app.js + shared sleep.js),
-/// so it is not duplicated here. Idempotent per mount.
+/// NowPlaying extras injected per mount (fresh DOM every navigation): the
+/// speed select and the header more-options menu. There is no volume slider —
+/// system volume keys own it, and `tm-mobile-vol` still seeds the level in
+/// player.js (slider removed 2026-10-06, docs/mobile/06-features.md). Sleep
+/// lives in the utility bar ([data-sleep] → app.js + shared sleep.js), so it
+/// is not duplicated here. Idempotent per mount.
 function ensureNpExtras(m) {
-  // Volume row after the transport controls.
-  const playBtn = document.getElementById("master-play-pause");
-  const transport = playBtn?.closest("div.px-margin") || playBtn?.parentElement?.parentElement;
-  if (transport && !m.querySelector("#m-np-vol")) {
-    const wrap = document.createElement("div");
-    wrap.className = "px-margin mt-3 flex items-center gap-2.5";
-    wrap.innerHTML = `<span class="material-symbols-outlined text-[18px] text-on-surface-variant shrink-0">volume_up</span>
-      <input id="m-np-vol" type="range" min="0" max="100" value="100" aria-label="Volume" class="flex-1 accent-black h-1.5" />
-      <span id="m-np-volval" class="font-label-mono text-[11px] text-secondary w-9 text-right shrink-0">100%</span>`;
-    transport.insertAdjacentElement("afterend", wrap);
-  }
-  const vol = m.querySelector("#m-np-vol");
-  if (vol && !vol.dataset.wired) {
-    vol.dataset.wired = "1";
-    try {
-      // Missing key = keep the markup's default (100%). `Number(null)` is 0,
-      // which would otherwise clamp the slider — and playback — to silence.
-      const raw = localStorage.getItem("tm-mobile-vol");
-      if (raw != null && raw !== "") {
-        const saved = Number(raw);
-        if (Number.isFinite(saved)) {
-          vol.value = String(Math.round(Math.min(1, Math.max(0, saved)) * 100));
-          if (mAudio) mAudio.volume = Math.min(1, Math.max(0, saved));
-        }
-      }
-    } catch {}
-    const lbl = m.querySelector("#m-np-volval");
-    if (lbl) lbl.textContent = `${vol.value}%`;
-    vol.addEventListener("input", () => {
-      const v = Math.min(1, Math.max(0, Number(vol.value) / 100));
-      try {
-        if (mAudio) mAudio.volume = v;
-        localStorage.setItem("tm-mobile-vol", String(v));
-      } catch {}
-      if (lbl) lbl.textContent = `${vol.value}%`;
-    });
-  }
   // Speed row after the utility bar (AirPlay row). Sleep is the utility-bar
   // bedtime button (app.js), not duplicated here.
   const routeBtn = document.getElementById("device-route-btn");

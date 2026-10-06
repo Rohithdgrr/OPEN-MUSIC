@@ -1,6 +1,31 @@
 fn main() {
     tauri_build::build();
 
+    // `cargo test` links a test executable that ships **no** application
+    // manifest, so the Windows loader binds comctl32 v5.82 and the process
+    // dies with 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND) *before* `main`:
+    // `rfd` (pulled in by tauri-plugin-dialog) statically imports
+    // `TaskDialogIndirect`, which only exists in comctl32 v6. The shipped app
+    // is unaffected because Tauri embeds a manifest into it — the test target
+    // is not. Declaring the v6 dependency on **test** link lines only fixes
+    // the harness (see ROOM.md §3C L-3).
+    //
+    // `rustc-link-arg-tests` is the precise flag, but Cargo rejects it here:
+    // this package has no `[[test]]` target, and the lib's own unit-test
+    // binary does not count as one. So the dependency goes on `link-arg`,
+    // which the app binary already satisfies via Tauri's own manifest — the
+    // entry is declared twice, which the loader merges.
+    //
+    // Gate on the **target** OS, not on `cfg(windows)`: a build script is
+    // compiled for the host, so `cfg(windows)` is true even when we are
+    // cross-compiling, and the flag then reaches the Android linker as
+    // `clang: error: no such file or directory: '/MANIFESTDEPENDENCY:...'`.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        println!(
+            "cargo:rustc-link-arg=/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'"
+        );
+    }
+
     // The Drive client id is baked in via option_env!. Shell env can be
     // unset between terminals, so build.rs also reads a project-local
     // `.google-client-id` file (gitignored) as a fallback. First match wins:

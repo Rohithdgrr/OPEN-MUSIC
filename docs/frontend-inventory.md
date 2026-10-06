@@ -40,10 +40,10 @@ task cards, and give any agent a fast "who owns what" lookup.
 | `vault.js` | download pipeline, vault/downloads view |
 | `store_db.js` | frontend wrapper over Rust AppStore (`store.db`): metadata cache + KV + search cache |
 | `net.js` | connection state machine: online/slow/reconnecting/lost → routing mode |
-| `room.js` | Listen Together room state — pure reducer, DOM-free (protocol frames) |
+| `room.js` | Listen Together room state — pure reducer, DOM-free (protocol frames), plus the shared sync math (`expectedPositionMs`/`syncDecision`), `parseInvite`, `sanitizeRoomName` |
 | `metroproto.js` | metroserver protobuf subset (verbatim from `listentogether.proto`) |
 | `sidecar.js` | metroserver connection manager — loopback (127.0.0.1) only |
-| `social.js` | Social Now Playing shell; mirrors sidecar into Jam/QR/header slots |
+| `social.js` | Social Now Playing shell; drives the `room_*` commands + `room://msg` frames (open/join/chat/playback/report/close), mirrors `room.js` state into the Jam/QR/header slots |
 | `qrview.js` | paints the Rust-encoded room QR symbol onto a canvas |
 
 ## Mobile shell — `app/src/mobile/`
@@ -63,6 +63,7 @@ task cards, and give any agent a fast "who owns what" lookup.
 | `lyrics.js` | karaoke lyrics for NowPlaying card (desktop port) |
 | `radio.js` | endless radio for mobile (desktop port) |
 | `rank.js` | mobile search ordering (pure, unit-tested like fuzzy.js) |
+| `jam.js` | Listen Together on mobile: Solo ↔ Social Jam sheets, room banner, chat, Jam Data, host/guest transport rules (imports the shared `../room.js`) |
 | `native.js` | Android media surfaces: notification, lockscreen, BT/car/headset, widget |
 | `net.js` | mobile port of the connection state machine |
 | `collab.js` | collaborative-feel playlists without a server (JSON envelope) |
@@ -86,6 +87,8 @@ Static fragment pairs (`.html` + `.js`), one per route: `home`,
 - **UI work entry points**: `index.html` + `styles.css` +
   `tailwind.css` (desktop); `mobile/index.html` +
   `mobile/tailwind-config.js` (mobile).
-- **Blocked dependency**: `room.js:5` expects the Listen Together
-  contract frozen in `ROOM.md` §3D — RUDRA to freeze before
-  room-UI tasks are coded.
+- **Room layer, as of 2026-10-06**: the reducer contract is frozen
+  (`ROOM.md` §3D C-2, `docs/listen-together.md` §6a) and both surfaces are
+  wired — desktop `social.js`, mobile `jam.js`, one shared `room.js`. Nothing
+  here is blocked; the remaining steps are the two-PC field test (§10) and the
+  Android build (needs `tauri android init`).

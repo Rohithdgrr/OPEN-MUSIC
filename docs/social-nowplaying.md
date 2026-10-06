@@ -1,7 +1,10 @@
 # Social Now Playing — Listen Together / Jam Mode (UI)
 
-Status: **Phases 1–3 + 4a landed**; chat/reactions/skip votes stay local, join
-and playback sync are Phase 4b/5 (`docs/sidecar.md`). Source mockup:
+Status: **Phases 1–5 landed.** §3b below is the retired phase-4a history: the
+Jam pane is now driven by the **in-app Rust room server** (`room_*` commands +
+`room://msg` frames, spec `docs/listen-together.md` §6/§13), not by a local
+metroserver. `app/src/social.js` no longer imports `sidecar.js`; both files stay
+committed and tested as the dormant interop path. Source mockup:
 `design/screens/social nowplaying screen/` (`DESIGN.md`, `code.html`, `screen.png`).
 
 ## 1. Goal
@@ -51,14 +54,23 @@ Guard rails: `app/tests/social-ui.test.mjs` asserts `social.js` contains **no
 network API** (`fetch`/`WebSocket`/`EventSource`/`XMLHttpRequest`/`sendBeacon`)
 and never assigns `innerHTML`.
 
-## 3b. Phase 4a behaviors (`app/src/sidecar.js`, details in `docs/sidecar.md`)
+## 3b. Phase 4a behaviors (`app/src/sidecar.js`) — historic, no longer wired
+
+> Superseded by `docs/listen-together.md` §13. The table below still describes
+> what `sidecar.js` does when something drives it (its own tests do), but the
+> Jam pane it used to feed — `#jam-sidecar`, `#jam-sidecar-note`, `#btn-open-room`,
+> the room-code slots — is now fed by the room server instead. `#jam-ua` was
+> removed from the markup with it (see §13.1 of the other doc), the tile is
+> labelled **Room server** (it names the component it reports), and its static
+> default is `Not in a room` — the exact string `social.js:paintRoom()` writes
+> for `role === "idle"`, so the markup never shows a state JS will contradict.
 
 | Trigger | Behavior | Honest fallback |
 |---|---|---|
 | entering Social | `GET http://127.0.0.1:<port>/health` (1.5 s), then `ws://…/ws` + `client_capabilities` | no answer → `#jam-sidecar` stays `Not connected` |
 | `server_capabilities` | `#jam-sidecar` → `Connected (v…)`, keepalive `ping` every 15 s | shown only after a decoded frame; no `server_capabilities` within **5 s** (`handshake: 5000`) → `handshake_timeout` carrying the app's own wording ("No server_capabilities before the timeout."), never a guess |
 | `#btn-open-room` (enabled only while connected) | sends `create_room`; `room_created` fills `soc-room-code` + `qr-room-code` + `jam-room-id` with the server's 8-char code, toasts it, and re-paints the QR symbol | refused → the server's `code`/`message` verbatim, all code slots stay `NO ROOM` |
-| `#jam-ua` | prints this client's `navigator.userAgent` for the operator's `ua_policy.json` | display only — the app never alters its UA |
+| ~~`#jam-ua`~~ | removed with the sidecar (see the note above §3b and `docs/listen-together.md` §13.1) | — |
 | `#btn-copy-invite` / `#btn-qr-copy` | copy the room code | `disabled` until a code exists |
 | leaving Social | `leave_room` (if any) + socket close; all slots reset to `NO ROOM` | — |
 
@@ -116,7 +128,7 @@ silently never applied. The class in `index.html` was renamed to match the
 documented inventory; `id="np-trackline"` is unchanged (id contract §5).
 | Room QR | `.np-qr-btn`, `.np-qr-overlay(.hidden)`, `.np-qr-card`, `.np-qr-head(-label)`, `.np-qr-count`, `.np-qr-frame`, `.np-qr-canvas`, `.np-qr-empty(.hidden)`, `.np-qr-code`, `.np-qr-note`, `.np-qr-actions`, `.np-qr-copy`, `.np-qr-close` |
 | Reactions | `.soc-reaction-bar`, `.soc-reaction-pill(.active)`, `.soc-reaction-emoji`, `.soc-reaction-count`, `.soc-reaction-note` |
-| Transport | `.soc-sync-clock`, `.soc-skip-vote(.is-done)`, `.soc-vote-ratio(.is-hot)`, `.soc-grace(.hidden)`, `.soc-grace-timer` |
+| ~~Transport~~ | Removed 2026-10-06: the whole `.np-transport-card` block (`#timeline-bar`, `#sync-clock-label`, `#soc-grace`, `#btn-skip-vote`, `#volume-track`) is gone from the desktop Now Playing view. Only the bottom mini-player drives playback and volume now. The skip-vote and grace-period surfaces left with the card; `jam-vote-ratio` still paints the (now inert) tally. |
 | Collab queue | `.soc-qhead(-left/-actions)`, `.soc-qhead-title`, `.soc-badge(.is-locked)`, `.soc-qbtn(.is-on)`, `.soc-qrow(.is-now)`, `.soc-qindex`, `.soc-drag`, `.soc-qthumb`, `.soc-qtext`, `.soc-qtitle`, `.soc-now-badge`, `.soc-qbio`, `.soc-added-by`, `.soc-qrow-side`, `.soc-qdur`, `.soc-qremove`, `.soc-qappend`, `.soc-qinput`, `.soc-qappend-btn` |
 | Chat | `.soc-pane-head(-left/-right)`, `.soc-pane-title`, `.soc-stat-chip(.is-live)`, `.soc-chat-list`, `.soc-chat-msg(.mine)`, `.soc-chat-avatar`, `.soc-chat-bubble`, `.soc-chat-meta`, `.soc-chat-user`, `.soc-tag-host`, `.soc-chat-time`, `.soc-chat-text`, `.soc-chat-reacts`, `.soc-chat-react`, `.soc-typing` (+ `@keyframes soc-blink`), `.soc-chat-compose`, `.soc-emoji-btn`, `.soc-chat-input`, `.soc-chat-send`, `.soc-chat-quote`, `.soc-empty` |
 | Jam pane | `.soc-section-label`, `.soc-tiles`, `.soc-tile(-row/-label/-value/-note)`, `.soc-tile-value.is-ok/.is-off`, `.soc-mode-tag`, `.soc-members`, `.soc-member(-avatar/-name/-role)`, `.soc-btn(-solid/-danger)`, `.soc-qappend` |
@@ -139,8 +151,9 @@ Artwork overlay: `np-trackline` `np-quality` `track-title-heading`
 Room QR: `btn-qr` `qr-overlay` `qr-canvas` `np-qr-empty` `qr-room-code`
 `qr-members-count` `btn-qr-copy` `btn-qr-close`
 Reactions: `reaction-bar` `reaction-note` (pills are `data-emoji`)
-Transport: `sync-clock-label` `soc-grace` `grace-timer` `btn-skip-vote`
-`skip-vote-label` (plus existing `btn-next`, now `.soc-solo-only`)
+Transport: ~~`sync-clock-label` `soc-grace` `grace-timer` `btn-skip-vote`
+`skip-vote-label`~~ — removed 2026-10-06 with the whole transport card
+(plus existing `btn-next`, now `.soc-solo-only`)
 Deck: `tab-btn-lyrics` `tab-btn-queue` `tab-btn-chat` `tab-btn-jam`
 `jam-member-pill`
 Queue pane: `queue-lock-badge` `btn-undo-crdt` `btn-lock-queue`
@@ -149,7 +162,10 @@ Chat pane: `chat-messages-container` `chat-empty` `chat-input`
 `btn-chat-send` `btn-chat-quote` `chat-typing` `chat-online-count`
 `chat-rate-note`
 Jam pane: `jam-room-id` `jam-mode-label` `jam-session-mode` `jam-sync-value`
-`jam-vote-ratio` `jam-sidecar` `jam-sidecar-note` `jam-ua`
+`jam-vote-ratio` `jam-sidecar` `jam-sidecar-note`
+(`jam-ua` was removed in this milestone — the Jam pane no longer prints a UA,
+because the in-app room server has no allow-list; `docs/listen-together.md` §13.1)
+Join form (C-4): `room-join-addr` `room-join-code` `btn-room-join` `room-join-note`
 `auto-level-toggle` `jam-members` `jam-members-note` `btn-open-room`
 `btn-copy-invite` `btn-leave-room`
 
@@ -224,7 +240,7 @@ actually scannable.
 |---|---|---|
 | Encode | `app/src-tauri/src/qr.rs` | `qr_symbol` command. Byte mode, EC level **M**, versions 1-10. Returns `{ size, modules, version }`, flat row-major `0/1`. |
 | Draw | `app/src/qrview.js` | Rasterises the matrix onto the canvas at device resolution, with the spec's 4-module quiet zone and whole-pixel cell rounding. |
-| Wire | `app/src/social.js` | `paintQrSurface(code)` on open and on every `room_created`. |
+| Wire | `app/src/social.js` | `paintQrSurface(inviteText(room) || room.code)` on open and on every `room_created` — the invite line, so the symbol agrees with `#btn-copy-invite`. |
 
 Why Rust owns the encoding: the symbol is derived from the sidecar's room code,
 and every other room fact already comes from Rust. Encoding in the same place
@@ -255,9 +271,21 @@ the room server. Rendering a scannable-looking plate with nothing scannable
 inside it is the exact lie the glyph told. If encoding itself fails, the note
 reports the error rather than leaving a blank white plate.
 
-**No join URL is encoded.** Nothing in metroserver defines a
-`trancemusic://join/...` scheme, so the symbol carries the room code verbatim —
-exactly what a person could paste into "Add to room".
+**What the symbol carries: the invite line, not a deep link.** It encodes
+`inviteText(state)` — `ws://<host>:<port> · <CODE>` while hosting, or the bare
+code until the address is known. It used to encode the code alone, which left a
+guest who scanned it still hunting for the host's address by hand; the invite
+line is the same string `#btn-copy-invite` already hands out, so the two
+surfaces cannot disagree.
+
+This is deliberately **not** a `trancemusic://join/...` deep link. No such
+scheme is registered anywhere, and inventing one would be a fabricated
+integration — a scan currently yields text a person can paste, which is exactly
+what the address+code pair is good for.
+
+Size check: the longest realistic payload is ~36 bytes
+(`ws://255.255.255.255:65535 · XXXXXXXX`), well inside the encoder's version
+1–10 range at EC level M.
 
 `app/tests/social-ui.test.mjs` guards the wiring (IPC path, the `!code` branch,
 the empty state, no CDN) and `styles.css` carries every `.np-qr-*` class.

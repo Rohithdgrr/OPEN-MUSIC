@@ -254,8 +254,9 @@ export function toast(msg, kind = "info", ms = 4500) {
     setTimeout(() => el.remove(), 220);
   };
   el.addEventListener("click", dismiss);
+  // Only one toast at a time — replace whatever is showing.
+  while (stack.firstChild) stack.firstChild.remove();
   stack.appendChild(el);
-  while (stack.children.length > 4) stack.firstChild.remove();
   setTimeout(() => {
     if (el.isConnected) dismiss();
   }, ms);

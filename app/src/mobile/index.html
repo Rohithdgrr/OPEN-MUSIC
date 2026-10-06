@@ -96,11 +96,10 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
 .tm-lyrics-full .lyric-past .lyric-text { font-size: 18px !important; opacity: 0.55 !important; }
 
 /* Toast stack — mobile's own; the desktop's #toast-stack lives in styles.css,
-   which this shell never loads. Stacks up to 4, click to dismiss. */
-/* Toast stack — mobile's own; stacks up to 4, click to dismiss. */
+   which this shell never loads. Single toast at the bottom, click to dismiss. */
 #tm-toast-stack {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 24px) + 3.8rem);
+  bottom: calc(env(safe-area-inset-bottom, 16px) + 5.5rem);
   left: 0;
   right: 0;
   z-index: 80;
@@ -393,6 +392,17 @@ html:not(.dark) select:focus {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06) !important;
 }
 
+/* The search bay carries its own pill chrome (container border +
+   focus-within ring); the global inset input border above would double it
+   into a sharp inner rectangle. The input itself stays chromeless. */
+html:not(.dark) #search-input,
+html:not(.dark) #search-input:focus {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
 /* 7. Image and Artwork Depth */
 html:not(.dark) .aspect-square img,
 html:not(.dark) [data-shelf] img,
@@ -677,6 +687,17 @@ html.dark input[type="password"]:focus,
 html.dark select:focus {
   border-color: #ffffff !important;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14) !important;
+}
+
+/* Same exemption as light mode: the search pill owns its chrome. */
+.dark #search-input,
+.dark #search-input:focus,
+html.dark #search-input,
+html.dark #search-input:focus {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 /* Scrubber in Dark Mode */

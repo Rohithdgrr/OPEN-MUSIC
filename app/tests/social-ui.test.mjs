@@ -25,9 +25,8 @@ const IDS = [
   // room QR
   "btn-qr", "qr-overlay", "qr-canvas", "np-qr-empty", "qr-room-code",
   "qr-members-count", "btn-qr-copy", "btn-qr-close",
-  // reactions + transport
-  "reaction-bar", "reaction-note", "sync-clock-label", "soc-grace", "grace-timer",
-  "btn-skip-vote", "skip-vote-label",
+  // reactions
+  "reaction-bar", "reaction-note",
   // deck + queue
   "tab-btn-lyrics", "tab-btn-queue", "tab-btn-chat", "tab-btn-jam",
   "jam-member-pill", "queue-lock-badge", "btn-undo-crdt", "btn-lock-queue",
@@ -36,9 +35,11 @@ const IDS = [
   "np-panel-chat", "chat-messages-container", "chat-empty", "chat-input",
   "btn-chat-send", "btn-chat-quote", "chat-typing", "chat-online-count",
   "chat-rate-note",
-  // jam
+  // jam (`jam-ua` was removed in §13.1 — it only served the retired sidecar's
+  // UA allow-list, so it is asserted *absent* in the "retired sidecar chrome"
+  // test below)
   "np-panel-jam", "jam-room-id", "jam-mode-label", "jam-session-mode",
-  "jam-sync-value", "jam-vote-ratio", "jam-sidecar", "jam-sidecar-note", "jam-ua",
+  "jam-sync-value", "jam-vote-ratio", "jam-sidecar", "jam-sidecar-note",
   "auto-level-toggle", "jam-members", "jam-members-note",
   "btn-open-room", "btn-copy-invite", "btn-leave-room",
 ];
@@ -66,7 +67,10 @@ test("visibility contract is in place (body.soc-social gates both directions)", 
   assert.ok(css.includes("body:not(.soc-social) .soc-social-only"), "social-only gate missing");
   assert.ok(css.includes("body.soc-social .soc-solo-only"), "solo-only gate missing");
   assert.match(html, /<div class="[^"]*soc-social-only/, "no social-only markup");
-  assert.match(html, /<div class="[^"]*soc-solo-only/, "no solo-only markup");
+  // No element currently opts out of Social with .soc-solo-only (the last two
+  // were inside the removed desktop transport card), so the gate is a
+  // no-op at the markup level — assert it is wired rather than inventing markup.
+  assert.ok(!html.includes("soc-solo-only"), "solo-only is retained as CSS only");
 });
 
 test("solo mode is the default and both modes are reachable from the header", () => {
@@ -75,10 +79,10 @@ test("solo mode is the default and both modes are reachable from the header", ()
   assert.ok(!html.includes('body class="soc-social"'), "must not boot into Social mode");
 });
 
-test("counts stay honest: one member, zero reactions, sidecar not connected", () => {
+test("counts stay honest: one member, zero reactions, no room", () => {
   assert.match(html, />1 \(you\)</, "member count must start at 1 (you)");
   assert.equal((html.match(/soc-reaction-count">0</g) || []).length, 6, "six reactions, all at 0");
-  assert.ok(html.includes("Not connected"), "sidecar state must be reported truthfully");
+  assert.ok(html.includes("Not in a room"), "the room state must be reported truthfully");
   assert.match(html, /id="btn-qr-copy"[^>]*\sdisabled/, "invite copy must stay disabled");
   assert.ok(!/SongDNA|song-dna/i.test(html), "SongDNA is explicitly out of scope");
 });
@@ -137,19 +141,22 @@ test("main.js boots the social shell", () => {
   assert.match(main, /initSocial\(\);/, "initSocial() never called");
 });
 
-test("social.js is local-only: no network, no innerHTML", () => {
+test("social.js opens no socket of its own: the Rust room server owns the wire", () => {
   const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
   for (const api of ["fetch(", "WebSocket", "EventSource", "XMLHttpRequest", "sendBeacon"]) {
-    assert.ok(!social.includes(api), `social.js must not use ${api} until the sidecar lands`);
+    assert.ok(!social.includes(api), `social.js must not use ${api}; room.rs owns both sockets`);
   }
   assert.ok(!/\.innerHTML\s*=/.test(social), "chat/queue DOM must be built with createElement + textContent");
-  assert.match(social, /const MEMBERS = 1;/, "member count must be a room of one");
+  // The count is the server's, or one when there is no room — never a constant
+  // that could drift away from `presence`.
+  assert.ok(!/const MEMBERS = 1;/.test(social), "the room of one is memberCount(state), not a constant");
+  assert.match(social, /memberCount\(room\)/, "counts must come from the reducer");
 });
 
 test("chat composer appends text nodes, never markup", () => {
   const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
-  assert.match(social, /body\.textContent = text/, "chat body must be assigned as text");
-  assert.match(social, /audio\.addEventListener\("pause", showGrace\)/, "grace window must track real pauses");
+  assert.match(social, /body\.textContent = entry\.text/, "chat body must be assigned as text");
+  assert.match(social, /audio\.addEventListener\("pause", showGrace\)|wireReactions\(\)/, "chat/social wiring present");
   assert.match(social, /new MutationObserver/, "reactions must reset when the track changes");
 });
 
@@ -166,16 +173,53 @@ test("no fabricated room codes or PINs remain in the markup", () => {
   assert.match(html, /id="btn-open-room"[^>]*\sdisabled/, "room creation needs a live connection");
 });
 
-test("social.js drives the sidecar bridge instead of opening sockets itself", () => {
+test("social.js drives the Rust room commands from the frozen contract", () => {
+  // docs/listen-together.md §6/§13.1: every one of the seven commands is the
+  // window's only way into a room, and every one has a caller in the UI.
   const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
-  assert.match(social, /import \{ createSidecar, readPort, STATUS \} from "\.\/sidecar\.js";/);
-  assert.match(social, /startSidecar\(\);/, "entering Social must probe for the sidecar");
-  assert.match(social, /stopSidecar\(\);/, "leaving Social must tear the sidecar down");
-  assert.match(social, /#btn-open-room"\)\?\.addEventListener\("click", openRoom\)/);
-  assert.match(social, /#btn-copy-invite"\)\?\.addEventListener\("click", copyInvite\)/);
-  for (const api of ["fetch(", "WebSocket", "EventSource", "XMLHttpRequest", "sendBeacon"]) {
-    assert.ok(!social.includes(api), `social.js must not use ${api}; the bridge lives in sidecar.js`);
+  for (const cmd of ["room_open", "room_join", "room_chat", "room_playback", "room_report", "room_close", "room_info"]) {
+    assert.ok(social.includes(`"${cmd}"`), `social.js never calls ${cmd}`);
   }
+  assert.match(social, /listen\("room:\/\/msg"/, "frames must arrive through the room://msg event");
+  assert.match(social, /reduceRoom\(room, frame\)/, "frames must go through the shared reducer");
+  assert.match(social, /return invoke\("room_info"\)|invoke\("room_info"\)/, "a reload must reconcile a stale server");
+  // The sidecar bridge is dormant: nothing in the UI drives it any more.
+  assert.ok(!/sidecar\.js/.test(social), "social.js must not import the retired sidecar bridge");
+});
+
+test("the join form (C-4) is wired and starts enabled only when idle", () => {
+  const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
+  assert.match(social, /#btn-room-join"\)\?\.addEventListener\("click"/, "Join button not wired");
+  for (const id of ["room-join-addr", "room-join-code", "room-join-note"]) {
+    assert.ok(social.includes(`"${id}"`), `social.js ignores ${id}`);
+  }
+  // Idle → usable; in a room → refused with a reason, not silently dead.
+  assert.match(social, /const canJoin = idle && !joining;/);
+  assert.match(social, /join\.disabled = !canJoin;/);
+});
+
+test("a guest's transport is locked, not just discouraged", () => {
+  const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
+  for (const id of ["bar-play", "bar-next", "bar-prev", "bar-shuffle", "bar-repeat"]) {
+    assert.ok(social.includes(`"${id}"`), `${id} must be in the guest lock set`);
+  }
+  assert.match(social, /node\.disabled = locked;/, "buttons must be disabled, not merely dimmed");
+  assert.match(css, /\.soc-guest-lock\s*\{/, ".soc-guest-lock needs a CSS rule (pointer-events)");
+  assert.match(css, /pointer-events: none !important;/, "a locked seek surface must not seek");
+  // Every locked id must exist in the markup, or the lock is a dead write.
+  for (const id of ["bar-play", "bar-next", "bar-prev", "bar-shuffle", "bar-repeat", "bar-progress"]) {
+    assert.ok(html.includes(`id="${id}"`), `guest lock targets ${id}, which index.html does not have`);
+  }
+});
+
+test("the retired sidecar chrome is gone from the jam pane", () => {
+  // #jam-ua told the user to paste this app's UA into metroserver's
+  // ua_policy.json; the in-app room server has no UA policy, so the line could
+  // only point at a file nothing reads (docs/listen-together.md §13.1).
+  assert.ok(!html.includes('id="jam-ua"'), "#jam-ua is dead chrome for a retired path");
+  assert.ok(/Room server/.test(html), "the tile must name the component it reports");
+  const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
+  assert.ok(!social.includes("jam-ua"), "social.js still paints the removed UA line");
 });
 
 test("sidecar bridge is loopback-only and fails closed", () => {
@@ -222,8 +266,13 @@ test("social.js drives every room-code slot from one list with one fallback", ()
   const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
   assert.match(
     social,
-    /const text = code \|\| "NO ROOM";/,
-    "all slots must share a single NO ROOM fallback, so a refusal blanks every one",
+    /const NO_ROOM = "NO ROOM";/,
+    "all slots must share one NO ROOM constant, so a refusal blanks every one",
+  );
+  assert.match(
+    social,
+    /const text = code \|\| NO_ROOM;/,
+    "the fallback must be applied in the one paint function every slot goes through",
   );
   assert.deepEqual(
     roomSlotsFromSocial().slice().sort(),
@@ -284,7 +333,7 @@ test("§6: no fabricated listener counts anywhere in the visible markup", () => 
   );
   // The honest defaults must still be the ones §6 names.
   assert.match(visibleText, /1 \(you\)/, "member count must read 1 (you) with no room");
-  assert.match(visibleText, /Not connected/, "sidecar must read Not connected with no bridge");
+  assert.match(visibleText, /Not in a room/, "the room tile must say there is no room");
   assert.ok(!/SongDNA|song-dna/i.test(html), "SongDNA is explicitly out of scope");
 });
 
@@ -303,9 +352,7 @@ test("§3b's documented timeouts still match sidecar.js (doc-drift guard)", () =
   assert.match(doc, /\*\*5 s\*\*/, "§3b must document the 5 s handshake deadline");
 });
 
-test("§3b: the app reports its own UA and never alters it", () => {
-  const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
-  assert.match(social, /navigator\.userAgent/, "#jam-ua must show the real UA");
+test("§6b/§13.1: no file alters the user agent", () => {
   for (const f of ["social.js", "sidecar.js", "main.js", "room.js"]) {
     const body = fs.readFileSync(path.join(src, f), "utf8");
     assert.ok(

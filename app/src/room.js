@@ -43,6 +43,24 @@ export function reduceRoom(state, frame) {
         error: "",
       };
 
+    // Host-side counterpart of `joined`. The server never sends the host a
+    // `joined` frame (it learns its room from `room_open`'s return value and
+    // hears everything through its own sink), so the host surface reduces this
+    // frame built from those real server facts. `selfId` is the id the server
+    // gave its own member row — always the literal "host" — which is what makes
+    // the host's own chat echo resolve as `mine` (docs/listen-together.md §13.3).
+    case "hosted":
+      return {
+        ...state,
+        role: "host",
+        status: "hosting",
+        selfId: typeof frame.selfId === "string" ? frame.selfId : state.selfId,
+        code: typeof frame.code === "string" ? frame.code : state.code,
+        urls: copyList(frame.urls),
+        members: copyList(frame.members),
+        error: "",
+      };
+
     case "history":
       return {
         ...state,
@@ -127,12 +145,83 @@ export function inviteText(state) {
   return `${urls[0]} · ${state.code}`;
 }
 
+/// Where the host's playhead is *now*: the frame's own position advanced by
+/// the time this device has held the frame since it arrived. That local anchor
+/// is why two PCs need no wall-clock sync — the error is one LAN hop plus the
+/// local audio clock (docs/listen-together.md §4.1). `null` (never `0`) until a
+/// `playback` frame exists.
+export function expectedPositionMs(playback, nowMs = Date.now()) {
+  if (!playback || typeof playback.positionMs !== "number") return null;
+  if (!playback.playing) return playback.positionMs;
+  const arrived = typeof playback.arrivedAt === "number" ? playback.arrivedAt : nowMs;
+  return playback.positionMs + Math.max(0, nowMs - arrived);
+}
+
+/// Past this the guest seeks; below it the mismatch is measurement noise and
+/// seeking would stutter — the ±0.4 s the UI advertises (docs §4.3).
+export const DRIFT_TOLERANCE_MS = 400;
+
+/// The one place drift is measured, shared by both surfaces so neither can
+/// report a different number for the same audio (docs/listen-together.md §8):
+/// `driftMs` is the measured difference (positive = this device is ahead), and
+/// `seekToSec` is a target **only** past the tolerance, else `null`.
+export function syncDecision(state, audioPosSec, nowMs = Date.now()) {
+  const expected = expectedPositionMs(state && state.playback, nowMs);
+  if (expected === null || typeof audioPosSec !== "number" || !Number.isFinite(audioPosSec)) {
+    return { driftMs: null, seekToSec: null };
+  }
+  const driftMs = Math.round(audioPosSec * 1000 - expected);
+  return {
+    driftMs,
+    seekToSec: Math.abs(driftMs) > DRIFT_TOLERANCE_MS ? expected / 1000 : null,
+  };
+}
+
+/// Read a pasted invite line back into its two halves. What `inviteText`
+/// writes — `ws://192.168.1.5:8787 · CODE` — has to survive a copy/paste into
+/// the join field, and a human may also type `192.168.1.5:8787 CODE` or
+/// `192.168.1.5 CODE`. Anything without both halves returns `null` (an address
+/// with no code is not joinable), so the caller can show its own honest error
+/// instead of joining a room that cannot exist (docs/listen-together.md §12).
+export function parseInvite(raw) {
+  const text = String(raw == null ? "" : raw)
+    .replace(/[·|,]/g, " ")
+    .trim();
+  if (!text) return null;
+  const parts = text.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return null;
+  const code = parts[parts.length - 1].replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const addr = parts.slice(0, -1).join("");
+  if (code.length !== 8 || !addr) return null;
+  return { addr, code };
+}
+
+/// Mirrors the server's own `sanitize_name` (trim, drop control characters,
+/// cap 24, empty → Guest) so the name a surface *shows* before any presence
+/// frame matches the name the room will actually hold.
+/// The one deviation is the empty case: the host calls itself "Host".
+export function sanitizeRoomName(raw, fallback = "Guest") {
+  const clean = String(raw == null ? "" : raw)
+    .trim()
+    .split("")
+    .filter((c) => {
+      const n = c.charCodeAt(0);
+      return n >= 32 && n !== 127;
+    })
+    .join("")
+    .slice(0, 24);
+  return clean || fallback;
+}
+
 /// Largest |driftMs| across non-host members, or null when there is nothing
+/// measured yet — never 0, which would read as "perfectly in sync".
 /// to sync against. Non-host = not flagged `isHost` by the server.
 export function worstDriftMs(state) {
   let worst = null;
   for (const m of state.members || []) {
-    if (!m || m.isHost) continue;
+    // The server's field is `host` (§3); `isHost` is tolerated so a state
+    // built by hand in a caller still excludes the host's own row.
+    if (!m || m.isHost || m.host) continue;
     if (typeof m.driftMs !== "number" || Number.isNaN(m.driftMs)) continue;
     const abs = Math.abs(m.driftMs);
     if (worst === null || abs > worst) worst = abs;

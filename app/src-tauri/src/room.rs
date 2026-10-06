@@ -15,7 +15,9 @@
 //! server exists only between `room_open` and `room_close`/exit.
 
 use std::collections::{HashMap, VecDeque};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener, ToSocketAddrs, UdpSocket};
+use std::net::{
+    IpAddr, Ipv4Addr, SocketAddr, TcpListener as StdTcpListener, ToSocketAddrs, UdpSocket,
+};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -179,7 +181,10 @@ fn lan_urls(port: u16) -> Vec<String> {
             }
         }
     }
-    let mut out: Vec<String> = ips.into_iter().map(|ip| format!("ws://{ip}:{port}")).collect();
+    let mut out: Vec<String> = ips
+        .into_iter()
+        .map(|ip| format!("ws://{ip}:{port}"))
+        .collect();
     out.push(format!("ws://127.0.0.1:{port}"));
     out
 }
@@ -487,13 +492,15 @@ async fn serve_conn(socket: WebSocket, core: SharedCore) {
             }
         };
         if parsed.get("t").and_then(Value::as_str) != Some("join") {
-            let _ = out_tx.send(
-                err_frame("invalid_message", "First frame must be a JSON join.").to_string(),
-            );
+            let _ = out_tx
+                .send(err_frame("invalid_message", "First frame must be a JSON join.").to_string());
             return;
         }
         let code = parsed.get("code").and_then(Value::as_str).unwrap_or("");
-        let name = parsed.get("name").and_then(Value::as_str).unwrap_or("Guest");
+        let name = parsed
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("Guest");
         let mut guard = match lock(&core) {
             Some(g) => g,
             None => return,
@@ -634,7 +641,7 @@ async fn guest_run(
             },
             incoming = ws.next() => match incoming {
                 Some(Ok(ClientMessage::Text(t))) => {
-                    if let Ok(v) = serde_json::from_str::<Value>(&t.to_string()) {
+                    if let Ok(v) = serde_json::from_str::<Value>(t.as_ref()) {
                         out.send(&v);
                     }
                 }
@@ -716,6 +723,9 @@ pub struct RoomInfo {
     pub role: &'static str,
     pub port: u16,
     pub code: String,
+    /// Same `ws://` invite list `room_open` returns. Empty unless hosting, so a
+    /// re-attached window can re-offer the address it is already serving on.
+    pub urls: Vec<String>,
 }
 
 /// Open a LAN room: bind `0.0.0.0:<port>` (default 8787, ephemeral
@@ -751,13 +761,9 @@ pub async fn room_open(
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let serve_core = core.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = serve(
-            listener,
-            serve_core,
-            async {
-                let _ = shutdown_rx.await;
-            },
-        )
+        let _ = serve(listener, serve_core, async {
+            let _ = shutdown_rx.await;
+        })
         .await;
     });
 
@@ -818,7 +824,9 @@ pub async fn room_playback(
     let mode = state.inner.lock().await;
     match &*mode {
         Mode::Host { core, .. } => {
-            let mut guard = core.lock().map_err(|_| "Room state poisoned.".to_string())?;
+            let mut guard = core
+                .lock()
+                .map_err(|_| "Room state poisoned.".to_string())?;
             guard.playback(playing, &track_id, &title, &artist, position_ms);
             Ok(())
         }
@@ -834,7 +842,9 @@ pub async fn room_chat(state: TauriState<'_, RoomState>, text: String) -> Result
     let mode = state.inner.lock().await;
     match &*mode {
         Mode::Host { core, .. } => {
-            let mut guard = core.lock().map_err(|_| "Room state poisoned.".to_string())?;
+            let mut guard = core
+                .lock()
+                .map_err(|_| "Room state poisoned.".to_string())?;
             guard.chat("host", &text).map_err(|(_, m)| m)
         }
         Mode::Guest { tx, .. } => {
@@ -899,16 +909,19 @@ pub async fn room_info(state: TauriState<'_, RoomState>) -> Result<RoomInfo, Str
             role: "idle",
             port: 0,
             code: String::new(),
+            urls: Vec::new(),
         },
         Mode::Host { port, code, .. } => RoomInfo {
             role: "host",
             port: *port,
             code: code.clone(),
+            urls: lan_urls(*port),
         },
         Mode::Guest { .. } => RoomInfo {
             role: "guest",
             port: 0,
             code: String::new(),
+            urls: Vec::new(),
         },
     })
 }
@@ -932,23 +945,16 @@ mod tests {
 
     async fn start(code: &str) -> Harn {
         let (host_tx, host_rx) = mpsc::unbounded_channel();
-        let core: SharedCore = Arc::new(Mutex::new(RoomCore::new(
-            code,
-            "Host",
-            Sink::Chan(host_tx),
-        )));
+        let core: SharedCore =
+            Arc::new(Mutex::new(RoomCore::new(code, "Host", Sink::Chan(host_tx))));
         let listener = StdTcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
         let serve_core = core.clone();
         tokio::spawn(async move {
-            let _ = serve(
-                listener,
-                serve_core,
-                async {
-                    let _ = shutdown_rx.await;
-                },
-            )
+            let _ = serve(listener, serve_core, async {
+                let _ = shutdown_rx.await;
+            })
             .await;
         });
         Harn {
@@ -978,9 +984,7 @@ mod tests {
             .expect("socket closed waiting for a frame")
             .expect("socket error waiting for a frame");
         match msg {
-            ClientMessage::Text(t) => {
-                serde_json::from_str(&t.to_string()).expect("frame is not JSON")
-            }
+            ClientMessage::Text(t) => serde_json::from_str(t.as_ref()).expect("frame is not JSON"),
             other => panic!("expected text frame, got {other:?}"),
         }
     }
@@ -1070,10 +1074,7 @@ mod tests {
         send(&mut ws, &join_frame("WRONG9", "Mallory")).await;
         let err = recv_t(&mut ws, "error").await;
         assert_eq!(err["code"], "bad_code");
-        assert!(err["message"]
-            .as_str()
-            .unwrap()
-            .contains("Wrong room code"));
+        assert!(err["message"].as_str().unwrap().contains("Wrong room code"));
     }
 
     #[tokio::test]
@@ -1088,7 +1089,7 @@ mod tests {
         let _ = recv_t(&mut a, "history").await;
         let presence = recv_t(&mut a, "presence").await;
         assert_eq!(presence["members"].as_array().unwrap().len(), 2); // host + Ann
-        // The host window is asked for a fresh playback state after a join.
+                                                                      // The host window is asked for a fresh playback state after a join.
         let refresh = host_recv_t(&mut h.host_rx, "refresh").await;
         assert_eq!(refresh["t"], "refresh");
 
@@ -1169,6 +1170,24 @@ mod tests {
         let mut a = dial(h.port).await;
         send(&mut a, &join_frame("DRFT01", "Ann")).await;
         let _ = recv_t(&mut a, "joined").await;
+        let _ = recv_t(&mut a, "history").await;
+        // The join itself broadcasts presence — *before* any drift exists, so
+        // Ann must not carry a driftMs yet (a fabricated 0 would read as
+        // "perfectly in sync" in the host's tile, docs/listen-together.md §8).
+        // Drain that frame; the report's presence is the next one.
+        let join_presence = recv_t(&mut a, "presence").await;
+        let ann_join = join_presence["members"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["name"] == "Ann")
+            .expect("Ann is in the join-time presence");
+        assert_eq!(
+            ann_join["driftMs"],
+            Value::Null,
+            "no report yet → no number"
+        );
+        let _ = host_recv_t(&mut h.host_rx, "presence").await; // same broadcast
 
         send(&mut a, &json!({ "t": "report", "driftMs": 420 })).await;
         let presence = recv_t(&mut a, "presence").await;

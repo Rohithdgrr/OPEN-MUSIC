@@ -99,114 +99,39 @@ tailwind.config = {
     }
   }
 };
-
-(function () {
-  // Play/Pause Micro-interaction
-  const playBtn = document.getElementById('mainPlayBtn');
-  const playIcon = document.getElementById('playIcon');
-  let isPlaying = true;
-  if (playBtn && playIcon) {
-    playBtn.addEventListener('click', () => {
-      isPlaying = !isPlaying;
-      playIcon.textContent = isPlaying ? 'pause' : 'play_arrow';
-    });
-  }
-
-  // Favorite Heart Toggle
-  const favBtn = document.getElementById('favoriteBtn');
-  const favIcon = document.getElementById('favoriteIcon');
-  let isFav = false;
-  if (favBtn && favIcon) {
-    favBtn.addEventListener('click', () => {
-      isFav = !isFav;
-      favIcon.style.fontVariationSettings = isFav ? "'FILL' 1" : "'FILL' 0";
-      favIcon.classList.toggle('text-error', isFav);
-    });
-  }
-
-  // Copy Join URI
-  const copyBtn = document.getElementById('copyUriBtn');
-  if (copyBtn) {
-    copyBtn.addEventListener('click', () => {
-      const originalContent = copyBtn.innerHTML;
-      copyBtn.innerHTML = '<span class="material-symbols-outlined text-[12px] text-on-tertiary-container">check</span><span class="font-label-sm text-[9px] tracking-wide uppercase font-semibold text-on-tertiary-container">Copied</span>';
-      setTimeout(() => {
-        copyBtn.innerHTML = originalContent;
-      }, 1500);
-    });
-  }
-})();
-
-(function () {
-  // Solo vs Social Mode Toggle
-  let isSocialMode = true;
-  const modeToggleBtn = document.getElementById('modeToggleBtn');
-  const headerSubtitle = document.getElementById('headerSubtitle');
-  const headerTitle = document.getElementById('headerTitle');
-  const headerModeDot = document.getElementById('headerModeDot');
-  const jamSessionBanner = document.getElementById('jamSessionBanner');
-  const artworkCollabTag = document.getElementById('artworkCollabTag');
-  const skipVoteBadge = document.getElementById('skipVoteBadge');
-  const chatTabBtn = document.getElementById('chatTabBtn');
-  const jamDataTabBtn = document.getElementById('jamDataTabBtn');
-  const queueSyncBadge = document.getElementById('queueSyncBadge');
-  const queueHeaderLabel = document.getElementById('queueHeaderLabel');
-
-  function applyMode(social) {
-    isSocialMode = social;
-    if (isSocialMode) {
-      headerSubtitle.textContent = 'PLAYING FROM JAM';
-      headerTitle.textContent = 'Late Night Resonance (Social Jam)';
-      headerModeDot.className = 'w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse shrink-0';
-      if (jamSessionBanner) jamSessionBanner.classList.remove('hidden');
-      if (artworkCollabTag) artworkCollabTag.textContent = 'COLLAB QUEUE';
-      if (skipVoteBadge) skipVoteBadge.classList.remove('hidden');
-      if (chatTabBtn) chatTabBtn.classList.remove('hidden');
-      if (jamDataTabBtn) jamDataTabBtn.classList.remove('hidden');
-      if (queueSyncBadge) queueSyncBadge.classList.remove('hidden');
-      if (queueHeaderLabel) queueHeaderLabel.textContent = 'COLLABORATIVE QUEUE';
-    } else {
-      headerSubtitle.textContent = 'PLAYING FROM PLAYLIST';
-      headerTitle.textContent = 'Late Night Resonance (Solo)';
-      headerModeDot.className = 'w-1.5 h-1.5 rounded-full bg-secondary shrink-0';
-      if (jamSessionBanner) jamSessionBanner.classList.add('hidden');
-      if (artworkCollabTag) artworkCollabTag.textContent = 'SOLO PLAYBACK';
-      if (skipVoteBadge) skipVoteBadge.classList.add('hidden');
-      if (chatTabBtn) chatTabBtn.classList.add('hidden');
-      if (jamDataTabBtn) jamDataTabBtn.classList.add('hidden');
-      if (queueSyncBadge) queueSyncBadge.classList.add('hidden');
-      if (queueHeaderLabel) queueHeaderLabel.textContent = 'PERSONAL QUEUE';
-
-      // If current tab was chat or jam-data, fallback to queue
-      const activeTab = document.querySelector('.tab-btn.bg-primary')?.getAttribute('data-tab');
-      if (activeTab === 'chat' || activeTab === 'jam-data') {
-        switchTab('queue');
-      }
-    }
-  }
-
-  if (modeToggleBtn) {
-    modeToggleBtn.addEventListener('click', () => {
-      applyMode(!isSocialMode);
-    });
-  }
-})();
-
+// The design export's demo scripts — a fake play/pause toggle, a fake
+// favourite, a fake "Copied" flash and a fake Solo↔Social switch — are removed
+// here on purpose: `jam.js` owns the mode + room chrome and `binders.js` owns
+// the real player, and both write only values that came back from the backend
+// (docs/listen-together.md §8/§13.2). What stays is the tab switcher the tab
+// buttons call.
+//
+// Bound with listeners, not inline `onclick`: the mobile CSP allows inline
+// handlers only when their sha256 is listed ('unsafe-hashes'), the regenerated
+// screen shipped four that were never hashed, and the WebView refused every
+// tap on a real device (docs/mobile/09-problems-solutions.md P24). A listener
+// has no hash to keep in sync.
 function switchTab(targetTab) {
-  const tabs = ['queue', 'chat', 'jam-data', 'lyrics'];
-  tabs.forEach(tab => {
-    const view = document.getElementById('view-' + tab);
-    const btn = document.querySelector(`[data-tab="${tab}"]`);
-    if (tab === targetTab) {
-      if (view) view.classList.remove('hidden');
-      if (btn) {
-        btn.className = 'tab-btn flex-1 bg-primary text-on-primary py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 shadow-xs whitespace-nowrap transition-all';
-      }
-    } else {
-      if (view) view.classList.add('hidden');
-      if (btn) {
-        btn.className = 'tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors';
-      }
-    }
+  const tabs = ["queue", "chat", "jam-data", "lyrics"];
+  tabs.forEach((tab) => {
+    const view = document.getElementById("view-" + tab);
+    const btn = document.querySelector('[data-tab="' + tab + '"]');
+    if (!view || !btn) return;
+    const active = tab === targetTab;
+    view.classList.toggle("hidden", !active);
+    view.classList.toggle("flex", active);
+    // The class rewrite must not clear `hidden`: Chat / Jam Data are room-only
+    // and their visibility belongs to paintJam's show(…, social, "flex")
+    // (P25) — dropping it flashed them in Solo until the next repaint.
+    const roomOnly = btn.classList.contains("hidden");
+    const base = active
+      ? "tab-btn flex-1 bg-primary text-on-primary py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 shadow-xs whitespace-nowrap transition-all"
+      : "tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors";
+    btn.className = roomOnly ? `${base} hidden` : base;
   });
 }
+// The router re-runs this script on every navigation against fresh DOM, so
+// these bind once per mount and never stack.
+document.querySelectorAll("#tabBar .tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});

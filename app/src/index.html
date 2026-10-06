@@ -1417,76 +1417,6 @@ addEventListener("DOMContentLoaded", () => {
     <span class="soc-reaction-note" id="reaction-note">Be the first to react</span>
   </div>
 
-  <!-- Master Transport & Precision Scrubber Deck -->
-  <div class="np-transport-card">
-    <!-- Precision Timeline -->
-    <div class="flex flex-col gap-1.5">
-      <div class="np-timeline-track flex items-center" id="timeline-bar">
-        <div class="np-buffered-fill w-[72%]" id="buffered-bar"></div>
-        <div class="np-progress-fill w-[39.5%]" id="progress-bar"></div>
-        <div class="np-scrub-thumb left-[39.5%]" id="progress-thumb"></div>
-      </div>
-      <div class="flex justify-between items-center text-on-surface-variant font-mono text-xs pt-1">
-        <span class="font-semibold text-on-surface text-[12.5px]" id="track-current">01:42</span>
-        <div class="flex items-center gap-2 soc-solo-only">
-          <div class="np-equalizer" title="Real-time bitstream pulse">
-            <i></i><i></i><i></i><i></i>
-          </div>
-          <span class="text-on-surface-variant/70 tracking-wider text-[11px]">STEREO L/R CH 01-02 • BIT-PERFECT</span>
-        </div>
-        <span class="soc-sync-clock soc-social-only" id="sync-clock-label">DEMOCRATIC SYNC CLOCK • 5s DRIFT CHECK</span>
-        <span class="text-[12.5px]" id="track-total">04:18</span>
-      </div>
-    </div>
-
-    <!-- Pause grace period window (Social only, hidden until a pause happens) -->
-    <div class="soc-grace soc-social-only hidden" id="soc-grace" role="status">
-      <span class="material-symbols-outlined" style="font-size:14px">pause_circle</span>
-      <span>Pause grace period</span>
-      <span class="soc-grace-timer" id="grace-timer">—</span>
-    </div>
-
-    <!-- Transport Actions -->
-    <div class="flex items-center justify-between pt-1">
-      <div class="flex items-center gap-1.5">
-        <button class="np-btn-mode" id="btn-shuffle" title="Shuffle (S)" type="button">
-          <span class="material-symbols-outlined text-[18px]">shuffle</span>
-        </button>
-        <button class="np-btn-mode" id="btn-repeat" title="Repeat (R)" type="button">
-          <span class="material-symbols-outlined text-[18px]">repeat</span>
-        </button>
-      </div>
-
-      <div class="flex items-center gap-3">
-        <button class="np-btn-transport" id="btn-prev" title="Previous Track" type="button">
-          <span class="material-symbols-outlined text-[24px]">skip_previous</span>
-        </button>
-        <button class="np-btn-master-play" id="master-play-btn" title="Play / Pause (Space)" type="button">
-          <span class="material-symbols-outlined text-[28px]" id="master-play-icon">pause</span>
-        </button>
-        <button class="np-btn-transport soc-solo-only" id="btn-next" title="Next Track" type="button">
-          <span class="material-symbols-outlined text-[24px]">skip_next</span>
-        </button>
-        <!-- Social: advancing needs a majority vote -->
-        <button class="soc-skip-vote soc-social-only" id="btn-skip-vote" title="Vote to skip (majority required)" type="button">
-          <span class="material-symbols-outlined" style="font-size:16px">skip_next</span>
-          <span id="skip-vote-label">Skip (0/1)</span>
-        </button>
-      </div>
-
-      <!-- Volume Slider Block -->
-      <div class="flex items-center gap-2">
-        <button class="text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center" id="vol-mute-btn" title="Mute Toggle" type="button">
-          <span class="material-symbols-outlined text-[20px]" id="vol-icon">volume_up</span>
-        </button>
-        <div class="w-20 h-2 bg-surface-container rounded-full overflow-hidden flex items-center cursor-pointer relative" id="volume-track">
-          <div class="w-[75%] h-full bg-primary rounded-full transition-all duration-75" id="volume-fill"></div>
-        </div>
-        <span class="font-mono text-[10px] text-neutral-500 w-8 text-right" id="vol-val-tooltip">75%</span>
-      </div>
-    </div>
-  </div>
-
 </div>
 
 <!-- Right Column: Interactive Deck (Track Meta & Segmented Switcher) -->
@@ -1551,7 +1481,7 @@ addEventListener("DOMContentLoaded", () => {
     <!-- Fluid Lyrics Scroll Container -->
     <div class="lyrics-container np-lyrics-scroll pr-1 flex flex-col gap-3.5 scroll-smooth py-3" id="lyrics-scroll-box">
       <!-- Lyric Item [00:18] -->
-      <div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="18">
+      <div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-500 select-none" data-seconds="18">
         <span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[00:18]</span>
         <div class="flex flex-col flex-1">
           <p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">A cold harmonic resonance wakes the streetlights</p>
@@ -1560,7 +1490,7 @@ addEventListener("DOMContentLoaded", () => {
         <span class="lyric-rhythm-badge opacity-0 group-hover:opacity-40 transition-opacity material-symbols-outlined text-[15px]">play_circle</span>
       </div>
       <!-- Lyric Item [00:42] -->
-      <div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="42">
+      <div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-500 select-none" data-seconds="42">
         <span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[00:42]</span>
         <div class="flex flex-col flex-1">
           <p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">Signal echoes float between the high tension wires</p>
@@ -1581,7 +1511,7 @@ addEventListener("DOMContentLoaded", () => {
         </div>
       </div>
       <!-- Lyric Item [02:08] -->
-      <div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-400 select-none" data-seconds="128">
+      <div class="lyric-line group flex items-start gap-3 p-2.5 rounded-lg hover:bg-surface-container-low/70 transition-all duration-200 cursor-pointer text-neutral-500 select-none" data-seconds="128">
         <span class="font-mono text-[11px] opacity-40 group-hover:opacity-100 transition-opacity w-10 flex-shrink-0 pt-0.5">[02:08]</span>
         <div class="flex flex-col flex-1">
           <p class="lyric-text text-[15px] font-normal leading-relaxed transition-all duration-300">We chase the flicker of the midnight city lights</p>
@@ -1597,7 +1527,7 @@ addEventListener("DOMContentLoaded", () => {
         <span class="material-symbols-outlined text-[14px]">graphic_eq</span>
         TIMECODE <span class="text-neutral-900 font-medium" id="lyric-live-time">01:42</span> / 04:18
       </span>
-      <span class="text-neutral-400">Click any line to seek</span>
+      <span class="text-neutral-500">Click any line to seek</span>
     </div>
   </div>
 
@@ -1758,11 +1688,10 @@ addEventListener("DOMContentLoaded", () => {
       </div>
       <div class="soc-tile">
         <div class="soc-tile-row">
-          <span class="soc-tile-label">Sidecar</span>
-          <span class="soc-tile-value is-off" id="jam-sidecar">Not connected</span>
+          <span class="soc-tile-label">Room server</span>
+          <span class="soc-tile-value is-off" id="jam-sidecar">Not in a room</span>
         </div>
-        <span class="soc-tile-note" id="jam-sidecar-note">Local 127.0.0.1 process; ships unbundled.</span>
-        <span class="soc-tile-note" id="jam-ua" title="Copy this into the sidecar's ua_policy.json allow list to host"></span>
+        <span class="soc-tile-note" id="jam-sidecar-note">Open a room on this device, or join one with its code.</span>
       </div>
     </div>
 
