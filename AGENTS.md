@@ -334,6 +334,31 @@ evidence, not stubbed IPC. Two real defects were found and fixed.
 
 ---
 
+## 2026-10-07 — Windows-only signed lightweight release (verified build)
+
+- **Spec:** `docs/windows-release.md` (docs-first). NSIS-only (`--bundles
+  nsis`, no MSI/WiX), Authenticode (local `CN=TRANCE MUSIC` cert, thumbprint
+  already in `tauri.conf.json`) + updater minisign (`~/.tauri/open-music.pem`;
+  pubkey matches `tauri.conf.json`, verified byte-identical 2026-10-07).
+- **Diff (commit `9c17d5f`, local only, NOT pushed):** `docs/windows-release.md`
+  (new), `app/package.json` (`dist:windows` = `css` + `build --bundles nsis`),
+  `app/src-tauri/Cargo.toml` (`[profile.release]` `opt-level 3` → `"s"`;
+  `lto`, `codegen-units=1`, `strip` kept; no `panic="abort"` — would break
+  `cargo test --release` used by linux/macos CI).
+- **Artifact:** `app/src-tauri/target/release/bundle/nsis/TRANCE
+  MUSIC_0.4.0_x64-setup.exe` **4.85 MiB** + `.sig` (444 B). `BUILD_EXIT=0`.
+- **Trust caveat (verified, doc corrected):** `Get-AuthenticodeSignature`
+  `.Status` = `UnknownError`, but `.SignerCertificate` = `CN=TRANCE MUSIC` /
+  thumbprint `37838…` — signing worked; status is the self-signed root not
+  being trusted, not a signature defect. Needs paid OV/EV cert to silence
+  SmartScreen elsewhere. CI (`release.yml`) stays updater-signed-only (it
+  nulls the thumbprint; no cert on runner).
+- **Gates pre-build:** `npm test` 178/178, `eslint` clean, `cargo test --lib`
+  174/174 (`OP_OFFLINE=1`), `cargo fmt --check` + `clippy -D warnings` clean.
+- **Env notes:** no `tail`/`grep` in this PowerShell — use
+  `Select-Object -Last N`; nested `powershell -Command` mangles `$vars`,
+  run cmdlets directly; `$env:X=...; cmd` sets env for the build correctly.
+
 ## 2026-10-06e — Toolchain rollout: 5 MCP servers + 83 skills (vetted)
 
 Docs-first record: `docs/toolchain-mcp-skills.md` (written before installing).
