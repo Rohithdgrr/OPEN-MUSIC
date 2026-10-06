@@ -1,5 +1,5 @@
 // player.js — one shared <audio> for every mobile screen: queue, resolve, transport.
-import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted, relayUrl, haptic } from "./shared.js";
+import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted, relayUrl, haptic, prefetchTrackBytes } from "./shared.js";
 // Namespace import for forward-compatible helpers (effectiveStreamQuality,
 // isExplicitTrack, explicitHidden, eqPreset, normalizeOn) which may not exist
 // in shared.js yet. A static named import of a missing export would fail the
@@ -220,15 +220,49 @@ function streamError() {
   step(1, true);
 }
 
+// ------------------------------------------------------- resume position -
+// tm-remember-pos (Settings → Playback): park the playhead every ~2s while
+// playing, plus on pause/hide; start() seeks back when the same id returns.
+// Same key and shape as desktop playback.js (tm-pos = {id, t}).
+function rememberPosOn() {
+  try {
+    return localStorage.getItem("tm-remember-pos") !== "0";
+  } catch {
+    return true;
+  }
+}
+
+let posSaveAt = 0;
+function savePos(force = false) {
+  if (!rememberPosOn()) return;
+  const track = queue[qi];
+  if (!track || !track.id) return;
+  const now = Date.now();
+  if (!force && now - posSaveAt < 2000) return;
+  posSaveAt = now;
+  try {
+    localStorage.setItem("tm-pos", JSON.stringify({ id: track.id, t: audio.currentTime || 0 }));
+  } catch {}
+}
+
 function onAudioEvent(e) {
   // Both transport elements share this handler; only the audible one drives
   // paint/ended/error. The standby's events are preload noise.
   if (!e || e.target !== audio) return;
   if (e.type === "ended") return ended();
   if (e.type === "error") return streamError();
-  if (e.type === "timeupdate") xfadeTick();
+  if (e.type === "timeupdate") {
+    xfadeTick();
+    savePos();
+  }
+  if (e.type === "pause") savePos(true);
   paint();
 }
+
+addEventListener("pagehide", () => savePos(true));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") savePos(true);
+});
 
 if (audio) {
   for (const ev of [
@@ -705,6 +739,23 @@ async function start() {
       const v = Number(localStorage.getItem("tm-play-speed") || "1");
       audio.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
     } catch {}
+    // Resume where you stopped: same id → seek back once metadata lands.
+    try {
+      if (rememberPosOn()) {
+        const saved = JSON.parse(localStorage.getItem("tm-pos") || "null");
+        if (saved && saved.id === track.id && Number(saved.t) > 0) {
+          const t = Number(saved.t) || 0;
+          const seekBack = () => {
+            try {
+              const end = Number.isFinite(audio.duration) ? audio.duration - 1 : t;
+              audio.currentTime = Math.min(t, Math.max(0, end));
+            } catch {}
+          };
+          if (audio.readyState >= 1) seekBack();
+          else audio.addEventListener("loadedmetadata", seekBack, { once: true });
+        }
+      }
+    } catch {}
     try {
       audio.volume = baseVol();
     } catch {}
@@ -713,6 +764,7 @@ async function start() {
     await audio.play();
     prefetchNext();
     preloadStandby(); // gapless/xfade: resolve + buffer the next track now
+    prefetchBytesNext(); // disk: save the next track while this one plays
     topUpRadio();
   } catch (e) {
     if (mine === seq) {
@@ -753,6 +805,15 @@ function prefetchNext() {
   if (!ids.length) return;
   try {
     invoke("prefetch_next", { ids }).catch(() => {});
+  } catch {}
+}
+
+// Byte-prefetch the NEXT queued track to disk while this one plays
+// (feature-list §10 P0-2). Gating — off on cellular, under Data Saver, and
+// the tm-prefetch switch — lives inside prefetchTrackBytes.
+function prefetchBytesNext() {
+  try {
+    void prefetchTrackBytes(queue[qi + 1]);
   } catch {}
 }
 
@@ -974,6 +1035,7 @@ function finishXfade() {
     } catch {}
   }
   prefetchNext();
+  prefetchBytesNext();
   topUpRadio();
   paint();
 }
@@ -1021,6 +1083,11 @@ function ended() {
   const now = Date.now();
   if (now - lastEndedAt < 600) return;
   lastEndedAt = now;
+  // A finished track doesn't resume: clear the park so a later replay of the
+  // same id starts fresh instead of one second before the end.
+  try {
+    localStorage.removeItem("tm-pos");
+  } catch {}
   if (repeat === 2) {
     audio.currentTime = 0;
     audio.play().catch(() => {});

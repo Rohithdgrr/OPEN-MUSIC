@@ -67,6 +67,11 @@ import {
   setNormalize,
   smartDlOn,
   setSmartDl,
+  vaultQuotaGb,
+  setVaultQuotaGb,
+  enforceVaultQuota,
+  prefetchOn,
+  setPrefetchOn,
   playlistOffline,
   setPlaylistOffline,
   movePlaylistTrack,
@@ -78,8 +83,9 @@ import {
 import { buildBackup, parseBackupFile, applyBackup, readSettings, writeSettings, backupFilename } from "../sync.js";
 import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat, repaint, insertNext, audio as mAudio } from "./player.js";
 import { ensureReco, isRadioOn, setRadioOn } from "./radio.js";
-import { renderLyrics, resetLyrics, syncLyrics } from "./lyrics.js";
+import { renderLyrics, resetLyrics, syncLyrics, setLyricOffset, setLyricTrack, lyricOffsetMs } from "./lyrics.js";
 import { getGeminiKey, setGeminiKey, hasGeminiKey, fetchAiLyrics, aiCopyright } from "./ai-lyrics.js";
+import { importCsvToPlaylist, readCsvFile } from "../importer.js";
 import { netMode } from "./net.js";
 import { licensesHTML, aboutHTML, termsHTML } from "./legal.js";
 import { trackMenu, openSheet, detailsSheet } from "./menus.js";
@@ -2298,6 +2304,7 @@ async function ensureLyrics() {
     // Queue drained while the card is still open: drop the last track's words.
     if (lyricsFor !== "") {
       lyricsFor = "";
+      setLyricTrack(null);
       box.innerHTML = '<span class="font-body-sm text-secondary italic">Nothing playing</span>';
     }
     return;
@@ -2307,6 +2314,9 @@ async function ensureLyrics() {
   if (lyricsFor === t.id && lyricsBox === box) return;
   lyricsFor = t.id;
   lyricsBox = box;
+  // The offset buttons (P1-1) must target this track from here on — even if
+  // the fetch below fails and renderLyrics never runs.
+  setLyricTrack(t.id);
   if (lyricsFailed.has(t.id)) {
     box.innerHTML = LYRICS_UNAVAILABLE;
     return;
@@ -2317,7 +2327,7 @@ async function ensureLyrics() {
   try {
     const r = await invoke("get_lyrics", { id: t.id, title: t.title || "", artist: t.artist || "", album: t.album || "", duration: t.duration_secs || 0 });
     if (token !== lyricToken) return; // a newer track already fetched its own
-    renderLyrics(box, r || {});
+    renderLyrics(box, { ...(r || {}), trackId: t.id });
     maybeAiLyrics(box, t, r);
   } catch (e) {
     console.error(e);
@@ -2351,7 +2361,7 @@ function maybeAiLyrics(box, t, r) {
           try {
             const { text } = await fetchAiLyrics(t);
             if (lyricsFor !== id || lyricsBox !== box || !box.isConnected) return; // moved on
-            renderLyrics(box, { plain: text, copyright: aiCopyright() });
+            renderLyrics(box, { plain: text, copyright: aiCopyright(), trackId: id });
             try {
               haptic(12);
             } catch {}
@@ -2640,6 +2650,19 @@ function mountNowplaying() {
       fullBtn.textContent = on ? "Close" : "Full View";
       requestAnimationFrame(() => syncLyrics());
     });
+  }
+  // Manual lyrics offset (P1-1): ±100ms per press, clamp/persist/label live
+  // in setLyricOffset — same three controls as desktop index.html:1470-1474.
+  for (const [sel, fn] of [
+    ["#lyric-offset-minus", () => setLyricOffset(lyricOffsetMs() - 100)],
+    ["#lyric-offset-plus", () => setLyricOffset(lyricOffsetMs() + 100)],
+    ["#lyric-offset-reset", () => setLyricOffset(0)],
+  ]) {
+    const b = m.querySelector(sel);
+    if (b && !b.dataset.offWired) {
+      b.dataset.offWired = "1";
+      b.addEventListener("click", fn);
+    }
   }
   const shareBtn = document.getElementById("share-utility-btn");
   if (shareBtn && !shareBtn.dataset.shrWired) {
@@ -3385,6 +3408,11 @@ function applyMobileTheme() {
     document.body.dataset.density = mGet("tm-density", "comfortable");
   } catch {}
 }
+// Settings → Storage: last `cache_stats` answer so the budget select can
+// show the real value before the user touches it (fmtBytes is defined at
+// the top of this file).
+let lastCacheStats = null;
+
 function ensureMobilePrefs(m) {
   if (!m || m.querySelector("#tm-m-playback")) return;
   const row = (icon, title, sub, control) =>
@@ -3425,6 +3453,22 @@ function ensureMobilePrefs(m) {
       row("unfold_more", "Auto-scroll", "Follow the playhead", sw("m-lyr-auto")) +
         row("mic", "Karaoke highlight", "Words light up as sung", sw("m-lyr-kara")) +
         row("format_size", "Lyric text size", "Base size for lines", sel("m-lyr-size", "")),
+    ) +
+    sec(
+      "tm-m-storage",
+      "Storage & Data",
+      "STORAGE",
+      row("database", "Vault quota", "Over quota evicts least-recently played", sel("m-quota", "")) +
+        row("downloading", "Prefetch next track", "Save it while you listen (Wi-Fi)", sw("m-prefetch")) +
+        row("cleaning_services", "Cache usage", "Art & lyrics files — vault excluded", `<span id="m-cache-stats" class="shrink-0 max-w-[7.5rem] text-right font-label-mono text-[10px] text-on-surface-variant leading-tight">—</span>`) +
+        row("save", "Cache limit", "Art & lyrics budget (LRU)", sel("m-cache-budget", "")) +
+        row("delete_sweep", "Clear cache", "Never touches your downloads", `<button type="button" id="m-cache-clear" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Clear</button>`) +
+        row(
+          "upload_file",
+          "Import playlist CSV",
+          "Spotify Exportify export",
+          `<button type="button" id="m-csv-import" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button><input type="file" id="m-csv-file" accept=".csv,text/csv" class="hidden">`,
+        ),
     );
   const wrap = m.querySelector("div.space-y-6") || m.firstElementChild || m;
   // Before the Legal block when it exists so prefs stay together.
@@ -3496,6 +3540,88 @@ function ensureMobilePrefs(m) {
   flip("m-remember", "tm-remember-pos", (on) => (on ? "Resume on" : "Resume off"));
   flip("m-lyr-auto", "tm-lyrics-autoscroll", (on) => (on ? "Lyrics follow you" : "Lyrics stay put"));
   flip("m-lyr-kara", "tm-lyrics-gloss", (on) => (on ? "Karaoke on" : "Karaoke off"));
+
+  // ------------------------------------------- Storage & Data (new 2026-10-07)
+  // P0-1 quota + LRU, P0-2 byte-prefetch, cache stats/budget/clear (previously
+  // desktop-only UI over already-registered commands), P1-4 Exportify CSV.
+  const paintCache = (s) => {
+    if (s) lastCacheStats = s;
+    const st = m.querySelector("#m-cache-stats");
+    if (st && s) {
+      st.textContent = `${fmtBytes((s.art_bytes || 0) + (s.lyrics_bytes || 0))} cached · ${fmtBytes(s.budget_bytes || 0)} budget`;
+    }
+    const bg = m.querySelector("#m-cache-budget");
+    if (bg && s && s.budget_bytes) bg.value = String(Math.round(s.budget_bytes / (1024 * 1024)));
+  };
+  q("m-quota")?.addEventListener("change", (e) => {
+    setVaultQuotaGb(e.target.value);
+    const gb = e.target.value;
+    toast(gb ? `Vault capped at ${gb} GB — least-recently played evicts first` : "Vault quota: unlimited", 3500, "success");
+    if (gb) enforceVaultQuota().catch(() => {});
+  });
+  flipShared("m-prefetch", prefetchOn, setPrefetchOn, (on) =>
+    on ? "Prefetch on — the next track saves while you listen" : "Prefetch off",
+  );
+  q("m-cache-budget")?.addEventListener("change", async (e) => {
+    const mb = Number(e.target.value);
+    if (!invoke || !(mb > 0)) return;
+    try {
+      const s = await invoke("cache_set_budget", { mb });
+      paintCache(s);
+      toast(`Cache limit ${mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}`, 3000, "success");
+    } catch (err) {
+      toast(String(err).slice(0, 120), 5000, "error");
+    }
+  });
+  q("m-cache-clear")?.addEventListener("click", async () => {
+    if (!invoke) return toast("Backend unavailable", 4000, "error");
+    try {
+      const s = await invoke("cache_clear");
+      paintCache(s);
+      toast("Cache cleared — your downloads are untouched", 3500, "success");
+    } catch (err) {
+      toast(String(err).slice(0, 120), 5000, "error");
+    }
+  });
+  q("m-csv-import")?.addEventListener("click", () => q("m-csv-file")?.click());
+  q("m-csv-file")?.addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    toast("Importing CSV — matching tracks…", 4000, "info");
+    try {
+      const text = await readCsvFile(f);
+      const { playlist, matched, missed, errors } = await importCsvToPlaylist(
+        text,
+        `Imported ${f.name.replace(/\.csv$/i, "")}`,
+        invoke,
+      );
+      if (!playlist || !playlist.tracks.length) {
+        toast(`No tracks imported${errors && errors.length ? ` — ${errors[0]}` : ""}`, 5000, "error");
+        return;
+      }
+      const saved = load(LIBRARY_KEY, []);
+      // Same record shape as createPlaylist so Library lists it as local.
+      saved.unshift({
+        ...playlist,
+        local: true,
+        kind: "playlist",
+        subtitle: `${matched} songs`,
+        image: "",
+        ts: Date.now(),
+      });
+      save(LIBRARY_KEY, saved);
+      toast(
+        `Imported ${matched} tracks${missed ? ` — ${missed} not found` : ""}${errors && errors.length ? ` (${errors.length} bad rows skipped)` : ""}`,
+        5500,
+        "success",
+      );
+      pushEvent("library", `Imported playlist ${playlist.title}`, `${matched} tracks matched from ${f.name}.`);
+    } catch (err) {
+      toast(`Import failed: ${String(err).slice(0, 120)}`, 5000, "error");
+    }
+  });
+  if (invoke) invoke("cache_stats").then((s) => paintCache(s)).catch(() => {});
   applyMobileTheme();
 }
 function paintMobilePrefs(m) {
@@ -3525,11 +3651,24 @@ function paintMobilePrefs(m) {
   fill("m-theme", [["system", "System"], ["light", "Light"], ["dark", "Dark"]], mGet("tm-theme", "system"));
   fill("m-density", [["comfortable", "Comfortable"], ["compact", "Compact"]], mGet("tm-density", "comfortable"));
   fill("m-lyr-size", [["s", "Small"], ["m", "Medium"], ["l", "Large"]], mGet("tm-lyrics-size", "m"));
+  fill(
+    "m-quota",
+    [["", "Unlimited"], ["1", "1 GB"], ["2", "2 GB"], ["5", "5 GB"], ["10", "10 GB"], ["20", "20 GB"], ["50", "50 GB"]],
+    vaultQuotaGb(),
+  );
+  fill(
+    "m-cache-budget",
+    [
+      ["100", "100 MB"], ["256", "256 MB"], ["512", "512 MB"], ["1024", "1 GB"],
+      ["2048", "2 GB"], ["3072", "3 GB"], ["4096", "4 GB"], ["5120", "5 GB"],
+    ],
+    lastCacheStats && lastCacheStats.budget_bytes ? String(Math.round(lastCacheStats.budget_bytes / (1024 * 1024))) : "100",
+  );
   for (const [id, key, dflt] of [["m-gapless", "tm-gapless", "0"], ["m-remember", "tm-remember-pos", "1"], ["m-lyr-auto", "tm-lyrics-autoscroll", "1"], ["m-lyr-kara", "tm-lyrics-gloss", "1"]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
   }
-  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-normalize", normalizeOn()], ["m-smart", smartDlOn()]]) {
+  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-normalize", normalizeOn()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, !!on);
   }

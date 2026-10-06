@@ -16,8 +16,29 @@ instead of failing oddly.
 - Offline: vault tracks play from disk (`resolve_song` vault hit);
   network state machine (online / degraded / offline) skips undownloaded
   tracks while offline.
+- Stream quality: `effectiveStreamQuality()` (`mobile/shared.js`) — Data
+  Saver 64 kbps, Wi-Fi 320 kbps, **cellular Auto = 320 kbps** (was 96;
+  changed 2026-10-07 so default mobile-data playback isn't audibly
+  degraded — economy is an explicit picker or Data Saver).
+- Resume position (`tm-remember-pos`, Settings → Playback): the playhead
+  of the playing track is persisted (`tm-pos`, `{id, t}`) on
+  timeupdate/pause/visibility-hidden and re-applied on the next start of
+  the *same* track (`mobile/player.js`). Off switch honours the same key
+  desktop reads.
+- Smart downloads (`tm-smart-dl`): a played track is auto-saved to the
+  vault in the background — Wi-Fi only, never on cellular, quiet, deduped
+  (`mobile/shared.js pushPlay`). The switch was storage-only before
+  2026-10-07; it now has a consumer.
+- Byte-prefetch (`tm-prefetch`, Settings → Playback): while a track
+  plays, the next queue track is downloaded to disk
+  (`prefetchTrackBytes`), gated off on cellular and Data Saver so it
+  never burns metered bytes. Distinct from `prefetch_next`, which only
+  warms resolve metadata.
 - Lyrics: `get_lyrics` (LRCLIB synced → JioSaavn text → LRCLIB search),
   karaoke paint in `mobile/lyrics.js` + `.lyric-*` CSS in `mobile/index.html`.
+  Per-track manual offset (±100 ms buttons in the Lyrics tab, clamp
+  ±2 s, `tm-lyrics-offsets`, same `currentTime + offset/1000` formula
+  as desktop `lyrics.js:313`).
 - NowPlaying (`mobile/screens/nowplaying.*`): the artwork card mirrors the
   desktop overlay's metadata — eyebrow track line (`#np-trackline`),
   title/artist with favorite / download / add / share actions, and an
@@ -25,7 +46,10 @@ instead of failing oddly.
   from the player state, `jam.js:paintJam` fills the room count). The
   Queue / Chat / Jam Data / Lyrics tabs are bound with `addEventListener` in
   the screen script — inline `onclick` is refused by the mobile CSP
-  (09-problems-solutions P24). There is **no in-app volume slider** (removed
+  (09-problems-solutions P24). The Jam Data tab renders the room QR
+  (`qrview.js paintQr` with the mobile `invoke`; encodes the same
+  invite string the Copy button hands out — `qr::qr_symbol` was already
+  registered on mobile, `lib.rs:1648`). There is **no in-app volume slider** (removed
   2026-10-06: system volume keys own it; `tm-mobile-vol` still seeds the level
   in `player.js`).
 
@@ -52,8 +76,18 @@ instead of failing oddly.
   vault lives in the app data dir (`TRANCE MUSIC` under
   `%LOCALAPPDATA%` / `~/.local/share` / app sandbox), migrated once from the
   legacy `Downloads/TRANCE MUSIC` folder (`lib.rs:migrate_vault`).
-- Cache controls: `cache_stats`, `cache_set_budget` (100 MB–5 GB),
-  `cache_clear` (never touches the vault), `net_ping` reachability probe.
+- Vault quota + LRU eviction (`tm-vault-quota`, GB; Settings → Storage):
+  after a download lands, over-quota vaults evict least-recently-played
+  tracks (play order from `tm-plays`, oldest-added tie-break), never the
+  playing track or an in-flight download. Picker is the pure
+  `mobile/quota.js` (unit-tested, mirrors desktop `vault.js:410-467`).
+- Cache controls (`cache_stats`, `cache_set_budget` 100 MB–5 GB,
+  `cache_clear` — never touches the vault) now have a **Settings →
+  Storage** section on mobile: usage line, budget select, Clear button;
+  `net_ping` reachability probe unchanged.
+- Exportify CSV import (`importer.js:parseExportifyCsv`, core.js-free):
+  `Import playlist CSV` row in Settings → Storage behind a hidden file
+  input; parsed rows become a local playlist, bad rows are reported.
 - Backup/restore + Drive sync commands exist (`gdrive_*`), but native
   file pickers are desktop-only (see below).
 

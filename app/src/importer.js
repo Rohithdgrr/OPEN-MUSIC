@@ -1,7 +1,10 @@
 // importer.js — Exportify CSV → vault import
 // Parses Spotify CSV exports into local playlists.
 
-import { invoke } from "./core.js";
+// core.js (desktop's DOM module) must NOT be imported at top level here: the
+// mobile shell imports the pure parsers too. Only the catalog-matching path
+// needs invoke, and it resolves desktop's lazily when the caller — mobile
+// passes its own (shared.js) — doesn't supply one.
 
 /// Parse Exportify CSV format into track objects.
 /// Expected columns: Track URI, Track Name, Artist URI(s), Artist Name(s),
@@ -74,7 +77,8 @@ function parseCsvLine(line) {
 
 /// Match CSV tracks to JioSaavn catalog via search.
 /// Limits to 100 tracks per batch to avoid overwhelming the API.
-export async function importCsvToPlaylist(csvText, playlistName) {
+export async function importCsvToPlaylist(csvText, playlistName, doInvoke) {
+  const call = doInvoke || (await import("./core.js")).invoke;
   const { tracks, errors } = parseExportifyCsv(csvText);
 
   if (tracks.length === 0) {
@@ -89,7 +93,7 @@ export async function importCsvToPlaylist(csvText, playlistName) {
     try {
       // Search JioSaavn for ISRC (most reliable) or title+artist
       const query = t.isrc || `${t.name} ${t.artists[0]}`;
-      const results = await invoke("search_songs", { query, limit: 1 });
+      const results = await call("search_songs", { query, limit: 1 });
 
       if (results.tracks && results.tracks.length > 0) {
         matched.push({

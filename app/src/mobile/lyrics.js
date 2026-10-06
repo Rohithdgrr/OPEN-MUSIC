@@ -23,6 +23,62 @@ let raf = null;
 let userScrollUntil = 0;
 let boxScrollWired = null;
 
+// ------------------------------------------------------------ offset tool -
+// Per-track manual nudge (feature-list §10 P1-1): same key, clamp and
+// `currentTime + offset/1000` formula as desktop lyrics.js:65-88,313 — the
+// label/buttons mirror the desktop controls (index.html:1470-1474).
+const OFFSETS_KEY = "tm-lyrics-offsets";
+let offsetMs = 0;
+let currentTrackId = null;
+
+function loadOffsets() {
+  try {
+    return JSON.parse(localStorage.getItem(OFFSETS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function paintOffsetLabel() {
+  try {
+    const lbl = document.getElementById("lyric-offset-label");
+    if (lbl) lbl.textContent = `${offsetMs > 0 ? "+" : ""}${offsetMs}ms`;
+  } catch {}
+}
+
+/// Point the offset tool at a track: loads its stored nudge (0 for none) and
+/// repaints the label. Called for every lyrics paint path — including "no
+/// lyrics" — so the buttons can never write to a stale track id.
+export function setLyricTrack(id) {
+  currentTrackId = id != null && id !== "" ? String(id) : null;
+  offsetMs = 0;
+  if (currentTrackId) {
+    const stored = loadOffsets()[currentTrackId];
+    const n = Number(stored);
+    if (Number.isFinite(n)) offsetMs = Math.max(-2000, Math.min(2000, n));
+  }
+  paintOffsetLabel();
+}
+
+/// Nudge the highlight for the rendered track; persists per track id and
+/// re-syncs immediately. ±100ms per press, clamped to ±2s like desktop.
+export function setLyricOffset(ms) {
+  offsetMs = Math.max(-2000, Math.min(2000, Math.round(ms)));
+  if (currentTrackId) {
+    const all = loadOffsets();
+    all[currentTrackId] = offsetMs;
+    try {
+      localStorage.setItem(OFFSETS_KEY, JSON.stringify(all));
+    } catch {}
+  }
+  paintOffsetLabel();
+  syncLyrics();
+}
+
+export function lyricOffsetMs() {
+  return offsetMs;
+}
+
 function splitWords(text) {
   if (!WORD_TAG.test(text)) return null;
   const parts = text.split(WORD_TAG);
@@ -97,6 +153,9 @@ export function renderLyrics(target, data) {
   box = target;
   lines = [];
   scrollTarget = null;
+  // Load this track's stored nudge before the first sync (P1-1). Callers
+  // that know the id pass it; standalone callers keep the current target.
+  if (data && data.trackId !== undefined) setLyricTrack(data.trackId);
   const synced = Array.isArray(data && data.synced) ? data.synced : [];
   const plain = data && typeof data.plain === "string" ? data.plain : "";
   if (!synced.length && !plain.trim()) {
@@ -142,11 +201,12 @@ export function resetLyrics() {
   box = null;
   lines = [];
   scrollTarget = null;
+  currentTrackId = null;
 }
 
 export function syncLyrics() {
   if (!lines.length || !box || !box.isConnected) return;
-  const t = audio.currentTime;
+  const t = audio.currentTime + offsetMs / 1000;
   let active = null;
   for (const line of lines) {
     const raw = line.dataset.seconds;

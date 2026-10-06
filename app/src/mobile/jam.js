@@ -20,6 +20,7 @@
 // router loads as a classic script — it is the tab switcher the tab buttons
 // call, so this module moves the deck with the same function.
 import { invoke, toast } from "./shared.js";
+import { paintQr } from "../qrview.js";
 import { onPaint, playerState, playList, queueHistory, queueUpNext, repaint, seek, toggle } from "./player.js";
 import {
   createRoomState,
@@ -532,6 +533,41 @@ function paintChat() {
   list.scrollTop = list.scrollHeight;
 }
 
+/// The room QR (feature-list §10 P1-2): the identical invite string the
+/// Copy button hands out, rasterised by the shared qrview.js (one Rust
+/// encoder, one rasterizer — `paintQr` takes this shell's invoke so core.js
+/// never loads here). paintJam runs on every frame, so repaint only when the
+/// invite actually changes; a failed paint clears the tag to retry.
+let qrPainted = "";
+let qrCanvas = null;
+function paintQrSurface(share) {
+  try {
+    const canvas = el("jamQr");
+    if (!canvas) return;
+    const note = el("jamQrNote");
+    if (!share) {
+      if (note) note.textContent = "Start a room — a guest can scan the invite here.";
+      if (qrPainted !== "") {
+        const ctx = canvas.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        qrPainted = "";
+        qrCanvas = null;
+      }
+      return;
+    }
+    // Repaint when the invite changes OR the canvas is a fresh element (the
+    // router rebuilds the screen from its template on remount).
+    if (share === qrPainted && qrCanvas === canvas) return;
+    qrPainted = share;
+    qrCanvas = canvas;
+    if (note) note.textContent = "Scan to join — the same invite the Copy button shares.";
+    void paintQr(canvas, share, invoke).catch(() => {
+      qrPainted = "";
+      qrCanvas = null;
+    });
+  } catch {}
+}
+
 /// Paint everything the mobile screen shows. Null-safe: a room can stay open
 /// while the user is on another screen, and then there is nothing to paint.
 function paintJam() {
@@ -589,6 +625,7 @@ function paintJam() {
   setText("jamInviteUri", invite || (inRoom ? "Invite unavailable — code only" : "Not in a room"));
   const inviteCopy = el("jamInviteCopy");
   if (inviteCopy) inviteCopy.disabled = !inRoom;
+  paintQrSurface(invite || (inRoom ? room.code : ""));
   setText("jamMemberValue", inRoom ? `${memberCount(room)} in room` : "1 (you)");
   // Artwork telemetry ROOM cell (desktop `.np-art-info-item` parity): the
   // count comes from the reducer, "1 (you)" is the honest Solo value.

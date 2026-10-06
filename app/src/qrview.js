@@ -13,8 +13,10 @@ import { invoke } from "./core.js";
 const QUIET = 4;
 
 // Draw `text` as a QR symbol. Returns the symbol descriptor, or throws.
-export async function paintQr(canvas, text) {
-  const symbol = await invoke("qr_symbol", { text });
+// `doInvoke` lets the mobile shell pass its own invoke (shared.js) — core.js
+// is desktop's DOM module — so there is still exactly one rasterizer.
+export async function paintQr(canvas, text, doInvoke) {
+  const symbol = doInvoke ? await doInvoke("qr_symbol", { text }) : await invoke("qr_symbol", { text });
   if (!symbol?.size || !Array.isArray(symbol.modules)) {
     throw new Error("qr_symbol returned an unusable symbol");
   }

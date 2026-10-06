@@ -1,5 +1,6 @@
 // shared.js — invoke, Channel, storage, artwork, row/card templates for the mobile shell.
 import { esc } from "../html.js";
+import { quotaBytesFromGb, pickEvictVictims } from "./quota.js";
 
 export const invoke = window.__TAURI__?.core?.invoke ?? window.__TAURI_INTERNALS__?.invoke;
 
@@ -263,6 +264,15 @@ export function pushPlay(track) {
   try {
     import("../store_db.js").then((m) => m.recordPlay(track).catch(() => {}));
   } catch {}
+  // Smart downloads: every played track becomes a vault file — Wi-Fi only
+  // (never on cellular, independent of the Wi-Fi-only gate), quiet, and
+  // deduped by downloadTrack's active/vaulted guards. The switch existed in
+  // Settings with no consumer before 2026-10-07.
+  try {
+    if (invoke && smartDlOn() && track && track.id && !isVaulted(track.id) && !onCellular()) {
+      void downloadTrack(track, null, true);
+    }
+  } catch {}
 }
 
 export function pushHistory(q) {
@@ -292,6 +302,101 @@ export async function refreshVault() {
     vaultIds = new Set(entries.map((e) => e && e.id).filter(Boolean).map(String));
     save(VAULT_IDS_KEY, [...vaultIds]);
   } catch {} // offline boot: keep the cached set
+}
+
+// ------------------------------------------------------------- vault quota
+// Port of desktop vault.js:410-467: over quota → evict least-recently-played
+// (oldest added as tie-break), never the track playing or a download in
+// flight. The ordering math lives in the pure ./quota.js so it is unit-tested.
+const QUOTA_KEY = "tm-vault-quota";
+
+export function vaultQuotaGb() {
+  try {
+    return localStorage.getItem(QUOTA_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+/// Raw string storage, same reason as setDlQuality: "" = unlimited.
+export function setVaultQuotaGb(gb) {
+  try {
+    if (gb === "" || gb == null) localStorage.removeItem(QUOTA_KEY);
+    else localStorage.setItem(QUOTA_KEY, String(gb));
+  } catch {}
+}
+
+let enforcing = false;
+export async function enforceVaultQuota(currentId) {
+  const cap = quotaBytesFromGb(vaultQuotaGb());
+  if (!cap || enforcing || !invoke) return;
+  enforcing = true;
+  try {
+    const r = await invoke("list_downloads");
+    const entries = (r && r.entries) || [];
+    if (!entries.length) return;
+    const played = new Map();
+    try {
+      for (const t of JSON.parse(localStorage.getItem(PLAYS_KEY) || "[]")) {
+        if (t && t.id && !played.has(String(t.id))) played.set(String(t.id), Number(t.ts) || 0);
+      }
+    } catch {}
+    const victims = pickEvictVictims(
+      entries,
+      played,
+      cap,
+      currentId != null ? String(currentId) : null,
+      [...activeDownloads.keys()],
+    );
+    if (!victims.length) return;
+    let evicted = 0;
+    for (const e of victims) {
+      try {
+        await invoke("remove_download", { path: e.path });
+        evicted += 1;
+      } catch {}
+    }
+    if (evicted) {
+      toast(
+        `Vault over quota: evicted ${evicted} least-recently played track${evicted === 1 ? "" : "s"}.`,
+        "info",
+        4500,
+      );
+      await refreshVault();
+      try {
+        hooks.repaintDownload?.();
+      } catch {}
+    }
+  } catch {} finally {
+    enforcing = false;
+  }
+}
+
+// --------------------------------------------------------- byte prefetch -
+// Save the NEXT queued track to disk while the current one plays (spec:
+// feature-list §10 P0-2). Always off on cellular and under Data Saver —
+// prefetch is a convenience, never a reason to burn metered bytes.
+const PREFETCH_KEY = "tm-prefetch";
+
+export function prefetchOn() {
+  try {
+    return localStorage.getItem(PREFETCH_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function setPrefetchOn(on) {
+  try {
+    localStorage.setItem(PREFETCH_KEY, on ? "1" : "0");
+  } catch {}
+}
+
+export async function prefetchTrackBytes(track) {
+  if (!invoke || !track || !track.id) return;
+  if (!prefetchOn() || dataSaver() || onCellular()) return;
+  if (isVaulted(track.id) || activeDownloads.has(String(track.id))) return;
+  await downloadTrack(track, null, true);
 }
 
 const ART_RENDS = [
@@ -727,6 +832,7 @@ export async function downloadTrack(track, btn, quiet = false) {
     }
     if (out && out.duplicate_of && !quiet) toast("Already in vault");
     refreshVault(); // the offline gate must see the new file immediately
+    enforceVaultQuota(track.id).catch(() => {});
     return out;
   } catch (e) {
     console.error(e);
@@ -928,10 +1034,13 @@ export function effectiveStreamQuality() {
       if (c) cellular = !!c.saveData || String(c.type || "").toLowerCase() === "cellular";
     } catch {}
     if (cellular) {
+      // 2026-10-07: Auto on cellular was 96kbps — audibly worse than every
+      // other default. Auto now means "full quality"; economy is an explicit
+      // pick below or Data Saver (which still wins above).
       try {
-        return localStorage.getItem(STREAM_CELL_KEY) || "96kbps";
+        return localStorage.getItem(STREAM_CELL_KEY) || "320kbps";
       } catch {
-        return "96kbps";
+        return "320kbps";
       }
     }
     try {

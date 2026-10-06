@@ -193,33 +193,33 @@ These are not gaps — they are concepts that only exist on one platform.
 
 ## 10. Desktop → Mobile port backlog (Android improvement)
 
-Everything below is verified **absent on Android, present and working on
-desktop** — ordered by what actually hurts an Android user. Excludes §9
-platform-only concepts. Status: `OPEN` (2026-10-07 audit).
+Everything below was verified **absent on Android, present and working on
+desktop** (2026-10-07 audit), then landed in order of Android pain. Excludes
+§9 platform-only concepts.
 
-### P0 — storage & data safety (Android pain today)
+### P0 — storage & data safety (Android pain today) — ✅ LANDED 2026-10-07
 
-| # | Feature | Desktop code | What Android gets | Effort | Acceptance |
-|---|---|---|---|---|---|
-| P0-1 | **Vault quota + LRU eviction** | `vault.js:410-467` (`tm-vault-quota`), selector `index.html:1016`, apply-immediately `settings.js:1761` | A GB cap in Settings → Downloads; least-recently-played tracks evict when over quota. Phones hit "storage full"; desktop laptops rarely do — this matters *more* on Android | Frontend-only (localStorage key + evict call where downloads land; `list_downloads` already exists on both) | Download past the cap → oldest-played file removed, download still completes, `verify_vault` clean; gate: `npm test` + `OP_OFFLINE=1 cargo test --lib` |
-| P0-2 | **Vault byte-prefetch (`tm-prefetch`)** | `prefetchTrack` `vault.js:472-478`, fired in `playback.js:275,407` | Next queue track saved to disk while you listen → offline-ready queue, instant next-track start | Frontend-only, **must** gate behind existing `tm-wifi-only` (`mobile/shared.js:494`) + Data Saver so it never burns cellular bytes | With Wi-Fi-only on: next track file lands during playback and next play is a vault hit; with Data Saver/cellular: zero extra bytes |
+| # | Feature | Desktop code | What Android got | Acceptance |
+|---|---|---|---|---|
+| P0-1 | **Vault quota + LRU eviction** ✅ | `vault.js:410-467` (`tm-vault-quota`), selector `index.html:1016` | GB cap in Settings → Storage; least-recently-played evicts when over quota. Pure picker in `mobile/quota.js` (unit-tested); enforced after every download lands | Over-quota download → oldest-played evicted, current track + in-flight downloads never touched; `app/tests/vault-quota.test.mjs` |
+| P0-2 | **Vault byte-prefetch (`tm-prefetch`)** ✅ | `prefetchTrack` `vault.js:472-478` | Next queue track downloads to disk while you listen. Switch in Settings → Playback; gated off on cellular + Data Saver so it never burns metered bytes (`mobile/shared.js` `prefetchTrackBytes`) | Wi-Fi: next track is a vault hit at track end; cellular/Data Saver: zero extra bytes |
 
-### P1 — parity, cheap, no new dependency
+### P1 — parity, cheap, no new dependency — ✅ LANDED 2026-10-07
 
-| # | Feature | Desktop code | What Android gets | Effort | Acceptance |
-|---|---|---|---|---|---|
-| P1-1 | **Lyrics manual offset** (±100 ms, per-track `tm-lyrics-offsets`) | `lyrics.js:65,402-404`; controls `index.html:1470-1474` | Fix lip-sync drift on Bluetooth/headphone latency — the most common phone-only lyrics complaint | Frontend-only: add `−`/`+`/reset to the NowPlaying Lyrics tab; reuse desktop's per-track offset map | Offset persists across reload per track id; karaoke paint shifts with it; `npm test` + eslint clean |
-| P1-2 | **Room QR render** | `qrview.js:16 paintQr`, `social.js:626-668`; Rust `qr::qr_symbol` is **already registered on mobile** (`lib.rs:1648`, no cfg gate) | Host shows a scannable QR on the Jam Data tab — invite without typing an IP | Frontend-only: paint QR onto a canvas in `jam.js` (join today is paste-only, `jam.js:97-147`) | QR encodes the same `inviteText(room)` string desktop renders; scan with phone camera opens/contains the join details |
-| P1-3 | **`reveal_download` / `reveal_vault` equivalent** | `lib.rs:1678-1679` → desktop file manager | "Show file" opens the vault folder in Android's file app | Small Rust: `open_external`-style Intent (pairs with P2-3) | Tap reveal → system file manager shows the `.opus`/`.mp3` |
-| P1-4 | **Exportify CSV import** | `importer.js:9 parseExportifyCsv`, wired `settings.js:768` | Import a Spotify-exported playlist CSV | Frontend parser is portable; file access needs SAF → **P2 blocker**, parser can land first behind the existing hidden `<input type=file>` Settings already uses for restore (`binders.js:4201-4214`) | Parsed CSV becomes a local playlist; bad rows reported, not silent |
+| # | Feature | Desktop code | What Android got | Acceptance |
+|---|---|---|---|---|
+| P1-1 | **Lyrics manual offset** ✅ | `lyrics.js:65,402-404`; controls `index.html:1470-1474` | `−`/`+`/reset in the NowPlaying Lyrics tab; per-track `tm-lyrics-offsets`, clamp ±2 s, same `currentTime + offset/1000` formula as desktop | Offset persists per track id across reloads; karaoke paint shifts with it |
+| P1-2 | **Room QR render** ✅ | `qrview.js:16 paintQr`, `social.js:626-668` | Canvas on the Jam Data tab, repainted on room/invite change; `qr::qr_symbol` was already registered on mobile (`lib.rs:1648`). `paintQr` takes an optional invoke fn so mobile reuses the one rasterizer | QR encodes `inviteText(room)`; scans to the same string the Copy button hands out |
+| P1-4 | **Exportify CSV import** ✅ | `importer.js:9 parseExportifyCsv` | `Import playlist CSV` row in Settings → Storage (hidden file input, no native picker needed); parser is core.js-free so mobile imports it directly | Parsed CSV becomes a local playlist; bad rows reported, not silent |
 
-### P2 — needs a native bridge
+### P2 — needs a native bridge (still OPEN)
 
 Coordinate with [`mobile/08-future-scope.md`](mobile/08-future-scope.md) #3/#4 —
 these are already written up there; listed here for parity accounting.
 
 | # | Feature | Desktop code | Android route |
 |---|---|---|---|
+| P1-3 | Reveal vault file in a file manager | `reveal_download`, `reveal_vault` (`lib.rs:1678-1679`) | Android folder Intent — lands with P2-3 |
 | P2-1 | Native file import/export (backup/restore JSON, CSV, M3U) | `export_file`, `read_import_file` (`#[cfg(desktop)]` `lib.rs:1688-1691`) | SAF / document picker / share sheet — content generation already works on mobile (`menus.js:247`) |
 | P2-2 | Google Drive sync (`gdrive_*`) | Engine live `gsync.js`; UI parked `settings.js:735-738` | Unblock `gdrive.rs` mobile `Err` — needs an OAuth flow that can open a browser tab |
 | P2-3 | `open_external` | `lib.rs:1709` | Android `Intent.ACTION_VIEW` (also unblocks P1-3) |
