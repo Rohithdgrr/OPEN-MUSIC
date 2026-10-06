@@ -36,6 +36,30 @@ exit code, or URL). Unverified entries are marked `HYPOTHESIS`.
    (d) if an unintended push lands, **report it immediately and do not
    rewrite history** — force-push is forbidden by rule 2.
 
+## 2026-10-06 — Social + Jam landed on both surfaces (verified)
+
+`docs/listen-together.md` §13 is the spec of record. What changed and what
+proves it:
+
+| Item | Evidence |
+|---|---|
+| **`cargo test` unblocked (board P0)** | `app/src-tauri/build.rs:20` declares the comctl-v6 `MANIFESTDEPENDENCY` on the link line. `rustc-link-arg-tests` does **not** work here ("The package … does not have a test target"); `rustc-link-arg` does, and the app binary already carries Tauri's own manifest. **`cargo test`: 174 pass / 0 fail** |
+| The block was hiding a broken test | `room::tests::drift_report_paints_presence_for_the_host_tile` read the join-time `presence` frame (no `driftMs` by design) and asserted 420 against it. Repaired in `room.rs`; the join frame's *absence* of a number is now asserted |
+| Clippy/fmt were not clean | `cargo clippy --all-targets -- -D warnings` had **2** `unnecessary_to_owned` warnings in `room.rs` (lines 644, 982) — fixed. Always run fmt+clippy after touching Rust, not just `cargo test` |
+| Desktop `social.js` drives the room | `room_open/join/chat/playback/report/close/info` + `room://msg` → `room.js` reducer; host 1 s tick; guest applies the host playhead and reports measured drift; guest transport locked. **39/39 headless-Chrome checks** |
+| Mobile `jam.js` (new) + regenerated Now Playing screen | mode sheets, banner, chat, Jam Data, guest lock. **31/31 headless-Chrome checks**. `app/tests/jam-ui.test.mjs` is the static gate |
+| Gates | `npm test` **174 pass / 0 fail**, `npm run lint` clean, `cargo fmt --check` clean, `cargo clippy` clean, `npm run css` re-run after the markup change |
+| **NOT verified** | two real devices over a LAN (§10 runbook). *Superseded 2026-10-06b:* the Android APK **has** now been built and verified on the emulator — see the next section. The headless runs stubbed the IPC; the live runs drive a real app against a real socket |
+
+**How the headless check was done (reproducible):** a temporary stub of
+`window.__TAURI__` (`core.invoke` + `event.listen`) plus a driver module was
+added beside each shell, served over a plain `node -e` static server, loaded by
+`chrome --headless=new --virtual-time-budget=… --dump-dom`, then **deleted**.
+No dependency was installed and nothing was committed for it. A green per-layer
+suite is not the same claim as a driven UI: the run caught two real bugs (a
+host's own `playback` echo counted towards the "Synchronized" badge; the
+desktop Leave button no longer returned to Solo).
+
 ## Project facts (T0-verified)
 
 - **Stack:** Tauri 2 (`app/src-tauri`, Rust) + zero-build vanilla JS
@@ -187,8 +211,14 @@ channel on this repo.
 
 ## Skills actually available
 
-`opencode`, `report`, `slim-readme`, `ui-ux-pro-max`.
-**There is no "ponytail" skill** — if asked for it, say so; do not simulate.
+Built-in: `opencode`, `report`. Legacy (`~/.opencode/skills/`): `slim-readme`,
+`ui-ux-pro-max`. **V2 global (`~/.config/opencode/skills/`, 83 dirs since
+2026-10-06):** `ponytail` + 5 ponytail-* helpers, superpowers ×15,
+agent-skills ×25, caveman ×23, understand-* ×9, `graphify`, `impeccable`,
+plus curated `mcp-builder`, `webapp-testing`, `skill-creator`.
+**`ponytail` now exists** — the standing "always use ponytail" rule applies
+(load `ponytail` for coding tasks); the old "no ponytail" note was corrected
+2026-10-06. Inventory + vetting: `docs/toolchain-mcp-skills.md`.
 
 ## Known defects
 
@@ -199,3 +229,138 @@ channel on this repo.
   `test -f` does not glob a quoted pattern.
 - `macos.yml` "Run smoke tests" step removed (it failed the runner: the built
   `.app` is never installed to `/Applications` there).
+
+## 2026-10-06d — Mobile home greeting rich card + search double-border fix (verified in browser)
+
+| Item | Evidence |
+|---|---|
+| Search inner border root-caused | `app/src/mobile/index.html:378-394` (light) + `:656-680` (dark) paint `input[type=text]` with `!important` borders — doubles the search pill. `#search-input` now exempted in both themes; input itself hardened (`border-0 outline-none ring-0`, `search.html:6`). Pill's own `focus-within` ring keeps the focus indicator |
+| Home greeting redesigned | `screens/home.html`: hero card (rounded-3xl, gradient, ambient primary blobs, live-dot date eyebrow, 30px `h1`, tagline). Keeps `mountHome` contracts (`binders.js:266-274`: first `h1`, first `section span.uppercase`) |
+| Spec first | `docs/mobile/06-features.md` "Home greeting & search bay" |
+| Gates | `npm run css` rebuilt, `npm test` 174/174, `eslint` clean |
+| Preview | local static server `http://127.0.0.1:8123/mobile/index.html` + Playwright @412px: home card + borderless focused search pill screenshotted and confirmed; preview PNGs deleted. Note: fresh profiles hit the `tm-onboarded` gate — dismissed via the real Start-listening button |
+
+## 2026-10-06c — Android streaming verified working on fresh build (was: stale APK)
+
+User reported "app not working / not streaming". Finding: the installed APK was
+stale, not the pipeline. `app/src/social.js` (16:36) was newer than the
+universal debug APK (16:23), and an older `tauri android dev` APK baked in a
+`:1430` devUrl. Rebuilt (`npm run css` + `tauri android build --debug
+--target x86_64`), `adb install -r` on `Pixel6_API36`, then drove the real UI
+over CDP: search → Play Song → `#/nowplaying` 320KBPS, `t=12.0` advancing,
+`readyState 4`, no errors; pause holds, play resumes, next advances. Pipeline
+is `resolve_song` → `http://127.0.0.1:{port}/stream` (same on Android, no
+`cfg(mobile)` branch, `lib.rs:156-210`, `proxy.rs:1451-1457`). Emulator
+`net_ping` RTT ~3.7 s keeps the net banner on "Slow internet" (thresholds in
+`app/src/mobile/net.js:7-8`), but `degraded` gates nothing in playback — only
+`offline` does — so it is cosmetic. Probes were temp files outside the repo,
+deleted after the run.
+
+## 2026-10-06b — Social/Collab verified LIVE on desktop + Android emulator
+
+Extends the section above: the same features now have **real** end-to-end
+evidence, not stubbed IPC. Two real defects were found and fixed.
+
+| What | Evidence |
+|---|---|
+| **Desktop live: 32 pass / 0 fail** | `node tests/live-desktop.mjs` — real `cargo build` binary + WebView2 CDP on `:9222`, real second socket. Room opened from the UI, `ws://10.227.158.104:8787` advertised, handshake `joined,history,presence`, chat echo **31 ms**, guest `playback` → `not_host`, `presence` → 2 members + `±0.25s`, Leave → `NO ROOM` + Solo |
+| **Android live: 28 pass / 0 fail** | `node tests/live-android-emulator.mjs` — real debug APK on AVD `Pixel6_API36`. Device's Rust server opened `#6TH5BLFR`, invite `ws://10.0.2.16:8787 · 6TH5BLFR`, chat echo **31 ms** via adb forward, `presence` → 2 members + `±0.25s`, leave → Solo |
+| Defect 1 — `room_info` hid the invite | returned `{role,port,code}` while `room_open` returned `urls`, so `live-desktop.mjs` aborted at `room_info().urls` (a field that never existed → **the test had never been run**). `room_info` now returns `urls`; `docs/listen-together.md` §6 updated, ROOM.MD D-12 |
+| Defect 2 — room listener coupled to mode entry | `startRoomListener()` was called only by `enterSocial()`, but `#btn-open-room` → `openRoom()` is wired independently. A room could be open with **nobody listening** → host UI frozen at `1 online`. Now attached once at boot; the no-IPC early-return no longer latches `listenerReady` off. `live-desktop.mjs` also enters Social first (Jam controls are `display:none` in Solo) |
+| Gates after the edits | `npm test` **174/174** · `npm run lint` clean · `cargo fmt --check` clean · `cargo clippy --all-targets -- -D warnings` clean · `cargo test --lib` **174/174** |
+
+### Environment findings (all verified this session)
+
+- **Android IS usable on this machine.** `gen/android` exists, AVD
+  `Pixel6_API36` boots, JDK 17, NDK 27.2.12479018, and
+  `gen/android/app/src/main/AndroidManifest.xml` **already contains**
+  `<uses-permission android:name="android.permission.INTERNET"/>` — the
+  ROOM.MD P20/P21 "INTERNET not granted" finding is **stale** for this checkout.
+  `gen/` is gitignored, so a fresh clone still needs `tauri android init`.
+- **A `gen/` debug APK is a dev client.** The pre-existing
+  `app-x86_64-debug.apk` came from `tauri android dev` and baked in
+  `devUrl` (`http://<pc-ip>:1430/mobile/index.html`). On the emulator it showed
+  a load-failure page — `adb logcat` had `Failed to request http://…:1430/…`,
+  CDP DOM had **0** ids. Only `tauri android build --debug` embeds the
+  frontend. Rebuild before concluding the frontend is broken.
+- **Run the desktop live test off `cargo build`, not `tauri dev`.**
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` did
+  **not** reach WebView2 through `npm run tauri dev` → `cargo run` (port never
+  listened), and `tauri dev`'s asset server on :1430 dies with the app. Build
+  `cargo build` (assets embedded, serves `http://tauri.localhost/`), then launch
+  `target/debug/trance-music.exe` with the env var set directly.
+- **`OP_OFFLINE=1 cargo test --lib`** — 174 pass in **5.9 s** vs 84–107 s
+  online. Two tests failed on one online run and passed on re-run (network
+  flake). Use `OP_OFFLINE=1` for a deterministic local gate.
+- Android build cost: `tauri android build --debug --target x86_64` ≈ 1 min Rust
+  (incremental) + gradle; produces a **universal** APK (~586 MB debug) at
+  `gen/android/app/build/outputs/apk/universal/debug/`.
+- `code_search` failed this session: `uv_spawn 'C:\Users\rohit\.config\manicode\rg.exe' ENOENT`.
+  Fall back to bash `grep`/`find`.
+- The live harnesses are **not** in `npm test` (glob is `tests/**/*.test.mjs`);
+  `live-*.mjs` are `node`-run by hand and need a running app.
+
+---
+
+## 2026-10-06 — Session Memory Format Update (this entry)
+
+**Model:** `nemotron-3-ultra-free` (provider: `opencode`)  
+**Timestamp:** 2026-10-06T14:52:00+00:00  
+**Session ID:** `ses_` (current OpenCode session)  
+**Work Done:**  
+- Read `AGENTS.md` in full (lines 1–285) to confirm existing memory structure  
+- Appended this entry per user's new logging specification: immutable, append-only, WhatsApp-style chat log with tagged status
+
+**Files & Folders Touched (with line numbers):**  
+- `AGENTS.md` — appended new section at line 287+ (this entry)  
+- No other files modified
+
+**Identification:**  
+- Model: `opencode/nemotron-3-ultra-free` (ID from `tools.opencode.models` catalog)  
+- Provider: `opencode` (local OpenCode server)  
+- Workspace: `C:\Users\rohit\Music\OPEN-MUSIC` (git root, public repo `Rohithdgrr/OPEN-MUSIC`)  
+- Git identity verified: `Rohithdgrr <rohit93dgrr@gmail.com>` (per Rule 2)
+
+**Status Tags (WhatsApp-style):**  
+- ✅ **READ** — `AGENTS.md` fully loaded into context (lines 1–285)  
+- ✅ **APPENDED** — this entry written atomically via `edit` tool  
+- 🔒 **IMMUTABLE** — no prior entries deleted or modified; history preserved  
+- 🏷️ **TAGGED** — each prior section retains original timestamp + verification status
+
+**Evidence:**  
+- `edit` tool call above (line 287+ insertion)  
+- `read` tool output shows pre-append state (lines 1–285)  
+- No `shell` git commands run — commit/push deferred per Rule 1
+
+---
+
+## 2026-10-06e — Toolchain rollout: 5 MCP servers + 83 skills (vetted)
+
+Docs-first record: `docs/toolchain-mcp-skills.md` (written before installing).
+
+- **MCP added** (global `opencode.json`, V2 `mcp.servers` shape), all
+  `connected` per `opencode mcp list`: `playwright` (25 tools), `rust-analyzer`
+  (11; **positional** workspace arg — the pasted `--workspace` flag does not
+  exist), `json-yaml-toml` (8), `httpx` (2; private net allowed for the relay),
+  `context7` (2; from mcpmarket consult — replaces the skipped rust-docs-mcp).
+- **Do NOT re-add `agent-hub`** — user said "skip agent-hub" this session; the
+  CLI's V1→V2 migration dropped its entry and it was intentionally left out.
+- **Packages that DO NOT EXIST** (never install): `mcp-network`, `mcp-request`,
+  `audio-analysis-mcp` (npm/PyPI 404), repo `tt-ali/archify` (GitHub 404).
+  The original pasted list also used the **V1** config shape (`mcp` flat +
+  `permission`); V2 is `mcp.servers` + `permissions` ordered rules.
+- **Side effect fixed:** the pip installs pulled `starlette 1.7.0`, breaking
+  `fastapi 0.128.0` in the global Python env; pinned
+  `pip install "starlette>=0.49.1,<0.51"` → `pip check` clean.
+- **`opencode mcp add` rejects `-y` anywhere** in its args → install npm
+  servers with `npm i -g` and register the **shim name** (e.g. `context7-mcp`),
+  never the `npm view bin` script-path value (`dist/index.js` won't spawn).
+- **Skills:** 83 dirs in `~/.config/opencode/skills/` (7 leaderboard repos +
+  3 curated from awesome-claude-skills, whose 864 skills are capped as an
+  aggregator per rule 7). `graphify` shipped lowercase `skill.md` → renamed.
+  `uv` and `ffmpeg` are **missing** on this machine — uvx/ffmpeg servers fail.
+- **Auto-approve** already existed (`opencode.jsonc` allow-all `permissions`);
+  no change needed. `.playwright-mcp/` (MCP browser profile in repo root)
+  added to `.gitignore`. Temp clones deleted.
+- **Evidence:** `opencode mcp list` (5× connected), in-session skill/tool
+  advertisement, `pip check` (clean), repo/API 404 checks per the doc table.

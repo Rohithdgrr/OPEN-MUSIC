@@ -54,3 +54,4 @@ langsplit_tmp.pdb
 # Tauri regenerates the Android + Apple scaffolds from tauri.conf.json.
 # gen/android holds a release.keystore + keystore.properties = signing secrets.
 app/src-tauri/gen/
+.playwright-mcp/
