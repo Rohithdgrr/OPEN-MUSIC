@@ -45,6 +45,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 # frontend paints it to a canvas — so the default `image`/`svg`/`pic` encoders
 # are switched off; they would drag the whole `image` crate into the build.
 qrcode = { version = "0.14.1", default-features = false }
+tauri-plugin-opener = "2.5.5"
 
 # Desktop-only plugins. None of them has a mobile implementation, and pulling
 # them into the iOS/Android targets fails the mobile build, so they live here

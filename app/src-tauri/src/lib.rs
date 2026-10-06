@@ -1550,7 +1550,10 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()>
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
-    let builder = tauri::Builder::default();
+    // Opener: fires an ACTION_VIEW Intent on Android and `open`/`ShellExecute`
+    // on desktop. Used by spotify_signin's browser hop on mobile (the old
+    // xdg-open shell only exists on desktop) and by open_external everywhere.
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
     // First plugin: a second launch focuses the running instance. Both this
     // and the shortcut plugin are desktop-only — their Rust API does not
     // exist on mobile (Android gets single-task semantics from the OS and

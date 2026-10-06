@@ -119,19 +119,57 @@ fn keyring_delete() -> Result<(), String> {
     }
 }
 
+// ------------------------------------------------------- token persistence -
+// One seam, two backends. Desktop keeps the OS credential store (keyring) —
+// byte-identical behaviour to before. Mobile cannot use `keyring` at all (it
+// ships no Android/iOS backend, which is why the old mobile stubs returned
+// Err), so the refresh token lands in the app's own sandboxed `store.db` kv
+// table instead. `store` is ignored on desktop and required on mobile.
+//
+// Accepted tradeoff (docs/spotify-android-canvas.md §3A): app-private SQLite,
+// not Android Keystore. Because every caller goes through these three fns, a
+// later Keystore migration is a one-function change.
+
+// Desktop reads/writes these through the OS credential store, so the kv keys
+// exist only where the store-backed seam is compiled in.
 #[cfg(mobile)]
-fn keyring_save(_refresh: &str) -> Result<(), String> {
-    Err("Spotify sign-in is not supported on mobile yet".to_string())
+const TOKEN_KEY: &str = "spotify:refresh-token";
+// Consumed by canvas.rs (the `sp_dc` cookie), wired in the Canvas slice.
+#[allow(dead_code)]
+const SPDC_KEY: &str = "spotify:sp_dc";
+
+#[cfg(not(mobile))]
+fn token_save(_store: &crate::store::AppStore, refresh: &str) -> Result<(), String> {
+    keyring_save(refresh)
+}
+
+#[cfg(not(mobile))]
+fn token_load(_store: &crate::store::AppStore) -> Result<Option<String>, String> {
+    keyring_load()
+}
+
+#[cfg(not(mobile))]
+fn token_delete(_store: &crate::store::AppStore) -> Result<(), String> {
+    keyring_delete()
 }
 
 #[cfg(mobile)]
-fn keyring_load() -> Result<Option<String>, String> {
-    Err("Spotify sign-in is not supported on mobile yet".to_string())
+fn token_save(store: &crate::store::AppStore, refresh: &str) -> Result<(), String> {
+    store.kv_put(TOKEN_KEY, refresh)
 }
 
 #[cfg(mobile)]
-fn keyring_delete() -> Result<(), String> {
-    Err("Spotify sign-in is not supported on mobile yet".to_string())
+fn token_load(store: &crate::store::AppStore) -> Result<Option<String>, String> {
+    // Empty means cleared (see token_delete): a leftover "" must read as
+    // signed OUT, not `Some("")`.
+    Ok(store.kv_get(TOKEN_KEY)?.filter(|v| !v.is_empty()))
+}
+
+#[cfg(mobile)]
+fn token_delete(store: &crate::store::AppStore) -> Result<(), String> {
+    // kv has no delete through this seam, so clear to "" — token_load filters
+    // that out, which is why signout genuinely flips the status row.
+    store.kv_put(TOKEN_KEY, "")
 }
 
 // ------------------------------------------------------------ loopback auth -
@@ -279,9 +317,22 @@ async fn wait_for_code(
     }
 }
 
-/// Open a URL in the user's browser without a shell.
-#[cfg(windows)]
-fn open_browser(url: &str) -> Result<(), String> {
+/// Open a URL in the user's browser.
+///
+/// Desktop keeps its own shell-less launchers (Windows `ShellExecuteW`, macOS
+/// `open`, Linux `xdg-open`). Mobile cannot spawn any of those, so it goes
+/// through `tauri-plugin-opener`, which fires an Android `ACTION_VIEW` Intent —
+/// that Intent is what hands the Spotify authorize URL to the system browser.
+#[cfg(mobile)]
+fn open_browser(app: &tauri::AppHandle, url: &str) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(url, None::<String>)
+        .map_err(|e| format!("could not open the browser for Spotify sign-in: {e}"))
+}
+
+#[cfg(all(not(mobile), windows))]
+fn open_browser(_app: &tauri::AppHandle, url: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
     let op: Vec<u16> = "open\0".encode_utf16().collect();
@@ -302,8 +353,8 @@ fn open_browser(url: &str) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(not(windows))]
-fn open_browser(url: &str) -> Result<(), String> {
+#[cfg(all(not(mobile), not(windows)))]
+fn open_browser(_app: &tauri::AppHandle, url: &str) -> Result<(), String> {
     let opener = if cfg!(target_os = "macos") {
         "open"
     } else {
@@ -355,9 +406,12 @@ async fn exchange_code(
         .map_err(|e| format!("token exchange returned junk: {e}"))
 }
 
-async fn refresh_access(http: &reqwest::Client) -> Result<(String, Instant), String> {
+async fn refresh_access(
+    http: &reqwest::Client,
+    store: &crate::store::AppStore,
+) -> Result<(String, Instant), String> {
     let cid = client_id()?;
-    let refresh = keyring_load()?.ok_or_else(|| "not signed in with Spotify".to_string())?;
+    let refresh = token_load(store)?.ok_or_else(|| "not signed in with Spotify".to_string())?;
     let resp = http
         .post(TOKEN_URL)
         .form(&[
@@ -386,6 +440,7 @@ async fn refresh_access(http: &reqwest::Client) -> Result<(String, Instant), Str
 async fn authed(
     http: &reqwest::Client,
     state: &tauri::State<'_, SpotifyState>,
+    store: &crate::store::AppStore,
     force_refresh: bool,
 ) -> Result<String, String> {
     {
@@ -401,7 +456,7 @@ async fn authed(
             }
         }
     }
-    let (tok, exp) = refresh_access(http).await?;
+    let (tok, exp) = refresh_access(http, store).await?;
     let mut inner = state
         .inner
         .lock()
@@ -463,8 +518,12 @@ pub struct ImportedTrack {
 /// Complete Spotify OAuth sign-in by starting the loopback server and
 /// waiting for the callback.
 #[tauri::command]
-pub async fn spotify_signin() -> Result<bool, String> {
+pub async fn spotify_signin(
+    app: tauri::State<'_, crate::proxy::AppState>,
+    handle: tauri::AppHandle,
+) -> Result<bool, String> {
     let cid = client_id()?;
+    let store = app.store()?;
     let verifier = random_hex(32)?;
     let challenge = pkce_challenge(&verifier);
     let state = random_hex(16)?;
@@ -484,7 +543,7 @@ pub async fn spotify_signin() -> Result<bool, String> {
     let listener = std::net::TcpListener::bind("127.0.0.1:4321")
         .map_err(|e| format!("could not bind loopback: {e}"))?;
 
-    open_browser(&url)?;
+    open_browser(&handle, &url)?;
 
     let http = reqwest::Client::new();
     let code = wait_for_code(listener, &state).await?;
@@ -496,8 +555,8 @@ pub async fn spotify_signin() -> Result<bool, String> {
     // here means "signed in" while the keyring stays empty, which is exactly
     // the status row that then never flips. Never claim success unpersisted.
     match tokens.refresh_token {
-        Some(refresh) => keyring_save(&refresh)?,
-        None if keyring_load()?.is_none() => {
+        Some(refresh) => token_save(store, &refresh)?,
+        None if token_load(store)?.is_none() => {
             return Err(
                 "Spotify approved the sign-in but sent no refresh token — nothing was saved"
                     .to_string(),
@@ -511,14 +570,17 @@ pub async fn spotify_signin() -> Result<bool, String> {
 
 /// Sign out from Spotify by clearing the stored refresh token.
 #[tauri::command]
-pub fn spotify_signout() -> Result<(), String> {
-    keyring_delete()
+pub fn spotify_signout(app: tauri::State<'_, crate::proxy::AppState>) -> Result<(), String> {
+    token_delete(app.store()?)
 }
 
 /// Check if the user is signed in with Spotify.
 #[tauri::command]
-pub fn spotify_is_signedin() -> bool {
-    keyring_load().ok().flatten().is_some()
+pub fn spotify_is_signedin(app: tauri::State<'_, crate::proxy::AppState>) -> bool {
+    app.store()
+        .ok()
+        .and_then(|s| token_load(s).ok().flatten())
+        .is_some()
 }
 
 /// Import the user's top tracks from Spotify.
@@ -527,10 +589,12 @@ pub fn spotify_is_signedin() -> bool {
 #[tauri::command]
 pub async fn spotify_import_top(
     state: tauri::State<'_, SpotifyState>,
+    app: tauri::State<'_, crate::proxy::AppState>,
     time_range: String,
     limit: u32,
 ) -> Result<Vec<ImportedTrack>, String> {
-    let token = authed(&state.http, &state, false).await?;
+    let store = app.store()?;
+    let token = authed(&state.http, &state, store, false).await?;
 
     let time_range = match time_range.as_str() {
         "short_term" => "short_term",
