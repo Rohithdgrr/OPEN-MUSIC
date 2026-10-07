@@ -529,7 +529,10 @@ document.addEventListener(
   true,
 );
 
-export function rowHTML(name, i, t) {
+/// `titleHtml` lets the search screen pass an already-escaped, match-highlighted
+/// title (searchkit.highlight) without rebuilding the row template; every other
+/// caller keeps the plain escaped title.
+export function rowHTML(name, i, t, titleHtml) {
   return `<div data-list="${name}" data-idx="${i}" class="group flex items-center justify-between p-2.5 rounded-xl hover:bg-surface-container/60 transition-all cursor-pointer active:scale-[0.99] active:bg-surface-container-high/80 border border-transparent hover:border-surface-container-high/40">
     <div class="flex items-center gap-3 min-w-0 flex-1">
       <div class="relative w-11 h-11 rounded-lg bg-surface-container-highest overflow-hidden flex-shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover" ${art(t.image)}>${(() => {
@@ -540,7 +543,7 @@ export function rowHTML(name, i, t) {
         }
       })()}</div>
       <div class="flex flex-col min-w-0">
-        <span class="text-body-md font-medium text-on-surface truncate tracking-tight text-[13.5px]">${esc(t.title || "")}</span>
+        <span class="text-body-md font-medium text-on-surface truncate tracking-tight text-[13.5px]">${titleHtml || esc(t.title || "")}</span>
         <span class="text-body-sm text-secondary truncate text-[11.5px] mt-0.5" data-entity-name data-entity-kind="artist">${esc(t.artist || t.subtitle || "")}</span>
       </div>
     </div>
@@ -560,7 +563,7 @@ export function plCardHTML(p, i, nav) {
       <span class="font-label-md text-label-md text-on-surface font-semibold truncate tracking-tight text-[13px]">${esc(p.title || "")}</span>
       <span class="font-body-sm text-[11.5px] text-secondary truncate mt-0.5">${esc(p.subtitle || "")}</span>
       <div class="flex items-center gap-1.5 mt-1 text-on-surface-variant">
-        <span class="px-1.5 py-0.5 rounded bg-surface-container-low font-label-mono text-[9.5px] font-medium text-secondary uppercase tracking-wider">${p.count ? `${p.count} TRACKS` : p.year || ""}</span>${(() => {
+        <span class="px-1.5 py-0.5 rounded bg-surface-container-low font-label-mono text-[9.5px] font-medium text-secondary uppercase tracking-wider">${p.count ? `${p.count} TRACKS` : p.year || ""}</span>${p.langCount > 1 ? `<span class="px-1.5 py-0.5 rounded bg-black/70 font-label-mono text-[9.5px] font-medium text-white uppercase tracking-wider">${p.langCount} languages</span>` : ""}${(() => {
         try {
           return p && p.id && typeof playlistOffline === "function" && playlistOffline(p.id)
             ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/15 font-label-mono text-[9.5px] font-medium text-emerald-600 uppercase tracking-wider">Offline</span>'
@@ -925,53 +928,6 @@ export function toggleFollow(entry) {
   list.unshift({ id: entry.id, title: entry.title || "", image: entry.image || "" });
   saveFollows(list.slice(0, 200));
   return true;
-}
-
-// --------------------------------------------------------------- mixes -
-// Pure helpers over a plays log; callers pass load(PLAYS_KEY, []).
-export function onRepeatMix(plays, n = 10) {
-  const list = Array.isArray(plays) ? [...plays] : [];
-  list.sort((a, b) => (Number(b?.count) || 0) - (Number(a?.count) || 0));
-  const want = Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 10;
-  return list.slice(0, want);
-}
-
-export function recentlyPlayed(plays, n = 10) {
-  const sorted = (Array.isArray(plays) ? [...plays] : []).sort((a, b) => (Number(b?.ts) || 0) - (Number(a?.ts) || 0));
-  const seen = new Set();
-  const out = [];
-  const want = Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 10;
-  for (const t of sorted) {
-    if (!t || !t.id || seen.has(String(t.id))) continue;
-    seen.add(String(t.id));
-    out.push(t);
-    if (out.length >= want) break;
-  }
-  return out;
-}
-
-// Daily mix: score = count*2 + recency rank (most recent gets the top rank),
-// then take the best N. Unique by id, deterministic-ish (no random factor).
-export function dailyMix(plays, n = 20) {
-  const list = (Array.isArray(plays) ? plays : []).filter((t) => t && t.id);
-  if (!list.length) return [];
-  const want = Number.isFinite(Number(n)) ? Math.max(0, Number(n)) : 20;
-  const byTs = [...list].sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0));
-  const rank = new Map();
-  byTs.forEach((t, i) => {
-    const k = String(t.id);
-    if (!rank.has(k)) rank.set(k, list.length - i);
-  });
-  const byId = new Map();
-  for (const t of list) {
-    const cur = byId.get(String(t.id));
-    if (!cur || (Number(t.count) || 0) > (Number(cur.count) || 0)) byId.set(String(t.id), t);
-  }
-  return [...byId.values()]
-    .map((t) => ({ t, s: (Number(t.count) || 0) * 2 + (rank.get(String(t.id)) || 0) }))
-    .sort((a, b) => b.s - a.s)
-    .slice(0, want)
-    .map((x) => x.t);
 }
 
 // -------------------------------------------------------- stream quality -

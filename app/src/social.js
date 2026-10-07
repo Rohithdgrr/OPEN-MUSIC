@@ -338,6 +338,10 @@ async function followHostTrack(pb) {
   if (!found) {
     // §4.5: mirror the host's metadata, never claim to be playing it.
     guestMirror = `Host is on “${pb.title || pb.trackId}” — not on this device.`;
+    // D3: the sync this UI advertises stopped in this frame — drop the applied
+    // frame and the drift that described a playhead we are no longer following.
+    guestApplied = "";
+    lastDrift = null;
     paintRoom();
     return;
   }
@@ -367,6 +371,9 @@ function guestTick() {
     }
     return;
   }
+
+  // We are on the host's track, so the mirror note (if any) is false — D3.
+  guestMirror = "";
 
   if (pb.playing && audio.paused) audio.play().catch(() => {});
   if (!pb.playing && !audio.paused) audio.pause();
@@ -420,12 +427,19 @@ function applyRoomFrame(frame) {
     case "presence":
       paintRoom();
       return;
-    case "error":
+    case "error": {
+      const wasJoining = joining;
       joining = false;
       // Verbatim: the server's message is the diagnosis (§8).
       setRoomNote(frame.message || frame.code || "Room error.");
       toast(frame.message || String(frame.code || "Room error."), "error", 5000);
+      // D2, layer 2: a refusal on an already-open socket (wrong code, room
+      // full) never reaches the backend's own failure exits, so drop the
+      // half-open guest mode here or the next join is refused as "already in a
+      // room" while the UI reads Solo.
+      if (wasJoining) invoke("room_close").catch(() => {});
       break;
+    }
     case "bye": {
       joining = false;
       stopHostTick();

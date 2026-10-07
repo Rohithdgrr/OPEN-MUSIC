@@ -104,6 +104,22 @@ Work landing after the latest tag sits in `Unreleased`.
   the camelCase key `timeRange`.
 - **Mobile offline queue rows** — `isVaulted` was used but never imported, so
   the offline "not downloaded" path threw a `ReferenceError`.
+- **Desktop search box double border** — global `input[type="text"]`
+  `!important` rules painted a second box (black on focus) inside the search
+  pill, which owns its own container. `#search-input` is now exempt in both
+  themes; the pill's `focus-within` glow stays the focus indicator.
+- **Search failure wall** — a dead backend used to dump every page/mirror URL
+  into the error box. The backend now logs that detail server-side and
+  returns one line; the UI shows a short classified sentence (offline vs
+  down) with Retry, full text in diagnostics only.
+- **Junk catalog rows on album pages** — `This is a sample trailer -
+  testing` survived because the filter required a missing artist, but album
+  listings inherit a real artist bill. Two or more junk words in the title
+  now drop the row regardless of artist (both Rust `is_junk` and the
+  `isJunkTrack` mirror); single-word titles still need a missing artist.
+- **Desktop widget shape + transport** — card radius 26 → 32 px, side buttons
+  32 → 28 px, volume slider shortened, both transport sides centred: play is
+  pixel-centred with clear air to prev/next instead of crowding Next.
 
 ### Added
 
@@ -137,6 +153,18 @@ Work landing after the latest tag sits in `Unreleased`.
   pages into it via `src/store_db.js`; localStorage remains the fallback, so
   a missing store degrades instead of breaking. Audio bytes are never stored
   in SQLite — only track JSON.
+- **Download pause / resume (desktop)** — new `pause_download` command keeps
+  the `.part` prefix; the next `download_song` for the id continues it with
+  an HTTP `Range` request (clean restart when the server ignores ranges,
+  one retry on 416). Per-row pause/resume on the Downloads in-transit cards,
+  Pause-all / Resume-remainder controls in the section header; batch Stop
+  keeps its discard semantics. Non-breaking additive command — no
+  `api_version` bump.
+- **Smart playlists (desktop)** — two auto-generated cards beside Liked
+  Songs: `Top 50 · Last 30 Days` (play counts in window, newest breaks ties)
+  and `Favourited, Not Downloaded` (hearts minus vault ids). Pure rules in
+  `app/src/smart.js` with unit tests; cards recompute on every Playlists
+  visit and open inline like the other synthetic lists.
 
 ---
 

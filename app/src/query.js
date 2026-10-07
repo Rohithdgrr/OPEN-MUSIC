@@ -16,7 +16,9 @@ const LANGS = new Set([
   "spanish", "french", "japanese", "korean", "arabic",
 ]);
 
-const MOODS = {
+// Exported for the mobile shell (searchkit.js derives its mood boost from the
+// same table rather than keeping a second copy in sync by hand).
+export const MOODS = {
   chill: ["chill", "chilled", "relax", "relaxing", "ambient", "calm", "downtempo", "lofi", "lo-fi", "sleep", "dreamy"],
   party: ["party", "dance", "club", "remix", "edm", "festival", "hype", "bash"],
   energy: ["workout", "gym", "energy", "power", "run", "pump", "beast", "hardcore"],
@@ -31,7 +33,9 @@ const REGIONS = new Set(["IN", "PK", "US", "GB", "AE", "BD", "NP", "LK", "CA", "
 
 // What a language is worth per region, as a small additive boost. Region
 // preference is a nudge, never a filter — nothing gets hidden for it.
-const REGION_LANGS = {
+// Exported for the mobile recommender (recommend.js), which uses the same
+// table to build a region shelf.
+export const REGION_LANGS = {
   IN: ["hindi", "punjabi", "tamil", "telugu", "bengali", "marathi", "odia", "kannada", "malayalam"],
   PK: ["urdu", "punjabi", "hindi"],
   BD: ["bengali", "hindi"],

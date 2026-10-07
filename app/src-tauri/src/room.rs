@@ -29,7 +29,7 @@ use axum::Router;
 use futures::{SinkExt, StreamExt};
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, State as TauriState};
+use tauri::{AppHandle, Emitter, Manager, State as TauriState};
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message as ClientMessage;
 
@@ -586,16 +586,41 @@ async fn serve(
 /// inbound text frame is forwarded to the window as `room://msg` and every
 /// outbound string from `rx` goes to the server. Ends with a `bye` unless
 /// the local side closed it deliberately.
+/// Drop the half-open `Mode::Guest` that a failed dial left behind (D2).
+///
+/// `room_join` writes the mode *before* connecting, so every early return below
+/// used to leave the backend convinced it was in a room the UI had already
+/// given up on — and `room_join` refuses a second attempt while the mode is not
+/// `Idle` ("Leave the current room before joining another.").
+///
+/// The task owns a clone of its own sender, so `same_channel` makes this both
+/// idempotent and safe against a race: a task that timed out seconds ago can
+/// never blank a room opened since.
+async fn revert_failed_guest(app: &AppHandle, own_tx: &mpsc::UnboundedSender<String>) {
+    if let Some(state) = app.try_state::<RoomState>() {
+        let mut mode = state.inner.lock().await;
+        let same = matches!(&*mode, Mode::Guest { tx } if tx.same_channel(own_tx));
+        if same {
+            *mode = Mode::Idle;
+        }
+    }
+}
+
 async fn guest_run(
     app: AppHandle,
     url: String,
     join_frame: String,
     mut rx: mpsc::UnboundedReceiver<String>,
+    own_tx: mpsc::UnboundedSender<String>,
 ) {
-    let out = Sink::App(app);
+    // Cloned so the failure exits below can still reach the managed state. The
+    // revert runs *before* the `error` frame, so the state the next `room_join`
+    // sees and the frame the UI reacts to always agree (D2).
+    let out = Sink::App(app.clone());
     let connected = tokio::time::timeout(Duration::from_secs(8), connect(&url)).await;
     let mut ws = match connected {
         Err(_) => {
+            revert_failed_guest(&app, &own_tx).await;
             out.send(&err_frame(
                 "connect_failed",
                 format!("Could not reach {url} — timed out."),
@@ -603,6 +628,7 @@ async fn guest_run(
             return;
         }
         Ok(Err(e)) => {
+            revert_failed_guest(&app, &own_tx).await;
             out.send(&err_frame(
                 "connect_failed",
                 format!("Could not reach {url}: {e}"),
@@ -617,6 +643,7 @@ async fn guest_run(
         .await
         .is_err()
     {
+        revert_failed_guest(&app, &own_tx).await;
         out.send(&err_frame(
             "connect_failed",
             format!("Could not reach {url}."),
@@ -805,8 +832,11 @@ pub async fn room_join(
     })
     .to_string();
     let (tx, rx) = mpsc::unbounded_channel();
+    // The task keeps its own sender so a failed dial can identify *its* mode
+    // before reverting it (D2).
+    let own_tx = tx.clone();
     *mode = Mode::Guest { tx };
-    tokio::spawn(guest_run(app, url, join_frame, rx));
+    tokio::spawn(guest_run(app, url, join_frame, rx, own_tx));
     Ok(())
 }
 

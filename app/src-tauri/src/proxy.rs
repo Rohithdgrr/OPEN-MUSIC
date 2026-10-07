@@ -204,8 +204,13 @@ pub struct AppState {
     /// Written by the `cancel_download` command (batch Stop button), read in
     /// the streaming loop. Entries are single-use: `save_to_vault` clears its
     /// own id on every exit so a later retry of the same song is not killed
-    /// by a stale flag.
+    /// by a stale flag. Cancelling deletes the `.part` prefix.
     pub cancel: Mutex<HashSet<String>>,
+    /// Song ids whose in-flight `download_to` must pause at the next chunk.
+    /// Written by the `pause_download` command, read in the same loop. Unlike
+    /// `cancel`, the `.part` prefix is KEPT, and the next `download_song`
+    /// for the id resumes from it with an HTTP `Range` request.
+    pub paused: Mutex<HashSet<String>>,
 }
 
 impl AppState {
@@ -258,6 +263,7 @@ impl AppState {
             db,
             store,
             cancel: Mutex::new(HashSet::new()),
+            paused: Mutex::new(HashSet::new()),
         }
     }
 
@@ -446,6 +452,14 @@ impl AppState {
     /// 256 KB, and once with the final byte count. Returns path + bytes +
     /// the SHA-256 of everything written (streamed into the hasher while the
     /// file lands — no second read pass).
+    ///
+    /// Pause/resume: a `.part` left behind by `pause_download` is continued
+    /// with an HTTP `Range` request (prefix re-hashed from disk so the
+    /// checksum still covers the whole file). Servers that ignore ranges
+    /// answer 200 — the stale prefix is discarded and the song restarts
+    /// cleanly; 416 (prefix longer than the upstream file) retries once from
+    /// zero. Cancels and crashes leave no `.part` (deleted / swept at boot),
+    /// so any prefix found here is pause-made by construction.
     pub async fn download_to(
         &self,
         id: &str,
@@ -456,15 +470,45 @@ impl AppState {
         use tokio::io::AsyncWriteExt;
 
         let url = validate_media_url(url)?;
-        let resp = self
-            .media
-            .get(&url)
+        let part = dest.with_extension("part");
+        let have_prefix = tokio::fs::metadata(&part)
+            .await
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        // One restart at most: a 416 means the prefix outruns the upstream
+        // file, so drop it and fetch from zero. Any other status flows into
+        // the normal checks below.
+        let mut resume_from = have_prefix;
+        let mut req = self.media.get(&url);
+        if resume_from > 0 {
+            req = req.header(reqwest::header::RANGE, format!("bytes={resume_from}-"));
+        }
+        let mut resp = req
             .send()
             .await
             .map_err(|e| format!("download failed: {e}"))?;
+        if resp.status().as_u16() == 416 && resume_from > 0 {
+            let _ = tokio::fs::remove_file(&part).await;
+            resume_from = 0;
+            resp = self
+                .media
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| format!("download failed: {e}"))?;
+        }
         let status = resp.status();
         if !status.is_success() {
             return Err(format!("download failed: HTTP {status}"));
+        }
+        // 206 confirms the server honoured the range; a 200 to a ranged
+        // request means "starting over" — the stale prefix must go, or the
+        // bytes would corrupt.
+        let resumed = status.as_u16() == 206 && resume_from > 0;
+        if !resumed && resume_from > 0 {
+            let _ = tokio::fs::remove_file(&part).await;
+            resume_from = 0;
         }
         // A captive portal / intercepting proxy can answer 200 with an HTML
         // login page (review 5.1); never let it land in the vault as a song.
@@ -479,25 +523,65 @@ impl AppState {
                 ));
             }
         }
-        let declared = resp.content_length();
-        on_progress(0, declared);
+        // `content_length` on a 206 is the *remaining* window: totals stay
+        // absolute so progress, verification and the ledger never see the
+        // seam.
+        let total = resp.content_length().map(|r| r + resume_from);
+        on_progress(resume_from, total);
 
-        let part = dest.with_extension("part");
-        let mut file = tokio::fs::File::create(&part)
-            .await
-            .map_err(|e| format!("create {}: {e}", part.display()))?;
-        let mut written: u64 = 0;
-        let mut next_report: u64 = REPORT_EVERY;
+        let mut file = if resumed {
+            tokio::fs::OpenOptions::new()
+                .append(true)
+                .open(&part)
+                .await
+                .map_err(|e| format!("append {}: {e}", part.display()))?
+        } else {
+            tokio::fs::File::create(&part)
+                .await
+                .map_err(|e| format!("create {}: {e}", part.display()))?
+        };
+        let mut written: u64 = resume_from;
+        let mut next_report: u64 = resume_from + REPORT_EVERY;
         let mut hasher = crate::sha256::Sha256::new();
+        if resumed {
+            // The checksum must cover the whole file, not just the resumed
+            // tail: re-hash the kept prefix from disk (local, megabytes).
+            let prefix = tokio::fs::read(&part)
+                .await
+                .map_err(|e| format!("read {}: {e}", part.display()))?;
+            if prefix.len() as u64 != resume_from {
+                // Raced with another writer — start over rather than shipping
+                // a frankenfile.
+                drop(file);
+                let _ = tokio::fs::remove_file(&part).await;
+                return Err("resumed prefix changed mid-flight, retry".to_string());
+            }
+            hasher.update(&prefix);
+        }
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
+            // Pause: flush the prefix and keep it — the next `download_song`
+            // for this id resumes from it. Cancel (batch Stop) still deletes.
+            if self.is_paused(id) {
+                let _ = file.flush().await;
+                drop(file);
+                return Err("paused".to_string());
+            }
             // Batch Stop: abort before the next chunk is committed. The `.part`
             // sibling is deleted below, the rename never happens, and nothing
             // is recorded — so the cancelled song never resolves as vaulted.
+            // Stop overrides Pause when both land: cancelling deletes.
             if self.is_cancelled(id) {
                 drop(file);
                 let _ = tokio::fs::remove_file(&part).await;
                 return Err("cancelled".to_string());
+            }
+            // Pause: flush the prefix and keep it — the next `download_song`
+            // for this id resumes from it (see the `Range` setup above).
+            if self.is_paused(id) {
+                let _ = file.flush().await;
+                drop(file);
+                return Err("paused".to_string());
             }
             let chunk =
                 chunk.map_err(|e| format!("download interrupted after {written} bytes: {e}"))?;
@@ -507,14 +591,14 @@ impl AppState {
                 .await
                 .map_err(|e| format!("write {}: {e}", part.display()))?;
             if written >= next_report {
-                on_progress(written, declared);
+                on_progress(written, total);
                 next_report = written + REPORT_EVERY;
             }
         }
         drop(file);
-        on_progress(written, declared);
+        on_progress(written, total);
 
-        if let Err(e) = verify_streamed(written, declared) {
+        if let Err(e) = verify_streamed(written, total) {
             let _ = tokio::fs::remove_file(&part).await;
             return Err(e);
         }
@@ -561,6 +645,33 @@ impl AppState {
 
     /// Flag one in-flight download for cancellation. The streaming loop in
     /// `download_to` polls this set and aborts the song whose id appears.
+    /// Pausing keeps the `.part` prefix; resuming re-enters `download_to`,
+    /// which continues from it with an HTTP `Range` request.
+    pub fn request_pause(&self, id: &str) {
+        if let Ok(mut set) = self.paused.lock() {
+            set.insert(id.to_string());
+        }
+    }
+
+    /// Single-use flags: drop `id` so a later download is never frozen by a
+    /// stale entry. Called on every `save_to_vault` exit path.
+    pub fn clear_pause(&self, id: &str) {
+        if let Ok(mut set) = self.paused.lock() {
+            set.remove(id);
+        }
+    }
+
+    fn is_paused(&self, id: &str) -> bool {
+        self.paused
+            .lock()
+            .map(|set| set.contains(id))
+            .unwrap_or(false)
+    }
+
+    /// Flag one in-flight download for cancellation. The streaming loop in
+    /// `download_to` polls this set and aborts the song whose id appears.
+    /// Cancelling deletes the `.part` prefix; pausing (see `request_pause`)
+    /// keeps it for a later resume.
     pub fn request_cancel(&self, id: &str) {
         if let Ok(mut set) = self.cancel.lock() {
             set.insert(id.to_string());
@@ -1698,6 +1809,55 @@ mod tests {
         assert!(
             !dest.with_extension("part").exists(),
             "a verified download is committed, never left as .part"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Pause keeps the prefix and resume commits the song: pausing flags the
+    /// in-flight stream, the `.part` survives (cancel would delete it), and
+    /// the next `download_to` commits a verified file — Range-continuing
+    /// where the server honours it, restarting cleanly otherwise.
+    #[tokio::test]
+    async fn pause_keeps_prefix_and_resume_commits_the_file() {
+        if std::env::var("OP_OFFLINE").is_ok() {
+            return;
+        }
+        let (_base, state) = boot().await;
+        let id = live_song_id().await;
+        let song = state.cached_song(&id).await.expect("resolve");
+        let chosen = crate::jiosaavn::best_quality(&song.qualities, "12kbps").unwrap();
+        let dest =
+            std::env::temp_dir().join(format!("trance-pause-test-{}.mp4", std::process::id()));
+        let _ = std::fs::remove_file(&dest);
+        let _ = std::fs::remove_file(dest.with_extension("part"));
+
+        // Pause before the first chunk: deterministic, no timing involved.
+        state.request_pause(&id);
+        let err = state
+            .download_to(&id, &chosen.url, &dest, |_, _| {})
+            .await
+            .expect_err("paused download must not commit");
+        assert_eq!(err, "paused");
+        assert!(
+            dest.with_extension("part").exists(),
+            "pause keeps the .part prefix; cancel would delete it"
+        );
+        state.clear_pause(&id);
+
+        // Resume must commit a verified file and leave no `.part` behind.
+        let (path, written, sha) = state
+            .download_to(&id, &chosen.url, &dest, |_, _| {})
+            .await
+            .expect("resume");
+        assert_eq!(
+            sha,
+            crate::sha256::hash_file(&path).expect("hash file"),
+            "resumed bytes hash clean"
+        );
+        assert!(written > 100_000, "resumed file is a real song");
+        assert!(
+            !dest.with_extension("part").exists(),
+            "resume commits the .part"
         );
         let _ = std::fs::remove_file(&path);
     }

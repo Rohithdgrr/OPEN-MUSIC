@@ -57,7 +57,7 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .lyric-word {
-  background-image: linear-gradient(90deg, #18181b 0%, #18181b var(--progress, 0%), #d4d4d8 var(--progress, 0%), #d4d4d8 100%);
+  background-image: linear-gradient(90deg, #18181b 0%, #18181b var(--progress, 0%), #71717a var(--progress, 0%), #71717a 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -67,11 +67,50 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
   border-left: 3px solid #18181b;
   background: rgba(24, 24, 27, 0.05);
 }
-.lyric-active .lyric-text { font-size: 15px; font-weight: 700; line-height: 1.4; color: #18181b; }
-.lyric-past .lyric-text { font-size: 13px; color: #d4d4d8; }
-.lyric-past .lyric-word { background-image: linear-gradient(90deg, #d4d4d8, #d4d4d8); }
-.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text { color: #a1a1aa; }
-.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word { background-image: linear-gradient(90deg, #a1a1aa, #a1a1aa); }
+.lyric-active .lyric-text { font-size: 16px; font-weight: 700; line-height: 1.45; color: #18181b; }
+.lyric-past .lyric-text { font-size: 13px; color: #71717a; }
+.lyric-past .lyric-word { background-image: linear-gradient(90deg, #71717a, #71717a); }
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text { color: #52525b; }
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word { background-image: linear-gradient(90deg, #52525b, #52525b); }
+
+/* High contrast dark mode lyrics */
+html.dark .lyric-active,
+.dark .lyric-active {
+  border-left: 3px solid #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark .lyric-active .lyric-text,
+.dark .lyric-active .lyric-text {
+  color: #ffffff !important;
+  font-size: 16px;
+  font-weight: 700;
+}
+html.dark .lyric-past .lyric-text,
+.dark .lyric-past .lyric-text {
+  color: #71717a !important;
+}
+html.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text,
+.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text {
+  color: #a1a1aa !important;
+}
+html.dark .lyric-word,
+.dark .lyric-word {
+  background-image: linear-gradient(90deg, #ffffff 0%, #ffffff var(--progress, 0%), #71717a var(--progress, 0%), #71717a 100%) !important;
+}
+
+/* Ensure circular buttons and pills are true circles/pills */
+.rounded-full {
+  border-radius: 9999px !important;
+}
+
+/* Smooth tab view transitions */
+@keyframes tm-tab-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tab-content.flex {
+  animation: tm-tab-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
 /* Lyrics full-view stage — true immersive fullscreen overlay */
 .tm-lyrics-full {
@@ -311,6 +350,15 @@ html:not(.dark) .rounded-xl.border {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
 }
 
+/* The Now Playing artwork (P35) is a media frame, not a list card: the rule
+   above must not repaint it or its frame. The metadata now lives in its own
+   card BELOW the art (`#np-meta`), which *does* want that rule. */
+html:not(.dark) #np-art-card {
+  background: #1b1b1e !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+}
+
 /* 4. Interactive List Rows (Playlists, Albums, Tracklists, History) */
 html:not(.dark) .divide-y > div:hover,
 html:not(.dark) [data-track-row]:hover,
@@ -321,9 +369,8 @@ html:not(.dark) .genre-card:hover {
 }
 
 html:not(.dark) .genre-card {
-  background: linear-gradient(135deg, #ffffff 0%, #f4f4f7 100%) !important;
-  border: 1px solid rgba(0, 0, 0, 0.07) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
 }
 
 html:not(.dark) .genre-card:active {
@@ -433,6 +480,19 @@ html.dark,
 body.dark,
 .dark {
   color-scheme: dark !important;
+  --color-primary: #ffffff !important;
+  --color-on-primary: #000000 !important;
+  --color-surface: #09090b !important;
+  --color-on-surface: #ffffff !important;
+  --color-on-surface-variant: #a1a1aa !important;
+  --color-surface-container: #18181c !important;
+  --color-surface-container-high: #222228 !important;
+  --color-surface-container-highest: #2a2a32 !important;
+  --color-surface-container-low: #141417 !important;
+  --color-surface-container-lowest: #101013 !important;
+  --color-secondary: #a1a1aa !important;
+  --tm-text: #ffffff !important;
+  --tm-muted: #a1a1aa !important;
 }
 
 html.dark,
@@ -454,27 +514,27 @@ html.dark .bg-surface {
 
 .dark .bg-surface-container,
 html.dark .bg-surface-container {
-  background-color: #141417 !important;
+  background-color: #18181c !important;
 }
 
 .dark .bg-surface-container-low,
 html.dark .bg-surface-container-low {
-  background-color: #101013 !important;
+  background-color: #141417 !important;
 }
 
 .dark .bg-surface-container-lowest,
 html.dark .bg-surface-container-lowest {
-  background-color: #141416 !important;
+  background-color: #101013 !important;
 }
 
 .dark .bg-surface-container-high,
 html.dark .bg-surface-container-high {
-  background-color: #1a1a1e !important;
+  background-color: #222228 !important;
 }
 
 .dark .bg-surface-container-highest,
 html.dark .bg-surface-container-highest {
-  background-color: #242429 !important;
+  background-color: #2a2a32 !important;
 }
 
 .dark .bg-surface\/85,
@@ -484,33 +544,33 @@ html.dark .bg-surface\/85 {
 
 .dark .bg-surface\/90,
 html.dark .bg-surface\/90 {
-  background-color: rgba(9, 9, 11, 0.92) !important;
+  background-color: rgba(9, 9, 11, 0.94) !important;
 }
 
-/* Header & Bottom Navigation Bar */
+/* Header & Bottom Navigation Bar with Deep Frosted Glass */
 .dark header,
 html.dark header {
   background-color: rgba(9, 9, 11, 0.9) !important;
-  backdrop-filter: blur(20px) saturate(140%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6) !important;
 }
 
 .dark nav.fixed.bottom-0,
 html.dark nav.fixed.bottom-0 {
-  background-color: rgba(14, 14, 17, 0.96) !important;
-  backdrop-filter: blur(24px) saturate(150%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(150%) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6) !important;
+  background-color: rgba(12, 12, 16, 0.96) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.7) !important;
 }
 
 .dark nav.fixed.bottom-0 a[aria-current="page"] > div,
 html.dark nav.fixed.bottom-0 a[aria-current="page"] > div {
   background: #ffffff !important;
   color: #000000 !important;
-  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.28) !important;
 }
 
 .dark nav.fixed.bottom-0 a[aria-current="page"] > div span,
@@ -521,6 +581,11 @@ html.dark nav.fixed.bottom-0 a[aria-current="page"] > div span {
 .dark nav.fixed.bottom-0 a:not([aria-current="page"]) span,
 html.dark nav.fixed.bottom-0 a:not([aria-current="page"]) span {
   color: #a1a1aa !important;
+}
+
+.dark nav.fixed.bottom-0 a:not([aria-current="page"]):hover span,
+html.dark nav.fixed.bottom-0 a:not([aria-current="page"]):hover span {
+  color: #ffffff !important;
 }
 
 /* Typography & Headings in Dark Mode */
@@ -537,6 +602,24 @@ html.dark .text-on-surface-variant {
 .dark .text-secondary,
 html.dark .text-secondary {
   color: #a1a1aa !important;
+}
+
+.dark .text-zinc-400,
+.dark .text-zinc-500,
+.dark .text-neutral-400,
+.dark .text-neutral-500,
+html.dark .text-zinc-400,
+html.dark .text-zinc-500,
+html.dark .text-neutral-400,
+html.dark .text-neutral-500 {
+  color: #a1a1aa !important;
+}
+
+.dark .placeholder\:text-outline,
+.dark .placeholder-secondary,
+html.dark .placeholder\:text-outline,
+html.dark .placeholder-secondary {
+  color: #71717a !important;
 }
 
 .dark h1, .dark h2, .dark h3, .dark h4,
@@ -575,9 +658,17 @@ html.dark .bg-surface-container-lowest,
 html.dark [data-shelf] > div,
 html.dark .rounded-2xl.border,
 html.dark .rounded-xl.border {
-  background: linear-gradient(180deg, #151518 0%, #101013 100%) !important;
+  background: linear-gradient(180deg, #161619 0%, #101013 100%) !important;
   border-color: rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Artwork Shadow & Specular Frame */
+.dark #np-art-card,
+html.dark #np-art-card {
+  background: #101013 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
 }
 
 .dark .genre-card,
@@ -609,14 +700,14 @@ html.dark .recent-pill {
   color: #ffffff !important;
 }
 
-/* Primary Contrast Inversion (Black button -> White button in dark mode) */
+/* Primary Contrast Inversion (Black button -> Pure Glowing White in dark mode) */
 .dark button.bg-primary,
 .dark .bg-primary:not(span),
 html.dark button.bg-primary,
 html.dark .bg-primary:not(span) {
-  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 100%) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #ededed 100%) !important;
   color: #000000 !important;
-  box-shadow: 0 4px 18px rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 4px 18px rgba(255, 255, 255, 0.22), 0 1px 3px rgba(0, 0, 0, 0.4) !important;
   border: 1px solid #ffffff !important;
 }
 
@@ -638,9 +729,17 @@ html.dark .text-on-primary {
 html.dark button.bg-surface-container-low,
 html.dark button.bg-surface-container,
 html.dark .bg-surface-container-low {
-  background: linear-gradient(180deg, #1c1c20 0%, #141418 100%) !important;
-  border-color: rgba(255, 255, 255, 0.09) !important;
+  background: linear-gradient(180deg, #1c1c21 0%, #141418 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
   color: #f4f4f5 !important;
+}
+
+.dark button.bg-surface-container-low:hover,
+.dark button.bg-surface-container:hover,
+html.dark button.bg-surface-container-low:hover,
+html.dark button.bg-surface-container:hover {
+  background: #24242a !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 /* Filter Chips in Dark Mode */
@@ -648,9 +747,10 @@ html.dark .bg-surface-container-low {
 .dark .home-cat-chip.bg-primary,
 html.dark .filter-chip.bg-primary,
 html.dark .home-cat-chip.bg-primary {
-  background: linear-gradient(180deg, #ffffff 0%, #e4e4e7 100%) !important;
+  background: linear-gradient(180deg, #ffffff 0%, #ededed 100%) !important;
   color: #000000 !important;
   box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25) !important;
+  border: 1px solid #ffffff !important;
 }
 
 .dark .filter-chip:not(.bg-primary),
@@ -660,6 +760,15 @@ html.dark .home-cat-chip:not(.bg-primary) {
   background: linear-gradient(180deg, #18181c 0%, #121215 100%) !important;
   border: 1px solid rgba(255, 255, 255, 0.08) !important;
   color: #a1a1aa !important;
+}
+
+.dark .filter-chip:not(.bg-primary):hover,
+.dark .home-cat-chip:not(.bg-primary):hover,
+html.dark .filter-chip:not(.bg-primary):hover,
+html.dark .home-cat-chip:not(.bg-primary):hover {
+  background: #222228 !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
 }
 
 /* Form Inputs, Selects & Search Bays in Dark Mode */
@@ -686,7 +795,7 @@ html.dark input[type="search"]:focus,
 html.dark input[type="password"]:focus,
 html.dark select:focus {
   border-color: #ffffff !important;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15), 0 4px 16px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* Same exemption as light mode: the search pill owns its chrome. */
@@ -701,33 +810,124 @@ html.dark #search-input:focus {
 }
 
 /* Scrubber in Dark Mode */
+.dark #scrubber-container,
+html.dark #scrubber-container {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
 .dark #scrubber-container #scrubber-bar,
 html.dark #scrubber-container #scrubber-bar {
-  background: #ffffff !important;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5) !important;
+  background: linear-gradient(90deg, #ffffff 0%, #f4f4f5 100%) !important;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6) !important;
 }
 
 .dark #scrubber-needle,
 html.dark #scrubber-needle {
   background: #ffffff !important;
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6) !important;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(0, 0, 0, 0.6) !important;
+  border: 2px solid #09090b !important;
+}
+
+/* Now Playing Metadata Card & Mode Switcher */
+.dark #np-meta-container,
+html.dark #np-meta-container {
+  background: linear-gradient(180deg, #16161a 0%, #101013 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+.dark #modeToggleBtn,
+html.dark #modeToggleBtn {
+  background: #141418 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .np-deck-tab.active,
+html.dark .np-deck-tab.active {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+.dark .np-deck-tab:not(.active),
+html.dark .np-deck-tab:not(.active) {
+  color: #a1a1aa !important;
+}
+
+.dark .np-deck-tab:not(.active):hover,
+html.dark .np-deck-tab:not(.active):hover {
+  color: #ffffff !important;
+}
+
+.dark .jam-rx-btn,
+html.dark .jam-rx-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.dark .jam-rx-btn:hover,
+html.dark .jam-rx-btn:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.dark #jamSessionBanner,
+html.dark #jamSessionBanner {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.92) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+  border: 1px solid rgba(129, 140, 248, 0.3) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark #jamChatMessages,
+html.dark #jamChatMessages {
+  background: #101013 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Docked Mini-Player Widget */
+.dark #tm-widget,
+html.dark #tm-widget {
+  background: rgba(16, 16, 20, 0.94) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.7) !important;
+}
+
+.dark #tm-widget h3,
+.dark #tm-widget [data-title],
+html.dark #tm-widget h3,
+html.dark #tm-widget [data-title] {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.dark #tm-widget p,
+.dark #tm-widget [data-artist],
+html.dark #tm-widget p,
+html.dark #tm-widget [data-artist] {
+  color: #a1a1aa !important;
 }
 
 /* Lyrics Styling in Mobile Dark Mode */
 .dark .lyric-line,
 html.dark .lyric-line {
   color: #71717a !important;
+  transition: color 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .lyric-active,
 html.dark .lyric-active {
   border-left-color: #ffffff !important;
   background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
 }
 
 .dark .lyric-active .lyric-text,
 html.dark .lyric-active .lyric-text {
   color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.25) !important;
 }
 
 .dark .lyric-word,
@@ -752,8 +952,8 @@ html.dark .tm-lyrics-full {
 .dark #tm-queue-sheet [data-q-panel],
 html.dark #tm-queue-sheet [data-q-panel] {
   background: #141417 !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.85) !important;
 }
 </style>
 <script>

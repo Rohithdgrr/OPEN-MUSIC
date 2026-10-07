@@ -4,7 +4,7 @@
 // shared card renderers, so taps navigate and rows play exactly like native
 // shelves. New-release lookups are cached 24h (tm-newrel) to avoid hammering
 // artist endpoints on every Home visit.
-import { invoke, load, save, hqArt, paintArt, loadFollows } from "./shared.js";
+import { invoke, load, save, art, paintArt, loadFollows } from "./shared.js";
 import { esc } from "../html.js";
 import { streakStats, streakLabel } from "./streaks.js";
 
@@ -31,7 +31,7 @@ function loadCache() {
 function albumCard(a, i, listName) {
   const nav = a.albumId ? `album?id=${encodeURIComponent(a.albumId)}` : a.id && a.kind === "album" ? `album?id=${encodeURIComponent(a.id)}` : "";
   return `<div ${nav ? `data-nav="${esc(nav)}"` : ""} class="w-40 flex-shrink-0 bg-surface-container-lowest border border-surface-container-high/70 rounded-2xl p-2.5 shadow-sm hover:shadow-md flex flex-col space-y-2 cursor-pointer active:scale-[0.98] transition-all group">
-    <div class="relative w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="${esc(hqArt(a.image || ""))}" loading="lazy" data-art-orig="${esc(a.image || "")}"></div>
+    <div class="relative w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(a.image)}></div>
     <div class="flex flex-col pt-0.5 min-w-0">
       <span class="font-label-md text-label-md text-on-surface font-semibold truncate tracking-tight text-[13px]">${esc(a.title || "Untitled")}</span>
       <span class="font-body-sm text-[11.5px] text-secondary truncate mt-0.5">${esc(a.artist || "")}</span>

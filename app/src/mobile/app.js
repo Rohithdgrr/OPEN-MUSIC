@@ -551,7 +551,9 @@ onPaint((st) => {
     else artist.textContent = t.artist || "";
   }
   const img = w.querySelector("#tm-w-art");
-  if (img && t.image) paintArt(img, t.image);
+  // Always paint: guarding on t.image left the *previous* track's cover on
+  // an artless track — paintArt maps empty → brand mark (06-features batch).
+  if (img) paintArt(img, t.image || "");
   const vault = w.querySelector("#tm-w-vault");
   if (vault) {
     const saved = isVaulted(t.id);

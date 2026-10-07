@@ -42,6 +42,12 @@ fn client_id() -> Result<&'static str, String> {
     }
 }
 
+/// Same credential, for sibling modules (`canvas.rs`). The Spotify Dashboard
+/// client id is shared: the cookie exchange and the PKCE flow both need it.
+pub fn client_id_public() -> Result<&'static str, String> {
+    client_id()
+}
+
 pub struct SpotifyState {
     http: reqwest::Client,
     inner: std::sync::Mutex<SpotifyInner>,
@@ -131,12 +137,10 @@ fn keyring_delete() -> Result<(), String> {
 // later Keystore migration is a one-function change.
 
 // Desktop reads/writes these through the OS credential store, so the kv keys
-// exist only where the store-backed seam is compiled in.
+// exist only where the store-backed seam is compiled in. (The Canvas `sp_dc`
+// key lives with its own module — see canvas.rs::SPDC_KEY.)
 #[cfg(mobile)]
 const TOKEN_KEY: &str = "spotify:refresh-token";
-// Consumed by canvas.rs (the `sp_dc` cookie), wired in the Canvas slice.
-#[allow(dead_code)]
-const SPDC_KEY: &str = "spotify:sp_dc";
 
 #[cfg(not(mobile))]
 fn token_save(_store: &crate::store::AppStore, refresh: &str) -> Result<(), String> {

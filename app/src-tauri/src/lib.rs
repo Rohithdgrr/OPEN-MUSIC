@@ -6,6 +6,9 @@
 
 mod cache;
 // mod catalog; // Temporarily disabled - type mismatches need resolution
+// Spotify Canvas (undocumented endpoint) — its own module so the ToS-exposed
+// query surface stays in one file. docs/spotify-android-canvas.md §3B.
+mod canvas;
 mod db;
 mod gdrive;
 mod jiosaavn;
@@ -740,6 +743,16 @@ fn cancel_download(id: String, state: State<'_, Arc<AppState>>) {
     state.request_cancel(&id);
 }
 
+/// Pause one in-flight `download_song` at the next chunk (≈256 KB). The
+/// `.part` prefix is KEPT on disk, and the next `download_song` for the same
+/// id resumes from it with an HTTP `Range` request (restarting cleanly when
+/// the server ignores ranges). The frontend surfaces this per-row in the
+/// Downloads in-transit list and for the batch remainder.
+#[tauri::command]
+fn pause_download(id: String, state: State<'_, Arc<AppState>>) {
+    state.request_pause(&id);
+}
+
 /// The two-tier vault: a saved song the user favorites is re-saved at the
 /// premium bitrate. Returns whether anything was upgraded — a song that is not
 /// in the vault, is already at (or above) the premium bitrate, or has no
@@ -801,6 +814,7 @@ async fn save_to_vault(
     impl Drop for ClearCancel<'_> {
         fn drop(&mut self) {
             self.state.clear_cancel(&self.id);
+            self.state.clear_pause(&self.id);
         }
     }
     let _guard = ClearCancel {
@@ -1611,6 +1625,8 @@ pub fn run() {
             app.manage(crate::gdrive::GDriveState::new());
             // Optional Spotify integration: dormant until sign-in.
             app.manage(crate::spotify::SpotifyState::new());
+            // Spotify Canvas: dormant until a session cookie is pasted in.
+            app.manage(crate::canvas::CanvasState::new());
             // Listen Together room server/client state (docs/listen-together.md).
             app.manage(crate::room::RoomState::new());
 
@@ -1673,6 +1689,7 @@ pub fn run() {
             get_lyrics,
             download_song,
             cancel_download,
+            pause_download,
             promote_song,
             list_downloads,
             remove_download,
@@ -1701,6 +1718,9 @@ pub fn run() {
             spotify::spotify_signout,
             spotify::spotify_is_signedin,
             spotify::spotify_import_top,
+            canvas::fetch_canvas,
+            canvas::set_canvas_cookie,
+            canvas::canvas_configured,
             widget_show,
             widget_embed,
             widget_set_position,

@@ -277,6 +277,25 @@ navigation; header comment records the source).
 | `queueSyncBadge` "Synchronized" | shown only after ≥1 real `playback` frame was received and applied this session |
 | Leave Jam / End Jam | `room_close` → `bye` → back to Solo |
 
+> **Defect (D4, found 2026-10-07, not yet fixed — §13.7).** The mobile host
+> does **not** actually broadcast on pause, so the transport row above is
+> aspirational for that one case. `jam.js:342 hostTick()` returns at line 346
+> (`if (!t || !t.id || st.paused) return;`) *before* the drift/key checks its
+> own comment (lines 338-341) says are there to "catch play, pause, track
+> changes and seeks", and mobile wires no `play`/`pause`/`seeked` listener and
+> no title observer: `broadcastPlayback()` has exactly two call sites
+> (`jam.js:263 refresh`, `:354 hostTick`) against the desktop's five
+> (`social.js:317 startHostTick`, `:401 refresh`, `:696` title MutationObserver,
+> `:704` `play`/`pause`/`seeked` — registered at boot by `wireReactions()`,
+> `:884`). Measured: the host paused at t=136 while the desktop guest kept
+> playing at t=141 and still reported `±0.06s`. The guest would have paused
+> (`social.js:371-372` applies `playing:false` for the same track), and the
+> *small* drift is itself proof the cached frame still read `playing:true`.
+> Consequences: guests keep playing while the host is paused (the inverse of
+> "the host controls playback"), and a track change or seek made **while
+> paused** is not sent until playback resumes. Resume does self-heal — the
+> key/drift mismatch fires on the first tick after `play`.
+
 **Shared code:** one reducer for both surfaces — `app/src/room.js` (contract
 §6a) imported by desktop `social.js` and mobile
 `screens/nowplaying.js`/`jam.js`. Mobile sync drives the same `<audio>`
@@ -304,6 +323,17 @@ current track, then `[...queueHistory(), current, ...queueUpNext()]` — found
 → `playList(full, idx)` + seek; not found → the header shows the host's title
 and `artworkCollabTag` reads `NOT ON THIS DEVICE` (§4 rule 5); the
 Synchronized badge stays hidden (§8).
+
+> **Defect (D1, found 2026-10-07, not yet fixed — §13.6).** That search list is
+> **narrower than the desktop's**: `social.js:328 findLocalTrack()` resolves the
+> host's id against play history, favourites, the vault *and* the live queue,
+> while mobile `jam.js:398 followGuest()` sees only queue history + current +
+> up-next. On a phone that has a track downloaded or favourited but not sitting
+> in the current queue, the host's track is declared "not on this device" and
+> the guest silently keeps playing its own audio for the rest of the room —
+> with its transport locked (below). Measured: 0 of 3 host tracks resolved on
+> Android until one happened to be in the queue/history; 2 of 2 resolved once
+> the id was in reach (§13.6).
 
 **M1 append honesty:** the jam view's append row is disabled for everyone
 with a stated reason — the host adds tracks through the regular queue screen
@@ -455,7 +485,9 @@ lives in the reducer module next to the frames (pure, DOM-free, `node --test`):
 | The two clients speak one protocol | both suites drive the same seven commands and the same `room://msg` frames through `app/src/room.js` |
 | **Desktop — real app window + a second real socket client** | `node tests/live-desktop.mjs` against a self-contained `cargo build` binary (WebView2 remote debugging on `:9222`): **32 pass / 0 fail** — room opened from the UI, code in all three slots, `ws://10.227.158.104:8787` advertised, handshake `joined,history,presence`, chat echo in **31 ms**, guest `playback` refused `not_host`, `presence` → 2 members + `±0.25s`, guest leave → 1 online + `—`, Leave → `NO ROOM` + Solo |
 | **Android — real debug APK on the `Pixel6_API36` emulator + a second real socket client** | `node tests/live-android-emulator.mjs`: **28 pass / 0 fail** — the device's Rust server opened `#6TH5BLFR`, invite `ws://10.0.2.16:8787 · 6TH5BLFR`, chat echo in **31 ms** through the adb forward, `presence` → 2 members + `±0.25s`, second guest line rendered, leave → Solo |
-| **Two real devices over a physical LAN** | **still NOT DONE** — each run proves one real app speaking to a real socket, but on the same machine (desktop) and emulator host (Android). A packet crossing a real LAN between two PCs is the §10 runbook and remains untested. |
+| **A real desktop host + a real Android guest in one room (both apps, no synthetic socket)** | **DONE 2026-10-07 — §13.6.** Chat, presence, drift report, follow-and-play and auto-resume all worked against two real apps; three defects found (D1 guest resolve scope, D2 `room_join` state leak lockout, D3 stale mirror note). |
+| **The reverse pairing — a real Android host + a real desktop guest** | **DONE 2026-10-07 — §13.7.** Join, chat both ways, host broadcast, follow-and-play (`±0.08s` → `±0.05s`) and resume re-sync all worked; the desktop guest took the same §4.5 mirror path for a track it lacked. One new defect: **D4 — the Android host never broadcasts a pause.** |
+| **Two real devices over a physical LAN** | **still NOT DONE** — the run above is two real apps, but the guest is the *emulator on the same PC* (device loopback through `adb reverse`). A packet crossing a real LAN between two PCs is the §10 runbook and remains untested. |
 | **A `gen/android` debug APK is a dev client, not a shippable build** | The checked-in `app-x86_64-debug.apk` had been produced by `tauri android dev`, so it baked in `devUrl` (`http://<pc-ip>:1430/mobile/index.html`). On the emulator it rendered a load-failure page (DOM with **0** ids, `Failed to request http://…:1430/…` in `adb logcat`). Only `tauri android build --debug` embeds the frontend; the standalone APK is what the run above used. |
 
 Two defects surfaced only because these two harnesses were run against a real
@@ -496,3 +528,164 @@ real defect rather than protecting a green suite:
 frame (which must carry no `driftMs`) and asserted 420 against it. The test now
 drains that frame, asserts the absence explicitly, and then reads the report's
 presence.
+
+### 13.6 Desktop host ↔ Android guest — first real two-client run (2026-10-07)
+
+**Defects D1–D3 from this run, each with its proposed fix: `docs/jam-defects-d1-d4.md`** (design only — no code changed).
+
+Every earlier live run used **one real app + one synthetic socket client**. This
+run put the real desktop app (host) and the real Android app (guest) in the
+same room for the first time, driven only through the UI — the defect report
+under test was *"the guest doesn't follow the host's music, the controls are
+locked and nothing responds, only chat works."*
+
+**How it was run** (nothing in the repo was modified; all drivers were
+throwaway `Runtime.evaluate` scripts in a temp dir):
+
+| Side | Setup |
+|---|---|
+| Desktop host | plain `cargo build` (self-contained — assets embedded, page is `http://tauri.localhost/`), launched with `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`, attached over CDP |
+| Android guest | the installed app, CDP over `adb forward tcp:9223 localabstract:webview_devtools_remote_<pid>`; the guest dialed the host through **`adb reverse tcp:8787 tcp:8787`** (see the harness note below — `adb forward` is the wrong direction and produced the first failure) |
+| Traffic | room `#5BTQDYZM` on `:8787`, two real members, host playing from its own queue |
+
+**What both sides did, verbatim:**
+
+| Step | Desktop host | Android guest |
+|---|---|---|
+| Join | `2 in the room`, member rows `Host` / `Guest` | toast `Joined room 5BTQDYZM`, banner `#5BTQDYZM` · count `2`, role `GUEST` |
+| Chat | `ping from guest` rendered from the guest | sent from `#jamChatInput`, echoed back |
+| Presence / drift | `jam-sync-value` `±0.09s` → `±0.00s` | `jamBannerDrift` `±0.04s` → `±0.20s`, member row `±0.04s` |
+| Host on a track the guest **has** (`AjWUhbq4`, `cKPqYV55`) | — | audio `<src>` switched to the host's id, `artworkCollabTag` `FOLLOWING HOST`, queueSyncBadge visible, `appliedFrames` counted |
+| Host on a track the guest **lacks** (`nBqLSLVk`, `NEBgg__6`, `p1O59IIG`) | keeps playing, tile drift frozen at last value | `artworkCollabTag` `NOT ON THIS DEVICE`, **no** `room_report`, drift stays `—` on a fresh session, guest audio keeps playing its **own** queue (observed still on `cKPqYV55` at t=192 while the host was on `p1O59IIG`) |
+| Guest paused by hand | — | auto-resumed on the next frame: paused at t=67 → playing t=95 within 4 s, seek-corrected |
+| Controls | enabled | `master-play-pause` disabled + `The host controls playback in this room.` (by design, §12) |
+
+**Hypotheses from the plan — verdicts:**
+
+| # | Hypothesis | Verdict | Evidence |
+|---|---|---|---|
+| H1 | guest cannot resolve the host's track | **CONFIRMED — primary cause** | 0 of 3 host tracks resolved until the id was in queue/history; resolution succeeded 2/2 once reachable, with follow + play + drift reporting all working |
+| H2 | host never broadcasts `playback` | **DISPROVEN** | the guest switched tracks and reported drift within one tick of the host changing song — frames arrive |
+| H3 | autoplay rejection swallowed | **DISPROVEN on Android** | a paused guest resumed and seek-corrected straight from a frame callback (`jam.js:379`), no `NotAllowedError` |
+
+**Three defects, all reproduced (none fixed yet):**
+
+1. **D1 — the mobile resolve list is too narrow (the reported symptom).**
+   `mobile/jam.js:398 followGuest()` searches `queueHistory() + current +
+   queueUpNext()` only; desktop `social.js:328 findLocalTrack()` additionally
+   searches play history, favourites and the vault. Any host track not sitting
+   in the phone's current queue is declared `NOT ON THIS DEVICE` forever, while
+   the transport stays locked (§12) — the guest can neither follow nor take
+   over, and its own audio keeps playing. That is precisely "nothing works but
+   chat". Spec text for this: §12 "Guest track resolution (M1)" (annotated).
+2. **D2 — a failed join bricks the backend until the app restarts.**
+   `room.rs:787 room_join` sets `Mode::Guest { tx }` at line 808 **before** the
+   socket connects; `guest_run` (line 589) sends an `error` frame on a refused
+   or timed-out dial and returns **without resetting the mode** — `Mode::Idle`
+   is written only by `room_close` (`room.rs:881`) and at init (line 698).
+   The UI resets itself to Solo on that `error` frame (`jam.js:285-289`) and
+   never calls `room_close`, so the next attempt hits `room.rs:796`
+   *"Leave the current room before joining another."* — a room the UI says does
+   not exist. Reproduced twice: `room_info` returned `{role:"guest"}` while the
+   banner read `SOLO`; after an explicit `room_close` the same join succeeded
+   first try. The only in-app recovery is an app restart (`initJam`'s boot
+   `room_info` → `room_close`, `jam.js:736-741`). Any unreachable address
+   triggers it: wrong IP, host app closed, firewall.
+3. **D3 — the collab tag and sync badge go stale (§8 truthfulness).**
+   `mirrorNote` is cleared only on a *successful* resolve (`jam.js:411`) or on
+   leave (`:233`). If a later frame's id already equals the local track,
+   `guestApply` takes the fast path (`jam.js:369`) and never clears it — the
+   guest was observed at `NOT ON THIS DEVICE` **while** showing `±0.04s` drift
+   and a visible `Synchronized` badge. The mirror image also holds: after the
+   host moved to an unresolvable track the badge and `±0.00s` lingered although
+   no frame was being applied.
+
+**Harness notes worth keeping:**
+
+* `adb forward tcp:8787 tcp:8787` listens on the **host** (the adb process owns
+  `127.0.0.1:8787`), so a *device-side guest* gets `Connection refused` on its
+  own loopback. Device → host needs **`adb reverse tcp:8787 tcp:8787`**;
+  probe with `adb shell "toybox nc -z -w 2 127.0.0.1 8787"`.
+  `live-android-emulator.mjs` uses `forward` legitimately — in that suite the
+  room server runs **on the device**.
+* The app ships `tauri-plugin-single-instance`: a second launch forwards to the
+  first and exits, so it never appears in `:9222/json`.
+* A desktop debug exe last built under `tauri dev` bakes the `devUrl`
+  (`http://127.0.0.1:1430/`) into itself and shows an error page when started
+  standalone — the known Android trap (`incomplete-jam.md` §5.2/§5.3) applies
+  to desktop too. Plain `cargo build` embeds the assets.
+
+**Still not proven:** a physical LAN between two machines (§10 runbook) and a
+real second phone rather than the emulator. *(The third item — whether D1's
+symptom reaches a desktop guest — was answered by §13.7 the same day: yes, the
+desktop guest takes the same §4.5 mirror path, but its wider resolve list makes
+it follow far more often.)*
+
+### 13.7 Android host ↔ desktop guest — the reverse run (2026-10-07)
+
+The pairing of §13.6 with the roles swapped, because *"also verify for vice
+versa"* is a different code path on **both** sides: the host broadcast on mobile
+is `jam.js hostTick` (not `social.js wireReactions`), and the guest applying the
+frames is `social.js guestTick` (not `jam.js guestApply`). Same two real apps,
+driven only through the UI; nothing in the repo was modified.
+
+**Defect D4 from this run, with its proposed fix: `docs/jam-defects-d1-d4.md`** (design only — no code changed).
+
+| Side | Setup |
+|---|---|
+| Android host | the installed app, CDP over `adb forward tcp:9223 localabstract:webview_devtools_remote_<pid>`; room opened from the mode sheet (`Start a Jam`) |
+| Desktop guest | plain `cargo build` binary + `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`; joined through **`adb forward tcp:8787 tcp:8787`** — the mirror image of §13.6: *forward* when the device hosts, *reverse* when it dials |
+| Traffic | rooms `#MPXYBD5L` then `#5VV6PGF8` on `:8787`, two real members; a raw second client (`WebSocket` + `join`, no UI) was used as an independent witness of the wire |
+
+**What both sides did, verbatim:**
+
+| Step | Android host | Desktop guest |
+|---|---|---|
+| Join | banner `#MPXYBD5L` · count `2`, `jamMembersList` YOU + Host rows, role `HOST` | `Joined room MPXYBD5L`, session `Guest — following the host`, `membersNote` `2 in the room · the host controls playback.`, transport locked |
+| Chat | `ping from desktop` rendered | `ping from android` rendered (`chat.len` 1 → 2) |
+| Host on a track the guest **has** (`6DN9AmgT`) | `PLAYING FROM JAM … Admi Jo Kahta Hai` | title switched, audio **playing** `stream?id=6DN9AmgT`, `jam-sync-value` `±0.08s` → `±0.05s`, member rows `H 0.05s` / `G -0.05s` |
+| Host on a track the guest **lacks** | keeps playing | `#jam-sidecar-note`: `Host is on "Aye Dil-E-Nadan - Full Version" — not on this device.` — the §4.5 mirror path, on a **desktop** guest |
+| Host **pause** | paused, audio t=136, icon `play_arrow` | **kept playing** (t=141), badge still `±0.06s` → **D4** |
+| Host resume | t=137 | re-synced to `±0.05s` within a frame; member drift repainted |
+| Host `skip_next` | queue advanced (incl. a resume-at-77 s case) | raw client's cached `playback` updated to the new id (`2HXOzvO_`) |
+| Leave / room close | `jamLeaveBtn` → `NO ROOM` | `bye` → idle |
+
+**Hypotheses — verdicts:**
+
+| # | Hypothesis | Verdict | Evidence |
+|---|---|---|---|
+| V-H1 | the mobile host never broadcasts (`hostTick` never armed) | **DISPROVEN** | the raw client's `joined` welcome carried a cached `playback` written **before any guest existed**, and it saw live `playback` frames afterwards. Arming path: `startRoom()` synthesises a `hosted` frame locally (`jam.js:190-196`) → `applyFrame`'s tail calls `startTick(hostTick)` (`:302`) at room open. Rust sends no `hosted` (only `refresh`, `room.rs:341`), which is what made this look dead on paper |
+| V-H2 | the desktop guest receives no `playback` frames | **DISPROVEN — my own reading error** | `paintRoom()` writes `#jam-sidecar-note` (`social.js:147`), while `setRoomNote()` writes `#room-join-note` (`:69`). I was polling the join note, which legitimately still read `Joined room MPXYBD5L.`; the mirror line was in the sidecar note the whole time |
+| V-H3 | the host's `room_playback` is refused or not registered on Android | **DISPROVEN** | all seven `room_*` commands are registered unconditionally (`lib.rs:1657-1663`), `room_playback` allows `Mode::Host` (`room.rs:826`), and the cache/wire traffic above is that call's output |
+| V-H4 | a host pause reaches the guests like any other state | **CONFIRMED DEFECT — D4** | see below |
+
+**D4 — the Android host never broadcasts a pause** (§12 transport note, mobile
+09 **P34**): `jam.js:346` returns while `st.paused`, and mobile has no
+`play`/`pause`/`seeked` listeners where desktop does (`social.js:702-706`) and
+no title MutationObserver (`:687-697`). Observed live: host paused at t=136,
+desktop guest still playing at t=141 with a *small* drift — a frozen
+`positionMs` with `playing:true` in the cached frame is exactly what
+`syncDecision` would score that way. Any change made while paused (next track,
+seek) is withheld too, because the guard returns before the key check; the
+resume afterwards self-heals via the drift mismatch.
+
+**Harness notes worth keeping:**
+
+* **Direction matters:** `adb reverse tcp:8787 tcp:8787` when the *device* is
+  the guest (§13.6); **`adb forward tcp:8787 tcp:8787`** when the *device*
+  hosts — the host machine then dials `127.0.0.1:8787`, which is the adb
+  listener, not the desktop app's own room server (the desktop must be idle, or
+  the port is taken).
+* PowerShell 5 **drops an empty `""` argument**, shifting positional args: a
+  probe called as `node p.mjs 20000 "" 5VV6PGF8` received `CHAT="5VV6PGF8"` and
+  sent that as a chat — silently contaminating a "chat-free" arming test. Check
+  the echo (`sentChat`/`inbound`) before believing a negative result.
+* Wrapping `window.__TAURI_INTERNALS__.invoke` at runtime intercepts **nothing**:
+  both surfaces capture `window.__TAURI__?.core?.invoke` **by reference at
+  module load** (`mobile/shared.js:5`, `core.js:35`). Proven by a probe whose
+  own `room_info` call never appeared in its log. Watch the wire instead (raw
+  `WebSocket` client), which is also the only witness that cannot be
+  mis-read through a UI element.
+* Reading the wrong DOM id costs a wrong conclusion: `#room-join-note` is
+  write-once (`setRoomNote`), `#jam-sidecar-note` is the live one
+  (`paintRoom`).

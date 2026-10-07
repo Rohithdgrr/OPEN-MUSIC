@@ -23,10 +23,14 @@ export function prefDlQuality() {
 /// and reports the summary; failures are rethrown so the batch can count them.
 export async function downloadTrack(track, btn, quiet = false) {
   if (!track) return;
-  if (activeDownloads.has(track.id)) {
+  const existing = activeDownloads.get(track.id);
+  // A paused row re-entering is a resume, not a duplicate: drop the stale
+  // entry and proceed — the backend continues the kept `.part` prefix.
+  if (existing && !existing.paused) {
     toast(`"${track.title}" is already downloading.`, "info");
     return;
   }
+  activeDownloads.delete(track.id);
   const icon = btn ? btn.querySelector(".material-symbols-outlined") : null;
   const original = icon ? icon.textContent : "";
   if (icon) icon.textContent = "progress_activity";
@@ -42,6 +46,11 @@ export async function downloadTrack(track, btn, quiet = false) {
     received: 0,
     total: null,
     done: false,
+    paused: false,
+    // Kept for resumeOne: re-entering downloadTrack needs the full track.
+    // Progress messages never carry these keys, so the spread in onmessage
+    // cannot clobber them.
+    track,
   });
   renderActive();
   try {
@@ -89,6 +98,20 @@ export async function downloadTrack(track, btn, quiet = false) {
       if (resultsSub.textContent.startsWith("Saved to")) resultsSub.textContent = previous;
     }, 5000);
   } catch (err) {
+    // Pause is user intent, not failure: the backend kept the `.part`
+    // prefix, so the row stays (flagged) instead of erroring out. The batch
+    // loop rethrows so it can snapshot its remainder (see below).
+    if (isPausedErr(err)) {
+      const entry = activeDownloads.get(track.id);
+      if (entry) entry.paused = true;
+      renderActive();
+      diag(`download ${track.id}`, null, "paused — prefix kept for resume");
+      if (quiet) throw err;
+      if (icon) icon.textContent = original;
+      if (btn) btn.disabled = false;
+      toast(`Paused "${track.title}" — resume it from Downloads.`, "info", 4000);
+      return;
+    }
     activeDownloads.delete(track.id);
     renderActive();
     if (icon) icon.textContent = original;
@@ -109,17 +132,80 @@ export async function downloadTrack(track, btn, quiet = false) {
 export let dlBatch = false;
 let dlAbort = false;
 const isCancelledErr = (err) => /cancelled/i.test(String(err || ""));
+/// Pause is user intent, not failure — exported for tests and the batch loop.
+export const isPausedErr = (err) => /^paused/i.test(String(err || ""));
+/// Pause state for the running batch: set by pauseBatch(), polled at the top
+/// of every loop iteration. The unstarted remainder waits in `pausedBatch`
+/// for resumeBatch(); finished and in-flight rows keep their own paused flag
+/// on their `activeDownloads` entry.
+let dlPaused = false;
+let pausedBatch = null;
 
 /// Stop a running `downloadAll`: no further tracks are queued, and every
 /// in-flight `download_song` is told to abort mid-stream. Safe to call when
-/// nothing is running (sets a flag the next loop start clears).
+/// nothing is running (sets a flag the next loop start clears). Rows the
+/// user paused are left alone — they already stopped, cost nothing, and keep
+/// their resume prefix; a paused batch remainder is discarded.
 export function stopBatch() {
   dlAbort = true;
-  for (const id of activeDownloads.keys()) {
+  dlPaused = false;
+  pausedBatch = null;
+  for (const [id, entry] of activeDownloads) {
+    if (entry && entry.paused) continue;
     try {
       invoke("cancel_download", { id }).catch(() => {});
     } catch {}
   }
+  renderActive();
+}
+
+/// Pause the running batch after the current chunk: every in-flight track
+/// keeps its `.part` prefix backend-side, the unstarted remainder waits in
+/// `pausedBatch`, and Downloads offers the resume. No-op unless a batch runs.
+export function pauseBatch() {
+  if (!dlBatch || dlPaused) return false;
+  dlPaused = true;
+  for (const id of activeDownloads.keys()) {
+    try {
+      invoke("pause_download", { id }).catch(() => {});
+    } catch {}
+  }
+  return true;
+}
+
+/// Resume a paused batch: re-enters the pipeline with the waiting remainder.
+/// Tracks already saved are skipped; the rest continue their `.part`
+/// prefixes with HTTP `Range` requests (or restart cleanly). No-op with
+/// nothing waiting.
+export function resumeBatch() {
+  if (!pausedBatch) return false;
+  const { items, what, btn } = pausedBatch;
+  pausedBatch = null;
+  dlPaused = false;
+  downloadAll(items, what, btn);
+  return true;
+}
+
+/// Pause one in-transit row (single or batch member). The row stays flagged;
+/// resumeOne() continues it.
+export function pauseOne(id) {
+  const entry = activeDownloads.get(id);
+  if (!entry || entry.paused) return false;
+  try {
+    invoke("pause_download", { id }).catch(() => {});
+  } catch {}
+  return true;
+}
+
+/// Resume one paused row from its kept prefix. The entry is dropped first so
+/// the pipeline's already-downloading guard does not refuse the re-entry.
+export function resumeOne(id) {
+  const entry = activeDownloads.get(id);
+  if (!entry || !entry.paused || !entry.track) return false;
+  activeDownloads.delete(id);
+  renderActive();
+  downloadTrack(entry.track, null, false);
+  return true;
 }
 
 export async function downloadAll(items, what, btn) {
@@ -134,6 +220,8 @@ export async function downloadAll(items, what, btn) {
   }
   dlBatch = true;
   dlAbort = false;
+  dlPaused = false;
+  pausedBatch = null;
   const icon = btn?.querySelector(".material-symbols-outlined");
   const labelEl = btn && btn.lastElementChild !== icon ? btn.lastElementChild : null;
   const originalIcon = icon ? icon.textContent : "";
@@ -163,11 +251,17 @@ export async function downloadAll(items, what, btn) {
     }
     dlBatch = false;
     dlAbort = false;
+    dlPaused = false;
   };
   // Fresh vault list: a restart must not re-download what is already saved.
+  // Paused rows re-enter the queue: their `.part` prefixes resume by Range.
   await refreshVault();
   const saved = new Set(vaultEntries.map((e) => e.id));
-  const todo = list.filter((t) => !saved.has(t.id) && !activeDownloads.has(t.id));
+  const todo = list.filter((t) => {
+    if (!t || !t.id || saved.has(t.id)) return false;
+    const running = activeDownloads.get(t.id);
+    return !running || running.paused;
+  });
   if (!todo.length) {
     restore("check");
     toast(`All ${list.length} ${what} are already in the offline vault.`, "info");
@@ -176,9 +270,18 @@ export async function downloadAll(items, what, btn) {
   let ok = 0;
   let fail = 0;
   let stopped = false;
+  let paused = false;
   for (let i = 0; i < todo.length; i++) {
     if (dlAbort) {
       stopped = true;
+      break;
+    }
+    // Paused between tracks: snapshot the unstarted remainder (the in-flight
+    // row, if any, flagged itself paused through its own catch below) and
+    // leave it all for resumeBatch().
+    if (dlPaused) {
+      pausedBatch = { items: todo.slice(i), what, btn };
+      paused = true;
       break;
     }
     if (labelEl) labelEl.textContent = `${i + 1}/${todo.length}`;
@@ -187,6 +290,14 @@ export async function downloadAll(items, what, btn) {
       await downloadTrack(todo[i], null, true);
       ok++;
     } catch (err) {
+      // A paused track is the user pausing, not a failure: the in-flight
+      // row flagged itself, and everything from here on waits in
+      // `pausedBatch` for resumeBatch().
+      if (isPausedErr(err) || dlPaused) {
+        pausedBatch = { items: todo.slice(i), what, btn };
+        paused = true;
+        break;
+      }
       // A backend abort is the user stopping, not a failure — count it
       // neither as saved nor as failed, and halt the queue behind it.
       if (isCancelledErr(err) || dlAbort) {
@@ -196,7 +307,13 @@ export async function downloadAll(items, what, btn) {
       fail++;
     }
   }
-  restore(stopped ? "stop" : fail ? "error" : "check");
+  restore(paused ? "pause" : stopped ? "stop" : fail ? "error" : "check");
+  if (paused) {
+    const left = pausedBatch ? pausedBatch.items.length : 0;
+    diag("download-all", null, `paused at ${ok}/${todo.length} ${what}, ${left} waiting`);
+    toast(`Paused — ${ok} saved, ${left} waiting in Downloads.`, "info", 4000);
+    return;
+  }
   if (stopped) {
     diag("download-all", null, `stopped at ${ok}/${todo.length} ${what}`);
     toast(`Stopped — ${ok} of ${todo.length} ${what} downloaded.`, "info", 4000);
@@ -264,7 +381,10 @@ export function activeCard(p) {
             <h3 class="font-headline-md text-body-lg font-medium text-on-surface truncate" dir="auto">${esc(p.title)}</h3>
             <p class="font-body-sm text-body-sm text-on-surface-variant truncate">${esc([p.artist, p.album].filter(Boolean).join(" • "))}</p>
           </div>
-          <span class="font-label-mono text-label-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface shrink-0">${Math.round(pct)}%</span>
+          <span class="font-label-mono text-label-mono px-2 py-0.5 rounded bg-surface-container-high text-on-surface shrink-0">${p.paused ? "PAUSED" : `${Math.round(pct)}%`}</span>
+          <button type="button" data-dl-pause="${esc(p.id)}" title="${p.paused ? "Resume download" : "Pause download"}" class="w-8 h-8 rounded hover:bg-surface-container-high flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors shrink-0">
+            <span class="material-symbols-outlined text-[18px]">${p.paused ? "play_arrow" : "pause"}</span>
+          </button>
         </div>
         <div class="mt-2.5 grid grid-cols-2 gap-2 font-label-mono text-label-mono text-on-surface-variant">
           <div>
@@ -289,12 +409,17 @@ export function renderActive() {
   const grid = $("#dl-active");
   if (!section || !grid) return;
   const list = [...activeDownloads.values()];
-  section.classList.toggle("hidden", list.length === 0);
+  const waiting = pausedBatch ? pausedBatch.items.length : 0;
+  // A paused remainder has no rows of its own — keep the section up so the
+  // resume control below stays reachable.
+  section.classList.toggle("hidden", list.length === 0 && !waiting);
   const label = $("#dl-active-label");
   if (label) {
     label.textContent = list.length
       ? `${list.length} stream${list.length === 1 ? "" : "s"} in transit`
-      : "Vault idle";
+      : waiting
+        ? `${waiting} paused in queue`
+        : "Vault idle";
   }
   const dot = $("#dl-pipeline-dot");
   if (dot) {
@@ -304,6 +429,18 @@ export function renderActive() {
   }
   const count = $("#dl-active-count");
   if (count) count.textContent = `${list.length} active`;
+  // Batch remainder resume + running-batch pause: rendered next to the ETA
+  // slot so they never move the grid. Exactly one shows at a time.
+  const eta = $("#dl-active-eta");
+  if (eta) {
+    if (waiting > 0) {
+      eta.innerHTML = `<button type="button" id="dl-resume-batch" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:opacity-90 transition-opacity"><span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Resume ${waiting} paused</span></button>`;
+    } else if (dlBatch) {
+      eta.innerHTML = `<button type="button" id="dl-pause-batch" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-container-high text-on-surface font-label-md text-label-md hover:bg-surface-container-highest transition-colors"><span class="material-symbols-outlined text-[16px]">pause</span><span>Pause all</span></button>`;
+    } else {
+      eta.innerHTML = "";
+    }
+  }
   grid.innerHTML = list.map(activeCard).join("");
 }
 
@@ -551,6 +688,25 @@ $("#dl-search")?.addEventListener("input", () => {
 });
 
 $("#dl-refresh")?.addEventListener("click", refreshVault);
+
+// In-transit pause / resume (per-row buttons + the batch remainder control in
+// the section header). Delegated: renderActive() rebuilds the grid each beat.
+$("#dl-active-section")?.addEventListener("click", (e) => {
+  if (e.target.closest("#dl-resume-batch")) {
+    resumeBatch();
+    return;
+  }
+  if (e.target.closest("#dl-pause-batch")) {
+    pauseBatch();
+    return;
+  }
+  const pb = e.target.closest("[data-dl-pause]");
+  if (!pb) return;
+  const id = pb.dataset.dlPause;
+  const entry = activeDownloads.get(id);
+  if (entry && entry.paused) resumeOne(id);
+  else pauseOne(id);
+});
 
 // Vault option widgets: quota select + prefetch toggle (spec 3.3).
 const quotaSel = $("#dl-quota");

@@ -10,6 +10,7 @@ import { addBtn, dedupeTracks, doSearch, isTracks, paintChips, playTrack, setAct
 import { filterLang, filterLangHome, langLabel, prefLangs } from "./settings.js";
 import { paintModes } from "./transport.js";
 import { artistLinks, fmtTime, npText } from "./util.js";
+import { groupLangAlbums } from "./albumgroup.js";
 import { downloadTrack } from "./vault.js";
 
 // -------------------------------------------------------------------- home -
@@ -156,7 +157,7 @@ export function renderJumpBack() {
   const pref = preferenceAlbums();
   wrap.classList.toggle("hidden", !pref.length);
   wrap.classList.toggle("flex", pref.length > 0);
-  if (pref.length) albums.innerHTML = pref.map((a) => ddCard("album", a)).join("");
+  if (pref.length) albums.innerHTML = groupLangAlbums(pref).map((a) => ddCard("album", a)).join("");
 }
 
 /// Repaint the taste-driven Home section: used at paint and after a play is

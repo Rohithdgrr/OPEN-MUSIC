@@ -128,3 +128,109 @@ instead of failing oddly.
 - iOS: same shell + overlay config; signed `.ipa` only with Apple secrets,
   otherwise unsigned Simulator `.app`; updates via App Store, never the
   Tauri updater.
+
+## Android UI parity batch (2026-10-07) — spec + todo
+
+Scope: **mobile shell only** (`app/src/mobile/**`); desktop is the visual
+reference, untouched. Requested by the user with three screenshots.
+
+### Root causes found before editing
+
+1. **Three-dots menu "only has 3 options"** — the options sheet clips its
+   list: content `max-h-[40vh]` and list `max-h-[calc(40vh-240px)]`
+   (`menus.js ensureSheet`) leave ~110px ≈ 3 rows. The other options
+   (View Album, Go to Artist, Share, Details, EQ) exist but sit below the
+   fold with no visible scroll cue.
+2. **Stale/blank thumbnails** — `paintArt` already maps empty art to the
+   brand mark, but two callers guard it away: widget `if (img &&
+   t.image)` (`app.js syncWidget paint`) and NowPlaying `if (artImg &&
+   t.image)` (`binders.js` onPaint) — a track without art keeps the
+   *previous* track's cover. `homeplus.js` also wrote `src=""` for
+   artless items (the browser then requests the page URL as an image →
+   broken tile).
+3. **Track menu missing Download** — `trackMenu` (row + NowPlaying
+   three-dots) had no Download; the library recent-plays branch already
+   did (`menus.js libraryMenu`).
+
+### Work list
+
+- [x] Sheet height: `40vh` → `75vh` (content + list) so the full menu
+      is visible on phone screens. *(done — `menus.js ensureSheet`)*
+- [x] `trackMenu` items in the user's order: Track Details · Go to Artist
+      · View Album (movie albums are albums) · Play Next · Add to Queue ·
+      Add to Playlist · **Download (new)** · Share Track · Share Card ·
+      EQ · context removals. *(done — `menus.js trackMenu`)*
+- [x] Stale-art guards fixed (widget + NowPlaying always call `paintArt`,
+      empty → brand mark) and `homeplus.js` uses the shared `art()`
+      helper. *(done — `app.js`, `binders.js`, `homeplus.js`)*
+- [x] NowPlaying metadata parity with desktop: eyebrow `TRACK nn / n •
+      STEREO DIRECT` (desktop `np-trackline` wording) + a real quality
+      chip painted from `st.badge` (the resolve's `chosen_quality`) +
+      a QUALITY cell in the telemetry strip (ALBUM · LENGTH · QUALITY ·
+      ROOM). *(done — `screens/nowplaying.html` + `binders.js` onPaint)*
+- [x] "Songs not streaming" report triaged → **not reproducible** (cold +
+      warm probes stream on the installed release; audio unmuted). Root
+      causes recorded as P30 in `09-problems-solutions.md`; the blank white
+      widget tile was the stale-paint guard fixed above.
+- [x] Build **universal release** APK (lightweight: release profile + size
+      packaging per `docs/android-universal-release.md` / `APK-SIZE.md`),
+      install on `Pixel6_API36`, verify: thumbnails loaded, metadata
+      visible, full menu on screen, streaming still OK. *(done — BUILD 6,
+      18,285,395 B; see P29/P30)*
+
+## Now Playing: artwork and metadata are separate cards (2026-10-07)
+
+User report: *"separate the meta data and thumbnail in nowplaying screen like
+old and make that proper visible"* — with a screenshot of the metadata card
+rendering as an **empty white box** over the album art.
+
+### Root cause (verified on the device, not inferred)
+
+The `97b0db8` regeneration moved the track header **into the artwork** as a dark
+glass overlay (`bg-black/60 backdrop-blur-md border border-white/10
+rounded-xl`), copying the desktop `.np-art-overlay`. The mobile light theme has
+a blanket card rule:
+
+```css
+html:not(.dark) .rounded-2xl.border,
+html:not(.dark) .rounded-xl.border { background: linear-gradient(180deg,#fff,#fbfbfd) !important; }
+```
+
+`!important` beats Tailwind's utility, so the overlay computed to
+`background-image: linear-gradient(rgb(255,255,255) 0%, …)` while every child
+kept `text-white` — white text on a white card, i.e. invisible metadata plus a
+white rectangle over the cover. DOM dump from the running app
+(`#np-art` section): overlay box `41,318,331,138`, computed
+`bg rgba(0,0,0,0)` / `bgi linear-gradient(rgb(255,255,255) 0%, …)`.
+The dark theme has the same rule with `#151518` (would have been readable) — so
+this only ever broke in light mode, which is the default.
+
+### Shipped layout ("like old" = the `6e724b4` composition)
+
+1. **Artwork card** (`#np-art-card`) — the square cover, the `[data-badge]`
+   quality chip (top-left) and the `#artworkCollabTag` SOLO/room chip
+   (top-right) only. Explicitly exempted from the blanket card rule in both
+themes (it is a media frame, not a list card) so `bg-black/60` chips and the
+   art shadow stay as designed.
+2. **Metadata card** (`#np-meta`), directly **below** the art, on the screen
+   surface: eyebrow `#np-trackline` + `#np-qchip`, title `#np-title`, artist
+   `#np-artist`, the four actions (`favorite-btn`, `download-btn`,
+   `playlist-add-btn`, `share-utility-btn`), and the telemetry strip
+   (ALBUM · LENGTH · QUALITY · ROOM = `np-album`, `np-length`, `np-quality`,
+   `np-room-members`).
+3. **Tokens only** — the card is `bg-surface-container-lowest border
+   border-outline-variant/30 rounded-2xl` with `text-on-surface` /
+   `text-secondary`; the actions are `bg-surface-container-high text-on-surface`.
+   The blanket card rule is *wanted* here, and both themes invert the tokens,
+   so one markup works in light and dark. No `text-white` outside the art.
+
+### Acceptance criteria
+
+- Every id `jam.js`/`binders.js` paints still exists, exactly once, unchanged
+  (`jam-ui.test.mjs` C-6/ADDED/LEGACY lists).
+- No metadata element overlaps the artwork: `#np-title`'s box is **below**
+  `#np-art`'s box.
+- Light and dark: title/artist/telemetry read against the card (contrast is
+  the theme's own `on-surface` on `surface-container-lowest`).
+- The art card's own chips still compute `rgba(0,0,0,0.6)`.
+- Streaming is untouched: this is markup/CSS only.

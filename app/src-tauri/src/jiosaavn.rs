@@ -672,7 +672,16 @@ pub async fn search_songs(
     if raw.is_empty() && !errs.is_empty() {
         errs.sort();
         errs.dedup();
-        return Err(format!("search failed — {}", errs.join("; ")));
+        // Per-mirror detail (full request URLs included) goes to the server
+        // log only. The Err string reaches the UI verbatim, so it stays one
+        // short line — the frontend classifies further from connectivity.
+        for e in &errs {
+            eprintln!("[TRANCE MUSIC] search page error: {e}");
+        }
+        return Err(format!(
+            "search failed — {} upstream page(s) unreachable",
+            errs.len()
+        ));
     }
     Ok(SearchPage {
         tracks: dedup_tracks(raw),
@@ -784,6 +793,30 @@ pub fn best_quality(qualities: &[QualityUrl], prefer: &str) -> Option<QualityUrl
 /// the same recording differently across albums).
 const DURATION_TOLERANCE_S: u64 = 3;
 
+/// Test-upload rows upstream sometimes leaks into listings (observed:
+/// `This is a sample trailer - testing` billed to artist `NULL` — and, on
+/// album pages, the same junk title inheriting the album's real artist bill,
+/// which is why the artist-missing guard alone is not enough). Drop a row
+/// when a junk word is in the title *and* the artist is missing, OR when the
+/// title carries two or more junk words no matter who is billed — no real
+/// song is titled that. A legit `Trailer Music` with a real artist (single
+/// junk word) always survives.
+fn is_junk(t: &Track) -> bool {
+    let hits = t
+        .title
+        .to_ascii_lowercase()
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| matches!(*w, "sample" | "trailer" | "testing" | "demo"))
+        .count();
+    if hits >= 2 {
+        return true;
+    }
+    if hits == 0 || !is_placeholder(&t.artist) {
+        return false;
+    }
+    true
+}
+
 /// Collapse duplicate catalog entries, keeping the best copy.
 ///
 /// Upstream repeats songs two ways: byte-identical entries with the same id,
@@ -802,6 +835,8 @@ const DURATION_TOLERANCE_S: u64 = 3;
 /// Entries without an id or without a duration carry no reliable
 /// fingerprint, so they only match themselves.
 pub fn dedup_tracks(tracks: Vec<Track>) -> Vec<Track> {
+    // Pass 0: junk test-upload rows (title + artist must agree — see is_junk).
+    let tracks: Vec<Track> = tracks.into_iter().filter(|t| !is_junk(t)).collect();
     // Pass 1: exact ids (empty ids are not identity — keep those rows).
     let mut seen_ids = std::collections::HashSet::new();
     let mut unique: Vec<Track> = Vec::with_capacity(tracks.len());
@@ -1197,6 +1232,39 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].id, "a");
         assert_eq!(out[1].id, "b");
+    }
+
+    #[test]
+    fn junk_rows_dropped_only_when_title_and_artist_agree() {
+        let tracks = vec![
+            dup_track(
+                "j1",
+                "This is a sample trailer - testing",
+                "NULL",
+                30,
+                false,
+                0,
+            ),
+            // Album-page shape: the same junk title inheriting a real artist
+            // bill (two junk words) — must drop too.
+            dup_track(
+                "j2",
+                "This is a sample trailer - testing",
+                "Thaman S",
+                30,
+                false,
+                0,
+            ),
+            dup_track("k1", "Trailer Music", "Real Artist", 200, false, 9),
+            dup_track("k2", "Real Song", "Real Artist", 200, false, 9),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 2, "junk rows gone, the rest stay");
+        assert!(out.iter().all(|t| t.id != "j1" && t.id != "j2"));
+        assert!(
+            out.iter().any(|t| t.id == "k1"),
+            "junk-titled but real artist survives"
+        );
     }
 
     #[test]

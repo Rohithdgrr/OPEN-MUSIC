@@ -78,6 +78,7 @@ Feature-by-feature comparison of the **desktop** and **mobile** surfaces.
 | Charts | ✅ | ✅ | Platform chart playlists |
 | Endless radio (`recommend_songs`) | ✅ | ✅ | `radio.js` on both shells |
 | Liked Songs view | ⚠️ | ✅ | Mobile has a dedicated screen; desktop folds it into Library |
+| Smart playlists (Top 50 last 30d; favourited-not-downloaded) | ✅ | ❌ | Desktop 2026-10-07: auto-generated cards (`smart.js` rules), recomputed per Playlists visit |
 | Listening history | ✅ | ✅ | |
 | Analytics screen | ❌ | ✅ | Mobile-only screen |
 | Notification feed | ❌ | ✅ | Mobile-only; seeded once with a welcome event |
@@ -90,6 +91,7 @@ Feature-by-feature comparison of the **desktop** and **mobile** surfaces.
 | Progress reporting | ✅ | ✅ | Both stream over a Tauri `Channel`: desktop live rows (`vault.js:50-59` `renderActive`), mobile live In-Transit section (`shared.js` `getActiveDownloads`) |
 | Cancel download (`cancelDownload`) | ✅ | ✅ | Backend `cancel_download` aborts at the next ~256 KB chunk (`lib.rs:699-702`). Desktop batch Stop calls it (`vault.js:116-123` `stopBatch`). Mobile per-row cancel is frontend-only — drops the row now and deletes the finished file on landing, never invokes the backend (`mobile/shared.js:547-561`) |
 | Pause / resume batch (`setBatchPaused`) | ❌ | ✅ | Desktop has Stop (abort), not pause/resume. Mobile batch loop stops after the current track; single downloads unaffected |
+| Pause / resume downloads (`pause_download` + `Range` resume into `.part`) | ✅ | ❌ | Desktop 2026-10-07: per-row + batch-remainder controls in Downloads; Stop still discards. Mobile batch flag is frontend-only (never invokes backend) |
 | Wi-Fi-only gate (`wifiOnly`) | ❌ | ✅ | Blocks `downloadTrack`/`downloadAll` on `navigator.connection.type === cellular` or `saveData`; persisted in localStorage |
 | Promote to higher quality (`promote_song`) | ✅ | ✅ | |
 | List / remove / verify (`list_downloads`, `remove_download`, `verify_vault`) | ✅ | ✅ | Mobile: `Verify` button in the downloads tools strip — report-only, nothing is deleted |

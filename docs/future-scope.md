@@ -25,7 +25,8 @@ single cross-platform view.
   (`playback.js:256`); mobile has no second element. Also worth making the
   desktop fade sample-accurate instead of `timeupdate`-discovered.
 - **Visualiser.** `AnalyserNode` → canvas. The widget's 7-bar spectrum is decorative today.
-- **Download pause / resume.** HTTP `Range` resume into `.part` files.
+- **Download pause / resume.** HTTP `Range` resume into `.part` files. ✅
+  shipped on desktop 2026-10-07 (`pause_download` + per-row/batch controls).
 - **Drag-and-drop queue reorder.** The queue is a plain array — splice on drop.
 - **Quality picker in the player.** `qualities[]` is already in the DTO; no UI surfacing it.
 - **Light theme.** Flip the seven design tokens + `prefers-color-scheme`.
@@ -36,7 +37,8 @@ single cross-platform view.
 - **Lyrics translation.** The toggle exists and does nothing; needs LibreTranslate or equivalent.
 - **Karaoke parity.** Word-level highlighting is mobile-only today — port to desktop.
 - **Smart playlists.** "Top 50 last 30 days", "favourited but never downloaded". Data is in
-  `localStorage` — needs a query, not a system.
+  `localStorage` — needs a query, not a system. ✅ shipped on desktop
+  2026-10-07 (`app/src/smart.js` rules + synthetic cards).
 - **Playlist import / export.** M3U, PLS, CSV in; M3U8 + JSON backup out.
 
 ### Mobile

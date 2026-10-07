@@ -13,6 +13,7 @@ import { enqueue, insertNext, queue, queueIndex, renderQueue, setQueueTab } from
 import { filterLang, prefCountry } from "./settings.js";
 import { metaLinks } from "./util.js";
 import { downloadTrack } from "./vault.js";
+import { groupLangAlbums, isJunkTrack } from "./albumgroup.js";
 
 export let lastResults = [];
 /// Entity cards for the active search chip (artists / albums / playlists).
@@ -402,14 +403,17 @@ export function renderCards() {
   if (isTracks()) return; // a chip switch raced this repaint
   paintResultsMode();
   const spec = KIND_SPEC[activeFilter];
-  resultsEl.innerHTML = lastCards.map(cardHtml).join("");
+  // Same movie in N languages upstream = N cards; show one (registry keeps
+  // every variant token for the merged open). Other kinds pass through.
+  const cards = activeFilter === "albums" ? groupLangAlbums(lastCards) : lastCards;
+  resultsEl.innerHTML = cards.map(cardHtml).join("");
   updateLoadMore();
   if (!searchQuery) {
     resultsSub.textContent = `Search for ${spec.many}, then tap one to hear it.`;
-  } else if (!lastCards.length) {
+  } else if (!cards.length) {
     resultsSub.textContent = `No ${spec.many} for "${searchQuery}".`;
   } else {
-    resultsSub.textContent = `Showing ${lastCards.length} ${spec.many} for "${searchQuery}"`;
+    resultsSub.textContent = `Showing ${cards.length} ${spec.many} for "${searchQuery}"`;
   }
 }
 
@@ -683,6 +687,12 @@ export function dedupeTracks(tracks) {
   const out = [];
   let removed = 0;
   for (const t of tracks) {
+    // Junk test-upload rows never reach a list (backend drops them too;
+    // this covers locally stored lists the backend never sees).
+    if (isJunkTrack(t)) {
+      removed += 1;
+      continue;
+    }
     if (t.id && seenIds.has(t.id)) {
       removed += 1;
       continue;
@@ -805,10 +815,17 @@ export async function doSearch(opts = {}) {
     updateLoadMore();
     if (seq !== searchSeq) return; // a newer search owns the UI now
     diag(`search "${q}"`, false, String(err));
-    resultsSub.textContent = append
+    // The error box shows one short line only: raw backend detail (full
+    // URLs, per-mirror errors) lives in the diagnostics log above, never
+    // in front of the user.
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const short = append
       ? `Could not load more results for "${q}".`
-      : "Search failed.";
-    showErrorRetry(`Search failed: ${err}`, () => doSearch({ append, query: q }));
+      : offline
+        ? "You're offline — check your connection, then retry."
+        : "Search is down right now — retry in a bit.";
+    resultsSub.textContent = append ? short : "Search failed.";
+    showErrorRetry(short, () => doSearch({ append, query: q }));
     return;
   }
   loadingMore = false;

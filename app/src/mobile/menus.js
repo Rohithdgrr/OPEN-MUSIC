@@ -63,7 +63,7 @@ function ensureSheet() {
     "fixed inset-0 z-[70] transition-opacity duration-200 flex flex-col justify-end pointer-events-none opacity-0";
   root.innerHTML = `
     <div class="absolute inset-0 bg-black/50 backdrop-blur-md transition-opacity duration-200" data-tm-dismiss></div>
-    <div class="relative bg-surface-container-lowest/95 backdrop-blur-2xl border-t border-surface-container-high/80 rounded-t-[28px] max-w-lg mx-auto w-full max-h-[40vh] overflow-hidden px-5 pt-3 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] transform transition-transform duration-300 ease-out flex flex-col gap-3 translate-y-full" data-tm-content>
+    <div class="relative bg-surface-container-lowest/95 backdrop-blur-2xl border-t border-surface-container-high/80 rounded-t-[28px] max-w-lg mx-auto w-full max-h-[75vh] overflow-hidden px-5 pt-3 pb-8 shadow-[0_-16px_48px_rgba(0,0,0,0.18)] transform transition-transform duration-300 ease-out flex flex-col gap-3 translate-y-full" data-tm-content>
       <div class="w-12 h-1.5 bg-surface-container-highest rounded-full mx-auto mb-1.5 opacity-80"></div>
       <div class="flex items-center gap-3.5 pb-3 border-b border-surface-container-high/60">
         <div class="w-12 h-12 rounded-xl bg-surface-container-high overflow-hidden shrink-0 shadow-sm ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover hidden" data-tm-art></div>
@@ -72,7 +72,9 @@ function ensureSheet() {
           <p class="font-body-sm text-[12px] text-on-surface-variant truncate mt-0.5" data-tm-sub></p>
         </div>
       </div>
-      <div class="flex flex-col gap-0.5 overflow-y-auto max-h-[calc(40vh_-_240px)]" data-tm-list></div>
+      <!-- 75vh: at 40vh this list clipped to ~3 rows (the "menu only has 3
+        options" report — docs/mobile/06-features.md, Android UI parity batch) -->
+      <div class="flex flex-col gap-0.5 overflow-y-auto max-h-[calc(75vh_-_240px)]" data-tm-list></div>
       <button class="w-full py-3.5 rounded-xl bg-surface-container text-on-surface font-body-md text-[14px] font-semibold hover:bg-surface-container-high active:scale-[0.98] transition-all mt-1" data-tm-dismiss>Close</button>
     </div>`;
   document.body.appendChild(root);
@@ -460,12 +462,18 @@ export function trackMenu(track, ctx, idx) {
     haptic(10);
   } catch {}
   const items = [];
+  // Order is the user's (docs/mobile/06-features.md, Android UI parity
+  // batch): track info → artist → album → queue → playlist → download →
+  // share. Play Next stays next to Add to Queue; EQ and the context
+  // removals keep their old positions below.
+  items.push({ icon: "info", label: "Track Details", action: () => detailsSheet(track) });
+  if (track.artist || track.artist_ids?.length) {
+    items.push({ icon: "artist", label: "Go to Artist", action: () => goToArtist(track) });
+  }
+  if (track.album) {
+    items.push({ icon: "album", label: "View Album", action: () => viewAlbum(track) });
+  }
   if (track.id) {
-    items.push({
-      icon: "playlist_add",
-      label: "Add to Playlist",
-      action: () => addToPlaylist(track),
-    });
     items.push({
       icon: "playlist_play",
       label: "Play Next",
@@ -482,12 +490,16 @@ export function trackMenu(track, ctx, idx) {
         toast(`“${track.title || "track"}” added to queue`);
       },
     });
-  }
-  if (track.album) {
-    items.push({ icon: "album", label: "View Album", action: () => viewAlbum(track) });
-  }
-  if (track.artist || track.artist_ids?.length) {
-    items.push({ icon: "artist", label: "Go to Artist", action: () => goToArtist(track) });
+    items.push({
+      icon: "playlist_add",
+      label: "Add to Playlist",
+      action: () => addToPlaylist(track),
+    });
+    items.push({
+      icon: "download",
+      label: "Download",
+      action: () => downloadTrack(track),
+    });
   }
   items.push({
     icon: "ios_share",
@@ -499,7 +511,6 @@ export function trackMenu(track, ctx, idx) {
     label: "Share Card",
     action: () => shareCard({ title: track.title, subtitle: track.artist, image: track.image, badge: "TRANCE" }),
   });
-  items.push({ icon: "info", label: "Track Details", action: () => detailsSheet(track) });
   if (track.id) {
     items.push({
       icon: "tune",
@@ -530,9 +541,10 @@ export function trackMenu(track, ctx, idx) {
       danger: true,
       action: () => removeFromHistory(track),
     });
-  } else if (track.id) {
-    items.push({ icon: "download", label: "Download", action: () => downloadTrack(track) });
   }
+  // Download used to be pushed here in an `else if (track.id)` tail; it now
+  // lives in the main sequence above (user's order), so a second push would
+  // show it twice.
   openSheet({ title: track.title || "Track", sub: track.artist || track.subtitle || "", image: track.image, items });
 }
 

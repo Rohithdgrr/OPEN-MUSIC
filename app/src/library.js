@@ -9,9 +9,11 @@ import { playQueueItem } from "./playback.js";
 import { enqueue, insertNext, queue, queueIndex, renderQueue, setQueueIndex, setQueueTab, setShuffleMode } from "./queue.js";
 import { setRadioStation } from "./radio.js";
 import { addBtn, dedupeTracks, doSearch, lastCards, trackRow, uniqById } from "./search.js";
+import { favsNotSaved, topPlayedTracks } from "./smart.js";
+import { groupLangAlbums, variantsFor } from "./albumgroup.js";
 import { paintModes } from "./transport.js";
 import { artistLinks, fmtTime, metaLinks, npText, openEntityByName } from "./util.js";
-import { dlBatch, downloadAll, downloadTrack, refreshVault, stopBatch } from "./vault.js";
+import { dlBatch, downloadAll, downloadTrack, refreshVault, stopBatch, vaultEntries } from "./vault.js";
 
 // ------------------------------------------------- local playlists (mine) -
 // They live in the same library array as saved items, flagged `local`, so the
@@ -302,6 +304,7 @@ export function toggleEntityFav(ent) {
             title: ent.title || "",
             subtitle: ent.subtitle || "",
             image: ent.image || "",
+            language: ent.language || "",
           },
     );
     on = true;
@@ -323,7 +326,7 @@ export function entFavBtn(kind, item) {
   const saved = isEntityFav(kind, key);
   const local = kind === "playlist" && !!item.local;
   const fill = saved ? ` style="font-variation-settings: 'FILL' 1;"` : "";
-  return `<button type="button" data-ent-fav="1" data-ent-kind="${esc(kind)}" data-ent-key="${esc(key || "")}" data-ent-title="${esc(item.title || "")}" data-ent-sub="${esc(item.subtitle || "")}" data-ent-img="${esc(item.image || "")}"${
+  return `<button type="button" data-ent-fav="1" data-ent-kind="${esc(kind)}" data-ent-key="${esc(key || "")}" data-ent-title="${esc(item.title || "")}" data-ent-sub="${esc(item.subtitle || "")}" data-ent-img="${esc(item.image || "")}"${item.language ? ` data-ent-lang="${esc(item.language)}"` : ""}${
     local ? ` data-ent-local="1"` : ""
   } title="${local ? "Already in your Library" : saved ? "Remove from Library" : "Save to Library"}" class="w-8 h-8 rounded-full bg-surface-container-lowest/90 backdrop-blur-md text-on-surface flex items-center justify-center shadow-md hover:scale-105 transition-all${
     saved ? "" : " opacity-0 group-hover:opacity-100"
@@ -351,6 +354,7 @@ document.addEventListener(
       title,
       subtitle: btn.dataset.entSub,
       image: btn.dataset.entImg,
+      language: btn.dataset.entLang || "",
     });
     const icon = btn.querySelector(".material-symbols-outlined");
     if (icon) icon.style.fontVariationSettings = on ? "'FILL' 1" : "'FILL' 0";
@@ -941,7 +945,7 @@ export function renderReleases() {
   if (!grid) return;
   const counts = { all: ddReleaseList.length, album: 0, single: 0 };
   for (const r of ddReleaseList) counts[r.kind] = (counts[r.kind] || 0) + 1;
-  const shown = ddReleaseList.filter((r) => ddFilter === "all" || r.kind === ddFilter);
+  const shown = groupLangAlbums(ddReleaseList.filter((r) => ddFilter === "all" || r.kind === ddFilter));
   grid.innerHTML = shown.map(releaseCard).join("");
   $("#dd-discography")?.classList.toggle("hidden", !ddReleaseList.length);
   npText(
@@ -971,6 +975,7 @@ export function releaseCard(a) {
         <img alt="" loading="lazy" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(a.image || "")} />
         <span class="absolute top-2 left-2">${entFavBtn("album", a)}</span>
         ${a.year ? `<span class="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-surface-container-lowest/90 backdrop-blur-md font-label-mono text-[9px] text-on-surface">${esc(a.year)}</span>` : ""}
+        ${a.langCount > 1 ? `<span class="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-black/70 text-white font-label-mono text-[9px] uppercase tracking-wider">${a.langCount} languages</span>` : ""}
         <div class="absolute inset-0 bg-primary/20 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
           <span class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span></span>
         </div>
@@ -1069,10 +1074,19 @@ export async function openDetail(kind, item, opts = {}) {
 
   if (!isArtist) {
     try {
-      const raw =
-        kind === "playlist"
-          ? await invoke("playlist_tracks", { id: item.id })
-          : await invoke("album_tracks", { token: item.token });
+      let raw;
+      if (kind === "playlist") {
+        raw = await invoke("playlist_tracks", { id: item.id });
+      } else if (item.tokens && item.tokens.length > 1) {
+        // Merged language-variant card: every sibling album in parallel
+        // (bounded), merged — the language chips then offer each language.
+        const tokens = [...new Set([item.token, ...item.tokens])].filter(Boolean).slice(0, 7);
+        const pages = await Promise.allSettled(tokens.map((t) => invoke("album_tracks", { token: t })));
+        raw = pages.flatMap((p) => (p.status === "fulfilled" ? p.value || [] : []));
+        if (!raw.length) raw = await invoke("album_tracks", { token: item.token });
+      } else {
+        raw = await invoke("album_tracks", { token: item.token });
+      }
       ddTracks = dedupeTracks(raw).list;
     } catch (err) {
       diag(kind, false, String(err));
@@ -1153,6 +1167,7 @@ export function ddCard(kind, a) {
     <div data-dd-kind="${esc(kind)}" data-dd-token="${esc(a.token || "")}" data-dd-title="${esc(a.title || "")}" data-dd-sub="${esc(a.subtitle || "")}" data-dd-img="${esc(a.image || "")}" class="p-3.5 rounded-lg bg-surface-container-lowest border border-surface-container-highest/60 shadow-sm hover:shadow-md transition-all group flex flex-col justify-between cursor-pointer">
       <div class="relative aspect-square rounded overflow-hidden bg-surface-container-high mb-3">
         <img alt="" loading="lazy" class="w-full h-full object-cover" ${art(a.image || "")} />
+        ${a.langCount > 1 ? `<span class="absolute top-2 left-2 px-2 py-1 rounded bg-black/70 text-white font-label-mono text-[9px] uppercase tracking-wider">${a.langCount} languages</span>` : ""}
         <span class="absolute top-2 right-2">${entFavBtn(kind, a)}</span>
         <button type="button" title="Open" class="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-md hover:scale-105">
           <span class="material-symbols-outlined text-[18px]">play_arrow</span>
@@ -1196,11 +1211,18 @@ export function fmtSpan(sec) {
   return h ? `${h}h ${m % 60}m` : `${m}m`;
 }
 
-/// The two cards that only exist on this machine: what you hearted and
-/// whatever is queued right now.
+/// The cards that only exist on this machine: what you hearted, whatever is
+/// queued right now, your most-played of the last 30 days, and the hearts
+/// with no vault copy yet. Recomputed on every renderPlaylists(), so counts
+/// and rows are never stale (showView re-renders on each visit).
 export function plSyntheticEntries() {
   const liked = loadFavs();
   const queued = queue.map((q) => q.track).filter(Boolean);
+  const top = topPlayedTracks(loadPlays());
+  const catchup = favsNotSaved(
+    liked,
+    (vaultEntries || []).map((e) => e.id),
+  );
   return [
     {
       p: {
@@ -1228,13 +1250,39 @@ export function plSyntheticEntries() {
       tag: "Temporary Queue",
       label: "Active Session",
     },
+    {
+      p: {
+        id: "pl-top30",
+        synthetic: "top30",
+        title: "Top 50 · Last 30 Days",
+        blurb: "Your most-played tracks of the last 30 days — rebuilt every visit.",
+        count: top.length,
+        icon: "trending_up",
+        tracks: top,
+      },
+      tag: "Auto-generated",
+      label: "Your Habits",
+    },
+    {
+      p: {
+        id: "pl-catchup",
+        synthetic: "catchup",
+        title: "Favourited, Not Downloaded",
+        blurb: "Hearts with no offline copy yet — grab them before you go offline.",
+        count: catchup.length,
+        icon: "cloud_download",
+        tracks: catchup,
+      },
+      tag: "Auto-generated",
+      label: "Catch Up",
+    },
   ];
 }
 
 export function plBuckets() {
   const feed = homeFeed || { playlists: [], charts: [] };
   // ponytail: created + saved playlists are Library-only (user's call) — the
-  // Playlists screen is the JioSaavn feed plus the two auto-generated cards.
+  // Playlists screen is the JioSaavn feed plus the four auto-generated cards.
   return {
     synthetic: plSyntheticEntries(),
     curated: (feed.playlists || []).map((p) => ({ p, tag: "Curated", label: "" })),
@@ -1345,11 +1393,12 @@ export function moreHomeCharts() {
 export function renderHomeAlbums() {
   const box = $("#home-albums");
   if (!box || !homeFeed) return;
-  const shown = homeFeed.albums.slice(0, homeAlbumsShown);
+  const grouped = groupLangAlbums(homeFeed.albums);
+  const shown = grouped.slice(0, homeAlbumsShown);
   box.innerHTML = shown.length ? shown.map((a) => ddCard("album", a)).join("") : GRID_EMPTY;
   const more = $("#home-releases-all");
   if (more) {
-    const left = homeFeed.albums.length - shown.length;
+    const left = grouped.length - shown.length;
     more.classList.toggle("hidden", left <= 0);
     const lbl = more.querySelector("span");
     if (lbl) lbl.textContent = left > 0 ? `More Releases (${left})` : "View All Releases";
@@ -1419,7 +1468,7 @@ export function renderLibrary() {
   // Groups: playlists (created + saved) stay their own section; albums/movies
   // and artists get theirs, each opening its complete detail view on click.
   const pls = lib.filter((p) => !p.kind || p.kind === "playlist");
-  const albums = lib.filter((p) => p.kind === "album");
+  const albums = groupLangAlbums(lib.filter((p) => p.kind === "album"));
   const artists = lib.filter((p) => p.kind === "artist");
   box.innerHTML = pls.length
     ? pls
@@ -1485,6 +1534,12 @@ export function wireDdGrid(sel) {
       subtitle: card.dataset.ddSub,
       image: card.dataset.ddImg,
     };
+    // Merged language-variant card: carry every variant token so the detail
+    // loads all languages, not just the first.
+    if (card.dataset.ddKind !== "playlist") {
+      const v = variantsFor(item.token);
+      if (v) item.tokens = v.map((x) => x.token);
+    }
     // No token (payload oddity) ? fall back to a real search instead of dead click.
     if (!item.token) {
       doSearch({ query: item.title || "" });
@@ -1673,6 +1728,8 @@ $("#dd-releases")?.addEventListener("click", (e) => {
     subtitle: card.dataset.ddSub,
     image: card.dataset.ddImg,
   };
+  const v = variantsFor(item.token);
+  if (v) item.tokens = v.map((x) => x.token);
   if (!item.token) {
     doSearch({ query: item.title || "" });
     return;

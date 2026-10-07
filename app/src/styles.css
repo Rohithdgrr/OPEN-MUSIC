@@ -4723,7 +4723,7 @@ select:focus,
   height: calc(100% - 10px);
   margin: 5px;
   box-sizing: border-box;
-  border-radius: 26px !important;
+  border-radius: 32px !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
   overflow: hidden !important;
@@ -5038,15 +5038,16 @@ select:focus,
 .tm-widget__side {
   display: flex;
   align-items: center;
-  gap: 0.125rem;
+  justify-content: center;
+  gap: 0.375rem;
   min-width: 0;
 }
 .tm-widget__side--end {
-  justify-content: flex-end;
+  justify-content: center;
 }
 .tm-widget__btn {
-  width: 2rem;
-  height: 2rem;
+  width: 1.75rem;
+  height: 1.75rem;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -5093,7 +5094,7 @@ select:focus,
 }
 .tm-widget__voltrack {
   position: relative;
-  width: 3.5rem;
+  width: 2.5rem;
   height: 0.5rem;
   display: flex;
   align-items: center;
@@ -5270,14 +5271,14 @@ select:focus,
   padding-top: 0;
   padding-bottom: 0.15rem;
 }
-/* The 1fr side column strands shuffle/prev at its left edge, leaving a dead
-   zone before the play button: pack them against the centre instead. */
+/* Both sides centre their groups, so the 1fr columns stay equal and the
+   play button sits at true centre with clear air to prev/next. */
 .tm-widget__side:first-child {
-  justify-content: flex-end;
+  justify-content: center;
 }
 .tm-widget__play {
-  width: 2.35rem;
-  height: 2.35rem;
+  width: 2.5rem;
+  height: 2.5rem;
   border-radius: 9999px;
   background: #ffffff;
   color: #09090b;
@@ -6385,19 +6386,20 @@ html.dark #hero > div > div:nth-child(2) {
   background-color: #121215 !important;
 }
 
-/* Forms, Inputs & Universal Dropdown Selects in Dark Mode */
-.dark input[type="text"],
+/* Forms, Inputs & Universal Dropdown Selects in Dark Mode (pill-nested
+   #search-input owns its container — exempt so it never draws a second box) */
+.dark input[type="text"]:not(#search-input),
 .dark input[type="search"],
-html.dark input[type="text"],
+html.dark input[type="text"]:not(#search-input),
 html.dark input[type="search"] {
   background-color: #16161a !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
   color: #ffffff !important;
 }
 
-.dark input[type="text"]:focus,
+.dark input[type="text"]:not(#search-input):focus,
 .dark input[type="search"]:focus,
-html.dark input[type="text"]:focus,
+html.dark input[type="text"]:not(#search-input):focus,
 html.dark input[type="search"]:focus {
   border-color: #ffffff !important;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12) !important;
@@ -7095,15 +7097,16 @@ html:not(.dark) button.bg-surface-container-lowest:hover {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), inset 0 1px 0 #ffffff !important;
 }
 
-/* 6. Form Inputs & Selects with Polished Borders */
-html:not(.dark) input[type="text"],
+/* 6. Form Inputs & Selects with Polished Borders (pill-nested #search-input
+   owns its container — exempt so it never draws a second box inside it) */
+html:not(.dark) input[type="text"]:not(#search-input),
 html:not(.dark) input[type="search"] {
   background: #ffffff !important;
   border: 1px solid rgba(0, 0, 0, 0.1) !important;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03) !important;
 }
 
-html:not(.dark) input[type="text"]:focus,
+html:not(.dark) input[type="text"]:not(#search-input):focus,
 html:not(.dark) input[type="search"]:focus {
   border-color: #000000 !important;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06), inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;

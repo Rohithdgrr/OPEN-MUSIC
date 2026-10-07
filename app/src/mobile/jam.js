@@ -19,7 +19,7 @@
 // switchTab is defined by the generated `screens/nowplaying.js`, which the
 // router loads as a classic script — it is the tab switcher the tab buttons
 // call, so this module moves the deck with the same function.
-import { invoke, toast } from "./shared.js";
+import { FAVS_KEY, invoke, load, PLAYS_KEY, toast } from "./shared.js";
 import { paintQr } from "../qrview.js";
 import { onPaint, playerState, playList, queueHistory, queueUpNext, repaint, seek, toggle } from "./player.js";
 import {
@@ -282,12 +282,19 @@ function applyFrame(frame) {
     case "presence":
       paintJam();
       return;
-    case "error":
+    case "error": {
+      const wasJoining = joining;
       joining = false;
       // Verbatim (§8): the server's own words are the diagnosis.
       toast(frame.message || String(frame.code || "Room error"), 5000, "error");
       if (room.role === "idle") socialChrome = false;
+      // D2, layer 2: a refusal can arrive over an already-connected socket
+      // (wrong code, room full) and so never passes through the backend's own
+      // failure exits. Ask it to drop the half-open guest mode, or the next
+      // join is refused with "Leave the current room…" while the UI reads Solo.
+      if (wasJoining) invoke("room_close").catch(() => {});
       break;
+    }
     case "bye":
       joining = false;
       if (frame.reason && frame.reason !== "left") toast(String(frame.reason), 4000);
@@ -343,14 +350,24 @@ function hostTick() {
   if (room.role !== "host") return;
   const st = playerState();
   const t = st.track;
-  if (!t || !t.id || st.paused) return;
+  if (!t || !t.id) return;
+  // D4: the key check comes *before* the pause guard. A paused host has no
+  // playhead to correct, but it still has a pause (or a resume, or a track
+  // change made while paused) to announce — the old order returned first and
+  // withheld all three until playback resumed.
+  const key = `${t.id}|${st.paused ? "paused" : "playing"}`;
+  if (key !== hostKey) {
+    broadcastPlayback();
+    return;
+  }
+  if (st.paused) return;
   const expected = expectedPositionMs({
     positionMs: hostSentPos,
     playing: true,
     arrivedAt: hostSentAt,
   });
   const actual = Math.round((st.pos || 0) * 1000);
-  if (Math.abs(actual - (expected || 0)) > DRIFT_TOLERANCE_MS || `${t.id}|playing` !== hostKey) {
+  if (Math.abs(actual - (expected || 0)) > DRIFT_TOLERANCE_MS) {
     broadcastPlayback();
   }
 }
@@ -371,10 +388,15 @@ function guestApply() {
     const key = `${pb.at}|${pb.trackId}`;
     if (followKey !== key) {
       followKey = key;
-      followGuest(pb);
+      void followGuest(pb);
     }
     return;
   }
+
+  // We are on the host's track, so "not on this device" is false — §8 says the
+  // note must go even though the resolve that would have cleared it (D3) never
+  // runs on this path.
+  mirrorNote = "";
 
   if (pb.playing && st.paused) toggle();
   else if (!pb.playing && !st.paused) toggle();
@@ -392,19 +414,47 @@ function guestApply() {
   paintJam();
 }
 
-/// Guest track resolution (§12 M1): match the host's id against the local
-/// current track, then history + up-next. Not found → mirror the metadata and
-/// say so; never claim to be playing it (§4.5).
-function followGuest(pb) {
+/// Guest track resolution (§12 M1, D1): the host's id is matched against the
+/// live queue first (history, current, up-next), then against the same extra
+/// sources the desktop `social.js:328 findLocalTrack()` falls back to — play
+/// history, favourites and the offline vault. Only a genuine miss mirrors the
+/// metadata and says so; never claim to be playing it (§4.5).
+///
+/// The vault is asked for over IPC rather than read from `tm-vault-ids`,
+/// because that key stores **ids only** while the Rust ledger's rows carry the
+/// real `id/title/artist/image/duration_secs` a queue entry needs.
+/// `t.id && t.title` is the desktop's own filter, so id-only rows can never be
+/// handed to `playList`.
+async function followGuest(pb) {
   const st = playerState();
   const list = [
     ...queueHistory(),
     ...(st.track ? [st.track] : []),
     ...queueUpNext(),
   ];
-  const idx = list.findIndex((t) => t && t.id === pb.trackId);
+  let idx = list.findIndex((t) => t && t.id && String(t.id) === String(pb.trackId));
+  if (idx < 0) {
+    const extras = [...load(PLAYS_KEY, []), ...load(FAVS_KEY, [])];
+    try {
+      if (invoke) {
+        const vault = await invoke("list_downloads");
+        extras.push(...((vault && vault.entries) || []));
+      }
+    } catch {
+      /* offline or no vault: the other two sources still count */
+    }
+    const hit = extras.find((t) => t && t.id && t.title && String(t.id) === String(pb.trackId));
+    if (hit) {
+      list.push(hit);
+      idx = list.length - 1;
+    }
+  }
   if (idx < 0) {
     mirrorNote = `Host is on “${pb.title || pb.trackId}” — not on this device`;
+    // D3: the sync this badge claims is over in the same frame it stops — the
+    // last drift described a playhead we are no longer following.
+    appliedFrames = 0;
+    lastDrift = null;
     paintJam();
     return;
   }
@@ -511,22 +561,30 @@ function paintChat() {
   }
   for (const entry of room.chat) {
     const row = document.createElement("div");
-    row.className = entry.mine ? "flex items-start gap-2 flex-row-reverse" : "flex items-start gap-2";
+    row.className = entry.mine ? "flex items-end gap-2 flex-row-reverse" : "flex items-end gap-2";
 
     const avatar = document.createElement("div");
-    avatar.className = "w-6 h-6 rounded-full bg-primary flex items-center justify-center text-on-primary text-[9px] font-mono font-semibold shrink-0";
+    avatar.className = entry.mine
+      ? "w-6 h-6 rounded-full bg-primary text-on-primary text-[9px] font-mono font-bold flex items-center justify-center shadow-xs shrink-0 mb-0.5"
+      : "w-6 h-6 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface text-[9px] font-mono font-bold flex items-center justify-center shrink-0 mb-0.5";
     avatar.textContent = entry.mine ? "YOU" : initialsOf(entry.from && entry.from.name);
 
     const bubble = document.createElement("div");
-    bubble.className = "flex flex-col bg-surface-container-low px-2.5 py-1.5 rounded-xl border border-outline-variant/20 max-w-[85%]";
-    const who = document.createElement("span");
-    who.className = "font-label-sm text-[9px] text-secondary font-medium";
-    who.textContent = entry.mine ? "You" : (entry.from && entry.from.name) || "Guest";
-    const text = document.createElement("span");
-    text.className = "font-body-sm text-[12px] text-on-surface whitespace-pre-wrap break-words";
-    text.textContent = entry.text; // textContent, never innerHTML
-    bubble.append(who, text);
+    bubble.className = entry.mine
+      ? "flex flex-col bg-primary text-on-primary px-3 py-1.5 rounded-2xl rounded-br-xs max-w-[85%] shadow-xs"
+      : "flex flex-col bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 px-3 py-1.5 rounded-2xl rounded-bl-xs max-w-[85%] shadow-xs";
 
+    const who = document.createElement("span");
+    who.className = entry.mine ? "font-label-sm text-[8px] text-white/70 font-medium" : "font-label-sm text-[8px] text-secondary font-medium";
+    who.textContent = entry.mine ? "You" : (entry.from && entry.from.name) || "Guest";
+
+    const text = document.createElement("span");
+    text.className = entry.mine
+      ? "font-body-sm text-[12px] text-white leading-relaxed whitespace-pre-wrap break-words"
+      : "font-body-sm text-[12px] text-on-surface leading-relaxed whitespace-pre-wrap break-words";
+    text.textContent = entry.text; // textContent, never innerHTML
+
+    bubble.append(who, text);
     row.append(avatar, bubble);
     list.append(row);
   }
@@ -581,8 +639,23 @@ function paintJam() {
   const dot = el("headerModeDot");
   if (dot) {
     dot.className = social
-      ? "w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse shrink-0"
-      : "w-1.5 h-1.5 rounded-full bg-secondary shrink-0";
+      ? "w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse shrink-0 inline-block"
+      : "w-1.5 h-1.5 rounded-full bg-secondary shrink-0 hidden";
+  }
+  const soloTab = el("modeSoloTab");
+  const socialTab = el("modeSocialTab");
+  if (soloTab && socialTab) {
+    if (social) {
+      soloTab.className = "px-3.5 py-1 rounded-full font-label-md text-[11px] font-semibold transition-all duration-200 text-secondary hover:text-on-surface active:scale-95";
+      soloTab.setAttribute("aria-selected", "false");
+      socialTab.className = "px-3.5 py-1 rounded-full font-label-md text-[11px] font-semibold transition-all duration-200 bg-primary text-on-primary shadow-xs active:scale-95 flex items-center gap-1.5";
+      socialTab.setAttribute("aria-selected", "true");
+    } else {
+      soloTab.className = "px-3.5 py-1 rounded-full font-label-md text-[11px] font-semibold transition-all duration-200 bg-primary text-on-primary shadow-xs active:scale-95";
+      soloTab.setAttribute("aria-selected", "true");
+      socialTab.className = "px-3.5 py-1 rounded-full font-label-md text-[11px] font-semibold transition-all duration-200 text-secondary hover:text-on-surface active:scale-95 flex items-center gap-1.5";
+      socialTab.setAttribute("aria-selected", "false");
+    }
   }
 
   show(el("jamSessionBanner"), social, "flex");
@@ -642,7 +715,35 @@ function wireControls() {
   const toggleBtn = el("modeToggleBtn");
   if (toggleBtn && !toggleBtn.dataset.jamWired) {
     toggleBtn.dataset.jamWired = "1";
-    toggleBtn.addEventListener("click", openModeSheet);
+    toggleBtn.addEventListener("click", (e) => {
+      // If clicking directly on modeToggleBtn container rather than buttons:
+      if (e.target === toggleBtn) openModeSheet();
+    });
+  }
+
+  const soloTab = el("modeSoloTab");
+  if (soloTab && !soloTab.dataset.jamWired) {
+    soloTab.dataset.jamWired = "1";
+    soloTab.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setSocial(false);
+    });
+  }
+
+  const socialTab = el("modeSocialTab");
+  if (socialTab && !socialTab.dataset.jamWired) {
+    socialTab.dataset.jamWired = "1";
+    socialTab.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!socialChrome && room.role === "idle") {
+        setSocial(true);
+        if (typeof switchTab === "function") switchTab("jam-data");
+      } else if (room.role !== "idle") {
+        if (typeof switchTab === "function") switchTab("jam-data");
+      } else {
+        openModeSheet();
+      }
+    });
   }
 
   for (const id of ["copyUriBtn", "jamInviteCopy"]) {
@@ -679,16 +780,24 @@ function wireControls() {
       }
     });
   }
+
+  // Quick reaction buttons in room chat
+  const reactBtns = document.querySelectorAll("#jamChatReactions .chat-react-btn");
+  reactBtns.forEach((btn) => {
+    if (!btn.dataset.jamWired) {
+      btn.dataset.jamWired = "1";
+      btn.addEventListener("click", () => {
+        const text = btn.dataset.react || btn.textContent.trim();
+        sendChatText(text);
+      });
+    }
+  });
 }
 
-function sendChat() {
-  const input = el("jamChatInput");
-  const text = (input && input.value ? input.value : "").trim();
+function sendChatText(text) {
+  text = (text || "").trim();
   if (!text) return;
-  if (input) input.value = "";
   if (room.role === "idle") {
-    // No room: this device keeps the line, and says so rather than pretending
-    // a room heard it (the desktop shell does the same).
     room = reduceRoom({ ...room, selfId: "me" }, {
       t: "chat",
       from: { id: "me", name: "You" },
@@ -699,16 +808,40 @@ function sendChat() {
     toast("Not in a room — the message stayed on this device", 3500);
     return;
   }
-  // In a room the server relays and echoes, so the line is drawn exactly once,
-  // from that frame (§5). A refusal (rate limit) comes back as an `error` frame.
   invoke("room_chat", { text }).catch((e) => {
     toast(String(e).slice(0, 160), 5000, "error");
-    if (input) input.value = text;
   });
+}
+
+function sendChat() {
+  const input = el("jamChatInput");
+  const text = (input && input.value ? input.value : "").trim();
+  if (!text) return;
+  if (input) input.value = "";
+  sendChatText(text);
+}
+
+/// D4: the desktop host's `play`/`pause`/`seeked` listeners
+/// (`social.js:702-706`) ported to the shell `<audio>`. The reordered tick
+/// already reaches guests within 1 s; these make it immediate and, unlike the
+/// tick, they also carry a **seek made while paused** — a paused playhead does
+/// not move, so no drift check can ever notice that one.
+/// Wired once: the element belongs to the shell (`#audio`), not to the screen
+/// template the router rebuilds.
+function wireHostAudio() {
+  const audio = el("audio");
+  if (!audio || audio.dataset.jamHostWired) return;
+  audio.dataset.jamHostWired = "1";
+  for (const ev of ["play", "pause", "seeked"]) {
+    audio.addEventListener(ev, () => {
+      if (room.role === "host") broadcastPlayback();
+    });
+  }
 }
 
 function mountJam() {
   wireControls();
+  wireHostAudio();
   paintJam();
   repaint();
 }

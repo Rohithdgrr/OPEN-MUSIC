@@ -61,7 +61,7 @@ tailwind.config = {
         "DEFAULT": "0.125rem",
         "lg": "0.25rem",
         "xl": "0.5rem",
-        "full": "0.75rem"
+        "full": "9999px"
       },
       spacing: {
         "gutter": "0.75rem",
@@ -125,8 +125,8 @@ function switchTab(targetTab) {
     // (P25) — dropping it flashed them in Solo until the next repaint.
     const roomOnly = btn.classList.contains("hidden");
     const base = active
-      ? "tab-btn flex-1 bg-primary text-on-primary py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 shadow-xs whitespace-nowrap transition-all"
-      : "tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1 px-1.5 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors";
+      ? "tab-btn flex-1 bg-primary text-on-primary py-1.5 px-2 rounded-full font-label-md text-[11px] font-semibold flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap transition-all"
+      : "tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors";
     btn.className = roomOnly ? `${base} hidden` : base;
   });
 }

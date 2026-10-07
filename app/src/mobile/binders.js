@@ -50,9 +50,6 @@ import {
   loadFollows,
   isFollowing,
   toggleFollow,
-  onRepeatMix,
-  recentlyPlayed,
-  dailyMix,
   dataSaver,
   setDataSaver,
   effStreamWifi,
@@ -89,13 +86,30 @@ import { importCsvToPlaylist, readCsvFile } from "../importer.js";
 import { netMode } from "./net.js";
 import { licensesHTML, aboutHTML, termsHTML } from "./legal.js";
 import { trackMenu, openSheet, detailsSheet } from "./menus.js";
+// The taste engine (pure + unit-tested in tests/recommend.test.mjs). Home's
+// Made-for-you shelves are a windowed projection of one profile built here.
+import { buildProfile, explain, shelfPlan, trackLangs } from "./recommend.js";
+import { groupLangAlbums, variantsFor } from "../albumgroup.js";
 
 const main = () => document.querySelector("#screen main");
 
 // ------------------------------------------------- search rank + recovery -
 // Ordering lives in rank.js (pure + unit-tested); this shell owns the chip
 // that cycles it and the typo toast. Both reuse the desktop's helpers.
-import { rankTracks, nextSort, SORT_LABEL } from "./rank.js";
+import { nextSort, SORT_LABEL } from "./rank.js";
+// Query understanding, ranking, highlighting and the cache the search screen
+// runs on — pure logic, unit-tested in tests/mobile-searchkit.test.mjs.
+import {
+  createLru,
+  highlight,
+  parseSearch,
+  pickTop,
+  queryTokens,
+  rankForQuery,
+  tasteContext,
+  understoodLabels,
+  uniqueById,
+} from "./searchkit.js";
 let searchSort = "relevance";
 
 /// Nothing matched: ask the catalog for nearby titles and offer the closest as
@@ -205,6 +219,14 @@ export function entityNav(kind, it) {
   if (item.token) q.set("token", item.token);
   if (item.id) q.set("id", item.id);
   if (item.local) q.set("local", "1"); // local playlist: read from LIBRARY_KEY
+  // Merged language-variant card: every sibling token rides along so the
+  // detail can load all languages, not just the first.
+  const v = kind === "album" && (item.variantTokens || variantsFor(item.token));
+  if (v && v.length > 1) {
+    q.set("tokens", v.map((x) => x.token || x).filter(Boolean).join(","));
+    const langs = v.map((x) => x.language).filter(Boolean).join(",");
+    if (langs) q.set("langs", langs);
+  }
   for (const [k, v] of [
     ["title", item.title],
     ["subtitle", item.subtitle],
@@ -266,6 +288,84 @@ function wireRowFilter(input, container, rowSel) {
   });
 }
 
+// --------------------------------------------------------------- made for you
+// Home's personal shelves: the hybrid recommender (recommend.js) reads the
+// local logs — plays, likes, vault, saved playlists, country + language picks
+// — and hands back an ordered shelf plan. Runs *before* the feed guard in
+// mountHome: it needs no network, so an offline cold boot still gets them.
+async function renderMadeForYou(m) {
+  const root = m.querySelector("section")?.parentElement;
+  if (!root) return;
+
+  // Vault rows are the "intent to own" signal, and they are what the
+  // Downloaded shelf shows. Best effort: a preview with no IPC just loses it.
+  let downloads = [];
+  if (invoke) {
+    try {
+      downloads = (await invoke("list_downloads")).entries || [];
+    } catch (e) {
+      console.warn("made-for-you: no vault", e);
+    }
+  }
+
+  // Saved library entries are albums/playlists; only the locally materialised
+  // ones carry their tracks (Spotify CSV imports land here), and those tracks
+  // are the library signal buildProfile asks for.
+  const saved = load(LIBRARY_KEY, []).flatMap((e) => (e && e.local && Array.isArray(e.tracks) ? e.tracks : []));
+
+  // The SQLite ledger is the analytics layer: play counters that survive
+  // restarts, a longer history than the 100-row localStorage log, and likes
+  // mirrored for offline. Best effort — without IPC the localStorage signals
+  // still carry the shelves.
+  let ledger = [];
+  try {
+    const db = await import("../store_db.js");
+    const [most, recent, liked] = await Promise.all([db.getMostPlayed(120), db.getRecent(60), db.getStoredFavs(200)]);
+    ledger = [...most, ...recent, ...liked];
+  } catch (e) {
+    console.warn("made-for-you: no store ledger", e);
+  }
+
+  const profile = buildProfile({
+    plays: load(PLAYS_KEY, []),
+    favs: [...load(FAVS_KEY, []), ...ledger.filter((r) => r && r.is_fav)],
+    downloads,
+    library: saved,
+    extra: ledger,
+    country: load(COUNTRY_KEY, ""),
+  });
+  // An explicit language pick outranks what the log merely leans towards.
+  const picked = prefLangs()[0] || "";
+  const plan = shelfPlan(profile, { limit: 10, language: picked });
+
+  // Reconcile against the DOM: a remount must not stack sections, and a
+  // profile that shrank must not leave a shelf with nothing behind it.
+  for (const stale of [...root.querySelectorAll("[data-shelf]")]) {
+    if (stale.dataset.shelf.startsWith("tm-shelf-mfy-") && !plan.some((s) => `tm-shelf-mfy-${s.id}` === stale.dataset.shelf)) {
+      stale.remove();
+    }
+  }
+
+  for (const shelf of plan) {
+    const key = `tm-shelf-mfy-${shelf.id}`;
+    const listName = key;
+    let sec = root.querySelector(`[data-shelf="${key}"]`);
+    if (!sec) {
+      sec = document.createElement("section");
+      sec.dataset.shelf = key;
+      sec.className = "flex flex-col space-y-space-sm";
+      const why = explain(profile, shelf);
+      sec.innerHTML = `<div class="flex flex-col space-y-0.5"><div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">${esc(shelf.title)}</h2><span class="font-label-mono text-[9.5px] uppercase tracking-widest text-secondary">${esc(shelf.tag)}</span></div>${why ? `<p class="font-body-sm text-[11.5px] text-secondary truncate">${esc(why)}</p>` : ""}</div><div class="flex flex-col gap-1" data-cards></div>`;
+      root.appendChild(sec);
+    }
+    setList(listName, shelf.tracks);
+    const box = sec.querySelector("[data-cards]");
+    if (box) box.innerHTML = shelf.tracks.map((t, i) => rowHTML(listName, i, t)).join("");
+  }
+
+  paintFavs();
+}
+
 async function mountHome() {
   const m = main();
   if (!m) return;
@@ -278,6 +378,10 @@ async function mountHome() {
   }
   const dateEl = m.querySelector("section span.uppercase");
   if (dateEl) dateEl.textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+
+  // Personal shelves first: local logs only, so they still render when the
+  // launch feed fails below and this mount would otherwise bail out.
+  await renderMadeForYou(m);
 
   if (!invoke) return;
   let feed = null;
@@ -463,7 +567,7 @@ async function mountHome() {
   // Two shelves the feed already returns: new releases and daily playlists
   const root = m.querySelector("section")?.parentElement;
   const shelves = [
-    ["tm-shelf-albums", "New Releases", (feed.albums || []).map((a, i) => plCardHTML(a, i, entityNav("album", a)))],
+    ["tm-shelf-albums", "New Releases", groupLangAlbums(feed.albums || []).map((a, i) => plCardHTML(a, i, entityNav("album", a)))],
     ["tm-shelf-daily", "Fresh Playlists", (feed.daily || []).map((p, i) => plCardHTML(p, i, entityNav("playlist", p)))],
   ];
   for (const [key, title, cards] of shelves) {
@@ -484,34 +588,10 @@ async function mountHome() {
     if (box) box.innerHTML = cards.slice(0, 12).join("");
   }
 
-  // Made For You from the local play log (Spotify parity). Each shelf owns a
-  // setList entry so row taps play through the global delegation; empty
-  // shelves are dropped instead of standing with mock cards.
-  if (root) {
-    const allPlays = load(PLAYS_KEY, []);
-    const mfy = [
-      ["tm-shelf-onrepeat", "mfy-repeat", "On Repeat", onRepeatMix(allPlays, 10)],
-      ["tm-shelf-recently", "mfy-recent", "Recently Played", recentlyPlayed(allPlays, 10)],
-      ["tm-shelf-dailymix", "mfy-daily", "Daily Mix", dailyMix(allPlays, 12)],
-    ];
-    for (const [key, listName, title, tracks] of mfy) {
-      let sec = root.querySelector(`[data-shelf="${key}"]`);
-      if (!tracks.length) {
-        sec?.remove();
-        continue;
-      }
-      if (!sec) {
-        sec = document.createElement("section");
-        sec.dataset.shelf = key;
-        sec.className = "flex flex-col space-y-space-sm";
-        sec.innerHTML = `<div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">${title}</h2></div><div class="flex flex-col gap-1" data-cards></div>`;
-        root.appendChild(sec);
-      }
-      setList(listName, tracks);
-      const box = sec.querySelector("[data-cards]");
-      if (box) box.innerHTML = tracks.map((t, i) => rowHTML(listName, i, t)).join("");
-    }
-  }
+  // Made For You is no longer built here: renderMadeForYou() runs before the
+  // feed guard above (see docs/recommendations.md §4) so personal shelves
+  // survive an offline cold boot, and it renders all ten mixes from
+  // recommend.js instead of the three play-counter shelves.
 
   // Genre/mood grid fallback: the fragment may not ship one — inject eight
   // chips wired exactly like the design's own genre cards (search the term).
@@ -550,70 +630,444 @@ async function mountHome() {
 // handle to disconnect — each mount replaces it with its own button.
 let smMoreIO = null;
 
+// ------------------------------------------------------------- search caches
+// Three tiers, cheapest first, all keyed by query + category + sort:
+//   1. SEARCH_MEM — in-process LRU. Back-navigation, chip switches and
+//      retyping a query repaint with no IPC at all.
+//   2. store.db `search_cache` (store_db.js) — 6 h TTL, capped at 200 keys.
+//      Survives restarts and is what makes offline search answer.
+//   3. localStorage — a one-query snapshot, the last resort when even the
+//      store is unavailable (browser preview, disk error).
+const SEARCH_MEM = createLru({ max: 80, ttlMs: 30 * 60 * 1000 });
+const SUG_MEM = createLru({ max: 160, ttlMs: 15 * 60 * 1000 });
+const RESULT_FRESH_MS = 2 * 60 * 1000; // keep a page this long before revalidating
+const LIVE_DEBOUNCE_MS = 320; // search-as-you-type delay
+const SUG_DEBOUNCE_MS = 220;
+const UPGRADE_MS = 700; // idle time before the mixed shelves are fetched
+const MIXED_SONGS = 6; // song rows shown under "Top result" in the All view
+const SNAP_KEY = "tm-search-snap";
+
+// "Click away closes the suggestions" as ONE listener for the whole shell.
+// A per-mount listener would be re-added on every search navigation and then
+// never removed, leaking one closure per visit; this points at whichever mount
+// is on screen instead.
+let smSuggestCtx = null;
+document.addEventListener("click", (e) => {
+  const ctx = smSuggestCtx;
+  if (!ctx || ctx.box.classList.contains("hidden")) return;
+  if (e.target.closest("#m-suggest") || e.target.closest("#search-input")) return;
+  ctx.hide();
+});
+
 async function mountSearch(query) {
   const m = main();
   if (!m) return;
-  const q = (query && query.get("q")) || "";
-  const cat = (query && query.get("cat")) || "all";
+  const q0 = (query && query.get("q")) || "";
+  const cat0 = (query && query.get("cat")) || "all";
   // The sort chip rides in the URL: `go()` with an unchanged hash never
   // remounts, so a chip that only advanced module state looked dead.
   const sortParam = query && query.get("s");
   if (sortParam && SORT_LABEL[sortParam]) searchSort = sortParam;
-  // Declared before the chip wiring below: the sort chip's guard reads it, and
-  // a const is in its temporal dead zone until this line.
+  // Plural chip -> singular backend kind. Every other chip (all / tracks /
+  // hires) is a song search.
   const entityKinds = { albums: "album", artists: "artist", playlists: "playlist" };
+  const isEntityCat = (cat) => !!entityKinds[cat];
+  const navOf = (it, k) => entityNav(k, it);
+
   const input = document.getElementById("search-input");
-  if (input) input.value = q;
+  if (input) input.value = q0;
   // The field is white on a near-white surface; a hairline makes it read as an
   // input instead of empty space.
   const fieldWrap = input && input.closest(".relative");
   if (fieldWrap) fieldWrap.classList.add("border", "border-surface-container-high");
 
-  // Commit the typed query (Enter, or a recommendation tap) as one hash. The
-  // active category rides along so the next screen filters the same way.
-  const commit = (text) => {
-    const next = String(text == null ? (input ? input.value : q) : text).trim();
-    if (!next) return;
-    hideSug();
-    go(`search?q=${encodeURIComponent(next)}${cat !== "all" ? `&cat=${cat}` : ""}`);
+  // ---- live view state (a live search repaints in place, no remount) ------
+  let curQ = q0;
+  let curCat = cat0;
+  let curSort = searchSort;
+  let parsed = parseSearch(q0);
+  let tokens = queryTokens(parsed);
+  let results = []; // songs, or entity cards for an entity chip
+  let page = 1;
+  let pageFull = false;
+  let shelves = { album: [], artist: [], playlist: [] };
+  let statusNote = ""; // "offline copy" and friends, shown in the status line
+  let topPick = null; // memoized Spotify-style "Top result"
+  let topKey = "";
+  let seq = 0; // supersedes in-flight searches
+  let sugSeq = 0; // supersedes in-flight autocomplete
+  let sugIndex = -1;
+  let liveTimer = 0;
+  let sugTimer = 0;
+  let upgradeTimer = 0;
+
+  // ------------------------------------------------------------- cache tiers
+  const cacheKey = (q, cat, sort) => `${cat}|${sort}|${String(q).toLowerCase()}`;
+  const cacheKeyNow = () => cacheKey(curQ, curCat, curSort);
+  let dbPromise = null;
+  const db = () => (dbPromise || (dbPromise = import("../store_db.js").catch(() => null)));
+  const diskGet = async (key) => {
+    const mod = await db();
+    if (!mod || !mod.searchCacheGet) return null;
+    try {
+      return await mod.searchCacheGet(`sm:${key}`);
+    } catch {
+      return null;
+    }
+  };
+  const diskPut = (key, value) => {
+    db()
+      .then((mod) => mod && mod.searchCachePut(`sm:${key}`, value).catch(() => {}))
+      .catch(() => {});
+  };
+  const cacheSongs = (list) => {
+    if (isEntityCat(curCat) || !list.length) return;
+    db()
+      .then((mod) => mod && mod.cacheSongs(list.slice(0, 50)).catch(() => {}))
+      .catch(() => {});
+  };
+  const saveSnap = (key, payload) => save(SNAP_KEY, { key, ...payload, at: Date.now() });
+  const readSnap = (key) => {
+    const snap = load(SNAP_KEY, null);
+    return snap && snap.key === key ? snap : null;
   };
 
-  // --- inline suggestions ------------------------------------------------
-  // One debounced autocomplete call per keystroke burst; the sequence token
-  // stops a slow response from painting over a newer query.
+  // ------------------------------------------------------------ DOM anchors
+  const topSec = [...m.querySelectorAll("section")].find((s) => s.textContent.includes("Top result"));
+  let box = document.getElementById("sm-results");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "sm-results";
+    (topSec || m.firstElementChild).insertAdjacentElement("afterend", box);
+  }
+  box.setAttribute("aria-live", "polite");
+
+  const ROW_SKELETON = Array.from(
+    { length: 6 },
+    () =>
+      '<div class="flex items-center gap-3 p-2.5"><div class="w-11 h-11 rounded-lg tm-skeleton shrink-0"></div><div class="flex flex-col gap-1.5 flex-1 min-w-0"><div class="h-3.5 w-2/5 rounded tm-skeleton"></div><div class="h-3 w-1/4 rounded tm-skeleton"></div></div></div>',
+  ).join("");
+  const GRID_SKELETON = `<div class="grid grid-cols-2 gap-3">${Array.from(
+    { length: 6 },
+    () =>
+      '<div class="rounded-2xl border border-surface-container-high/70 p-2.5 space-y-2"><div class="aspect-square rounded-xl tm-skeleton"></div><div class="h-3.5 w-3/4 rounded tm-skeleton"></div><div class="h-3 w-1/2 rounded tm-skeleton"></div></div>',
+  ).join("")}</div>`;
+  const skeletonHTML = (cat) => (isEntityCat(cat) ? GRID_SKELETON : ROW_SKELETON);
+
+  /// What the search understood, said out loud — a stripped filter must be
+  /// visible rather than silently applied.
+  const statusText = () => {
+    if (!curQ) return "";
+    const labels = understoodLabels(parsed);
+    const tail = labels.length ? ` · ${esc(labels.join(" · "))}` : "";
+    const unit = isEntityCat(curCat) ? "result" : "song";
+    const want = esc(parsed.text || curQ);
+    if (!results.length) {
+      // The All chip can have shelves without a single song match.
+      const cards = shelves.album.length + shelves.artist.length + shelves.playlist.length;
+      if (curCat === "all" && cards) return `Top matches for “${want}”${tail}`;
+      return `No ${unit}s for “${want}”${tail}`;
+    }
+    const n = results.length;
+    return `${n} ${unit}${n === 1 ? "" : "s"} for “${want}”${tail}${statusNote ? ` · ${esc(statusNote)}` : ""}`;
+  };
+  const statusHTML = () => {
+    const text = statusText();
+    return text
+      ? `<div data-sm-status class="px-1 pt-2 pb-0.5 font-body-sm text-body-sm text-secondary">${text}</div>`
+      : "";
+  };
+  const emptyHTML = () => `<div class="flex flex-col items-center gap-2 py-8 px-4 text-center">
+    <span class="material-symbols-outlined text-[28px] text-secondary">search_off</span>
+    <span class="font-body-md text-body-md text-on-surface">No results for “${esc(curQ)}”</span>
+    <span class="font-body-sm text-body-sm text-secondary">Check the spelling, or try a different keyword.</span>
+  </div>`;
+
+  /// The design's spotlight card, wired to whatever the best match is. Kept
+  /// here (not in the fragment's script) so a chip switch or a live search can
+  /// repoint it without a remount.
+  const paintTopResult = (first, kind) => {
+    if (!topSec) return;
+    if (!first) {
+      topSec.classList.add("hidden");
+      return;
+    }
+    topSec.classList.remove("hidden");
+    if (first.image) paintArt(topSec.querySelector("img"), first.image);
+    const typeEl = [...topSec.querySelectorAll("span")].find((sp) => /^(song|album|artist|playlist)$/i.test(sp.textContent.trim()));
+    if (typeEl) typeEl.textContent = kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : "Song";
+    const h3 = topSec.querySelector("h3");
+    if (h3) h3.textContent = first.title || "";
+    const p = topSec.querySelector("p");
+    if (p) p.textContent = [first.artist || first.subtitle, first.year].filter(Boolean).join(" • ") || p.textContent;
+    // Anchor on the action buttons, not a class substring: the fragment's
+    // inner thumbnail is also "rounded-xl" and matched first, so data-list
+    // landed on a sibling of the Play button and the delegation never
+    // resolved a row (dead top-result Play/Favorite). `card` must be the
+    // container that actually wraps the buttons.
+    const card = (() => {
+      const btn = topSec.querySelector('button[aria-label="Play Song"], button[aria-label]');
+      return (btn && btn.closest("div.rounded-2xl, div[class*='rounded-']")) || topSec.querySelector('div[class*="rounded-xl"]');
+    })();
+    // A reused fragment can carry the previous query's wiring on the old
+    // thumbnail — strip it so only `card` resolves.
+    topSec.querySelectorAll("[data-list],[data-idx],[data-nav]").forEach((el) => {
+      if (el === card) return;
+      delete el.dataset.list;
+      delete el.dataset.idx;
+      delete el.dataset.nav;
+    });
+    if (card && kind) {
+      delete card.dataset.list;
+      delete card.dataset.idx;
+      card.dataset.nav = navOf(first, kind);
+    } else if (card) {
+      delete card.dataset.nav;
+      setList("topres", [first]);
+      card.dataset.list = "topres";
+      card.dataset.idx = "0";
+    }
+    // The card's Favorite button was static chrome: for songs it becomes a
+    // real favorite (the delegation resolves the card's track); entity
+    // results have no favorite concept, so it is hidden there.
+    const favBtn = topSec.querySelector('[aria-label="Favorite"]');
+    if (favBtn) {
+      const ic = favBtn.querySelector(".material-symbols-outlined");
+      if (kind || !card) {
+        favBtn.classList.add("hidden");
+        favBtn.removeAttribute("data-fav");
+        if (ic) delete ic.dataset.favIcon;
+      } else {
+        favBtn.classList.remove("hidden");
+        favBtn.dataset.fav = "";
+        if (ic) ic.dataset.favIcon = first.id || "";
+      }
+    }
+  };
+
+  /// One horizontal shelf of cards, with a "See all" that jumps to its chip.
+  const shelf = (title, cat, items) => {
+    if (!items || !items.length) return "";
+    const cards = items
+      .map((e, i) =>
+        cat === "artists" ? artistCardHTML(e, i, navOf(e, "artist")) : plCardHTML(e, i, navOf(e, entityKinds[cat])),
+      )
+      .join("");
+    return `<section class="flex flex-col gap-2">
+      <div class="flex items-center justify-between px-1">
+        <h2 class="font-headline-md text-[15px] font-bold text-on-surface tracking-tight">${esc(title)}</h2>
+        <button type="button" data-cat-jump="${cat}" class="font-label-sm text-label-sm text-secondary hover:text-on-surface font-semibold active:scale-95 transition-colors">See all</button>
+      </div>
+      <div class="flex gap-3 overflow-x-auto no-scrollbar -mx-gutter px-gutter pb-1">${cards}</div>
+    </section>`;
+  };
+
+  const paintLoading = () => {
+    box.className = isEntityCat(curCat) ? "flex flex-col gap-3" : "flex flex-col gap-1";
+    box.innerHTML = skeletonHTML(curCat);
+  };
+
+  /// Artists / albums / playlists chip: one grid of cards.
+  const paintEntityGrid = () => {
+    const kind = entityKinds[curCat];
+    paintTopResult(results[0], kind);
+    box.className = "flex flex-col gap-3";
+    if (!results.length) {
+      box.innerHTML = statusHTML() + emptyHTML();
+      paintFavs();
+      return;
+    }
+    box.innerHTML =
+      statusHTML() +
+      `<div class="grid grid-cols-2 gap-3">${(kind === "album" ? groupLangAlbums(results) : results)
+        .map((e, i) => (kind === "artist" ? artistCardHTML(e, i, navOf(e, "artist")) : plCardHTML(e, i, navOf(e, kind))))
+        .join("")}</div>`;
+    // The cards are shelf-sized (w-48/w-56), which overflows a half-width cell
+    // and overlaps the neighbour — in a grid they must fill the cell instead.
+    box.querySelectorAll("[data-pl-idx]").forEach((el) => {
+      el.classList.remove("w-48", "w-56");
+      el.classList.add("w-full");
+    });
+    paintFavs();
+  };
+
+  /// Songs chip (and Hi-Res): the top match plus a paged table.
+  const paintSongs = () => {
+    paintTopResult(results[0], "");
+    box.className = "flex flex-col gap-1";
+    if (!results.length) {
+      box.innerHTML = statusHTML() + emptyHTML();
+      paintFavs();
+      return;
+    }
+    setList("sres", results);
+    box.innerHTML =
+      statusHTML() +
+      results
+        .slice(1)
+        .map((t, i) => rowHTML("sres", i + 1, t, highlight(t.title, tokens)))
+        .join("");
+    paintFavs();
+  };
+
+  /// The "All" chip: Spotify's mixed answer — top result, a Songs preview and
+  /// one shelf per entity kind. `See all` jumps to the matching chip, which is
+  /// where pagination lives.
+  const paintMixed = () => {
+    const songs = results;
+    const cards = { album: shelves.album || [], artist: shelves.artist || [], playlist: shelves.playlist || [] };
+    if (topKey !== curQ) {
+      topPick = pickTop(parsed.text, { tracks: songs, albums: cards.album, artists: cards.artist, playlists: cards.playlist });
+      topKey = curQ;
+    }
+    const topKind = topPick && topPick.kind !== "song" ? topPick.kind : "";
+    paintTopResult(topPick && topPick.item, topKind);
+    const topSongId = topPick && topPick.kind === "song" ? String(topPick.item.id || "") : "";
+    const rows = songs.filter((t) => String(t.id || "") !== topSongId).slice(0, MIXED_SONGS);
+    setList("sres", rows);
+    box.className = "flex flex-col gap-4";
+    const songsSection = rows.length
+      ? `<section class="flex flex-col gap-1">
+          <div class="flex items-center justify-between px-1">
+            <h2 class="font-headline-md text-[15px] font-bold text-on-surface tracking-tight">Songs</h2>
+            <button type="button" data-cat-jump="tracks" class="font-label-sm text-label-sm text-secondary hover:text-on-surface font-semibold active:scale-95 transition-colors">See all</button>
+          </div>
+          ${rows.map((t, i) => rowHTML("sres", i, t, highlight(t.title, tokens))).join("")}
+        </section>`
+      : "";
+    const shelfHTML = shelf("Albums", "albums", groupLangAlbums(cards.album)) + shelf("Artists", "artists", cards.artist) + shelf("Playlists", "playlists", cards.playlist);
+    const body = songsSection + shelfHTML;
+    box.innerHTML = statusHTML() + (body || emptyHTML());
+    paintFavs();
+  };
+
+  const render = () => {
+    if (!curQ) {
+      paintTopResult(null, "");
+      box.className = "flex flex-col gap-1";
+      box.innerHTML = "";
+      updateMore();
+      return;
+    }
+    if (isEntityCat(curCat)) paintEntityGrid();
+    else if (curCat === "all") paintMixed();
+    else paintSongs();
+    updateMore();
+  };
+
+  /// Append a freshly fetched page without rebuilding the rows already on
+  /// screen — the whole point of paging is that the existing scroll and
+  /// decode work is not thrown away.
+  const appendSongRows = (fresh) => {
+    if (!fresh.length) return;
+    const base = results.length - fresh.length;
+    setList("sres", results);
+    const status = box.querySelector("[data-sm-status]");
+    if (status) status.innerHTML = statusText();
+    box.insertAdjacentHTML(
+      "beforeend",
+      fresh.map((t, i) => rowHTML("sres", base + i, t, highlight(t.title, tokens))).join(""),
+    );
+    paintFavs();
+  };
+
+  const updateMore = () => {
+    document.getElementById("sm-more")?.remove();
+    smMoreIO?.disconnect();
+    smMoreIO = null;
+    // The All view is a preview: its "See all" chips own pagination, so the
+    // button would be a second, redundant way to grow the same page.
+    if (!curQ || !invoke || !pageFull || curCat === "all") return;
+    const more = document.createElement("button");
+    more.id = "sm-more";
+    more.type = "button";
+    more.className =
+      "self-center mt-3 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors flex items-center gap-1.5 shadow-sm";
+    more.textContent = "Load more results";
+    box.insertAdjacentElement("afterend", more);
+    // Scrolling near the bottom pulls the next page automatically; the
+    // button remains as the manual fallback and as the observer's target.
+    smMoreIO = new IntersectionObserver(
+      (entries) => {
+        for (const en of entries) if (en.isIntersecting && !more.disabled) more.click();
+      },
+      { rootMargin: "300px 0px" },
+    );
+    smMoreIO.observe(more);
+    more.addEventListener("click", loadMore);
+  };
+
+  // ------------------------------------------------------------- suggestions
   const sugBox = document.createElement("div");
   sugBox.id = "m-suggest";
-  sugBox.className = "hidden flex-col rounded-xl bg-surface-container-lowest border border-surface-container shadow-md overflow-y-auto max-h-[55vh]";
+  sugBox.setAttribute("role", "listbox");
+  sugBox.className =
+    "hidden flex-col rounded-xl bg-surface-container-lowest border border-surface-container shadow-md overflow-y-auto max-h-[55vh]";
   const sugHost = input && (input.closest(".relative") || input.closest("section"));
   if (sugHost && sugHost.parentElement) sugHost.parentElement.insertBefore(sugBox, sugHost.nextElementSibling);
 
   const hideSug = () => {
     sugBox.classList.add("hidden");
     sugBox.classList.remove("flex");
+    sugIndex = -1;
   };
+  smSuggestCtx = { box: sugBox, hide: hideSug };
   const showSug = (html) => {
     sugBox.innerHTML = html;
     sugBox.classList.remove("hidden");
     sugBox.classList.add("flex");
+    sugIndex = -1;
   };
 
-  const sugIcon = { song: "music_note", album: "album", artist: "person", playlist: "queue_music" };
-  const sugRow = (it, kind) =>
-    `<button type="button" data-sug-kind="${kind}" data-sug-id="${esc(it.id || "")}" data-sug-token="${esc(it.token || "")}" data-sug-title="${esc(it.title || "")}" data-sug-sub="${esc(it.subtitle || "")}" data-sug-img="${esc(it.image || "")}" class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-container transition-colors border-b border-surface-container/60 last:border-b-0">
+  const SUG_GROUPS = [
+    ["songs", "Songs"],
+    ["albums", "Albums"],
+    ["artists", "Artists"],
+    ["playlists", "Playlists"],
+  ];
+  const SUG_ICON = { song: "music_note", album: "album", artist: "person", playlist: "queue_music" };
+  const sugLabel = (label) =>
+    `<div class="px-3 pt-2 pb-1 font-label-mono text-[10px] uppercase tracking-wider text-secondary">${esc(label)}</div>`;
+  const sugRow = (it, kind, toks) =>
+    `<button type="button" role="option" data-sug-kind="${esc(kind)}" data-sug-id="${esc(it.id || "")}" data-sug-token="${esc(it.token || "")}" data-sug-title="${esc(it.title || "")}" data-sug-sub="${esc(it.subtitle || "")}" data-sug-img="${esc(it.image || "")}" class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-container focus:bg-surface-container outline-none transition-colors border-b border-surface-container/60 last:border-b-0">
       <div class="w-9 h-9 rounded bg-surface-container-highest overflow-hidden shrink-0 flex items-center justify-center">${
         it.image
           ? `<img alt="" loading="lazy" class="w-full h-full object-cover" ${art(it.image)}>`
-          : `<span class="material-symbols-outlined text-[18px] text-on-surface-variant">${sugIcon[kind] || "music_note"}</span>`
+          : `<span class="material-symbols-outlined text-[18px] text-on-surface-variant">${SUG_ICON[kind] || "music_note"}</span>`
       }</div>
       <div class="flex flex-col min-w-0 flex-1">
-        <span class="font-body-md text-body-md text-on-surface truncate">${esc(it.title || "")}</span>
+        <span class="font-body-md text-body-md text-on-surface truncate">${highlight(it.title || "", toks)}</span>
         <span class="font-body-sm text-[11px] text-secondary truncate">${esc(it.subtitle || kind)}</span>
       </div>
       <span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary shrink-0">${esc(kind)}</span>
     </button>`;
-  const sugLabel = (label) => `<div class="px-3 pt-2 pb-1 font-label-mono text-[10px] uppercase tracking-wider text-secondary">${esc(label)}</div>`;
+  const sugQueryRow = (text, toks, icon) =>
+    `<button type="button" role="option" data-sug-q="${esc(text)}" class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-container focus:bg-surface-container outline-none transition-colors border-b border-surface-container/60 last:border-b-0">
+      <span class="material-symbols-outlined text-[18px] text-secondary shrink-0">${icon}</span>
+      <span class="font-body-md text-body-md text-on-surface truncate flex-1">${highlight(text, toks)}</span>
+    </button>`;
 
-  const suggestHtml = (s) => {
+  /// The dropdown for one server answer: the listener's own matching recent
+  /// searches first (free, and the likeliest intent), then the catalog's
+  /// grouped entities. Duplicates across the two are dropped.
+  const buildSuggest = (s, text) => {
+    const toks = queryTokens(parseSearch(text));
+    const needle = String(text || "").toLowerCase();
+    const seen = new Set();
+    const parts = [];
+    const recent = load(HISTORY_KEY, [])
+      .filter((x) => {
+        const low = String(x).toLowerCase();
+        return low !== needle && low.startsWith(needle);
+      })
+      .slice(0, 3);
+    if (recent.length) {
+      parts.push(sugLabel("Recent searches"));
+      for (const r of recent) {
+        seen.add(String(r).toLowerCase());
+        parts.push(sugQueryRow(r, toks, "history"));
+      }
+    }
     const groups = {
       songs: [...((s && s.songs) || [])],
       albums: [...((s && s.albums) || [])],
@@ -625,66 +1079,346 @@ async function mountSearch(query) {
       const bucket = groups[`${(s.top_kind || "song")}s`] || groups.songs;
       if (bucket && !bucket.some((it) => it.id === top.id)) bucket.unshift(top);
     }
-    const parts = [];
-    for (const [key, label] of [["songs", "Songs"], ["albums", "Albums"], ["artists", "Artists"], ["playlists", "Playlists"]]) {
-      if (!groups[key].length) continue;
-      parts.push(sugLabel(label), groups[key].map((it) => sugRow(it, key.slice(0, -1))).join(""));
+    for (const [key, label] of SUG_GROUPS) {
+      const items = groups[key].filter((it) => {
+        const k = String((it && it.title) || "").toLowerCase();
+        if (!k || seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      if (!items.length) continue;
+      const kind = key.slice(0, -1);
+      parts.push(sugLabel(label), items.slice(0, 6).map((it) => sugRow(it, kind, toks)).join(""));
     }
-    return parts.length ? parts.join("") : '<div class="px-3 py-3 font-body-sm text-secondary">No suggestions.</div>';
+    // Nothing matched anywhere: offer the typed text itself, so tapping and
+    // pressing Enter behave the same.
+    if (!parts.length) parts.push(sugLabel("Search"), sugQueryRow(text, toks, "search"));
+    return parts.join("");
   };
 
   const recentSuggest = () => {
-    const hist = load(HISTORY_KEY, []);
+    const hist = load(HISTORY_KEY, []).slice(0, 6);
     if (!hist.length) {
       hideSug();
       return;
     }
-    showSug(
-      sugLabel("Recent searches") +
-        hist
-          .slice(0, 6)
-          .map(
-            (s) =>
-              `<button type="button" data-sug-q="${esc(s)}" class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-container transition-colors border-b border-surface-container/60 last:border-b-0"><span class="material-symbols-outlined text-[18px] text-secondary">history</span><span class="font-body-md text-body-md text-on-surface truncate">${esc(s)}</span></button>`,
-          )
-          .join(""),
-    );
+    showSug(sugLabel("Recent searches") + hist.map((s) => sugQueryRow(s, [], "history")).join(""));
   };
 
-  let sugTimer = 0;
-  let sugSeq = 0;
-  const fetchSuggest = async () => {
-    const text = input ? input.value.trim() : "";
+  /// One autocomplete call per keystroke burst, memoized per prefix; the
+  /// sequence token stops a slow response from painting over a newer query.
+  const fetchSuggest = async (text) => {
+    const needle = String(text || "").trim().toLowerCase();
+    if (needle.length < 2 || !invoke) return;
     const mine = ++sugSeq;
+    const cached = SUG_MEM.get(needle);
+    if (cached) {
+      showSug(buildSuggest(cached, needle));
+      return;
+    }
     try {
-      const s = await invoke("search_suggestions", { query: text });
-      if (mine !== sugSeq) return; // a newer keystroke already superseded this
-      showSug(suggestHtml(s));
-    } catch (e) {
-      if (mine === sugSeq) hideSug();
-      console.error(e);
+      const s = await invoke("search_suggestions", { query: needle });
+      if (mine !== sugSeq) return;
+      SUG_MEM.set(needle, s);
+      showSug(buildSuggest(s, needle));
+    } catch {
+      if (mine !== sugSeq) return;
+      const stale = SUG_MEM.get(needle);
+      if (stale) showSug(buildSuggest(stale, needle));
+      else hideSug();
     }
   };
 
-  if (input) {
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        commit();
-      }
+  const sugRows = () => [...sugBox.querySelectorAll("[data-sug-kind],[data-sug-q]")];
+  const moveSug = (delta) => {
+    const rows = sugRows();
+    if (!rows.length) return;
+    rows.forEach((r) => r.classList.remove("bg-surface-container"));
+    sugIndex = Math.max(0, Math.min(rows.length - 1, sugIndex + delta));
+    const row = rows[sugIndex];
+    row.classList.add("bg-surface-container");
+    row.scrollIntoView({ block: "nearest" });
+  };
+  const pickSug = () => {
+    const rows = sugRows();
+    if (sugIndex >= 0 && rows[sugIndex]) {
+      rows[sugIndex].click();
+      return true;
+    }
+    return false;
+  };
+
+  // --------------------------------------------------------- hash + commit
+  const hashFor = (q, cat, sort) =>
+    `#/search?q=${encodeURIComponent(q)}${cat !== "all" ? `&cat=${cat}` : ""}${sort !== "relevance" ? `&s=${sort}` : ""}`;
+  /// Keep the address bar honest while repainting in place. `replaceState`
+  /// (not `go()`) so typing is one history entry, not one per keystroke, and
+  /// the router — which listens for `hashchange` — does not remount.
+  const syncHash = () => {
+    try {
+      history.replaceState(history.state, "", hashFor(curQ, curCat, curSort));
+    } catch {}
+  };
+  const commit = (text) => {
+    const next = String(text == null ? (input ? input.value : curQ) : text).trim();
+    if (!next) return;
+    clearTimeout(liveTimer);
+    clearTimeout(upgradeTimer);
+    hideSug();
+    go(hashFor(next, curCat, curSort).slice(2));
+  };
+
+  // ------------------------------------------------------------ data loading
+  const tasteOpts = () => tasteContext(load(PLAYS_KEY, []), load(FAVS_KEY, []), load(COUNTRY_KEY, "") || "");
+
+  /// One page for the active chip: entity cards for the album/artist/playlist
+  /// chips, songs otherwise. Returns null when a newer search superseded it.
+  const fetchPage = async (mine, next) => {
+    const limit = curCat === "hires" ? 50 : 30;
+    const r = isEntityCat(curCat)
+      ? await invoke("search_entities", { query: parsed.text, kind: entityKinds[curCat], limit, page: next })
+      : await invoke("search_songs", { query: parsed.text, limit, page: next });
+    if (mine !== seq) return null;
+    let got = isEntityCat(curCat) ? (r && r.items) || [] : (r && r.tracks) || [];
+    if (curCat === "hires") got = got.filter((t) => t.hq);
+    return { got, pageFull: !!(r && r.page_full) };
+  };
+
+  const shapePage = (raw) =>
+    isEntityCat(curCat) ? uniqueById(raw) : rankForQuery(uniqueById(raw), parsed, curSort, tasteOpts());
+
+  /// The mixed shelves behind the All chip: one small page per entity kind,
+  /// fetched together and cached under the query (not the chip) so switching
+  /// to Albums and back never refetches.
+  const loadShelves = async (mine) => {
+    if (curCat !== "all" || !curQ || !invoke || netMode() === "offline") return;
+    const ekey = `ent|${cacheKey(curQ, "all", curSort)}`;
+    const mem = SEARCH_MEM.get(ekey);
+    if (mem) {
+      shelves = mem;
+      render();
+      return;
+    }
+    const disk = await diskGet(ekey);
+    if (mine !== seq) return;
+    if (disk) {
+      shelves = disk;
+      SEARCH_MEM.set(ekey, disk);
+      render();
+      return;
+    }
+    const kinds = ["album", "artist", "playlist"];
+    const settled = await Promise.allSettled(
+      kinds.map((kind) => invoke("search_entities", { query: parsed.text, kind, limit: 8, page: 1 })),
+    );
+    if (mine !== seq) return;
+    const found = { album: [], artist: [], playlist: [] };
+    settled.forEach((res, i) => {
+      if (res.status === "fulfilled" && res.value) found[kinds[i]] = uniqueById(res.value.items || []);
     });
+    shelves = found;
+    SEARCH_MEM.set(ekey, found);
+    diskPut(ekey, found);
+    render();
+  };
+
+  /// Live typing pays for song rows only; the shelf fan-out waits until the
+  /// query has been still for a moment.
+  const scheduleUpgrade = () => {
+    clearTimeout(upgradeTimer);
+    const at = curQ;
+    upgradeTimer = setTimeout(() => {
+      if (curQ === at && curCat === "all") loadShelves(seq);
+    }, UPGRADE_MS);
+  };
+
+  const applyPayload = (p) => {
+    results = Array.isArray(p && p.results) ? p.results : [];
+    page = Number(p && p.page) || 1;
+    pageFull = !!(p && p.pageFull);
+  };
+
+  /// One full search for the current query/chip/sort, cache-first.
+  ///
+  /// Order: in-process LRU (instant) → localStorage snapshot (instant) →
+  /// store.db (one fast IPC) → network. A cached page paints immediately and
+  /// is revalidated in the background once it is older than RESULT_FRESH_MS,
+  /// so repeat and back-navigation searches feel instant without going stale.
+  const runSearch = async ({ full = true, live = false } = {}) => {
+    if (!invoke || !curQ.trim()) return;
+    parsed = parseSearch(curQ);
+    tokens = queryTokens(parsed);
+    topKey = "";
+    statusNote = "";
+    shelves = { album: [], artist: [], playlist: [] };
+    const mine = ++seq;
+    const key = cacheKeyNow();
+    let painted = false;
+    const mem = SEARCH_MEM.peek(key);
+    if (mem) {
+      applyPayload(mem.value);
+      render();
+      painted = true;
+    } else {
+      const snap = readSnap(key);
+      if (snap) {
+        applyPayload(snap);
+        render();
+        painted = true;
+      }
+    }
+    const fresh = mem && Date.now() - mem.at < RESULT_FRESH_MS;
+    if (painted && fresh) {
+      if (full && curCat === "all") loadShelves(mine);
+      return;
+    }
+    if (!painted) {
+      const disk = await diskGet(key);
+      if (mine !== seq) return;
+      if (disk) {
+        SEARCH_MEM.set(key, disk);
+        applyPayload(disk);
+        render();
+        painted = true;
+      }
+    }
+    // Typing keeps the previous rows on screen until the new page lands — a
+    // skeleton flash on every keystroke reads as flicker, not as speed.
+    const keepOld = !painted && live && results.length > 0;
+    if (!painted && !keepOld) paintLoading();
+    try {
+      if (netMode() === "offline") throw new Error("offline");
+      const got = await fetchPage(mine, 1);
+      if (!got || mine !== seq) return;
+      page = 1;
+      pageFull = got.pageFull;
+      results = shapePage(got.got);
+      if (!results.length) pageFull = false;
+      const payload = { results, page, pageFull };
+      SEARCH_MEM.set(key, payload);
+      diskPut(key, payload);
+      saveSnap(key, payload);
+      cacheSongs(results);
+      pushHistory(curQ);
+      pushDiag("search_page", true, `${results.length} ${isEntityCat(curCat) ? "cards" : "songs"} · ${curCat} · ${curSort}`);
+      render();
+      if (full && curCat === "all") loadShelves(mine);
+      else if (!full && curCat === "all") scheduleUpgrade();
+      if (!results.length && !isEntityCat(curCat) && curCat !== "hires") offerTypoFix(curQ);
+    } catch (e) {
+      if (mine !== seq) return;
+      pushDiag("search", false, String(e).split("\n")[0].slice(0, 90));
+      if (String(e) === "Error: offline") {
+        statusNote = painted ? "offline copy" : "offline";
+        if (!painted && !keepOld) results = [];
+        render(); // repaint so the status line names the offline copy
+        toast("You're offline — showing what's saved when possible", 3500, "info");
+        return;
+      }
+      if (!painted) {
+        // A live search that failed mid-typing leaves the last good page up.
+        if (!keepOld) results = [];
+        render();
+        toast(`Search failed: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
+      } else {
+        toast(`Couldn't refresh: ${String(e).split("\n")[0].slice(0, 60)}`, 4000, "error");
+      }
+    }
+  };
+
+  /// Pull the next page and append it — no full repaint, so scroll and the
+  /// images already decoded survive.
+  const loadMore = async () => {
+    const more = document.getElementById("sm-more");
+    if (!more || more.disabled) return;
+    more.disabled = true;
+    more.textContent = "Loading…";
+    const mine = seq;
+    const at = curQ;
+    try {
+      const next = page + 1;
+      const r = await fetchPage(mine, next);
+      if (!r || mine !== seq || at !== curQ) return;
+      pageFull = r.pageFull;
+      const known = new Set(results.map((x) => x && x.id));
+      const fresh = uniqueById(r.got.filter((x) => x && (!x.id || !known.has(x.id))));
+      if (!fresh.length) pageFull = false;
+      page = next;
+      results = results.concat(fresh);
+      const payload = { results, page, pageFull };
+      SEARCH_MEM.set(cacheKeyNow(), payload);
+      diskPut(cacheKeyNow(), payload);
+      saveSnap(cacheKeyNow(), payload);
+      if (isEntityCat(curCat)) paintEntityGrid();
+      else appendSongRows(fresh);
+      updateMore();
+      pushDiag("search_page", true, `+${fresh.length} (page ${page})`);
+    } catch (e) {
+      more.disabled = false;
+      more.textContent = "Load more results";
+      if (mine === seq) toast(String(e).split("\n")[0].slice(0, 70), 5000, "error");
+    }
+  };
+
+  // ------------------------------------------------------------------ input
+  /// Search as you type: the hash is kept in sync but nothing remounts, so
+  /// results update in place under the keyboard the way Spotify's do.
+  const liveSearch = () => {
+    const text = (input ? input.value : "").trim();
+    if (text === curQ) return;
+    curQ = text;
+    syncHash();
+    clearTimeout(upgradeTimer);
+    if (!text) {
+      parsed = parseSearch("");
+      tokens = [];
+      results = [];
+      shelves = { album: [], artist: [], playlist: [] };
+      topKey = "";
+      statusNote = "";
+      render();
+      return;
+    }
+    runSearch({ full: false, live: true });
+  };
+
+  if (input) {
     input.addEventListener("input", () => {
+      clearTimeout(liveTimer);
       clearTimeout(sugTimer);
       const text = input.value.trim();
+      liveTimer = setTimeout(liveSearch, LIVE_DEBOUNCE_MS);
       if (!invoke) return;
-      if (text.length >= 2) sugTimer = setTimeout(fetchSuggest, 250);
+      if (text.length >= 2) sugTimer = setTimeout(() => fetchSuggest(text), SUG_DEBOUNCE_MS);
       else if (!text) recentSuggest();
       else hideSug();
     });
     input.addEventListener("focus", () => {
       const text = input.value.trim();
       if (!text) recentSuggest();
-      else if (text.length >= 2) fetchSuggest();
+      else if (text.length >= 2) fetchSuggest(text);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        if (sugBox.classList.contains("hidden")) return;
+        e.preventDefault();
+        moveSug(1);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moveSug(-1);
+        return;
+      }
+      if (e.key === "Escape") {
+        hideSug();
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (pickSug()) return;
+        commit();
+      }
     });
   }
 
@@ -703,54 +1437,86 @@ async function mountSearch(query) {
       playList([{ id: b.dataset.sugId, title: b.dataset.sugTitle, artist: b.dataset.sugSub, image: b.dataset.sugImg }], 0);
       go("nowplaying");
     } else {
-      go(entityNav(kind, { id: b.dataset.sugId, token: b.dataset.sugToken, title: b.dataset.sugTitle, subtitle: b.dataset.sugSub, image: b.dataset.sugImg }));
+      go(
+        entityNav(kind, {
+          id: b.dataset.sugId,
+          token: b.dataset.sugToken,
+          title: b.dataset.sugTitle,
+          subtitle: b.dataset.sugSub,
+          image: b.dataset.sugImg,
+        }),
+      );
     }
   });
 
-  // --- category chips ----------------------------------------------------
-  // Active state is derived from `data-category`, not from the static markup,
-  // so a deep link or back-navigation restores the right chip.
-  m.querySelectorAll(".filter-chip").forEach((chip) => {
+  // ------------------------------------------------------------ category chips
+  const chips = [...m.querySelectorAll(".filter-chip")];
+  const applyChipStates = () => {
+    for (const chip of chips) {
+      const active = (chip.dataset.category || "all") === curCat;
+      chip.classList.toggle("bg-primary", active);
+      chip.classList.toggle("text-on-primary", active);
+      chip.classList.toggle("shadow-sm", active);
+      chip.classList.toggle("bg-surface-container-high", !active);
+      chip.classList.toggle("text-on-surface-variant", !active);
+    }
+  };
+  /// Switch chip in place (no remount): cached pages for the new chip paint
+  /// instantly, and the query already in the box rides along.
+  const switchCat = (cat) => {
+    if (cat === curCat) return;
+    curCat = cat;
+    hideSug();
+    clearTimeout(liveTimer);
+    clearTimeout(upgradeTimer);
+    curQ = (input ? input.value : curQ).trim();
+    syncHash();
+    applyChipStates();
+    refreshSortChip();
+    if (!curQ) {
+      results = [];
+      render();
+      return;
+    }
+    runSearch({ full: true });
+  };
+  chips.forEach((chip) => {
+    if (chip.dataset.sort !== undefined) return;
     const key = chip.dataset.category || "all";
-    const active = key === cat;
-    chip.classList.toggle("bg-primary", active);
-    chip.classList.toggle("text-on-primary", active);
-    chip.classList.toggle("shadow-sm", active);
-    chip.classList.toggle("bg-surface-container-high", !active);
-    chip.classList.toggle("text-on-surface-variant", !active);
-    chip.addEventListener("click", () => {
-      const text = (input ? input.value : q).trim();
-      hideSug();
-      go(`search?q=${encodeURIComponent(text)}${key !== "all" ? `&cat=${key}` : ""}`);
-    });
+    chip.addEventListener("click", () => switchCat(key));
   });
 
-  // Sort chip: cycles relevance → quality → popular → length → A–Z and
-  // re-runs the query so the whole page comes back in the new order.
+  // Sort chip: cycles relevance → quality → popular → length → A–Z in place
+  // and re-runs the query so the page comes back in the new order.
   const chipsRow = m.querySelector("#filter-chips-container");
-  if (chipsRow && !entityKinds[cat] && cat !== "hires") {
-    let sortBtn = chipsRow.querySelector("[data-sort]");
-    if (!sortBtn) {
-      sortBtn = document.createElement("button");
-      sortBtn.type = "button";
-      sortBtn.dataset.sort = "";
-      sortBtn.className = "filter-chip shrink-0 bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md font-medium";
-      chipsRow.appendChild(sortBtn);
-      sortBtn.addEventListener("click", () => {
-        searchSort = nextSort(searchSort);
-        // Read the live query/category from the address bar (not this
-        // mount's closure) and append `s` so the hash always changes — an
-        // identical hash would skip the remount and the chip would look dead.
-        const cur = new URLSearchParams(location.hash.split("?")[1] || "");
-        const live = (document.getElementById("search-input")?.value || cur.get("q") || q || "").trim();
-        const liveCat = cur.get("cat") || cat;
-        go(`search?q=${encodeURIComponent(live)}${liveCat !== "all" ? `&cat=${liveCat}` : ""}&s=${searchSort}`);
-      });
-    }
-    sortBtn.textContent = `↕ ${SORT_LABEL[searchSort]}`;
-    sortBtn.setAttribute("aria-label", `Sort: ${SORT_LABEL[searchSort]}`);
+  let sortBtn = chipsRow && chipsRow.querySelector("[data-sort]");
+  if (chipsRow && !sortBtn) {
+    sortBtn = document.createElement("button");
+    sortBtn.type = "button";
+    sortBtn.dataset.sort = "";
+    sortBtn.className = "filter-chip shrink-0 bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md font-medium";
+    chipsRow.appendChild(sortBtn);
   }
+  const refreshSortChip = () => {
+    if (!sortBtn) return;
+    const on = !isEntityCat(curCat) && curCat !== "hires";
+    // Rewrite the classes rather than toggling: the screen's own companion
+    // script repaints every .filter-chip on click, and this chip is one of
+    // them — without a full reset it would keep that active look.
+    const base = "filter-chip shrink-0 bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md font-medium";
+    sortBtn.className = on ? base : `${base} hidden`;
+    sortBtn.textContent = `↕ ${SORT_LABEL[curSort]}`;
+    sortBtn.setAttribute("aria-label", `Sort: ${SORT_LABEL[curSort]}`);
+  };
+  sortBtn?.addEventListener("click", () => {
+    searchSort = nextSort(searchSort);
+    curSort = searchSort;
+    refreshSortChip();
+    syncHash();
+    if (curQ) runSearch({ full: true });
+  });
 
+  // ------------------------------------------------------- recent-query bay
   const bay = document.getElementById("recent-queries-bay");
   const paintBay = () => {
     if (!bay) return;
@@ -779,230 +1545,30 @@ async function mountSearch(query) {
   document.getElementById("clear-search-btn")?.addEventListener("click", () => {
     if (input) input.value = "";
     hideSug();
+    clearTimeout(liveTimer);
+    clearTimeout(upgradeTimer);
+    curQ = "";
+    syncHash();
+    parsed = parseSearch("");
+    tokens = [];
+    results = [];
+    shelves = { album: [], artist: [], playlist: [] };
+    topKey = "";
+    statusNote = "";
+    render();
+  });
+  // "See all" inside the All view jumps to the chip that owns that shelf.
+  box.addEventListener("click", (e) => {
+    const jump = e.target.closest("[data-cat-jump]");
+    if (!jump) return;
+    e.stopPropagation();
+    switchCat(jump.dataset.catJump);
   });
 
-  const topSec = [...m.querySelectorAll("section")].find((s) => s.textContent.includes("Top result"));
-  const navOf = (it, k) => entityNav(k, it);
-
-  let results = [];
-  let page = 1;
-  let pageFull = false;
-  // One-query snapshot: the offline fallback repaints the last successful
-  // search verbatim (mirrors the desktop's tm-search behaviour).
-  const SEARCH_SNAP_KEY = "tm-search-snap";
-  const snapKey = `${q}::${cat}`;
-  // The results host is created before the fetch, and seeded with a
-  // skeleton — while the query is in flight the design's mock spotlight
-  // ("Midnight City Lights") must not masquerade as real data.
-  let box = document.getElementById("sm-results");
-  if (!box) {
-    box = document.createElement("div");
-    box.id = "sm-results";
-    (topSec || m.firstElementChild).insertAdjacentElement("afterend", box);
-  }
-  const head = '<div class="font-label-mono text-label-sm text-secondary uppercase tracking-wider px-1 pt-3 pb-1">Results</div>';
-  const skeletonHTML = () =>
-    entityKinds[cat]
-      ? `<div class="grid grid-cols-2 gap-3">${Array.from(
-            { length: 6 },
-            () =>
-              '<div class="rounded-2xl border border-surface-container-high/70 p-2.5 space-y-2"><div class="aspect-square rounded-xl tm-skeleton"></div><div class="h-3.5 w-3/4 rounded tm-skeleton"></div><div class="h-3 w-1/2 rounded tm-skeleton"></div></div>',
-          ).join("")}</div>`
-      : Array.from(
-            { length: 6 },
-            () =>
-              '<div class="flex items-center gap-3 p-2.5"><div class="w-11 h-11 rounded-lg tm-skeleton shrink-0"></div><div class="flex flex-col gap-1.5 flex-1 min-w-0"><div class="h-3.5 w-2/5 rounded tm-skeleton"></div><div class="h-3 w-1/4 rounded tm-skeleton"></div></div></div>',
-          ).join("");
-  if (q && invoke) {
-    topSec?.classList.add("hidden");
-    box.className = entityKinds[cat] ? "flex flex-col gap-3" : "flex flex-col gap-1";
-    box.innerHTML = head + skeletonHTML();
-  }
-  if (q && invoke) {
-    try {
-      if (netMode() === "offline") throw new Error("offline");
-      if (entityKinds[cat]) {
-        const r = await invoke("search_entities", { query: q, kind: entityKinds[cat], limit: 30, page: 1 });
-        results = r.items || [];
-        pageFull = !!r.page_full;
-      } else {
-        const r = await invoke("search_songs", { query: q, limit: cat === "hires" ? 50 : 30, page: 1 });
-        results = r.tracks || [];
-        pageFull = !!r.page_full;
-        // Hi-Res chip: the catalog already tags each track, so the chip
-        // filters this page instead of asking a different endpoint.
-        if (cat === "hires") results = results.filter((t) => t.hq);
-        else results = rankTracks(q, results, searchSort);
-        pushDiag("search_songs", true, `${results.length} results · ${cat} · ${searchSort}`);
-      }
-      pushHistory(q);
-      save(SEARCH_SNAP_KEY, { key: snapKey, results });
-      // SQLite song cache for offline lists (tracks only, not entity cards).
-      if (!entityKinds[cat] && results.length) {
-        try {
-          const page = results.slice(0, 50);
-          import("../store_db.js").then((m) => m.cacheSongs(page).catch(() => {}));
-        } catch {}
-      }
-    } catch (e) {
-      pushDiag("search", false, String(e).split("\n")[0].slice(0, 90));
-      const snap = load(SEARCH_SNAP_KEY, null);
-      if (snap && snap.key === snapKey && Array.isArray(snap.results) && snap.results.length) {
-        results = snap.results;
-        toast("Offline — showing saved results", 3500, "info");
-      } else {
-        console.error(e);
-        if (String(e) !== "Error: offline") toast(`Search failed: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
-        else toast("You're offline — search needs a network", 3500, "info");
-      }
-    }
-    // Typo recovery only makes sense when the catalog answered with nothing —
-    // never while an offline snapshot or another category is on screen.
-    if (!results.length && !entityKinds[cat] && cat !== "hires") offerTypoFix(q);
-  }
-
-  if (topSec) {
-    const first = results[0];
-    if (!first) {
-      topSec.classList.add("hidden");
-    } else {
-      topSec.classList.remove("hidden");
-      if (first.image) paintArt(topSec.querySelector("img"), first.image);
-      const kind = entityKinds[cat];
-      const typeEl = [...topSec.querySelectorAll("span")].find((sp) => /^(song|album|artist|playlist)$/i.test(sp.textContent.trim()));
-      if (typeEl) typeEl.textContent = kind || "Song";
-      const h3 = topSec.querySelector("h3");
-      if (h3) h3.textContent = first.title || "";
-      const p = topSec.querySelector("p");
-      if (p) p.textContent = [first.artist || first.subtitle, first.year].filter(Boolean).join(" • ") || p.textContent;
-      // Anchor on the action buttons, not a class substring: the fragment's
-      // inner thumbnail is also "rounded-xl" and matched first, so data-list
-      // landed on a sibling of the Play button and the delegation never
-      // resolved a row (dead top-result Play/Favorite). `card` must be the
-      // container that actually wraps the buttons.
-      const card = (() => {
-        const btn = topSec.querySelector('button[aria-label="Play Song"], button[aria-label]');
-        return (btn && btn.closest("div.rounded-2xl, div[class*='rounded-']")) || topSec.querySelector('div[class*="rounded-xl"]');
-      })();
-      // A reused fragment can carry the previous query's wiring on the old
-      // thumbnail — strip it so only `card` resolves.
-      topSec.querySelectorAll("[data-list],[data-idx],[data-nav]").forEach((el) => {
-        if (el === card) return;
-        delete el.dataset.list;
-        delete el.dataset.idx;
-        delete el.dataset.nav;
-      });
-      if (card && kind) {
-        delete card.dataset.list;
-        delete card.dataset.idx;
-        card.dataset.nav = navOf(first, kind);
-      } else if (card) {
-        delete card.dataset.nav;
-        setList("topres", [first]);
-        card.dataset.list = "topres";
-        card.dataset.idx = "0";
-      }
-      // The card's Favorite button was static chrome: for songs it becomes a
-      // real favorite (the delegation resolves the card's track); entity
-      // results have no favorite concept, so it is hidden there.
-      const favBtn = topSec.querySelector('[aria-label="Favorite"]');
-      if (favBtn) {
-        const ic = favBtn.querySelector(".material-symbols-outlined");
-        if (kind || !card) {
-          favBtn.classList.add("hidden");
-          favBtn.removeAttribute("data-fav");
-          if (ic) delete ic.dataset.favIcon;
-        } else {
-          favBtn.classList.remove("hidden");
-          favBtn.dataset.fav = "";
-          if (ic) ic.dataset.favIcon = first.id || "";
-        }
-      }
-    }
-  }
-
-  const renderResults = () => {
-    if (!q || !results.length) {
-      box.className = "flex flex-col gap-1";
-      box.innerHTML = q ? '<div class="font-body-sm text-secondary py-4 text-center">No matches</div>' : "";
-    } else if (entityKinds[cat]) {
-      // The "Results" label lives above the grid: as a grid child it ate the
-      // first cell (the report's empty first card). The cards are shelf-sized
-      // (w-48/w-56), which overflows a half-width cell and overlaps the
-      // neighbour — in a grid they must fill the cell instead.
-      box.className = "flex flex-col gap-3";
-      box.innerHTML =
-        head +
-        `<div class="grid grid-cols-2 gap-3">${results
-          .map((e, i) => (entityKinds[cat] === "artist" ? artistCardHTML(e, i, navOf(e, "artist")) : plCardHTML(e, i, navOf(e, entityKinds[cat]))))
-          .join("")}</div>`;
-      box.querySelectorAll("[data-pl-idx]").forEach((el) => {
-        el.classList.remove("w-48", "w-56");
-        el.classList.add("w-full");
-      });
-    } else {
-      box.className = "flex flex-col gap-1";
-      setList("sres", results);
-      box.innerHTML = head + results.slice(1).map((t, i) => rowHTML("sres", i + 1, t)).join("");
-    }
-    paintFavs();
-  };
-  renderResults();
-
-  // --- load more ---------------------------------------------------------
-  // Same contract as the desktop's #load-more: the backend's `page_full`
-  // flag (measured before dedup shrank the page) says another page exists.
-  document.getElementById("sm-more")?.remove();
-  smMoreIO?.disconnect();
-  if (q && invoke && pageFull) {
-    const more = document.createElement("button");
-    more.id = "sm-more";
-    more.type = "button";
-    more.className = "self-center mt-3 px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md hover:bg-surface-container-high transition-colors flex items-center gap-1.5 shadow-sm";
-    more.textContent = "Load more results";
-    box.insertAdjacentElement("afterend", more);
-    // Scrolling near the bottom pulls the next page automatically; the
-    // button remains as the manual fallback and as the observer's target.
-    smMoreIO = new IntersectionObserver(
-      (entries) => {
-        for (const en of entries) if (en.isIntersecting && !more.disabled) more.click();
-      },
-      { rootMargin: "300px 0px" },
-    );
-    smMoreIO.observe(more);
-    more.addEventListener("click", async () => {
-      more.disabled = true;
-      more.textContent = "Loading…";
-      try {
-        const next = page + 1;
-        let got;
-        if (entityKinds[cat]) {
-          const r = await invoke("search_entities", { query: q, kind: entityKinds[cat], limit: 30, page: next });
-          got = r.items || [];
-          pageFull = !!r.page_full;
-        } else {
-          const r = await invoke("search_songs", { query: q, limit: cat === "hires" ? 50 : 30, page: next });
-          got = r.tracks || [];
-          if (cat === "hires") got = got.filter((t) => t.hq);
-          pageFull = !!r.page_full;
-        }
-        if (!got.length) pageFull = false;
-        page = next;
-        results = results.concat(got);
-        save(SEARCH_SNAP_KEY, { key: snapKey, results });
-        renderResults(); // identical heights above → scroll position holds
-        if (pageFull) {
-          more.disabled = false;
-          more.textContent = "Load more results";
-        } else more.remove();
-      } catch (e) {
-        console.error(e);
-        more.disabled = false;
-        more.textContent = "Load more results";
-        toast(String(e).split("\n")[0].slice(0, 70), 5000, "error");
-      }
-    });
-  }
+  applyChipStates();
+  refreshSortChip();
+  if (curQ && invoke) runSearch({ full: true });
+  else render();
 }
 
 // Library screen state, kept across re-mounts (create-playlist re-runs the
@@ -1778,7 +2344,7 @@ function trackMeta(tracks) {
 
 /// Paint a playlist / album detail screen from its loaded tracks plus the card
 /// metadata carried in the URL.
-function paintDetail(m, kind, tracks, meta) {
+function paintDetail(m, kind, tracks, meta, opts) {
   const info = meta || {};
   const t = trackMeta(tracks);
   const title = info.title || t.lead.album || (kind === "playlist" ? "Playlist" : "Album");
@@ -1826,7 +2392,7 @@ function paintDetail(m, kind, tracks, meta) {
   }
 
   fillRows(trackSection(m), tracks, "detail");
-  void paintMoreBy(m, tracks, t.lead.album_id, title);
+  if (!((opts || {}).skipMore)) void paintMoreBy(m, tracks, t.lead.album_id, title);
   // "Tracklist  12" badge
   const tl = findByText(m, /^Tracklist$/i);
   if (tl && tl.parentElement) {
@@ -1837,6 +2403,49 @@ function paintDetail(m, kind, tracks, meta) {
   wireShuffleHeader(m);
   wireShareHeader(m, () => shareThing({ title, text: artist }));
   paintFavs();
+}
+
+/// Language chips above a multi-language track list (album detail merges
+/// every variant album; playlists natively span languages). Reuses the
+/// row-paint path so counts, play-all and downloads follow the pick;
+/// "More by" loads once (skipMore) instead of refetching per tap.
+let detailFullTracks = [];
+let detailLangSel = "";
+const langDisplay = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+function paintDetailLang(m, kind, tracks, meta, first = true) {
+  if (first) {
+    detailFullTracks = tracks || [];
+    detailLangSel = "";
+  }
+  const counts = {};
+  for (const t of detailFullTracks) for (const l of trackLangs(t)) counts[l] = (counts[l] || 0) + 1;
+  const buckets = Object.keys(counts).sort();
+  const sec = trackSection(m);
+  let chips = m.querySelector("#detail-langchips");
+  const list = !detailLangSel
+    ? detailFullTracks
+    : detailFullTracks.filter((t) => trackLangs(t).includes(detailLangSel));
+  if (buckets.length < 2) {
+    chips?.remove();
+  } else {
+    if (!chips) {
+      chips = document.createElement("div");
+      chips.id = "detail-langchips";
+      sec?.parentElement?.insertBefore(chips, sec);
+    }
+    chips.className = "flex items-center gap-2 flex-wrap px-1 pb-2";
+    const btn = (v, label) =>
+      `<button type="button" data-dlang="${esc(v)}" class="px-3 py-1 rounded-full font-label-sm text-label-sm transition-colors ${v === detailLangSel ? "bg-primary text-on-primary font-semibold" : "bg-surface-container-low text-secondary border border-surface-container-high/60"}">${esc(label)}</button>`;
+    chips.innerHTML =
+      btn("", `All (${detailFullTracks.length})`) + buckets.map((l) => btn(l, `${langDisplay(l)} (${counts[l]})`)).join("");
+    chips.onclick = (e) => {
+      const b = e.target.closest("[data-dlang]");
+      if (!b) return;
+      detailLangSel = b.dataset.dlang || "";
+      paintDetailLang(m, kind, null, meta, false);
+    };
+  }
+  paintDetail(m, kind, list, meta, { skipMore: !first });
 }
 
 /// Artist screen: real header, listener count, bio and discography shelves.
@@ -1975,7 +2584,7 @@ function shelfCardHTML(it, kind) {
       ? [trackCount(it.count), it.subtitle].filter(Boolean).join(" • ")
       : [it.year, trackCount(it.count)].filter(Boolean).join(" • ");
   return `<div data-nav="${esc(entityNav(kind, it))}" class="w-40 flex-shrink-0 flex flex-col bg-surface-container-lowest p-space-sm rounded-xl shadow-sm cursor-pointer active:opacity-80 transition-opacity">
-    <div class="relative w-full aspect-square rounded-lg overflow-hidden mb-space-sm bg-surface-container-highest"><img alt="" loading="lazy" class="w-full h-full object-cover" ${art(it.image)}></div>
+    <div class="relative w-full aspect-square rounded-lg overflow-hidden mb-space-sm bg-surface-container-highest"><img alt="" loading="lazy" class="w-full h-full object-cover" ${art(it.image)}>${it.langCount > 1 ? `<span class="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/70 text-white font-label-mono text-[9px] uppercase tracking-wider">${it.langCount} languages</span>` : ""}</div>
     <span class="font-body-md text-body-md font-medium text-on-surface truncate">${esc(it.title || "")}</span>
     <span class="font-body-sm text-body-sm text-secondary truncate">${esc(meta)}</span>
   </div>`;
@@ -2011,7 +2620,7 @@ async function paintMoreBy(m, tracks, excludeId, excludeTitle) {
   const h = headIn(sec, "More by");
   if (h) h.textContent = `More by ${name}`;
   const row = afterHead(sec, "More by");
-  if (row) row.innerHTML = releases.map((r) => shelfCardHTML(r, "album")).join("");
+  if (row) row.innerHTML = groupLangAlbums(releases).map((r) => shelfCardHTML(r, "album")).join("");
 }
 
 /// The container in `sec` with the most direct children that hold an image —
@@ -2109,14 +2718,26 @@ async function mountDetail(kind, query) {
   };
   try {
     if (kind === "album") {
-      paintDetail(m, kind, asTracks(await withSnap(`album:${token || id}`, () => invoke("album_tracks", { token }))), meta);
+      // Merged language-variant card: every sibling token in parallel
+      // (bounded), merged — the chip row below then offers each language.
+      const primary = token || id;
+      const sibs = (q.get("tokens") || "").split(",").map((s) => s.trim()).filter(Boolean);
+      const tokens = [...new Set([primary, ...sibs])].filter(Boolean).slice(0, 7);
+      const key = `album:${tokens.join(",")}`;
+      const merged = await withSnap(key, async () => {
+        const lists = await Promise.allSettled(tokens.map((t) => invoke("album_tracks", { token: t })));
+        const out = lists.flatMap((r) => (r.status === "fulfilled" ? asTracks(r.value) : []));
+        return out.length ? out : asTracks(await invoke("album_tracks", { token: primary }));
+      });
+      detailLangSel = "";
+      paintDetailLang(m, kind, merged, meta);
       wireHeaderDownload(m, "album tracks");
     } else if (kind === "playlist" && q.get("local")) {
       // Locally created playlists never reach the network — they live in
       // LIBRARY_KEY and previously opened nowhere at all.
       const rec = load(LIBRARY_KEY, []).find((x) => x.id === id);
       if (!rec) return toast("Playlist not found");
-      paintDetail(
+      paintDetailLang(
         m,
         kind,
         rec.tracks || [],
@@ -2125,7 +2746,7 @@ async function mountDetail(kind, query) {
       wireHeaderDownload(m, "playlist tracks");
       wireLocalPlaylistTools(m, kind, query, rec.id);
     } else if (kind === "playlist") {
-      paintDetail(m, kind, asTracks(await withSnap(`playlist:${id}`, () => invoke("playlist_tracks", { id }))), meta);
+      paintDetailLang(m, kind, asTracks(await withSnap(`playlist:${id}`, () => invoke("playlist_tracks", { id }))), meta);
       wireHeaderDownload(m, "playlist tracks");
     } else await mountArtist(m, token, meta);
   } catch (e) {
@@ -2430,21 +3051,34 @@ function paintNowplaying(st) {
       headerArtist.dataset.entityKind = "artist";
     }
     const artImg = m.querySelector("img");
-    if (artImg && t.image) paintArt(artImg, t.image);
+    // Always paint — see the widget: an artless track must fall back to the
+    // brand mark instead of keeping the last cover (06-features batch).
+    if (artImg) paintArt(artImg, t.image || "");
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
     paintFavs();
   }
-  // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity): queue
-  // position and total length are real player state — the export's
-  // "STEREO DIRECT" chrome has nothing to stand on here.
+  // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity). TRACK nn
+  // and the length are real player state; STEREO DIRECT is desktop's exact
+  // wording (app/src/playback.js np-trackline), and the quality chip is fed
+  // only by the resolve's own `chosen_quality` (st.badge "320KBPS") — a
+  // transient state (RESOLVING/ERROR) hides the chip rather than inventing
+  // a number (docs/mobile/06-features.md, Android UI parity batch).
   setTxt(
     document.getElementById("np-trackline"),
     t && st.queue.length
-      ? `TRACK ${String(st.qi + 1).padStart(2, "0")} / ${st.queue.length}`
+      ? `TRACK ${String(st.qi + 1).padStart(2, "0")} / ${st.queue.length} • STEREO DIRECT`
       : "—",
   );
   setTxt(document.getElementById("np-length"), st.dur ? fmtTime(st.dur) : "—");
+  const qm = /^(\d{2,3})K?BPS$/.exec(String(st.badge || ""));
+  const qval = qm ? `${qm[1]}kbps` : String(st.badge || "") === "VAULT" ? "vault" : "";
+  const chip = document.getElementById("np-qchip");
+  if (chip) {
+    chip.textContent = qval;
+    chip.classList.toggle("hidden", !qval);
+  }
+  setTxt(document.getElementById("np-quality"), qval || "—");
 
   const bd = document.querySelector("[data-badge]");
   if (bd) {

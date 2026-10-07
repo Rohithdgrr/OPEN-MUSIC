@@ -64,9 +64,50 @@ ensure_linux_deps() {
 
 cmd_check()  { npm_run lint; npm_run css; npm_run test; echo "check: OK"; }
 
+inject_android_permissions() {
+  local manifest="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+  if [[ ! -f "$manifest" ]]; then
+    echo "AndroidManifest.xml not found - run 'tauri android init' first"
+    return 1
+  fi
+  
+  # Check if already injected
+  if grep -q 'android.permission.INTERNET' "$manifest"; then
+    echo "✓ Android permissions already present"
+    return 0
+  fi
+  
+  echo "Injecting Android permissions..."
+  
+  # Create network security config for cleartext loopback (media proxy)
+  local nsc="src-tauri/gen/android/app/src/main/res/xml/network_security_config.xml"
+  mkdir -p "$(dirname "$nsc")"
+  cat > "$nsc" << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow cleartext for localhost/loopback only (media proxy) -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">::1</domain>
+    </domain-config>
+</network-security-config>
+EOF
+  
+  # Inject permissions after <manifest> opening tag
+  sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' "$manifest"
+  
+  # Add network security config reference to <application> tag
+  sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"|' "$manifest"
+  
+  echo "✓ Injected INTERNET permission and network security config"
+  return 0
+}
+
 cmd_android() {
   # Release only, split per ABI: one APK per architecture instead of a fat
   # APK carrying every target's .so.
+  inject_android_permissions || die "Failed to inject Android permissions"
   local args=(android build --target aarch64 x86_64 --split-per-abi --apk --ci)
   tauri_android "${args[@]}"
 }
@@ -75,6 +116,7 @@ cmd_android_universal() {
   # Release, universal: one signed APK carrying arm64-v8a + armeabi-v7a +
   # x86_64 — installs on every real phone (ARM) and the x86_64 emulator,
   # no per-architecture choice at download time.
+  inject_android_permissions || die "Failed to inject Android permissions"
   local args=(android build --target aarch64 armv7 x86_64 --apk --ci)
   tauri_android "${args[@]}"
 }
