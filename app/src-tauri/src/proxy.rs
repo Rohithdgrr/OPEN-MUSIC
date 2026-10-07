@@ -1046,6 +1046,22 @@ async fn auth_middleware(
         }
     }
 
+    // The origin check repeats three times below; take a snapshot of the
+    // validated value now — `req` moves into `next.run(req)` in the success
+    // path, so the post-response reflection cannot borrow it again.
+    let validated_origin = req
+        .headers()
+        .get("origin")
+        .and_then(|o| o.to_str().ok())
+        .filter(|o| {
+            o.starts_with("http://127.0.0.1:")
+                || o.starts_with("http://localhost:")
+                || o.starts_with("http://[::1]:")
+                || *o == "tauri://localhost"
+                || *o == "http://tauri.localhost"
+        })
+        .map(str::to_string);
+
     // Check session token in query parameter or header
     let token_from_query = req
         .uri()
@@ -1068,15 +1084,44 @@ async fn auth_middleware(
     #[cfg(not(test))]
     if token.as_deref() != Some(&state.session_token) {
         eprintln!("Proxy auth failed: invalid session token");
-        return Err(StatusCode::UNAUTHORIZED);
+        return cors_error(StatusCode::UNAUTHORIZED, validated_origin.as_ref());
     }
     #[cfg(test)]
     if token.is_some() && token.as_deref() != Some(&state.session_token) {
         eprintln!("Proxy auth failed: invalid session token");
-        return Err(StatusCode::UNAUTHORIZED);
+        return cors_error(StatusCode::UNAUTHORIZED, validated_origin.as_ref());
     }
 
-    Ok(next.run(req).await)
+    let mut res = next.run(req).await;
+    // The page origin (tauri://localhost / http://tauri.localhost) is a
+    // DIFFERENT origin from this relay (127.0.0.1:<port>). WebAudio treats
+    // a MediaElementAudioSourceNode fed by cross-origin media that arrived
+    // without CORS headers as tainted and outputs silence — mobile's EQ
+    // chain became exactly that victim (P36). Reflect the validated origin
+    // so every resource load is CORS-clean.
+    if let Some(origin) = validated_origin.as_deref() {
+        if let Ok(v) = axum::http::HeaderValue::from_str(origin) {
+            res.headers_mut()
+                .insert(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, v);
+        }
+    }
+    Ok(res)
+}
+
+/// Auth-failure responses still need the CORS reflection: with
+/// `crossOrigin="anonymous"` on the transport elements, a bare 401 surfacing
+/// as a CORS error would misdirect the diagnosis. `validated_origin` is the
+/// value that already passed the middleware's allow-list.
+fn cors_error(
+    status: StatusCode,
+    validated_origin: Option<&String>,
+) -> Result<Response, StatusCode> {
+    let mut b = Response::builder().status(status);
+    if let Some(origin) = validated_origin {
+        b = b.header("access-control-allow-origin", origin);
+    }
+    Ok(b.body(Body::empty())
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response()))
 }
 
 /// Serve one saved file from the vault with byte ranges, so a downloaded

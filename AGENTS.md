@@ -984,3 +984,53 @@ left for the user.
 - Docs: `CHANGELOG.md` Unreleased (Fixed ×5, Added ×2), `feature-list.md`
   §3+§4 rows, `future-scope.md` pause/resume + smart-playlists marked shipped.
 - Temp probe files (`_fixverify*.html`) + static server removed after the run.
+
+## 2026-10-07j — Push record: bundle commit `41a263e` on `main` (pushed, in sync)
+
+User said "push code to github", then answered scope Q: **everything as-is,
+straight to main**. Before pushing, surfaced the full range per rule 8 (7
+local commits + ~3.3k lines mixed WIP). Pushed `54f29d4..41a263e`, verified
+`origin/main..HEAD` empty afterwards.
+- Commit `41a263e` (Rohithdgrr, 67 files, +10947/−674): the 07i desktop work
+  + all in-flight jam/mobile/android WIP exactly as found.
+- Deliberately NOT pushed (still untracked locally): `temporary/`,
+  `temporary data/`, `app/src-tauri/.cargo/` — probe screenshots/scripts +
+  machine-local linker config; committing them could break other checkouts.
+- Push staggered per rule 8: stage → commit → re-verify range → push, each a
+  separate command (`git push` also emits the spurious PowerShell exit-1 via
+  stderr; the `main -> main` line + empty ahead-range are the real proof).
+
+---
+
+## 2026-10-08 — P36 FIXED: mobile "plays but silent" (CORS-tainted WebAudio; verified by output meter)
+
+User report: music not streaming on mobile; in the emulator the UI says it is
+streaming and playing but nothing is audible.
+
+| Item | Evidence |
+|---|---|
+| Repro on the release APK | CDP `Runtime.evaluate` + `Input.dispatchTouchEvent` (real activation): element `paused:false t 8.7→11.3, vol:1, muted:false, ready:4`, play resolved — yet inaudible |
+| Root cause **measured, not inferred** | boot shim wrapping `AudioContext`/`connect` exposed the EQ chain: one `ctx1=running@48000`, tail GainNode → analyser read **`maxBin:0 avgBin:0`** while the element played. `createMediaElementSource()` + relay loads (`http://127.0.0.1:port`, cross-origin from `http://tauri.localhost`) with **no `Access-Control-Allow-Origin`** (`RELAYED_HEADERS`, proxy.rs:31) = non-CORS-clean media = WebAudio spec mandates zeros. v0.4.0 (`6e724b4`) introduced the mobile EQ chain; every prior "streaming works" probe measured the **playhead**, never the output |
+| Fix (both halves) | proxy.rs `auth_middleware` reflects the validated local Origin (`access-control-allow-origin`, failures included via `cors_error`); mobile `player.js` sets `crossOrigin="anonymous"` on `audio` (boot) + `standby` (creation + after the xfade swap) so loads are CORS-clean |
+| Verification | rebuilt x86_64 release APK (`BUILD_EXIT=0`, 7.6 MB, 03:43): same probe → **`maxBin:222 avgBin:58.66`**, `tAdv:2.45`, `ctx1=running`; relay answers `access-control-allow-origin: http://tauri.localhost` on `/file` (206 intact); docs P36 + CHANGELOG |
+| Gates | `cargo fmt --check` ✓ · `cargo clippy --all-targets -D warnings` ✓ · `cargo test --lib` **182/182** · `npm test` 237 pass / 3 fails that fail **identically on stashed HEAD** (untracked jam tests import `src/jam/follow.js → dom.js` with no DOM — pre-existing bundle breakage, NOT this fix) |
+
+**Lessons / traps:**
+- **A "STREAMING_OK" probe that only checks `paused`/`currentTime` cannot
+  hear.** To verify audibility, meter the graph output (analyser on the
+  app's own chain tail) or `captureStream`. The silent class survived three
+  verification sessions because every probe measured transport state.
+- `emulator -no-audio-init` is not a valid flag (build 36 image) — plain
+  `-no-snapshot-load -no-boot-anim -gpu auto`.
+- Two timed-out `tauri android build` parents deadlock gradle's lock; the
+  daemon sits at ~600 MB RAM doing nothing visible. Kill java+node, rerun
+  ONE build redirected to a log. After a kill the next build recompiles all
+  deps (~10 min, not incremental).
+- `tasklist //FI` + `stat -c %Y` polling of the APK mtime is the reliable
+  completion check when the CLI output is backgrounded.
+- Node 24's global `WebSocket` (addEventListener API) is enough for CDP —
+  no `ws` install needed.
+
+Status: ✅ fixed + verified live (meter > 0) ✅ docs (P36, CHANGELOG) ⏳
+nothing committed or pushed (rule 1) — emulator left running with the fixed
+APK installed and a track playing.

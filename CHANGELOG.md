@@ -42,6 +42,15 @@ Work landing after the latest tag sits in `Unreleased`.
   the mobile Now Playing screen is unchanged.
 
 ### Fixed
+- **Mobile played tracks silently — playhead advanced, no sound** (P36):
+  the v0.4.0 EQ chain routes the transport element through a
+  `MediaElementAudioSourceNode`, but the relay's stream/file responses
+  carried no `Access-Control-Allow-Origin`, so the cross-origin load was
+  not CORS-clean and WebAudio output silence while the element kept
+  "playing". The relay now reflects the validated app origin from the auth
+  middleware (failures included), and the mobile transport elements load
+  with `crossOrigin="anonymous"`. Verified with an in-graph output meter:
+  max frequency bin 0 → 222 on the rebuilt release APK.
 - **Windows `cargo test` harness** (`0xC0000139`, `rfd` → `TaskDialogIndirect`):
   `build.rs` now declares the comctl v6 manifest dependency on the link line.
   The room suite runs again — and immediately exposed a test that had been

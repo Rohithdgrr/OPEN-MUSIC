@@ -9,6 +9,15 @@ import * as sharedHelpers from "./shared.js";
 import { netMode } from "./net.js";
 import { ensureReco } from "./radio.js";
 
+// Every transport element loads media from the relay (`http://127.0.0.1:port`) —
+// a different origin from the page (`http://tauri.localhost`). Before the EQ
+// chain routes it through a MediaElementAudioSourceNode the load must be
+// CORS-clean, or the graph outputs silence while the element "plays" (P36).
+// Set at boot, kept at every swap. (The relay reflects the app origin; both
+// sides of that contract live in proxy.rs auth_middleware.)
+const transport = document.getElementById("audio");
+if (transport) transport.crossOrigin = "anonymous";
+
 // `audio` is a live binding (screens import it): the gapless/crossfade
 // engine swaps which element is audible by reassigning it, and every reader
 // (playerState, mediaSession handlers, lyrics clock) follows automatically.
@@ -295,6 +304,9 @@ function ensureStandby() {
     standby = document.createElement("audio");
     standby.preload = "auto";
     standby.volume = 0;
+    // Same CORS-clean rule as the shell element (P36): the standby feeds the
+    // same EQ chain, so a tainted load would feed silence into the handoff.
+    standby.crossOrigin = "anonymous";
     try {
       const v = Number(localStorage.getItem("tm-play-speed") || "1");
       standby.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
@@ -1013,6 +1025,11 @@ function finishXfade() {
   badge = "OK";
   audio = sb; // the swap: every reader of the live binding follows
   standby = old;
+  // The promoted element keeps a cross-origin src — keep it CORS-clean
+  // for the EQ chain after the swap (P36). Setting the property on an
+  // element mid-load is a no-op for the in-flight fetch, but the swap is
+  // the one point where src is re-assigned next, so this is the hook.
+  try { audio.crossOrigin = "anonymous"; } catch {}
   try {
     audio.volume = baseVol();
     standby.volume = 0;
