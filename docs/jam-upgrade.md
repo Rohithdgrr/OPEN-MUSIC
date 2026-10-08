@@ -123,6 +123,18 @@ string, `room_join` still works; (4) both sheets have exactly one input;
 (5) displayed/copied/QR strings byte-identical = backend `invite`; (6) probes
 green; (7) full gates green.
 
+**Status 2026-10-08 — A1–A6 COMPLETE, all seven ACs green:**
+
+| AC | Evidence |
+|---|---|
+| (1) canonical `invite`, `urls`/`code` unchanged | Rust `invite_from` unit + live Android probe `room_info.invite` → `trancemusic://join?host=10.0.2.16&port=8787&code=N6NQ2SLG` with `urls`/`code` intact (D-12 row) |
+| (2) Rust cases | `cargo test --lib` 194/194 (`OP_OFFLINE=1`), fmt 0, clippy 0 — commits `9ed94cf` |
+| (3) `room_join_uri` from one string | live: garbage → `"That doesn't look like an invite link."`, good URI while hosting → exact guard, failed dial → `room_info` stays `idle` and a following `room_open` works (D2 lesson re-proven on device) |
+| (4) one input per sheet | static tests + live Android probe (sheet ids: invite ✓, addr/code absent) |
+| (5) UI == backend byte-identical | live Android: `#jamInviteUri` text == `room_info.invite` exactly |
+| (6) probes green | `live-desktop` **32/0** · `live-reverse-pair` **exit 0** (D4/D5 included; desktop guest joined **through the canonical link**) · `live-lan-join` **exit 0** (real LAN; Android guest joined through `#jam-join-invite`) · Android spike probe **11/11** |
+| (7) full gates | `npm test` 254/254, eslint clean; commits `c994fae` (A3), `d5cdf85` (A4), `33ed7d2` (A5), `779a5ab` (A6 probes) |
+
 ---
 
 ## 4. Sub-project B — scan-to-join (mobile camera)
@@ -139,6 +151,23 @@ green; (7) full gates green.
     camera + paste (A already delivers paste everywhere), documented as the
     limitation. **No vendored decoder in v1** (new dependency = needs the user's
     call); re-decide only after the spike result.
+
+  **Spike verdict (B-T1, 2026-10-08, run on `Pixel6_API36` / WebView
+  Chrome/133): camera YES, detector NO.** Full record: `docs/mobile/09-
+  problems-solutions.md` **P38**.
+  - Camera: works after `CAMERA` lands in the manifest through
+    `build.sh inject_android_permissions` (injection changed this session:
+    CAMERA-aware idempotence + sourceable dispatcher). Live proof: gUM
+    delivers a stream, frames render — wry approves the origin.
+  - `BarcodeDetector`: surface present (constructs, advertises `qr_code`)
+    but `detect()` returns empty on every input shape (DOM canvas,
+    ImageBitmap, blob, video) against a visually verified correct QR —
+    silent, no console error. `canvas.captureStream` also dead.
+  - **Consequence:** B-T2 does NOT start on the old assumption. Two options,
+    the user's call: (i) approve one vendored QR decoder (~10 KB jsQR-class,
+    the only new dep) over the proven camera — full in-app scanner; or
+    (ii) ship the documented fallback (system camera + paste) and close B
+    as a limitation. Until that call lands: no scanner UI code.
 - Scanner UI (success path): full-screen sheet in the Jam join flow
   ("Scan QR" next to the paste field), `<video>` + overlay, `BarcodeDetector`
   polling at ~5 fps via `requestAnimationFrame`, on hit → validate with

@@ -25,6 +25,15 @@ Work landing after the latest tag sits in `Unreleased`.
   `room_join {addr, code, name}` remains as a thin legacy wrapper. Both join
   sheets collapse to a single paste field.
 
+### Changed · Jam upgrade (sub-project B spike of `docs/jam-upgrade.md`)
+- **Android `CAMERA` permission** is injected by `app/build.sh
+  inject_android_permissions` (CAMERA-aware idempotence — an INTERNET-only
+  manifest now upgrades instead of early-returning; dispatcher is sourceable
+  for standalone runs). Camera verified live in the Tauri WebView (stream +
+  frames); `BarcodeDetector` proved non-functional there despite its API
+  surface — scanner verdict + the vendored-decoder decision: **P38** in
+  `docs/mobile/09-problems-solutions.md`.
+
 ### Changed · Brand → **OPEN MUSIC** (user-facing strings only)
 - The platform now reads **OPEN MUSIC** on both surfaces (`TRANCE MUSIC` on
   desktop, `REON` on mobile): window/installer/launcher `productName`, both
