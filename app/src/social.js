@@ -23,6 +23,7 @@ import { paintQr } from "./qrview.js";
 import {
   createRoomState,
   inviteText,
+  parseInvite,
   memberCount,
   reduceRoom,
   sanitizeRoomName,
@@ -551,6 +552,7 @@ async function openRoom() {
       selfId: "host",
       code: info?.code || "",
       urls: Array.isArray(info?.urls) ? info.urls : [],
+      invite: typeof info?.invite === "string" ? info.invite : "",
       members: [{ id: "host", name, host: true }],
     });
   } catch (e) {
@@ -561,18 +563,24 @@ async function openRoom() {
 
 async function joinRoom() {
   if (room.role !== "idle" || joining) return;
-  const addr = (el("room-join-addr")?.value || "").trim();
-  const code = (el("room-join-code")?.value || "").trim().toUpperCase();
-  if (!addr || !code) {
-    setRoomNote("Enter the host's address and the 8-character room code.");
+  const uri = (el("room-join-invite")?.value || "").trim();
+  if (!uri) {
+    setRoomNote("Paste the host's invite link (an old address · code line works too).");
+    return;
+  }
+  const parsed = parseInvite(uri);
+  if (!parsed) {
+    // Pre-validation for this inline message only — Rust is the authority
+    // and will reject the same string again (docs/jam-upgrade.md §3.3).
+    setRoomNote("That doesn't look like an invite link.");
     return;
   }
   joining = true;
-  setRoomNote(`Connecting to ${addr}…`);
+  setRoomNote(`Connecting to ${parsed.addr}…`);
   paintRoom();
   try {
     // The outcome arrives as frames (`joined` / `error`), not as a return value.
-    await invoke("room_join", { addr, code, name: roomName() });
+    await invoke("room_join_uri", { uri, name: roomName() });
   } catch (e) {
     joining = false;
     setRoomNote(String(e).slice(0, 200));
@@ -893,14 +901,12 @@ export function initSocial() {
 
   $("#btn-open-room")?.addEventListener("click", () => void openRoom());
   $("#btn-room-join")?.addEventListener("click", () => void joinRoom());
-  for (const id of ["room-join-addr", "room-join-code"]) {
-    el(id)?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        void joinRoom();
-      }
-    });
-  }
+  el("room-join-invite")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      void joinRoom();
+    }
+  });
   $("#btn-copy-invite")?.addEventListener("click", () => void copyInvite());
   $("#btn-qr-copy")?.addEventListener("click", () => void copyInvite());
 

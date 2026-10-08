@@ -1718,16 +1718,16 @@ addEventListener("DOMContentLoaded", () => {
     <p class="soc-tile-note" id="jam-members-note">1 (you) — nobody else can join until the local sidecar is running.</p>
 
     <!-- Join form (contract C-4, docs/listen-together.md §6a): ids
-         room-join-addr / room-join-code / btn-room-join / room-join-note.
-         Wired by social.js (T-104); button starts disabled until then. -->
+         room-join-invite / btn-room-join / room-join-note. One pasted link
+         covers both shapes — the canonical trancemusic://join?… and a legacy
+         `ws://ip:port · CODE` line — Rust parses both (A). Wired by social.js. -->
     <div class="soc-room-join">
-      <input class="soc-input" id="room-join-addr" type="text" placeholder="Host address — e.g. 192.168.1.5" autocomplete="off" spellcheck="false" />
-      <input class="soc-input soc-input-code" id="room-join-code" type="text" placeholder="CODE" maxlength="8" autocomplete="off" spellcheck="false" />
+      <input class="soc-input" id="room-join-invite" type="text" placeholder="Paste the invite link — trancemusic://join?…" autocomplete="off" spellcheck="false" />
       <button class="soc-btn soc-btn-solid" id="btn-room-join" type="button" disabled>
         <span class="material-symbols-outlined" style="font-size:14px">login</span>
         <span>Join room</span>
       </button>
-      <p class="soc-tile-note" id="room-join-note">Enter the host's LAN address and the 8-character room code.</p>
+      <p class="soc-tile-note" id="room-join-note">Paste the invite link the host shares — an old address · code line still works.</p>
     </div>
 
     <div class="soc-qappend">

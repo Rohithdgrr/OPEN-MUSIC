@@ -179,10 +179,11 @@ test("no fabricated room codes or PINs remain in the markup", () => {
 });
 
 test("social.js drives the Rust room commands from the frozen contract", () => {
-  // docs/listen-together.md §6/§13.1: every one of the seven commands is the
-  // window's only way into a room, and every one has a caller in the UI.
+  // docs/listen-together.md §6/§13.1: every command is the window's only way
+  // into a room, and every one has a caller in the UI. `room_join_uri` is the
+  // public join entry (A); `room_join` is legacy and has no UI caller.
   const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
-  for (const cmd of ["room_open", "room_join", "room_chat", "room_playback", "room_report", "room_close", "room_info"]) {
+  for (const cmd of ["room_open", "room_join_uri", "room_chat", "room_playback", "room_report", "room_close", "room_info"]) {
     assert.ok(social.includes(`"${cmd}"`), `social.js never calls ${cmd}`);
   }
   assert.match(social, /listen\("room:\/\/msg"/, "frames must arrive through the room://msg event");
@@ -195,9 +196,11 @@ test("social.js drives the Rust room commands from the frozen contract", () => {
 test("the join form (C-4) is wired and starts enabled only when idle", () => {
   const social = fs.readFileSync(path.join(src, "social.js"), "utf8");
   assert.match(social, /#btn-room-join"\)\?\.addEventListener\("click"/, "Join button not wired");
-  for (const id of ["room-join-addr", "room-join-code", "room-join-note"]) {
+  // One paste field (A) — the link is validated before the command is called.
+  for (const id of ["room-join-invite", "room-join-note"]) {
     assert.ok(social.includes(`"${id}"`), `social.js ignores ${id}`);
   }
+  assert.match(social, /parseInvite\(uri\)/, "the pasted link must be pre-validated for the inline message");
   // Idle → usable; in a room → refused with a reason, not silently dead.
   assert.match(social, /const canJoin = idle && !joining;/);
   assert.match(social, /join\.disabled = !canJoin;/);
