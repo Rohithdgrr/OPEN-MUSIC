@@ -228,3 +228,20 @@ export function worstDriftMs(state) {
   }
   return worst;
 }
+
+// ------------------------------------------------------------ local role ---
+// Which side of a room THIS window is on right now. The surfaces (social.js /
+// jam.js) set it whenever their room state changes; playback owners that are
+// not part of the room glue read it to hand the timeline to the host — a
+// guest's transport and seek surface must not fight the incoming frames, and
+// crossfade/gapless element swaps must not happen mid-room on either side
+// (§4: the host owns the playhead; a fade is two timelines).
+let currentLocalRole = "";
+
+export function setLocalRole(role) {
+  currentLocalRole = role === "host" || role === "guest" ? role : "";
+}
+
+export function localRole() {
+  return currentLocalRole;
+}

@@ -26,9 +26,11 @@ import {
   memberCount,
   reduceRoom,
   sanitizeRoomName,
+  setLocalRole,
   syncDecision,
   worstDriftMs,
 } from "./room.js";
+import { resolveFromCatalog } from "./jam/follow.js";
 import { entryTrack, vaultEntries } from "./vault.js";
 
 /// The host's sync tick (§4.1). C-5: a state frame on every real change *and*
@@ -335,7 +337,28 @@ function findLocalTrack(id) {
 
 async function followHostTrack(pb) {
   const found = findLocalTrack(pb.trackId);
+  const wantKey = `${pb.at}:${pb.trackId}`;
   if (!found) {
+    // Catalog fallback: the guest's own backend resolves the host's id even
+    // when this device has never seen the track (fresh install, deep cut).
+    // §4.5 still rules when the catalog refuses too: mirror, never pretend.
+    let cat;
+    try {
+      cat = await resolveFromCatalog(pb, { invoke });
+    } catch {
+      cat = null;
+    }
+    // The host may have moved on while the resolve ran — apply only if this
+    // frame is still the room's latest.
+    const latest = room.playback;
+    if (latest && `${latest.at}:${latest.trackId}` !== wantKey) return;
+    if (cat && cat.track) {
+      guestMirror = "";
+      enqueue(cat.track);
+      await playQueueItem(queue.length - 1);
+      paintRoom();
+      return;
+    }
     // §4.5: mirror the host's metadata, never claim to be playing it.
     guestMirror = `Host is on “${pb.title || pb.trackId}” — not on this device.`;
     // D3: the sync this UI advertises stopped in this frame — drop the applied
@@ -400,6 +423,7 @@ function startGuestTick() {
 function applyRoomFrame(frame) {
   if (!frame || typeof frame.t !== "string") return;
   room = reduceRoom(room, frame);
+  setLocalRole(room.role);
 
   switch (frame.t) {
     case "refresh":
@@ -487,6 +511,7 @@ async function enterSocial() {
     /* no IPC, or nothing to reconcile */
   }
   room = createRoomState();
+  setLocalRole("");
   roomPort = 0;
   joining = false;
   lastDrift = null;
@@ -504,6 +529,7 @@ async function leaveRoom(note) {
     /* nothing was open */
   }
   room = createRoomState();
+  setLocalRole("");
   roomPort = 0;
   joining = false;
   lastDrift = null;

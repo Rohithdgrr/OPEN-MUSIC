@@ -8,6 +8,7 @@ import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted, relayUrl, haptic, pref
 import * as sharedHelpers from "./shared.js";
 import { netMode } from "./net.js";
 import { ensureReco } from "./radio.js";
+import { localRole } from "../room.js";
 
 // Every transport element loads media from the relay (`http://127.0.0.1:port`) —
 // a different origin from the page (`http://tauri.localhost`). Before the EQ
@@ -854,6 +855,10 @@ function gaplessOn() {
 }
 
 function xfadeActive() {
+  // In a Jam room the host owns the timeline (§4): the standby handoff swaps
+  // which element is audible mid-room, which the incoming playback frames and
+  // the drift measure cannot follow. One element, one timeline.
+  if (localRole()) return false;
   return xfadeSecs() > 0 || gaplessOn();
 }
 

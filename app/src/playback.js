@@ -8,6 +8,7 @@ import { paintFavHearts, pushPlay } from "./library.js";
 import { loadLyrics, prefetchLyrics } from "./lyrics.js";
 import { setMediaSessionTrack } from "./media.js";
 import { setBadge, setPlayIcon } from "./player.js";
+import { localRole } from "./room.js";
 import { advanceQueue, markQueue, pickNextIndex, queue, queueIndex, renderQueue, repeatMode, setCurrent, setQueueIndex } from "./queue.js";
 import { ensureReco } from "./radio.js";
 import { prefetchNext, prefetchTrack, isDownloaded } from "./vault.js";
@@ -417,6 +418,10 @@ async function finishFade(f) {
 
 audio.addEventListener("timeupdate", () => {
   if (fade) return;
+  // In a Jam room the host owns the timeline (§4): a crossfade runs two
+  // tracks at once and swaps elements mid-room, which the incoming playback
+  // frames and the drift measure cannot follow. Single timeline only.
+  if (localRole()) return;
   const xf = Number(localStorage.getItem("tm-xfade") || 0);
   if (!(xf > 0) || audio.paused || repeatMode === "one") return;
   if (!Number.isFinite(audio.duration) || audio.duration <= xf + 2) return;

@@ -31,9 +31,11 @@ import {
   parseInvite,
   reduceRoom,
   sanitizeRoomName,
+  setLocalRole,
   syncDecision,
   worstDriftMs,
 } from "../room.js";
+import { resolveFromCatalog } from "../jam/follow.js";
 
 const TICK_MS = 1000; // C-5: a state frame on every change + 1 s while playing
 
@@ -226,6 +228,7 @@ async function leaveRoom(announce) {
     /* nothing was open */
   }
   room = createRoomState();
+  setLocalRole("");
   socialChrome = false;
   joining = false;
   appliedFrames = 0;
@@ -255,6 +258,7 @@ async function copyInvite() {
 function applyFrame(frame) {
   if (!frame || typeof frame.t !== "string") return;
   room = reduceRoom(room, frame);
+  setLocalRole(room.role);
 
   switch (frame.t) {
     case "refresh":
@@ -446,6 +450,24 @@ async function followGuest(pb) {
     const hit = extras.find((t) => t && t.id && t.title && String(t.id) === String(pb.trackId));
     if (hit) {
       list.push(hit);
+      idx = list.length - 1;
+    }
+  }
+  if (idx < 0) {
+    // Catalog fallback: this phone's own backend resolves the host's id even
+    // for a track the device has never queued, played, liked or downloaded.
+    let cat;
+    try {
+      cat = await resolveFromCatalog(pb, { invoke });
+    } catch {
+      cat = null;
+    }
+    // The host may have moved on while the resolve ran — play only if this
+    // frame is still the room's latest.
+    const latest = room.playback;
+    if (latest && String(latest.trackId) !== String(pb.trackId)) cat = null;
+    if (cat && cat.track) {
+      list.push(cat.track);
       idx = list.length - 1;
     }
   }

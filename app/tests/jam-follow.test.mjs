@@ -1,192 +1,135 @@
-// jam-follow.test.mjs — Unit tests for guest track resolution
+// jam-follow.test.mjs — unit tests for the guest resolution pipeline
+// (docs/listen-together.md §12/§13): local → catalog → mirror.
+// follow.js is pure and dependency-injected, so this runs with plain node.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-// Mock invoke for testing
-globalThis.invoke = async (cmd, params) => {
+const { findLocalTrack, resolveFromCatalog, resolveGuestTrack, createResolver } = await import(
+  "../src/jam/follow.js"
+);
+
+const invokeOk = async (cmd, params) => {
   if (cmd === "resolve_song") {
-    // Simulate successful catalog resolution
     if (params.id === "valid-track") {
       return {
         proxy_url: "http://127.0.0.1:8080/stream?id=valid-track",
         range_status: "ok",
-        title: "Resolved Track",
-        artist: "Resolved Artist",
+        title: "Catalog Title",
+        artist: "Catalog Artist",
       };
     }
-    // Simulate resolution failure
+    if (params.id === "dead-track") {
+      return { range_status: "dead", proxy_url: "" };
+    }
     throw new Error("Track not available");
   }
+  throw new Error("unexpected command " + cmd);
 };
 
-// Import after mocking
-const { findLocalTrack, resolveGuestTrack, createResolver } = await import("../src/jam/follow.js");
+const frame = { trackId: "valid-track", title: "Host Song", artist: "Host Artist" };
 
-test("findLocalTrack - finds track in queue", async () => {
-  const queue = [
-    { track: { id: "track1", title: "Song 1" } },
-    { track: { id: "track2", title: "Song 2" } },
-  ];
-  const localTracks = [];
-
-  const result = findLocalTrack("track2", queue, localTracks);
-  
-  assert.ok(result);
-  assert.equal(result.track.id, "track2");
-  assert.equal(result.index, 1);
-  assert.equal(result.source, "queue");
+test("findLocalTrack - queue hit carries its index", () => {
+  const queue = [{ track: { id: "t1", title: "A" } }, { track: { id: "t2", title: "B" } }];
+  const hit = findLocalTrack("t2", queue, []);
+  assert.equal(hit.index, 1);
+  assert.equal(hit.source, "queue");
+  assert.equal(hit.track.id, "t2");
 });
 
-test("findLocalTrack - finds track in local tracks", async () => {
-  const queue = [];
-  const localTracks = [
-    { id: "local1", title: "Local 1" },
-    { id: "local2", title: "Local 2" },
-  ];
-
-  const result = findLocalTrack("local2", queue, localTracks);
-  
-  assert.ok(result);
-  assert.equal(result.track.id, "local2");
-  assert.equal(result.index, -1);
-  assert.equal(result.source, "local");
+test("findLocalTrack - extras hit (history/favs/vault) has index -1", () => {
+  const hit = findLocalTrack("t9", [], [{ id: "t9", title: "Vaulted" }]);
+  assert.equal(hit.index, -1);
+  assert.equal(hit.source, "local");
 });
 
-test("findLocalTrack - returns null when not found", async () => {
-  const queue = [{ track: { id: "track1" } }];
-  const localTracks = [{ id: "local1" }];
-
-  const result = findLocalTrack("missing", queue, localTracks);
-  
-  assert.equal(result, null);
+test("findLocalTrack - miss and bad ids", () => {
+  assert.equal(findLocalTrack("nope", [], []), null);
+  assert.equal(findLocalTrack("", [], []), null);
+  assert.equal(findLocalTrack(undefined, [], []), null);
 });
 
-test("resolveGuestTrack - resolves from queue first", async () => {
-  const playbackFrame = {
-    trackId: "track1",
-    title: "Test Track",
-    artist: "Test Artist",
-  };
-  const queue = [{ track: { id: "track1", title: "Queue Track" } }];
-  const localTracks = [];
-  const quality = "320";
-
-  const result = await resolveGuestTrack(playbackFrame, queue, localTracks, quality);
-  
-  assert.ok(result.track);
-  assert.equal(result.source, "queue");
-  assert.equal(result.index, 0);
-  assert.ok(!result.mirror);
+test("resolveFromCatalog - resolves and prefers frame metadata", async () => {
+  const r = await resolveFromCatalog(frame, { invoke: invokeOk });
+  assert.equal(r.source, "catalog");
+  assert.equal(r.track.id, "valid-track");
+  assert.equal(r.track.title, "Host Song");
+  assert.equal(r.track.artist, "Host Artist");
 });
 
-test("resolveGuestTrack - falls back to catalog when not local", async () => {
-  const playbackFrame = {
-    trackId: "valid-track",
-    title: "Test Track",
-    artist: "Test Artist",
-  };
-  const queue = [];
-  const localTracks = [];
-  const quality = "320";
-
-  const result = await resolveGuestTrack(playbackFrame, queue, localTracks, quality);
-  
-  assert.ok(result.track);
-  assert.equal(result.source, "catalog");
-  assert.equal(result.index, -1);
-  assert.ok(!result.mirror);
-  assert.ok(result.track.title); // Should have metadata
+test("resolveFromCatalog - dead and failing ids are honest errors", async () => {
+  const dead = await resolveFromCatalog({ trackId: "dead-track" }, { invoke: invokeOk });
+  assert.equal(dead.track, undefined);
+  assert.ok(dead.error);
+  const boom = await resolveFromCatalog({ trackId: "throws" }, { invoke: invokeOk });
+  assert.equal(boom.track, undefined);
+  assert.ok(boom.error.includes("Track not available"));
 });
 
-test("resolveGuestTrack - shows mirror when catalog fails", async () => {
-  const playbackFrame = {
-    trackId: "unavailable-track",
-    title: "Unavailable Track",
-    artist: "Unknown Artist",
-  };
-  const queue = [];
-  const localTracks = [];
-  const quality = "320";
-
-  const result = await resolveGuestTrack(playbackFrame, queue, localTracks, quality);
-  
-  assert.ok(!result.track);
-  assert.ok(result.mirror);
-  assert.ok(result.mirror.includes("Unavailable Track"));
-  assert.ok(result.mirror.includes("not on this device"));
-  assert.ok(result.error);
+test("resolveFromCatalog - no invoke injected is an error, not a throw", async () => {
+  const r = await resolveFromCatalog(frame, {});
+  assert.equal(r.track, undefined);
+  assert.equal(r.error, "no invoke");
 });
 
-test("resolveGuestTrack - returns error for invalid frame", async () => {
-  const playbackFrame = { title: "No ID" }; // Missing trackId
-  const queue = [];
-  const localTracks = [];
-  const quality = "320";
-
-  const result = await resolveGuestTrack(playbackFrame, queue, localTracks, quality);
-  
-  assert.ok(result.mirror);
-  assert.ok(result.error);
-  assert.equal(result.error, "invalid_frame");
-});
-
-test("createResolver - cancels stale resolutions", async () => {
-  const resolver = createResolver();
-  const queue = [];
-  const localTracks = [];
-  const quality = "320";
-
-  // Start first resolution
-  const promise1 = resolver(
-    { trackId: "track1", title: "Track 1" },
-    queue,
-    localTracks,
-    quality
+test("resolveGuestTrack - local beats catalog", async () => {
+  const r = await resolveGuestTrack(
+    frame,
+    [{ track: { id: "valid-track", title: "Queued" } }],
+    [],
+    { invoke: invokeOk },
   );
-
-  // Start second resolution (should cancel first)
-  const promise2 = resolver(
-    { trackId: "track2", title: "Track 2" },
-    queue,
-    localTracks,
-    quality
-  );
-
-  const [result1, result2] = await Promise.all([promise1, promise2]);
-
-  // First should be superseded
-  assert.ok(result1.superseded);
-  
-  // Second should complete
-  assert.ok(!result2.superseded);
+  assert.equal(r.source, "queue");
+  assert.equal(r.index, 0);
 });
 
-test("createResolver - allows same track to resolve", async () => {
-  const resolver = createResolver();
-  const queue = [];
-  const localTracks = [];
-  const quality = "320";
-
-  // Resolve same track twice
-  const result1 = await resolver(
-    { trackId: "valid-track", title: "Track 1" },
-    queue,
-    localTracks,
-    quality
-  );
-
-  const result2 = await resolver(
-    { trackId: "valid-track", title: "Track 1" },
-    queue,
-    localTracks,
-    quality
-  );
-
-  // Both should succeed (not superseded)
-  assert.ok(!result1.superseded);
-  assert.ok(!result2.superseded);
-  assert.ok(result1.track);
-  assert.ok(result2.track);
+test("resolveGuestTrack - catalog path returns index -1", async () => {
+  const r = await resolveGuestTrack(frame, [], [], { invoke: invokeOk });
+  assert.equal(r.source, "catalog");
+  assert.equal(r.index, -1);
+  assert.equal(r.track.title, "Host Song");
 });
 
-console.log("✅ All jam-follow tests passed!");
+test("resolveGuestTrack - full miss mirrors with §4.5 text", async () => {
+  const r = await resolveGuestTrack(
+    { trackId: "dead-track", title: "Ghost Song", artist: "Nobody" },
+    [],
+    [],
+    { invoke: invokeOk },
+  );
+  assert.ok(r.mirror.includes("Ghost Song"));
+  assert.ok(r.mirror.includes("not on this device"));
+  assert.equal(r.track, undefined);
+});
+
+test("resolveGuestTrack - invalid frame mirrors immediately", async () => {
+  const r = await resolveGuestTrack({}, [], [], { invoke: invokeOk });
+  assert.equal(r.error, "invalid_frame");
+});
+
+test("createResolver - stale completions are superseded", async () => {
+  const deferreds = [];
+  const slow = createResolver({
+    invoke: async (cmd) => {
+      if (cmd !== "resolve_song") throw new Error("nope");
+      await new Promise((res) => deferreds.push(res));
+      return { proxy_url: "x", range_status: "ok", title: "S" };
+    },
+  });
+  const first = slow(frame, [], []);
+  const second = slow({ trackId: "other", title: "Other" }, [], []);
+  // Settle the SECOND resolve (the latest generation) first.
+  deferreds[1]();
+  const secondResult = await second;
+  assert.equal(secondResult.superseded, undefined);
+  // Now settle the stale one — it must report superseded, not a track.
+  deferreds[0]();
+  const firstResult = await first;
+  assert.equal(firstResult.superseded, true);
+});
+
+test("createResolver - result passes through when not superseded", async () => {
+  const resolve = createResolver({ invoke: invokeOk });
+  const r = await resolve(frame, [], []);
+  assert.equal(r.source, "catalog");
+  assert.equal(r.track.id, "valid-track");
+});

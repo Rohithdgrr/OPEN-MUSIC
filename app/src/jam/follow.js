@@ -1,55 +1,51 @@
-// jam/follow.js — Guest track resolution with catalog fallback.
+// jam/follow.js — guest track resolution pipeline: local → catalog → mirror.
 //
-// The P0 fix: guests can now play tracks they don't have locally by resolving
-// through the catalog. Resolution path: local → resolve_song → mirror fallback.
+// The pipeline every surface shares (docs/listen-together.md §12/§13):
+//   1. local — the live queue, play history, favourites and the vault
+//   2. catalog — the guest's own backend resolves the host's id
+//      (`resolve_song`), so a fresh device can follow a deep cut
+//   3. mirror — §4.5 honesty: metadata only, never claim to be playing it
 //
-// Contract: returns { track, source } or { mirror, error }.
-// - track: ready to enqueue and play
-// - source: "queue" | "local" | "catalog"
-// - mirror: metadata-only display string (honest "not playable")
-// - error: reason why resolve failed
+// Dependency-injected by design: `invoke` arrives from the caller (the
+// surface's own capture of the Tauri bridge). This module must stay
+// DOM-free and import-free so it can sit in the mobile shell's graph and
+// run under `node --test` — a static `../core.js` import here once killed
+// the whole mobile app.js module graph (mobile 09 P-stray), and a dynamic
+// one would still drag dom.js's top-level side effects into the page.
 
-import { invoke } from "../core.js";
-
-/// Find track in local state: queue, history, favorites, vault.
-/// Returns { track, index } where index >= 0 means it's in queue.
+/// Find the id in local state: the live queue first (with its index, so the
+/// caller can jump instead of re-append), then the caller's extra rows
+/// (history, favourites, vault). Returns `{ track, index, source }` or null.
 export function findLocalTrack(id, queue, localTracks) {
   if (!id) return null;
-  
-  // Check live queue first
-  const queueIdx = queue.findIndex((q) => q.track && q.track.id === id);
+  const queueIdx = (queue || []).findIndex((q) => q && q.track && q.track.id === id);
   if (queueIdx >= 0) {
     return { track: queue[queueIdx].track, index: queueIdx, source: "queue" };
   }
-  
-  // Check history / favorites / vault
-  const hit = localTracks.find((t) => t.id === id);
-  if (hit) {
-    return { track: hit, index: -1, source: "local" };
-  }
-  
+  const hit = (localTracks || []).find((t) => t && t.id === id);
+  if (hit) return { track: hit, index: -1, source: "local" };
   return null;
 }
 
-/// Resolve track through catalog when not found locally (the key P0 fix).
-/// This makes Jam work on fresh devices or when host plays unfamiliar tracks.
-async function resolveViaCatalog(id, quality) {
+/// Step 2: ask the guest's backend to resolve the id. `invoke` is injected.
+/// Returns `{ track }` or `{ error }` — never throws.
+export async function resolveFromCatalog(playbackFrame, deps = {}) {
+  const { invoke, quality } = deps;
+  if (!invoke) return { error: "no invoke" };
+  const id = playbackFrame && playbackFrame.trackId;
+  if (!id) return { error: "invalid_frame" };
   try {
-    const info = await invoke("resolve_song", { id, quality });
+    const info = await invoke("resolve_song", quality ? { id, quality } : { id });
     if (!info || info.range_status === "dead" || !info.proxy_url) {
       return { error: "Track not available" };
     }
-    
-    // Convert resolve_song response to a Track structure
-    // Note: metadata should ideally come from search_songs or be cached,
-    // but for Jam we can use the playback frame's metadata as fallback
     return {
       track: {
         id,
-        title: info.title || id,
-        artist: info.artist || "",
-        image: info.image || "",
-        // Mark this as catalog-resolved so UI can show it differently if needed
+        title: playbackFrame.title || info.title || id,
+        artist: playbackFrame.artist || info.artist || "",
+        image: playbackFrame.image || info.image || "",
+        // Mark catalog-resolved so a surface may badge it differently.
         _catalogResolved: true,
       },
       source: "catalog",
@@ -59,35 +55,18 @@ async function resolveViaCatalog(id, quality) {
   }
 }
 
-/// Complete resolution pipeline: local → catalog → mirror.
-/// This is the single source of truth for guest track resolution.
-///
-/// Parameters:
-///   - playbackFrame: the host's playback frame with trackId, title, artist, image
-///   - queue: current playback queue
-///   - localTracks: fn returning history/favs/vault
-///   - quality: stream quality setting
-///
-/// Returns:
-///   Success: { track, source, index }
-///   Failure: { mirror, error }
-export async function resolveGuestTrack(playbackFrame, queue, localTracks, quality) {
-  const { trackId, title, artist, image } = playbackFrame;
-  
-  if (!trackId) {
-    return { mirror: "No track ID", error: "invalid_frame" };
-  }
-  
-  // Step 1: Try local resolution
+/// The full pipeline. Returns:
+///   `{ track, index, source }` — playable now (index ≥ 0 means queue hit)
+///   `{ mirror, error }`        — §4.5 metadata mirror, nothing playable
+export async function resolveGuestTrack(playbackFrame, queue, localTracks, deps = {}) {
+  const { trackId, title, artist, image } = playbackFrame || {};
+  if (!trackId) return { mirror: "No track ID", error: "invalid_frame" };
+
   const local = findLocalTrack(trackId, queue, localTracks);
-  if (local) {
-    return local;
-  }
-  
-  // Step 2: Try catalog resolution (P0 fix - this was missing!)
-  const catalog = await resolveViaCatalog(trackId, quality);
+  if (local) return local;
+
+  const catalog = await resolveFromCatalog(playbackFrame, deps);
   if (catalog.track) {
-    // Enrich with metadata from the playback frame
     return {
       track: {
         ...catalog.track,
@@ -96,44 +75,25 @@ export async function resolveGuestTrack(playbackFrame, queue, localTracks, quali
         image: image || catalog.track.image,
       },
       source: catalog.source,
-      index: -1, // Not in queue yet
+      index: -1, // not in the queue — the caller appends and jumps
     };
   }
-  
-  // Step 3: Mirror metadata (honest failure - docs/listen-together.md §4.5)
+
   const mirrorText = title
     ? `Host is on "${title}" by ${artist || "unknown"} — not on this device.`
     : `Host is on track ${trackId} — not on this device.`;
-    
-  return {
-    mirror: mirrorText,
-    error: catalog.error || "Track not available",
-  };
+  return { mirror: mirrorText, error: catalog.error || "Track not available" };
 }
 
-/// Single-flight resolver to prevent resolution storms when host changes tracks rapidly.
-/// Tracks the in-flight trackId and cancels stale resolutions.
-export function createResolver() {
-  let currentId = null;
+/// Single-flight wrapper: rapid host track changes must not stack resolves —
+/// a stale completion is reported as `{ superseded: true }` and dropped by
+/// the caller.
+export function createResolver(deps = {}) {
   let generation = 0;
-  
-  return async function resolve(playbackFrame, queue, localTracks, quality) {
+  return async function resolve(playbackFrame, queue, localTracks) {
     const myGen = ++generation;
-    const trackId = playbackFrame.trackId;
-    
-    // Cancel if a newer resolution started
-    if (currentId !== trackId) {
-      currentId = trackId;
-    }
-    
-    const result = await resolveGuestTrack(playbackFrame, queue, localTracks, quality);
-    
-    // Discard if superseded
-    if (myGen !== generation) {
-      return { superseded: true };
-    }
-    
-    currentId = null;
+    const result = await resolveGuestTrack(playbackFrame, queue, localTracks, deps);
+    if (myGen !== generation) return { superseded: true };
     return result;
   };
 }

@@ -5,9 +5,19 @@ import { diag, invoke, showView, toast } from "./core.js";
 import { $ } from "./dom.js";
 import { toggleFavTrack } from "./library.js";
 import { queue, queueIndex, restoredTrack } from "./queue.js";
+import { localRole } from "./room.js";
 import { creditsBtn, step, togglePlay } from "./transport.js";
 import { widgetMode } from "./settings.js";
 import { downloadTrack } from "./vault.js";
+
+/// A Jam guest's transport is the host's (§12): the UI locks its buttons, but
+/// the global media keys and the Ctrl+Arrow chords would bypass that lock and
+/// desync the room — they get the same stated reason instead.
+function guestLockNote() {
+  if (localRole() !== "guest") return false;
+  toast("The host controls playback in this room.", "info", 3000);
+  return true;
+}
 
 // ponytail: a per-event 300ms cooldown instead of an AbortController —
 // the events arrive from Rust with no request to abort; a key-repeat
@@ -21,7 +31,10 @@ function armed(event) {
 }
 
 const ACTIONS = {
-  "shortcut:play": () => togglePlay(),
+  "shortcut:play": () => {
+    if (guestLockNote()) return;
+    togglePlay();
+  },
   "shortcut:search": () => {
     showView("search");
     ($("#search-input") || $("#nav-search-input"))?.focus();
@@ -40,9 +53,18 @@ const ACTIONS = {
   },
   "shortcut:download": () => downloadTrack(queue[queueIndex]?.track ?? restoredTrack, null),
   "shortcut:info": () => creditsBtn?.click(),
-  "media-play-pause": () => togglePlay(),
-  "media-next": () => step(1),
-  "media-prev": () => step(-1),
+  "media-play-pause": () => {
+    if (guestLockNote()) return;
+    togglePlay();
+  },
+  "media-next": () => {
+    if (guestLockNote()) return;
+    step(1);
+  },
+  "media-prev": () => {
+    if (guestLockNote()) return;
+    step(-1);
+  },
 };
 
 // ---------------------------------------------------- in-app shortcuts -
@@ -73,6 +95,7 @@ function wireInAppKeys() {
     if (ctrl && !e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
       if (typingTarget(e)) return;
       e.preventDefault();
+      if (guestLockNote()) return;
       step(e.key === "ArrowRight" ? 1 : -1);
       return;
     }
@@ -89,6 +112,7 @@ function wireInAppKeys() {
       // only a neutral focus target means "toggle playback".
       if (e.target instanceof HTMLElement && e.target.closest("button, a, summary, label")) return;
       e.preventDefault();
+      if (guestLockNote()) return;
       togglePlay();
     } else if (e.key.toLowerCase() === "l") {
       const t = currentTrack();
