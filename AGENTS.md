@@ -1084,3 +1084,67 @@ docs commit — **committed locally, not pushed (rule 1)**. Chain: `6522ca7`
 (origin/main) + 12 local commits. Note: another session's `2026-10-08b` push
 record (publishing `6522ca7`) stays uncommitted in the working tree — split out
 of this commit per the 07i hunk-split precedent.
+
+---
+
+## 2026-10-08d — Jam upgrade sub-project A COMPLETE (live-verified) + B-T1 spike verdict
+
+Master doc `docs/jam-upgrade.md` (`23d501b`) is the plan of record for all 7
+user requests (A unified invite → B scanner → C sync → D parity → E logo →
+F scale). T1 protocol docs `d848c04`.
+
+**Sub-project A (unified invite URI) — all 7 ACs green:**
+
+| Item | Evidence |
+|---|---|
+| A1+A2 Rust | `invite_uri`/`parse_invite`/`room_join_uri`, `OpenInfo.invite`+`RoomInfo.invite` (additive; `urls`/`code` unchanged) — `9ed94cf`, `cargo test --lib` 194/194, fmt/clippy 0 |
+| A3 room.js | canonical-first `inviteText`, `parseInvite` canonical branch, bye clears invite — `c994fae`, room.test 32/32 |
+| A4 desktop | one `#room-join-invite` field, join via `room_join_uri` — `d5cdf85` |
+| A5 mobile | one `#jam-join-invite` field, live validation, hosted frames carry invite — `33ed7d2` |
+| A6 probes | canonical string in the single field — `779a5ab`; grep gate: removed ids = 0 hits |
+| **Live desktop** | `live-desktop` **32/0** · `live-reverse-pair` **exit 0** (D4/D5; desktop guest joined **through the canonical link**) · `live-lan-join` **exit 0** (real LAN; Android guest via `#jam-join-invite`) |
+| **Live Android** | probe **11/11**: Jam Data invite == backend `invite` byte-identical (AC5), garbage → "That doesn't look like an invite link.", guard exact, failed dial does NOT latch `Mode::Guest` |
+| Gates | `npm test` 254/254, eslint clean |
+
+**B-T1 camera spike (verdict → docs, `a94cf60` + P38):**
+- **Camera YES** — `getUserMedia` delivers a stream + frames once `CAMERA` is
+  injected through `build.sh inject_android_permissions` (`bd6a038`) + `pm
+  grant`; wry's WebView approves the origin (`onPermissionRequest` works).
+- **`BarcodeDetector` NO** — constructs and advertises `qr_code`, but
+  `detect()` returns `[]` on every input shape (DOM canvas / ImageBitmap /
+  blob / video, 5 warm-ups, default opts) against a visually verified correct
+  QR rendered from the app's own `qr_symbol`. Silent empties, no console
+  error. `canvas.captureStream` also dead (video `0x0`).
+- B-T2 (scanner UI) therefore waits on the decoder decision; fallback =
+  system camera + paste (A delivers paste on both surfaces).
+
+**Environment facts (cheap to re-derive):**
+- `build.sh` checks out **CRLF** (`core.autocrlf`) → bash cannot parse it.
+  Run via `tr -d '\r'` into `/tmp` first (CI is LF-clean, unaffected).
+  Its dispatcher now carries a `BASH_SOURCE` guard so
+  `inject_android_permissions` can be sourced standalone; the injector checks
+  CAMERA **and** INTERNET (an INTERNET-only manifest upgrades instead of
+  early-returning).
+- **Foreign `trance-music.exe` (pid 6988) blocked the desktop link ~40 min**
+  (`target\debug\trance-music.exe` locked). Waited it out; did NOT kill it.
+  When clear: `cargo build` 3m23s → launch with
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`.
+  **Trap:** a debug exe last built by `tauri dev` bakes `devUrl :1430` and
+  renders an error page standalone — plain `cargo build` embeds the assets.
+- The other session **cycled the emulator twice** (relaunch hit
+  `FATAL: Running multiple emulators with the same AVD`) and its adb usage
+  restarts the adb server → **:9223 forwards silently die**. Re-forward
+  (`adb forward tcp:9223 localabstract:webview_devtools_remote_<pid>`) before
+  every probe; retry loop if `ECONNREFUSED`.
+- `qr_symbol` returns **`{size, modules}` with a flat `modules` array**
+  (`modules[r*size+c]`), not a 2-D matrix — probes reading it as 2-D get
+  "empty matrix".
+- PS 5.1 strips embedded double quotes in native args (known trap) — put the
+  bash one-liner in a `.sh` file instead.
+
+**Files this session:** `app/build.sh` (CAMERA inject + source guard, split
+out their brand hunk), `docs/jam-upgrade.md` (A status table + B verdict),
+`docs/mobile/09-problems-solutions.md` (P38), `CHANGELOG.md` (B-spike line),
+plus A1-A6. **22 commits ahead of `origin/main`, nothing pushed (rule 1).**
+Probes live in `%TEMP%\opencode\` (outside repo). Desktop app + emulator left
+running for B live tests.
