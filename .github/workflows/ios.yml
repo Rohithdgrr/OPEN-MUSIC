@@ -56,6 +56,10 @@ jobs:
         working-directory: app
         run: npm ci
 
+      - name: Run frontend unit tests (Node test runner)
+        working-directory: app
+        run: npm test
+
       - name: Build stylesheet
         working-directory: app
         run: npm run css
