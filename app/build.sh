@@ -71,12 +71,15 @@ inject_android_permissions() {
     return 1
   fi
   
-  # Check if already injected
-  if grep -q 'android.permission.INTERNET' "$manifest"; then
+  # Check if already injected. CAMERA arrived with the scan-to-join spike
+  # (jam-upgrade.md §4.1) — a manifest that already has INTERNET must still
+  # gain CAMERA, so both are checked before the early return.
+  if grep -q 'android.permission.INTERNET' "$manifest" \
+     && grep -q 'android.permission.CAMERA' "$manifest"; then
     echo "✓ Android permissions already present"
     return 0
   fi
-  
+
   echo "Injecting Android permissions..."
   
   # Create network security config for cleartext loopback (media proxy)
@@ -94,13 +97,21 @@ inject_android_permissions() {
 </network-security-config>
 EOF
   
-  # Inject permissions after <manifest> opening tag
-  sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' "$manifest"
-  
-  # Add network security config reference to <application> tag
-  sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"|' "$manifest"
-  
-  echo "✓ Injected INTERNET permission and network security config"
+  # Inject permissions after <manifest> opening tag — each guarded on its own
+  # absence so an existing INTERNET-only manifest upgrades to CAMERA without
+  # doubling the lines it already has (jam-upgrade.md §4.1).
+  if ! grep -q 'android.permission.INTERNET' "$manifest"; then
+    sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' "$manifest"
+    # Add network security config reference to <application> tag
+    sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"|' "$manifest"
+    echo "✓ Injected INTERNET permission and network security config"
+  fi
+  if ! grep -q 'android.permission.CAMERA' "$manifest"; then
+    # Camera for the scan-to-join QR flow; runtime prompt fires on first
+    # getUserMedia (jam-upgrade.md §4.1).
+    sed -i '/<manifest/a\    <uses-permission android:name="android.permission.CAMERA"/>' "$manifest"
+    echo "✓ Injected CAMERA permission"
+  fi
   return 0
 }
 
@@ -158,6 +169,9 @@ show_artifacts() { # $1 = stamp file taken before the build started
 
 usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
 
+# Dispatcher — guarded so the functions (notably inject_android_permissions)
+# can also be sourced standalone: bash -c '. ./build.sh; inject_android_permissions'
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 case "${1:-all}" in
   check)   cmd_check ;;
   android) stamp=$(mktemp); touch "$stamp"; cmd_android; show_artifacts "$stamp" ;;
@@ -178,3 +192,4 @@ case "${1:-all}" in
   help|-h|--help) usage ;;
   *) die "unknown target '$1' (see ./build.sh help)" ;;
 esac
+fi
