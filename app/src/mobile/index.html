@@ -969,6 +969,10 @@ try {
 <div id="screen"></div>
 <audio id="audio" preload="metadata"></audio>
 <script src="router.js"></script>
+<!-- jsQR: scan-to-join decoder (B-T2), classic script on purpose — see
+     src/vendor/README.md. Module scripts are deferred, so this executes
+     before app.js can ask for window.jsQR. -->
+<script src="../vendor/jsQR.js"></script>
 <script type="module" src="app.js"></script>
 </body>
 </html>

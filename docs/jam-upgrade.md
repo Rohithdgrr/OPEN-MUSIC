@@ -168,7 +168,7 @@ green; (7) full gates green.
     option (ii), a fallback that ships no scanner, would not deliver it.
     Under standing rule 9 (recommended options are pre-approved) B-T2
     proceeds with option (i): **vendor `jsQR` as one committed file**
-    (`app/src/vendor/jsQR.cjs`, Apache-2.0 (verified from the repo's LICENSE,
+    (`app/src/vendor/jsQR.js`, Apache-2.0 (verified from the repo's LICENSE,
     not remembered), pure JS, zero transitive deps, **no npm dependency** —
     `package.json` untouched, keeping the §4.2 AC "no new npm dependency").
     Option (ii) stays the fallback for what still fails live

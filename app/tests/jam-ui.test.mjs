@@ -174,3 +174,40 @@ test("the mobile screen binds to the ids binders.js now paints by id", () => {
     assert.ok(binders.includes(`document.getElementById("${id}")`), `binders.js should paint #${id}`);
   }
 });
+
+// ---- B-T2 scan-to-join (docs/jam-upgrade.md §4.1–4.2, P38) ----------------
+
+test("scan-to-join: one button, real overlay ids, decoder loaded, same join path", () => {
+  const idx = fs.readFileSync(path.join(src, "mobile", "index.html"), "utf8");
+  assert.ok(jam.includes('id="jam-scan-btn"'), "the join sheet needs the Scan QR button");
+  assert.ok(jam.includes('id="jam-scanner-video"'), "the scanner preview video is missing");
+  assert.ok(jam.includes('id="jam-scanner-status"'), "the scanner status line is missing");
+  assert.ok(jam.includes('id="jam-scanner-cancel"'), "the scanner needs Cancel — paste stays the fallback");
+  assert.match(jam, /import \{ startScanner \} from "\.\/scanner\.js";/, "jam.js must import the scanner");
+  assert.match(
+    jam,
+    /onScan: \(\{ uri \}\) => \{[\s\S]*?void joinRoom\(uri\)/,
+    "a scan hit must join through the same room_join_uri path as a paste",
+  );
+  assert.match(idx, /<script src="\.\.\/vendor\/jsQR\.js"><\/script>/, "mobile/index.html must load the vendored decoder");
+  assert.ok(
+    idx.indexOf("vendor/jsQR.js") < idx.indexOf('type="module" src="app.js"'),
+    "the decoder must be a classic script before the module graph runs",
+  );
+});
+
+test("P38: BarcodeDetector must not come back — it looks available and decodes nothing", () => {
+  const offenders = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.(js|html|mjs)$/.test(entry.name) && !full.includes(`${path.sep}vendor${path.sep}`)) {
+        if (fs.readFileSync(full, "utf8").includes("new BarcodeDetector")) offenders.push(full);
+      }
+    }
+  };
+  walk(src);
+  assert.deepEqual(offenders, [], "no source file may construct BarcodeDetector (silent empty results, P38)");
+});

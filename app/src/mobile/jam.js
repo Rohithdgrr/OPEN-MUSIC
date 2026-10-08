@@ -36,6 +36,7 @@ import {
   worstDriftMs,
 } from "../room.js";
 import { resolveFromCatalog } from "../jam/follow.js";
+import { startScanner } from "./scanner.js";
 
 const TICK_MS = 1000; // C-5: a state frame on every change + 1 s while playing
 
@@ -112,6 +113,7 @@ function promptJoin() {
     '<div class="font-headline-sm text-[15px] font-semibold text-on-surface px-0.5">Join a Jam</div>' +
     '<div class="flex flex-col gap-2">' +
     '<input id="jam-join-invite" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the invite — trancemusic://join?…" class="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/30 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none" />' +
+    '<button type="button" id="jam-scan-btn" class="w-full py-2 rounded-xl bg-surface-container-low border border-outline-variant/30 text-on-surface font-label-md text-[12px] font-semibold">Scan QR — point at the host\u2019s code</button>' +
     '<p class="text-[10px] font-label-sm text-secondary px-0.5" id="jam-join-note">Same Wi-Fi as the host. Their invite link is on the Jam Data tab — an old address · code line still works.</p>' +
     "</div>" +
     '<div class="flex items-center gap-2">' +
@@ -136,6 +138,8 @@ function promptJoin() {
         : "That doesn't look like an invite link.";
   });
 
+  card.querySelector("#jam-scan-btn").addEventListener("click", () => openScanner(wrap, invite));
+
   card.querySelector("#jam-join-go").addEventListener("click", () => {
     const uri = invite.value.trim();
     if (!parseInvite(uri)) {
@@ -145,6 +149,72 @@ function promptJoin() {
     wrap.remove();
     void joinRoom(uri);
   });
+}
+
+/// B-T2: camera sheet layered over the join sheet. A decoded invite fills
+/// the paste field and joins through the exact same `room_join_uri` path a
+/// paste uses; every camera failure (permission denied, no camera, missing
+/// decoder) drops back to the paste field — never a dead end (§4.1).
+function openScanner(joinWrap, inviteInput) {
+  const wrap = document.createElement("div");
+  wrap.className = "fixed inset-0 z-[80] flex items-center justify-center";
+  wrap.innerHTML =
+    '<div class="absolute inset-0 bg-black/70" id="jam-scan-scrim"></div>' +
+    '<div class="relative w-[86vw] max-w-sm flex flex-col gap-3 items-center px-4">' +
+    '<div class="w-full aspect-[3/4] rounded-2xl overflow-hidden bg-black border border-outline-variant/30">' +
+    '<video id="jam-scanner-video" class="w-full h-full object-cover" playsinline muted></video>' +
+    "</div>" +
+    '<p id="jam-scanner-status" class="min-h-[16px] text-[11px] font-body-sm text-secondary text-center">Starting camera…</p>' +
+    '<button type="button" id="jam-scanner-cancel" class="w-full py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30 text-on-surface font-label-md text-[12px] font-semibold">Cancel</button>' +
+    "</div>";
+  const canvas = document.createElement("canvas"); // frame grab — never in the DOM
+  document.body.append(wrap);
+
+  const video = wrap.querySelector("#jam-scanner-video");
+  const statusEl = wrap.querySelector("#jam-scanner-status");
+  const setNote = (text) => {
+    if (statusEl.isConnected) statusEl.textContent = text;
+  };
+  // `handle` is assigned AFTER startScanner returns, but `decoder-missing`
+  // fires synchronously inside it — so close() must not assume the real
+  // handle exists yet (the initial no-op stop is correct for that path).
+  let handle = { stop: () => {} };
+  const close = () => {
+    handle.stop();
+    wrap.remove();
+  };
+
+  handle = startScanner({
+    video,
+    canvas,
+    onStatus: (s) => {
+      if (s.type === "starting") setNote("Starting camera…");
+      else if (s.type === "live") setNote("Point at the host's invite QR.");
+      else if (s.type === "decoded") setNote("Invite found.");
+      else if (s.type === "denied") {
+        toast("Camera permission denied — paste the invite instead.", 4000, "error");
+        close();
+      } else if (s.type === "nocamera") {
+        toast("No camera available — paste the invite instead.", 4000, "error");
+        close();
+      } else if (s.type === "decoder-missing") {
+        toast("Scanner unavailable — paste the invite instead.", 4000, "error");
+        close();
+      } else {
+        toast(String(s.detail || "Camera failed — paste the invite instead.").slice(0, 160), 4000, "error");
+        close();
+      }
+    },
+    onScan: ({ uri }) => {
+      inviteInput.value = uri;
+      wrap.remove();
+      joinWrap.remove();
+      void joinRoom(uri);
+    },
+  });
+
+  wrap.querySelector("#jam-scan-scrim").addEventListener("click", close);
+  wrap.querySelector("#jam-scanner-cancel").addEventListener("click", close);
 }
 
 // -------------------------------------------------------------------- mode --
