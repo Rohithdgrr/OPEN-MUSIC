@@ -86,10 +86,12 @@ async function mobileJoin(addr, code) {
     document.getElementById("modeToggleBtn")?.click(); await new Promise(r=>setTimeout(r,400));
     const b = [...document.querySelectorAll("button")].find(b=>/Join a Jam/.test(b.textContent)); if (b) b.click();
     await new Promise(r=>setTimeout(r,500)); })()`);
-  const hasCard = await waitForCli(mob, '!!document.getElementById("jam-join-addr")', 5000);
+  const hasCard = await waitForCli(mob, '!!document.getElementById("jam-join-invite")', 5000);
   if (!hasCard) return { ok: false, why: "no-join-card" };
-  await mEval(`(() => { const set=(id,v)=>{const e=document.getElementById(id); if(e){e.value=v; e.dispatchEvent(new Event("input",{bubbles:true}));}};
-    set("jam-join-addr", ${JSON.stringify(addr)}); set("jam-join-code", ${JSON.stringify(code)}); return "ok"; })()`);
+  // One pasted link, canonical form (A): both layers parse it.
+  const [host, port] = addr.includes(":") ? addr.split(":") : [addr, "8787"];
+  const uri = `trancemusic://join?host=${host}&port=${port}&code=${code}`;
+  await mEval(`(() => { const e=document.getElementById("jam-join-invite"); e.value=${JSON.stringify(uri)}; e.dispatchEvent(new Event("input",{bubbles:true})); return "ok"; })()`);
   await mEval(`document.getElementById("jam-join-go")?.click()`);
   return { ok: true };
 }

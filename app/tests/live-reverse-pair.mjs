@@ -89,8 +89,9 @@ async function mobEndJam() {
 async function deskJoin(addr, code) {
   await dEval(`(async () => { if (!document.body.classList.contains("soc-social")) document.querySelector("#btn-mode-social")?.click(); await new Promise(r=>setTimeout(r,700));
     document.querySelector("#tab-btn-jam")?.click(); await new Promise(r=>setTimeout(r,300)); })()`);
-  await setVal(dEval, "room-join-addr", addr);
-  await setVal(dEval, "room-join-code", code);
+  // One pasted link, canonical form (A): both layers parse it.
+  const [host, port] = addr.includes(":") ? addr.split(":") : [addr, "8787"];
+  await setVal(dEval, "room-join-invite", `trancemusic://join?host=${host}&port=${port}&code=${code}`);
   const enabled = await waitForCli(desk, `!document.getElementById("btn-room-join")?.disabled`, 4000);
   if (!enabled) return { ok: false, why: "join-btn-disabled" };
   await dEval(`document.getElementById("btn-room-join").click()`);
