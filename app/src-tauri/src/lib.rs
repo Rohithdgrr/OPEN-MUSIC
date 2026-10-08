@@ -1675,6 +1675,7 @@ pub fn run() {
             qr::qr_symbol,
             room::room_open,
             room::room_join,
+            room::room_join_uri,
             room::room_chat,
             room::room_playback,
             room::room_report,

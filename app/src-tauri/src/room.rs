@@ -145,6 +145,87 @@ fn parse_room_addr(raw: &str) -> Result<(String, u16), String> {
     Ok((host, port))
 }
 
+/// The canonical invite every surface shares (docs/jam-upgrade.md §3.1):
+/// the invite row, the Copy button, both QRs and `room_join_uri` all speak
+/// this one string. A dumb builder — callers hand it values the server
+/// itself minted (`lan_urls` + `gen_code`).
+fn invite_uri(host: &str, port: u16, code: &str) -> String {
+    format!("trancemusic://join?host={host}&port={port}&code={code}")
+}
+
+/// Read a canonical invite **or** a legacy `ws://ip:port · CODE` line back
+/// into `(host, port, code)`. Rust is the authority for the join path — the
+/// JS parser only decides whether to show the inline "not an invite" message —
+/// so both shapes run through `parse_room_addr` and hit the same LAN gate.
+/// Error strings are shown to the user verbatim: one honest message for a
+/// malformed link, `parse_room_addr`'s own copy for a refused address.
+fn parse_invite(raw: &str) -> Result<(String, u16, String), String> {
+    const GENERIC: &str = "That doesn't look like an invite link.";
+    let text = raw.trim();
+    if text.is_empty() {
+        return Err(GENERIC.into());
+    }
+
+    if let Some(query) = text.strip_prefix("trancemusic://join?") {
+        let (mut host, mut port, mut code) = ("", "", "");
+        for pair in query.split('&') {
+            let Some((k, v)) = pair.split_once('=') else {
+                continue;
+            };
+            match k {
+                "host" => host = v,
+                "port" => port = v,
+                "code" => code = v,
+                _ => {} // unknown params ignored — forward compatible
+            }
+        }
+        if host.is_empty() || port.is_empty() || code.is_empty() {
+            return Err(GENERIC.into());
+        }
+        let port: u16 = port.parse().map_err(|_| GENERIC.to_string())?;
+        let code = sanitize_code(code).ok_or_else(|| GENERIC.to_string())?;
+        let (host, port) = parse_room_addr(&format!("{host}:{port}"))?;
+        return Ok((host, port, code));
+    }
+
+    // Legacy: `ws://ip:port · CODE`, `ip:port CODE`, `ip CODE` — exactly what
+    // the JS `parseInvite` accepted, so old links keep joining.
+    let legacy = text.replace(['·', '|', ','], " ");
+    let parts: Vec<&str> = legacy.split_whitespace().collect();
+    if parts.len() < 2 {
+        return Err(GENERIC.into());
+    }
+    let code = sanitize_code(parts[parts.len() - 1]).ok_or_else(|| GENERIC.to_string())?;
+    let addr = parts[..parts.len() - 1].join("");
+    let (host, port) = parse_room_addr(&addr)?;
+    Ok((host, port, code))
+}
+
+/// Uppercase, alnum-only, exactly 8 — the server's code shape, and the same
+/// rule the JS `parseInvite` applies, so both layers accept and reject alike.
+fn sanitize_code(raw: &str) -> Option<String> {
+    let code: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_uppercase();
+    (code.len() == 8).then_some(code)
+}
+
+/// The host's canonical invite, derived from its first advertised url —
+/// the exact address `inviteText` shows today. No usable address → empty
+/// string (an invite with no host is not joinable; the UI then falls back
+/// to the bare code display).
+fn invite_from(urls: &[String], code: &str) -> String {
+    let Some(first) = urls.first() else {
+        return String::new();
+    };
+    let Ok((host, port)) = parse_room_addr(first) else {
+        return String::new();
+    };
+    invite_uri(&host, port, code)
+}
+
 /// Best-effort local IPv4s for the invite line. The UDP-connect trick finds
 /// the default-route interface without sending a packet; a hostname lookup
 /// covers a LAN with no default route. Loopback is always offered last so a
@@ -800,6 +881,9 @@ pub struct OpenInfo {
     pub port: u16,
     pub code: String,
     pub urls: Vec<String>,
+    /// The canonical join link (`trancemusic://join?…`) built from `urls[0]`
+    /// and `code`; empty when no address was detected.
+    pub invite: String,
     pub members: usize,
 }
 
@@ -812,6 +896,9 @@ pub struct RoomInfo {
     /// Same `ws://` invite list `room_open` returns. Empty unless hosting, so a
     /// re-attached window can re-offer the address it is already serving on.
     pub urls: Vec<String>,
+    /// The canonical join link `room_open` mints (same `urls[0]` + `code`
+    /// derivation); empty unless hosting.
+    pub invite: String,
 }
 
 /// Open a LAN room: bind `0.0.0.0:<port>` (default 8787, ephemeral
@@ -859,16 +946,50 @@ pub async fn room_open(
         port: bound,
         code: code.clone(),
     };
+    let urls = lan_urls(bound);
+    let invite = invite_from(&urls, &code);
     Ok(OpenInfo {
         port: bound,
         code,
-        urls: lan_urls(bound),
+        urls,
+        invite,
         members: 1,
     })
 }
 
-/// Connect to another device's room. The join result itself arrives as
-/// frames (`joined` or `error`) — this only proves the address is dialable.
+/// Shared dial-and-spawn body for both join entries: guard first, then
+/// mutate — nothing after the guard can latch `Mode::Guest` on a failure
+/// (D2/P32). The task keeps its own sender so a failed dial can identify
+/// *its* mode before reverting it.
+fn begin_join(
+    app: AppHandle,
+    mode: &mut Mode,
+    host: &str,
+    port: u16,
+    code: &str,
+    name: Option<&str>,
+) -> Result<(), String> {
+    if !matches!(*mode, Mode::Idle) {
+        return Err("Leave the current room before joining another.".into());
+    }
+    let url = format!("ws://{host}:{port}/ws");
+    let join_frame = json!({
+        "t": "join",
+        "v": 1,
+        "code": code.trim().to_uppercase(),
+        "name": sanitize_name(name.unwrap_or("Guest")),
+    })
+    .to_string();
+    let (tx, rx) = mpsc::unbounded_channel();
+    let own_tx = tx.clone();
+    *mode = Mode::Guest { tx };
+    tokio::spawn(guest_run(app, url, join_frame, rx, own_tx));
+    Ok(())
+}
+
+/// Connect by address + code — the **legacy** entry point (old links and
+/// probes). Parses first, then runs the same `begin_join` body
+/// `room_join_uri` uses, so there is exactly one join path.
 #[tauri::command]
 pub async fn room_join(
     app: AppHandle,
@@ -877,26 +998,25 @@ pub async fn room_join(
     code: String,
     name: Option<String>,
 ) -> Result<(), String> {
-    let mut mode = state.inner.lock().await;
-    if !matches!(*mode, Mode::Idle) {
-        return Err("Leave the current room before joining another.".into());
-    }
     let (host, port) = parse_room_addr(&addr)?;
-    let url = format!("ws://{host}:{port}/ws");
-    let join_frame = json!({
-        "t": "join",
-        "v": 1,
-        "code": code.trim().to_uppercase(),
-        "name": sanitize_name(name.as_deref().unwrap_or("Guest")),
-    })
-    .to_string();
-    let (tx, rx) = mpsc::unbounded_channel();
-    // The task keeps its own sender so a failed dial can identify *its* mode
-    // before reverting it (D2).
-    let own_tx = tx.clone();
-    *mode = Mode::Guest { tx };
-    tokio::spawn(guest_run(app, url, join_frame, rx, own_tx));
-    Ok(())
+    let mut mode = state.inner.lock().await;
+    begin_join(app, &mut mode, &host, port, &code, name.as_deref())
+}
+
+/// Connect by the one pasted invite link — canonical `trancemusic://join?…`
+/// or a legacy `ws://ip:port · CODE` line. The link parses **before** any
+/// lock or mode mutation: a malformed invite can only return an error,
+/// never latch a guest state (D2/P32 lesson).
+#[tauri::command]
+pub async fn room_join_uri(
+    app: AppHandle,
+    state: TauriState<'_, RoomState>,
+    uri: String,
+    name: Option<String>,
+) -> Result<(), String> {
+    let (host, port, code) = parse_invite(&uri)?;
+    let mut mode = state.inner.lock().await;
+    begin_join(app, &mut mode, &host, port, &code, name.as_deref())
 }
 
 /// Host: broadcast authoritative playback state. Guest/idle: refused —
@@ -999,18 +1119,25 @@ pub async fn room_info(state: TauriState<'_, RoomState>) -> Result<RoomInfo, Str
             port: 0,
             code: String::new(),
             urls: Vec::new(),
+            invite: String::new(),
         },
-        Mode::Host { port, code, .. } => RoomInfo {
-            role: "host",
-            port: *port,
-            code: code.clone(),
-            urls: lan_urls(*port),
-        },
+        Mode::Host { port, code, .. } => {
+            let urls = lan_urls(*port);
+            let invite = invite_from(&urls, code);
+            RoomInfo {
+                role: "host",
+                port: *port,
+                code: code.clone(),
+                urls,
+                invite,
+            }
+        }
         Mode::Guest { .. } => RoomInfo {
             role: "guest",
             port: 0,
             code: String::new(),
             urls: Vec::new(),
+            invite: String::new(),
         },
     })
 }
@@ -1250,6 +1377,90 @@ mod tests {
         assert!(parse_room_addr("example.com").is_err());
         assert!(parse_room_addr("").is_err());
         assert!(parse_room_addr("wss://192.168.1.5").is_err());
+    }
+
+    #[test]
+    fn invite_uri_round_trips() {
+        let uri = invite_uri("192.168.1.5", 8787, "ABCD2345");
+        assert_eq!(
+            uri,
+            "trancemusic://join?host=192.168.1.5&port=8787&code=ABCD2345"
+        );
+        assert_eq!(
+            parse_invite(&uri).unwrap(),
+            ("192.168.1.5".into(), 8787, "ABCD2345".into())
+        );
+        // Unknown query params are ignored — the format stays forward-compatible.
+        assert_eq!(
+            parse_invite("trancemusic://join?x=1&host=10.0.0.2&port=9000&code=zzzz1234&y=2")
+                .unwrap(),
+            ("10.0.0.2".into(), 9000, "ZZZZ1234".into())
+        );
+    }
+
+    #[test]
+    fn parse_invite_accepts_the_legacy_lines() {
+        // The composite every old link, QR and probe hands out.
+        assert_eq!(
+            parse_invite("ws://192.168.1.5:8787 · ABCD2345").unwrap(),
+            ("192.168.1.5".into(), 8787, "ABCD2345".into())
+        );
+        // Typed by hand: address + code, port optional, code case-insensitive.
+        assert_eq!(
+            parse_invite("192.168.1.5 abcd2345").unwrap(),
+            ("192.168.1.5".into(), DEFAULT_PORT, "ABCD2345".into())
+        );
+        assert_eq!(
+            parse_invite("10.0.0.2:9000,ABCD2345").unwrap(),
+            ("10.0.0.2".into(), 9000, "ABCD2345".into())
+        );
+        // The LAN gate applies to legacy links too — same rule as parse_room_addr.
+        assert!(parse_invite("ws://8.8.8.8:8787 · ABCD2345").is_err());
+    }
+
+    #[test]
+    fn parse_invite_rejects_what_it_cannot_join() {
+        // One honest message for malformed links (docs/jam-upgrade.md §3.4).
+        let generic = "That doesn't look like an invite link.";
+        assert_eq!(parse_invite("garbage").unwrap_err(), generic);
+        assert_eq!(parse_invite("").unwrap_err(), generic);
+        assert_eq!(
+            parse_invite("trancemusic://join?host=192.168.1.5&port=8787").unwrap_err(),
+            generic
+        );
+        assert_eq!(
+            parse_invite("trancemusic://join?port=8787&code=ABCD2345").unwrap_err(),
+            generic
+        );
+        assert_eq!(
+            parse_invite("trancemusic://join?host=192.168.1.5&port=abc&code=ABCD2345").unwrap_err(),
+            generic
+        );
+        assert_eq!(
+            parse_invite("trancemusic://join?host=192.168.1.5&port=8787&code=short").unwrap_err(),
+            generic
+        );
+        assert_eq!(
+            parse_invite("https://openmusic.app/j/ABCD2345").unwrap_err(),
+            generic
+        );
+        // A hand-edited canonical link cannot smuggle in a public host.
+        assert!(parse_invite("trancemusic://join?host=8.8.8.8&port=8787&code=ABCD2345").is_err());
+    }
+
+    #[test]
+    fn host_invite_comes_from_the_first_advertised_url() {
+        let urls = vec![
+            "ws://10.96.197.104:8787".to_string(),
+            "ws://127.0.0.1:8787".to_string(),
+        ];
+        assert_eq!(
+            invite_from(&urls, "ABCD2345"),
+            "trancemusic://join?host=10.96.197.104&port=8787&code=ABCD2345"
+        );
+        // No usable address → no link (honest empty, never "undefined").
+        assert_eq!(invite_from(&[], "ABCD2345"), "");
+        assert_eq!(invite_from(&["ws://nope".to_string()], "ABCD2345"), "");
     }
 
     #[test]
