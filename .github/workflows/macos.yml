@@ -21,7 +21,7 @@ jobs:
           toolchain: stable
 
       - name: Install Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Node 20's `--test` does not expand the `tests/**/*.test.mjs`
           # glob `npm test` passes, so the runner reported
