@@ -224,10 +224,11 @@ Plus the standing static gates: `npm test`, `npm run lint`,
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
 `OP_OFFLINE=1 cargo test --lib`.
 
-**Documentation contract:** this file is the spec. When the fixes land, flip the
-"not yet fixed" markers in `docs/listen-together.md` (§12 D4 note, §13.4,
+**Documentation contract:** this file is the spec. **Fulfilled 2026-10-08:**
+the "not yet fixed" markers in `docs/listen-together.md` (§12 D1/D4 notes,
 §13.6, §13.7), `docs/mobile/09-problems-solutions.md` (P31–P34) and
-`incomplete-jam.md` (§0, §1.2) to point here and record the measured results.
+`incomplete-jam.md` (§0, §1.2) have been flipped to FIXED pointing here, with
+fix notes recorded inline.
 
 ## Explicitly out of scope
 

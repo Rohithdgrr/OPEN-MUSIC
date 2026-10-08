@@ -1,5 +1,12 @@
 # Jam P0 Integration — Complete Implementation Guide
 
+> **⚠️ Status update 2026-10-08 (supersedes the header below):** this guide was
+> never executed. The artifacts it directs you to integrate
+> (`social-refactored.js`, `jam/controller.js`, `jam/qr-scanner.js`, patch files)
+> **did not ship and have been deleted** (commit `0e3744d`). The equivalent fixes
+> landed as in-place edits to `social.js`, `playback.js`, `shortcuts.js`,
+> `mobile/jam.js` — see `docs/jam-defects-d1-d4.md`. Kept for historical context only.
+
 **Status:** ✅ Core infrastructure complete, integration pending  
 **Date:** 2026-10-07  
 **Author:** Kiro AI Agent

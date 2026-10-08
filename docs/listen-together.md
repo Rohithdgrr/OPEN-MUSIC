@@ -277,8 +277,9 @@ navigation; header comment records the source).
 | `queueSyncBadge` "Synchronized" | shown only after ≥1 real `playback` frame was received and applied this session |
 | Leave Jam / End Jam | `room_close` → `bye` → back to Solo |
 
-> **Defect (D4, found 2026-10-07, not yet fixed — §13.7).** The mobile host
-> does **not** actually broadcast on pause, so the transport row above is
+> **Defect (D4, found 2026-10-07 — FIXED 2026-10-07; original report kept
+> below, full evidence §13.7).** The mobile host did **not** actually
+> broadcast on pause, so the transport row above was
 > aspirational for that one case. `jam.js:342 hostTick()` returns at line 346
 > (`if (!t || !t.id || st.paused) return;`) *before* the drift/key checks its
 > own comment (lines 338-341) says are there to "catch play, pause, track
@@ -295,6 +296,11 @@ navigation; header comment records the source).
 > "the host controls playback"), and a track change or seek made **while
 > paused** is not sent until playback resumes. Resume does self-heal — the
 > key/drift mismatch fires on the first tick after `play`.
+>
+> **Fix landed (2026-10-07):** `hostTick` now compares the `id|paused` key
+> *before* the paused guard, and `wireHostAudio()` (called from `mountJam`)
+> wires `play`/`pause`/`seeked` on the shell `<audio>` — `mobile/jam.js`.
+> Design/fix record: `docs/jam-defects-d1-d4.md`.
 
 **Shared code:** one reducer for both surfaces — `app/src/room.js` (contract
 §6a) imported by desktop `social.js` and mobile
@@ -324,16 +330,22 @@ current track, then `[...queueHistory(), current, ...queueUpNext()]` — found
 and `artworkCollabTag` reads `NOT ON THIS DEVICE` (§4 rule 5); the
 Synchronized badge stays hidden (§8).
 
-> **Defect (D1, found 2026-10-07, not yet fixed — §13.6).** That search list is
-> **narrower than the desktop's**: `social.js:328 findLocalTrack()` resolves the
+> **Defect (D1, found 2026-10-07 — FIXED 2026-10-07/08; original report kept
+> below, full evidence §13.6).** That search list was
+> **narrower than the desktop's**: `social.js:328 findLocalTrack()` resolved the
 > host's id against play history, favourites, the vault *and* the live queue,
-> while mobile `jam.js:398 followGuest()` sees only queue history + current +
+> while mobile `jam.js:398 followGuest()` saw only queue history + current +
 > up-next. On a phone that has a track downloaded or favourited but not sitting
-> in the current queue, the host's track is declared "not on this device" and
-> the guest silently keeps playing its own audio for the rest of the room —
+> in the current queue, the host's track was declared "not on this device" and
+> the guest silently kept playing its own audio for the rest of the room —
 > with its transport locked (below). Measured: 0 of 3 host tracks resolved on
 > Android until one happened to be in the queue/history; 2 of 2 resolved once
 > the id was in reach (§13.6).
+>
+> **Fix landed (2026-10-07/08):** mobile `followGuest` now also searches plays,
+> favourites and the vault (`mobile/jam.js:440-455`) and falls back to
+> `resolveFromCatalog` (`jam/follow.js`, shared by both surfaces —
+> `mobile/jam.js:456-473`, `social.js:341-361`). Landed in commit `6f2f302`.
 
 **M1 append honesty:** the jam view's append row is disabled for everyone
 with a stated reason — the host adds tracks through the regular queue screen
@@ -531,7 +543,7 @@ presence.
 
 ### 13.6 Desktop host ↔ Android guest — first real two-client run (2026-10-07)
 
-**Defects D1–D3 from this run, each with its proposed fix: `docs/jam-defects-d1-d4.md`** (design only — no code changed).
+**Defects D1–D3 from this run, each with its proposed fix: `docs/jam-defects-d1-d4.md`** (design only — no code changed *in that session*; **all three since fixed** — D2/D3 committed before 2026-10-07, D1 in `6f2f302`, see the fix notes in §12/§13).
 
 Every earlier live run used **one real app + one synthetic socket client**. This
 run put the real desktop app (host) and the real Android app (guest) in the
@@ -568,7 +580,7 @@ throwaway `Runtime.evaluate` scripts in a temp dir):
 | H2 | host never broadcasts `playback` | **DISPROVEN** | the guest switched tracks and reported drift within one tick of the host changing song — frames arrive |
 | H3 | autoplay rejection swallowed | **DISPROVEN on Android** | a paused guest resumed and seek-corrected straight from a frame callback (`jam.js:379`), no `NotAllowedError` |
 
-**Three defects, all reproduced (none fixed yet):**
+**Three defects, all reproduced at the time (all since fixed — D1 in `6f2f302`, D2/D3 committed before 2026-10-07):**
 
 1. **D1 — the mobile resolve list is too narrow (the reported symptom).**
    `mobile/jam.js:398 followGuest()` searches `queueHistory() + current +
@@ -629,7 +641,7 @@ is `jam.js hostTick` (not `social.js wireReactions`), and the guest applying the
 frames is `social.js guestTick` (not `jam.js guestApply`). Same two real apps,
 driven only through the UI; nothing in the repo was modified.
 
-**Defect D4 from this run, with its proposed fix: `docs/jam-defects-d1-d4.md`** (design only — no code changed).
+**Defect D4 from this run, with its proposed fix: `docs/jam-defects-d1-d4.md`** (design only — no code changed *in that session*; **fixed 2026-10-07**, see the D4 fix note in §12).
 
 | Side | Setup |
 |---|---|

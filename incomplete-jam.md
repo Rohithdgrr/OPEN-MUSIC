@@ -26,8 +26,8 @@ Read this file first if you are resuming. It records what is proven, what is
 |---|---|
 | Social / room / QR / join / leave (desktop) | **DONE — verified live, 32/32** |
 | Social / room / chat / presence / leave (Android emulator) | **DONE — verified live, 28/28** |
-| **Desktop host ↔ Android guest in one real room** | **DONE 2026-10-07 — §1.2.** Chat/presence/drift/follow proven against two real apps; **3 defects found, none fixed yet** |
-| **Android host ↔ desktop guest (the reverse pairing)** | **DONE 2026-10-07 — §1.2 D4 + `listen-together.md` §13.7.** Join/chat/follow/`±0.05s` drift/resume all proven; **1 new defect: the phone host never broadcasts a pause** |
+| **Desktop host ↔ Android guest in one real room** | **DONE 2026-10-07 — §1.2.** Chat/presence/drift/follow proven against two real apps; **3 defects found, all since fixed (D2/D3 committed, D1 in `6f2f302`)** |
+| **Android host ↔ desktop guest (the reverse pairing)** | **DONE 2026-10-07 — §1.2.** Join/chat/follow/`±0.05s` drift/resume all proven; **1 new defect found (D4, phone host never broadcast a pause) — fixed 2026-10-07** |
 | Static gates (`npm test`, lint, fmt, clippy, `cargo test`) | **GREEN** |
 | **"Run a single song" — desktop** | **PARTIAL** — playback proven, *stable assertion not yet written* |
 | **"Run a single song" — Android emulator** | **NOT STARTED** |
@@ -76,10 +76,11 @@ three slots, `ws://10.227.158.104:8787` advertised, real second socket got
    `Runtime.evaluate` persists in the page, so a second run died with
    `Identifier 'i' has already been declared`. Wrapped in an IIFE.
 
-### 1.2 Defects found 2026-10-07 — both room directions (NOT fixed yet)
+### 1.2 Defects found 2026-10-07 — both room directions (all FIXED — D2/D3/D4 committed, D1 in `6f2f302` 2026-10-08)
 
-**Issue + solution write-up for D1–D4: `docs/jam-defects-d1-d4.md`** (design
-only, no code changed).
+**Issue + solution write-up for D1–D4: `docs/jam-defects-d1-d4.md`** (the
+spec the fixes were implemented against; fix notes now also inline in
+`docs/listen-together.md` §12).
 
 A later session ran the missing combination: **real desktop app as host, real
 Android app as guest**, same room, driven only through the UI over CDP. The
@@ -102,8 +103,10 @@ break. Evidence: **`docs/listen-together.md` §13.7**, mobile 09 **P34**.
 | D3 | `NOT ON THIS DEVICE` shows while the badge claims `Synchronized ±0.04s`, and the badge outlives a lost sync | `jam.js:411` (only clear) / `:369` (fast path skips it); `appliedFrames`/`lastDrift` never reset | clear the note on the fast path; reset the sync counters when a frame cannot be applied |
 | D4 | **Reverse run (Android host ↔ desktop guest): the host pauses and the guests keep playing.** Anything the phone host does while paused (next track, seek) is withheld until it resumes; resume itself self-heals | `mobile/jam.js:346` returns on `st.paused` before the drift/key check, and mobile has no `play`/`pause`/`seeked` listeners or title observer — `broadcastPlayback()` has 2 call sites (`:263`, `:354`) vs desktop's 5 (`social.js:317`, `:401`, `:696`, `:704`, wired at boot `:884`). Live: host t=136 paused, desktop guest t=141 still playing at `±0.06s` | wire `play`/`pause`/`seeked` (and title) listeners on the mobile host like the desktop, or drop the `st.paused` guard so the 1 s tick emits `playing:false`. Full evidence: `docs/listen-together.md` §13.7, mobile 09 **P34** |
 
-**Nothing was changed in the code** — the session was documentation-only by
-instruction. Reproduce the setup with §5 of this file plus the harness notes at
+**That session changed nothing in the code** — it was documentation-only by
+instruction. The fixes have since landed (D2/D3/D4 committed, D1 catalog
+fallback in `6f2f302` — fix notes in `docs/listen-together.md` §12).
+Reproduce the setup with §5 of this file plus the harness notes at
 the end of §13.6 (note: a device-side guest needs **`adb reverse`**, not
 `adb forward`).
 

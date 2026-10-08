@@ -1,5 +1,14 @@
 # Jam P0 Fixes — Implementation Complete
 
+> **⚠️ Status update 2026-10-08 (supersedes the header below):** the integration
+> artifacts this document describes — `social-refactored.js`, `jam/controller.js`,
+> `jam/qr-scanner.js`, the crossfade/shortcut patch files — were **never wired in
+> and have been deleted** (commit `0e3744d`). The fixes that actually shipped are
+> the in-place changes to `social.js`, `playback.js`, `shortcuts.js` and
+> `mobile/jam.js` (catalog fallback via `jam/follow.js`, room-role gates).
+> Defect/fix record of truth: `docs/jam-defects-d1-d4.md`.
+> The rest of this document is retained as the original design rationale.
+
 **Status:** ✅ Core infrastructure implemented  
 **Date:** 2026-10-07  
 **Priority:** P0 (Critical for "Jam works")
