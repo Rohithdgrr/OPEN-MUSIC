@@ -97,8 +97,8 @@ function sheet(title, rows) {
   return wrap;
 }
 
-/// Ask for a host address + code. Accepts a pasted invite line
-/// (`ws://192.168.1.5:8787 · CODE`) or address and code typed separately (§12).
+/// Ask for the host's invite link — one pasted string: the canonical
+/// `trancemusic://join?…` or a legacy `ws://ip:port · CODE` line (§12, A).
 function promptJoin() {
   const wrap = document.createElement("div");
   wrap.className = "fixed inset-0 z-[70] flex items-end justify-center";
@@ -111,10 +111,8 @@ function promptJoin() {
   card.innerHTML =
     '<div class="font-headline-sm text-[15px] font-semibold text-on-surface px-0.5">Join a Jam</div>' +
     '<div class="flex flex-col gap-2">' +
-    '<input id="jam-join-invite" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the invite — ws://192.168.1.5:8787 · CODE" class="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/30 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none" />' +
-    '<input id="jam-join-addr" type="text" autocomplete="off" spellcheck="false" placeholder="Host address — e.g. 192.168.1.5" class="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/30 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none" />' +
-    '<input id="jam-join-code" type="text" maxlength="8" autocomplete="off" spellcheck="false" placeholder="CODE" class="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/30 font-label-md text-[12px] tracking-widest uppercase text-on-surface placeholder:text-secondary focus:outline-none" />' +
-    '<p class="text-[10px] font-label-sm text-secondary px-0.5" id="jam-join-note">Same Wi-Fi as the host. The 8-character code is on their Jam Data tab.</p>' +
+    '<input id="jam-join-invite" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the invite — trancemusic://join?…" class="w-full px-3 py-2 rounded-xl bg-surface-container-low border border-outline-variant/30 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none" />' +
+    '<p class="text-[10px] font-label-sm text-secondary px-0.5" id="jam-join-note">Same Wi-Fi as the host. Their invite link is on the Jam Data tab — an old address · code line still works.</p>' +
     "</div>" +
     '<div class="flex items-center gap-2">' +
     '<button type="button" id="jam-join-cancel" class="flex-1 py-2.5 rounded-xl bg-surface-container-low border border-outline-variant/30 text-on-surface font-label-md text-[12px] font-semibold">Cancel</button>' +
@@ -124,30 +122,28 @@ function promptJoin() {
   document.body.append(wrap);
 
   const invite = card.querySelector("#jam-join-invite");
-  const addr = card.querySelector("#jam-join-addr");
-  const code = card.querySelector("#jam-join-code");
   const note = card.querySelector("#jam-join-note");
   card.querySelector("#jam-join-cancel").addEventListener("click", () => wrap.remove());
 
-  // A pasted invite fills both fields, so the host never has to type an IP.
+  // Live pre-validation for the inline message only — Rust is the authority
+  // and rejects the same string again (docs/jam-upgrade.md §3.3).
   invite.addEventListener("input", () => {
-    const parsed = parseInvite(invite.value);
-    if (!parsed) return;
-    addr.value = parsed.addr;
-    code.value = parsed.code;
-    note.textContent = "Invite read — tap Join.";
+    const value = invite.value.trim();
+    note.textContent = !value
+      ? "Same Wi-Fi as the host. Paste their invite link."
+      : parseInvite(value)
+        ? "Invite read — tap Join."
+        : "That doesn't look like an invite link.";
   });
 
   card.querySelector("#jam-join-go").addEventListener("click", () => {
-    const parsed = parseInvite(invite.value);
-    const a = (parsed ? parsed.addr : addr.value).trim();
-    const c = (parsed ? parsed.code : code.value).trim().toUpperCase();
-    if (!a || !c) {
-      note.textContent = "Enter the host's address and the 8-character room code.";
+    const uri = invite.value.trim();
+    if (!parseInvite(uri)) {
+      note.textContent = "That doesn't look like an invite link.";
       return;
     }
     wrap.remove();
-    void joinRoom(a, c);
+    void joinRoom(uri);
   });
 }
 
@@ -194,6 +190,7 @@ async function startRoom() {
       selfId: "host", // the server's own member row is always id "host"
       code: (info && info.code) || "",
       urls: Array.isArray(info && info.urls) ? info.urls : [],
+      invite: (info && info.invite) || "",
       members: [{ id: "host", name, host: true }],
     });
     toast(`Room ${room.code} open — share the code with someone on this network.`, 5000, "success");
@@ -204,14 +201,14 @@ async function startRoom() {
   }
 }
 
-async function joinRoom(addr, code) {
+async function joinRoom(uri) {
   if (room.role !== "idle" || joining) return;
   socialChrome = true;
   joining = true;
   paintJam();
   try {
     // The outcome arrives as frames (`joined` / `error`), not as a return value.
-    await invoke("room_join", { addr, code, name: roomName() });
+    await invoke("room_join_uri", { uri, name: roomName() });
   } catch (e) {
     joining = false;
     socialChrome = false;
@@ -901,6 +898,7 @@ export function initJam() {
           selfId: "host",
           code: info.code || "",
           urls: [`ws://127.0.0.1:${roomPort}`],
+          invite: info.invite || "",
           members: [{ id: "host", name: "Host", host: true }],
         });
         toast(`Room ${room.code} is running on this device`, 4000, "success");

@@ -111,7 +111,7 @@ test("social chrome ships hidden: Solo is the default state", () => {
 });
 
 test("jam.js is the mobile twin of the desktop glue", () => {
-  for (const cmd of ["room_open", "room_join", "room_chat", "room_playback", "room_report", "room_close", "room_info"]) {
+  for (const cmd of ["room_open", "room_join_uri", "room_chat", "room_playback", "room_report", "room_close", "room_info"]) {
     assert.ok(jam.includes(`"${cmd}"`), `jam.js never calls ${cmd}`);
   }
   assert.match(jam, /from "\.\.\/room\.js"/, "jam.js must share the desktop reducer, not fork one");
