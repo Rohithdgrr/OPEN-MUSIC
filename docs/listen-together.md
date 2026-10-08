@@ -238,6 +238,15 @@ Chat check:
    text twice quickly on B → second one rejected with the verbatim
    `rate_limited` message.
 
+Scan-to-join check (sub-project B — the only step where photons are real; the
+emulator's virtual camera cannot be aimed at our QR, so this cannot be
+automated from here — `docs/jam-upgrade.md` §4.2):
+9. Host: open a room — the invite row / Jam Data shows the room QR (canonical
+   invite from A). Phone: Jam join sheet → **Scan QR** → point at that QR.
+   Expected: camera opens, decode fires within ~2 s, room joined through
+   `room_join_uri`, sheet dismissed. Deny the camera permission → toast and
+   the paste field still joins (documented fallback).
+
 Failure reporting: paste what the Jam pane showed (status line text) and any
 `error` code — the UI shows server words unchanged, so the code is enough.
 

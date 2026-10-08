@@ -163,17 +163,24 @@ green; (7) full gates green.
     but `detect()` returns empty on every input shape (DOM canvas,
     ImageBitmap, blob, video) against a visually verified correct QR —
     silent, no console error. `canvas.captureStream` also dead.
-  - **Consequence:** B-T2 does NOT start on the old assumption. Two options,
-    the user's call: (i) approve one vendored QR decoder (~10 KB jsQR-class,
-    the only new dep) over the proven camera — full in-app scanner; or
-    (ii) ship the documented fallback (system camera + paste) and close B
-    as a limitation. Until that call lands: no scanner UI code.
+  - **Decoder decision (recorded here so the plan stays single-source):**
+    the user's request is verbatim *"ADD QR IN MOBILE, ALSO ADD SCANNER"* —
+    option (ii), a fallback that ships no scanner, would not deliver it.
+    Under standing rule 9 (recommended options are pre-approved) B-T2
+    proceeds with option (i): **vendor `jsQR` as one committed file**
+    (`app/src/vendor/jsQR.cjs`, Apache-2.0 (verified from the repo's LICENSE,
+    not remembered), pure JS, zero transitive deps, **no npm dependency** —
+    `package.json` untouched, keeping the §4.2 AC "no new npm dependency").
+    Option (ii) stays the fallback for what still fails live
+    (e.g. camera permission denied on a real device → paste remains).
 - Scanner UI (success path): full-screen sheet in the Jam join flow
-  ("Scan QR" next to the paste field), `<video>` + overlay, `BarcodeDetector`
-  polling at ~5 fps via `requestAnimationFrame`, on hit → validate with
-  `parseInvite` → same `room_join_uri` path as paste → dismiss. Detector
-  missing or permission denied → the sheet says so and leaves the paste field
-  focused (graceful degradation, never a dead end).
+  ("Scan QR" next to the paste field), `<video>` + overlay; frame polling at
+  ~5 fps (`video` frame → offscreen canvas → `getImageData` → **`jsQR`**) —
+  deliberately **not** `BarcodeDetector` (spike: silent empty results, P38);
+  on hit → validate with pure `extractInviteFromScan` (canonical-only) →
+  same `room_join_uri` path as paste → camera stopped → dismiss. Decoder
+  missing or permission denied → the sheet says so and leaves the paste
+  field focused (graceful degradation, never a dead end).
 - Permission: Android `CAMERA` injected by the existing `build.sh`
   permission-injection pattern (same as INTERNET, P20/P21 lesson); runtime
   prompt fires on first `getUserMedia`. **No `gen/` edits by hand** — it is
@@ -184,14 +191,26 @@ green; (7) full gates green.
 ### 4.2 B — tests & acceptance
 - JS unit: a pure `extractInviteFromScan(text)` wrapper (validated via
   `parseInvite`) — canonical-only, garbage → null.
-- Static: `jam-ui.test.mjs` asserts the Scan button + sheet ids exist and the
-  scan path calls `room_join_uri` (same style as the join-form assertions).
-- Live (on emulator): open scanner → feed a synthetic QR (render the invite
-  string to a QR on the desktop screen or use `qr_symbol` command output) →
-  join succeeds; deny permission → paste still works. Count goes into the
-  live matrix.
-- **AC:** guest joins by scanning the host's QR on a real/emulated camera
-  path, or the documented fallback is shown; no new npm dependency; gates green.
+- **Decode round-trip (browser-free, runs in `npm test`):** build an
+  RGBA buffer straight from the Rust `qr_symbol` matrix (flat
+  `modules[r*size+c]`, quiet zone 4, no canvas needed) and assert `jsQR`
+  returns the canonical invite **byte-identically** — the standing proof
+  that decoder and renderer agree.
+- Static: `jam-ui.test.mjs` asserts the Scan button + sheet ids exist, the
+  scan path calls `room_join_uri` (same style as the join-form assertions),
+  and the source never references `BarcodeDetector` (P38: it looks available
+  and silently decodes nothing — a future "cleanup" must not reintroduce it).
+- Live (on emulator): (a) scanner opens — real `getUserMedia` stream,
+  frames flowing; (b) the scan pipeline consumes a synthetic frame built
+  from `qr_symbol` output and **joins the room** through `room_join_uri`;
+  (c) permission denied → toast + paste still works. Count goes into the
+  live matrix. **Physical gap:** photons-through-a-lens can only be proven
+  on a real phone (desktop shows the room QR → phone app scans it) —
+  recorded in the §10 runbook, not claimable from this emulator's virtual
+  camera, which cannot be aimed at our QR.
+- **AC:** guest joins through the scan pipeline on the emulator (camera live
+  + synthetic frame → join), decoder round-trip green in `npm test`, no npm
+  dependency added, gates green; physical-camera scan = runbook item.
 
 ---
 
