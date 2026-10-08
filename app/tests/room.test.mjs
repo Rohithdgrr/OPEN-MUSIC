@@ -8,6 +8,7 @@ import {
   reduceRoom,
   memberCount,
   inviteText,
+  parseInvite,
   worstDriftMs,
   expectedPositionMs,
   syncDecision,
@@ -310,4 +311,84 @@ test("room names are sanitised the way the Rust server sanitises them", () => {
   assert.equal(sanitizeRoomName("\u0007evil"), "evil");
   assert.equal(sanitizeRoomName("x".repeat(80)).length, 24);
   assert.equal(sanitizeRoomName(null), "Guest", "a missing name is not the string 'null'");
+});
+
+// ----------------------------------------------- the unified invite (A)
+test("inviteText prefers the canonical invite link, with honest fallbacks", () => {
+  const host = { ...createRoomState(), role: "host", code: "ABCD2345" };
+  const canonical = "trancemusic://join?host=192.168.1.5&port=8787&code=ABCD2345";
+
+  // The one string every surface shows once the backend minted it.
+  assert.equal(
+    inviteText({ ...host, invite: canonical, urls: ["ws://192.168.1.5:8787"] }),
+    canonical,
+  );
+
+  // No invite field (old backend) -> the legacy composite still works.
+  assert.equal(
+    inviteText({ ...host, invite: "", urls: ["ws://192.168.1.5:8787"] }),
+    "ws://192.168.1.5:8787 · ABCD2345",
+  );
+
+  // Nothing to dial -> the bare code, never "undefined".
+  assert.equal(inviteText({ ...host, invite: "" }), "ABCD2345");
+  assert.equal(inviteText(createRoomState()), "");
+});
+
+test("hosted frames carry the invite; bye clears it", () => {
+  const canonical = "trancemusic://join?host=192.168.1.5&port=8787&code=ABCD2345";
+  const s = reduceRoom(createRoomState(), {
+    t: "hosted",
+    selfId: "host",
+    code: "ABCD2345",
+    urls: ["ws://192.168.1.5:8787"],
+    invite: canonical,
+    members: [],
+  });
+  assert.equal(s.invite, canonical);
+  assert.equal(reduceRoom(s, { t: "bye", reason: "left" }).invite, "");
+
+  // A hosted frame without the field (old backend) leaves invite empty.
+  const old = reduceRoom(createRoomState(), {
+    t: "hosted",
+    code: "ABCD2345",
+    urls: [],
+    members: [],
+  });
+  assert.equal(old.invite, "");
+});
+
+test("parseInvite reads the canonical link as one pasted string", () => {
+  assert.deepEqual(
+    parseInvite("trancemusic://join?host=192.168.1.5&port=8787&code=abcd2345"),
+    { addr: "192.168.1.5:8787", code: "ABCD2345" },
+  );
+  // Unknown params are ignored (forward compatible).
+  assert.deepEqual(
+    parseInvite("trancemusic://join?x=1&host=10.0.0.2&port=9000&code=ZZZZ1234&y=2"),
+    { addr: "10.0.0.2:9000", code: "ZZZZ1234" },
+  );
+
+  // Malformed links -> null (inline error), never a partial join.
+  for (const bad of [
+    "trancemusic://join?host=192.168.1.5&port=8787", // no code
+    "trancemusic://join?port=8787&code=ABCD2345", // no host
+    "trancemusic://join?host=192.168.1.5&port=abc&code=ABCD2345", // bad port
+    "trancemusic://join?host=&port=8787&code=ABCD2345", // empty host
+    "trancemusic://join?host=192.168.1.5&port=8787&code=short", // short code
+  ]) {
+    assert.equal(parseInvite(bad), null, bad);
+  }
+
+  // Legacy lines keep working (old links in the wild); the addr keeps its
+  // scheme exactly as it always has — parse_room_addr strips it.
+  assert.deepEqual(parseInvite("ws://192.168.1.5:8787 · ABCD2345"), {
+    addr: "ws://192.168.1.5:8787",
+    code: "ABCD2345",
+  });
+  assert.deepEqual(parseInvite("192.168.1.5 ABCD2345"), {
+    addr: "192.168.1.5",
+    code: "ABCD2345",
+  });
+  assert.equal(parseInvite("garbage"), null);
 });

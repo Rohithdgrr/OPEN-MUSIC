@@ -15,6 +15,7 @@ export function createRoomState() {
     code: "",
     selfId: "",
     urls: [],
+    invite: "",
     members: [],
     chat: [],
     historyLoaded: false,
@@ -57,6 +58,9 @@ export function reduceRoom(state, frame) {
         selfId: typeof frame.selfId === "string" ? frame.selfId : state.selfId,
         code: typeof frame.code === "string" ? frame.code : state.code,
         urls: copyList(frame.urls),
+        // The canonical link `room_open` minted (A). An old backend that
+        // omits it leaves the fallbacks in inviteText() to do their job.
+        invite: typeof frame.invite === "string" ? frame.invite : state.invite,
         members: copyList(frame.members),
         error: "",
       };
@@ -112,6 +116,7 @@ export function reduceRoom(state, frame) {
         code: "",
         selfId: "",
         urls: [],
+        invite: "",
         members: [],
         chat: [],
         historyLoaded: false,
@@ -135,11 +140,14 @@ export function memberCount(state) {
 }
 
 /// The host's share line. Empty unless hosting with a code in hand.
-/// No URL yet: the code alone. Never interpolate a missing index — that
-/// renders the literal "undefined", which the truthfulness rules forbid
-/// (was app/tests/room.test.mjs `todo`, now a live assertion).
+/// Prefers the canonical `trancemusic://join?…` link the backend minted (the
+/// one string display, clipboard and QR all carry), then the legacy
+/// `ws://ip:port · CODE` composite, then the bare code — never a missing
+/// index, which would render the literal "undefined" (was
+/// app/tests/room.test.mjs `todo`, now a live assertion).
 export function inviteText(state) {
   if (state.role !== "host" || !state.code) return "";
+  if (state.invite) return state.invite;
   const urls = Array.isArray(state.urls) ? state.urls : [];
   if (!urls[0]) return state.code;
   return `${urls[0]} · ${state.code}`;
@@ -177,18 +185,33 @@ export function syncDecision(state, audioPosSec, nowMs = Date.now()) {
   };
 }
 
-/// Read a pasted invite line back into its two halves. What `inviteText`
-/// writes — `ws://192.168.1.5:8787 · CODE` — has to survive a copy/paste into
-/// the join field, and a human may also type `192.168.1.5:8787 CODE` or
-/// `192.168.1.5 CODE`. Anything without both halves returns `null` (an address
-/// with no code is not joinable), so the caller can show its own honest error
-/// instead of joining a room that cannot exist (docs/listen-together.md §12).
+/// Read a pasted invite back into its two halves. Two shapes are accepted:
+/// the canonical `trancemusic://join?host=…&port=…&code=…` link (A) and the
+/// legacy `ws://ip:port · CODE` line — plus the human variants
+/// `ip:port CODE` / `ip CODE`. Anything without both halves returns `null`
+/// (an address with no code is not joinable), so the caller can show its own
+/// honest error instead of joining a room that cannot exist. This parser is
+/// **pre-validation for the inline message only — Rust's `parse_invite` is
+/// the authority** (docs/jam-upgrade.md §3.3).
 export function parseInvite(raw) {
-  const text = String(raw == null ? "" : raw)
-    .replace(/[·|,]/g, " ")
-    .trim();
+  const text = String(raw == null ? "" : raw).trim();
   if (!text) return null;
-  const parts = text.split(/\s+/).filter(Boolean);
+
+  if (text.startsWith("trancemusic://join?")) {
+    const params = new URLSearchParams(text.slice("trancemusic://join?".length));
+    const host = (params.get("host") || "").trim();
+    const port = (params.get("port") || "").trim();
+    const code = (params.get("code") || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    // Deliberately loose on the host (the LAN gate lives in Rust); strict on
+    // the two halves that make a room addressable.
+    if (!host || !/^\d+$/.test(port) || code.length !== 8) return null;
+    return { addr: `${host}:${port}`, code };
+  }
+
+  const parts = text
+    .replace(/[·|,]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
   if (parts.length < 2) return null;
   const code = parts[parts.length - 1].replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   const addr = parts.slice(0, -1).join("");
