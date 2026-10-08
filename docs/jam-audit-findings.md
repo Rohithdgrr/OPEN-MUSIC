@@ -109,6 +109,84 @@ them through the same registration path as desktop.
 
 ---
 
+## B1 — Android cleartext: does Jam traffic ever cross the WebView?
+
+Every Jam-related URL and its transport (this is the map Task 7's LAN-join
+test runs against):
+
+| # | URL | Transport | Cleartext governed by | Verdict |
+|---|---|---|---|---|
+| 1 | `ws://<lan-ip>:8787` (room protocol) | **native Rust socket** — tokio-tungstenite in `room.rs:691-701` | nothing WebView-side; needs only `INTERNET` permission (in the manifest, AGENTS.md 07f) | **OK — not affected by cleartext config** |
+| 2 | `http://127.0.0.1:{port}/stream`, `/art` (relay) | WebView `<audio>`/img | release `network_security_config.xml`: cleartext permitted for `127.0.0.1`, `localhost`, `[::1]` only; `base-config` false | **OK — loopback is explicitly permitted** |
+| 3 | catalog `resolve_song` (D1 fallback) | **native Rust** — Tauri command, Rust does the HTTP | n/a | **OK** |
+| 4 | `http://<pc-ip>:1430` (devUrl) | WebView, **debug builds only** | debug config: `cleartextTrafficPermitted="true"` everywhere (`app/src/.../debug/res/xml/network_security_config.xml`) | **OK — expected in dev; never ships** |
+| 5 | invite QR / invite text | rendered locally (`qr.rs`, no network) | n/a | **OK** |
+
+Config evidence (both files read this session):
+
+- **Release:** `gen/android/app/src/release/res/xml/network_security_config.xml`
+  — loopback-only `<domain-config cleartextTrafficPermitted="true">`,
+  `<base-config cleartextTrafficPermitted="false"/>`; its comment states a
+  present config makes Android ignore `usesCleartextTraffic` (P23).
+- **Debug:** `gen/android/app/src/debug/res/xml/network_security_config.xml`
+  — cleartext everywhere, with the devUrl rationale in its comment.
+- Injection point: `app/build.sh:101` (sed adds
+  `android:networkSecurityConfig`).
+
+**The spec's headline risk (§8: "phone joins PC room over real LAN may be
+blocked") dissolves for the room protocol:** `ws://<pc-ip>:8787` from the
+phone is a **native Rust socket**, and neither `usesCleartextTraffic` nor
+`networkSecurityConfig` governs native sockets — they govern the WebView
+(P23 states the same for the relay). What *was* only ever tested through
+adb tunnels is the WebView side, and the only WebView cleartext URLs Jam
+has are loopback (row 2), explicitly permitted in release.
+
+**Verdict: OK.** Task 7 should still run the LAN-join step — an
+evidence-first effort proves the analysis — but the expected result is
+success.
+
+## B2 — iOS readiness (what CI proves, ATS unknowns, backgrounding)
+
+**What `ios.yml` proves: build, nothing else.** The workflow is
+`workflow_dispatch`-only (`ios.yml:19`), runs `npx tauri ios init --ci`
+(`:83`), then `tauri ios build --ipa` signed (`:90`) or
+`--no-sign --target aarch64-sim` simulator (`:108`), and uploads the
+archive (`:157-166`). **No `npm test` step exists in it** (Task 5 adds one);
+no run/test-on-device step at all. A green iOS run therefore says
+"compiles for iOS", never "works on iOS".
+
+**ATS (NSAppTransportSecurity): explicit UNKNOWN.** `git grep` for
+`NSAppTransportSecurity` over the repo: **no hits**. No `*.plist` /
+`*.entitlements` files are tracked. `gen/apple` does not exist on this
+machine (`tauri ios init` has never run here), so the generated
+`Info.plist` cannot be inspected locally. What this leaves open, in order
+of importance for Jam:
+
+1. **The relay loads** — the WebView fetches `http://127.0.0.1:{port}`
+   (stream + art). If the generated Info.plist carries no ATS exception
+   and ATS applies to loopback HTTP in WKWebView, playback art/stream would
+   fail exactly like P23 did on Android. (The room WS is *not* exposed to
+   ATS — native socket, row 1 of B1.)
+2. **Background suspension** — a backgrounded iOS app suspends the WebView
+   and kills idle sockets. Expected behavior per the Audit A reading: the
+   guest's WS drops → `guest_run` emits `bye "Connection to the room was
+   lost."` (`room.rs:681-688`) on resume-adjacent I/O; whether the UI
+   recovers cleanly or shows a stale room until interaction is
+   **untested**.
+3. **CSP interaction** — `tauri.conf.json:40` allows
+   `connect-src ... ws://127.0.0.1:*` (loopback only) — irrelevant to the
+   native room socket today, but it means a WebView-originated room socket
+   could never dial a LAN host; keep the room WS native on iOS (it is).
+
+**Verdict: UNKNOWN (→ first checklist items for the Apple runbook,
+Task 8).** No DEFECT can be declared or denied from this machine; the
+runbook must check the generated `Info.plist` for ATS and run the
+three Jam flows (open/join, relay playback, background-return) on real
+hardware before iOS can be called verified-live (spec D-b: CI + runbook
+only).
+
+---
+
 ## Summary
 
 | Item | Verdict | Action |
@@ -116,9 +194,14 @@ them through the same registration path as desktop.
 | A1 bind/invite derivation | OK (single-homed) · KNOWN-LIMITATION (multi-homed/VPN, IPv6-only) | none — fix direction recorded above |
 | A2 listener attach + drop paths | OK | none |
 | A3 platform cfg surface | OK | none |
+| B1 Android cleartext vs Jam transports | OK — room WS is native, only relay is WebView-cleartext and loopback is permitted | none; Task 7 still runs LAN join as evidence |
+| B2 iOS readiness | UNKNOWN — CI proves build only; ATS + backgrounding unchecked (`gen/apple` absent locally) | runbook checklist (Task 8); `npm test` into `ios.yml` (Task 5) |
 
-No DEFECT verdicts in Audit A — nothing in the bind/invite, reconnect, or
-platform-cfg surfaces breaks documented behavior at this HEAD. The
-known-limitation (invite can show a VPN IP on a multi-homed host; IPv6-only
-LANs unsupported) is honest and recoverable: the room server binds every
-interface and the join sheet accepts a manually typed address.
+No DEFECT verdicts anywhere in the audit — nothing in the bind/invite,
+reconnect, platform-cfg, Android-cleartext or iOS-readiness surfaces can be
+shown to break documented behavior at this HEAD. Known gaps are recorded
+honestly above: invite can show a VPN IP on a multi-homed host; IPv6-only
+LANs unsupported; iOS is build-verified only until the Apple runbook is
+executed on hardware (spec D-b). Recoverability holds throughout: the room
+server binds every interface and the join sheet accepts a manually typed
+address.
