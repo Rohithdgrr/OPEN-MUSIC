@@ -197,8 +197,14 @@ async function main() {
   check("Jam Data titles the real room", (await app.evalJs('document.getElementById("jamRoomTitle").textContent')) === `Jam Room #${code}`);
   check("role badge reads HOST", (await app.evalJs('document.getElementById("jamRoleBadge").textContent')) === "HOST");
   const invite = await app.evalJs('document.getElementById("jamInviteUri").textContent');
-  const port = (String(invite).match(/:(\d{2,5})/) || [])[1];
-  check("invite carries a dialable ws:// address", /^ws:\/\/\d+\.\d+\.\d+\.\d+:\d+ · /.test(String(invite)), invite);
+  // c994fae unified invites: the backend mints `trancemusic://join?host=…&port=…&code=…`
+  // (canonical, parsed by room_join_uri); the legacy `ws://ip:port · CODE`
+  // composite is the fallback. Both are dialable — accept either, extract port.
+  const inviteStr = String(invite);
+  const canonical = inviteStr.match(/^trancemusic:\/\/join\?.*?\bport=(\d{2,5})\b/);
+  const legacy = inviteStr.match(/^ws:\/\/\d+\.\d+\.\d+\.\d+:(\d{2,5}) · /);
+  const port = (canonical || legacy || [])[1];
+  check("invite carries a dialable address", !!(canonical || legacy), inviteStr);
 
   // ---- second client, over the wire ----
   adb("forward", `tcp:${port}`, `tcp:${port}`);

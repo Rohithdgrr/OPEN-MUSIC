@@ -4458,7 +4458,7 @@ function mountSettings() {
     // file to the share sheet and fall back to the clipboard.
     try {
       if (navigator.canShare && navigator.canShare({ files: [blob] })) {
-        await navigator.share({ files: [blob], title: "TRANCE MUSIC backup" });
+        await navigator.share({ files: [blob], title: "OPEN MUSIC backup" });
         return toast(`Backup shared (${doc.favorites.records.length} favourites)`, 4000, "success");
       }
     } catch (e) {

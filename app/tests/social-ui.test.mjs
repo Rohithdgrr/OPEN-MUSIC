@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const src = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 const html = fs.readFileSync(path.join(src, "index.html"), "utf8");
 const css = fs.readFileSync(path.join(src, "styles.css"), "utf8");
+const settingsJs = fs.readFileSync(path.join(src, "settings.js"), "utf8");
 
 // Elements Phase 3 wires up; renaming any of these breaks social.js.
 // Removed on request (docs/social-nowplaying.md §6b): the bitstream pill
@@ -178,6 +179,10 @@ test("no fabricated room codes or PINs remain in the markup", () => {
   assert.match(html, /id="btn-open-room"[^>]*\sdisabled/, "room creation needs a live connection");
 });
 
+test("display name copy names Home and Jam", () => {
+  assert.match(settingsJs, /Home greeting and as your name in a Jam/);
+});
+
 test("social.js drives the Rust room commands from the frozen contract", () => {
   // docs/listen-together.md §6/§13.1: every command is the window's only way
   // into a room, and every one has a caller in the UI. `room_join_uri` is the
@@ -189,6 +194,16 @@ test("social.js drives the Rust room commands from the frozen contract", () => {
   assert.match(social, /listen\("room:\/\/msg"/, "frames must arrive through the room://msg event");
   assert.match(social, /reduceRoom\(room, frame\)/, "frames must go through the shared reducer");
   assert.match(social, /return invoke\("room_info"\)|invoke\("room_info"\)/, "a reload must reconcile a stale server");
+  assert.match(social, /info\.role === "host"/, "a live host room must be adopted, not closed");
+  assert.match(social, /t: "hosted"/, "adopt paints the hosted frame from room_info");
+  assert.ok(!/role !== "idle"\) await invoke\("room_close"\)/.test(social), "enterSocial must not close a live host");
+  assert.match(social, /roomDisplayName/, "Jam roster name comes from Settings tm-name");
+  assert.match(social, /roomTickKind/, "chat frames must not reset the host/guest tick");
+  assert.match(social, /shouldRetryJoinAfterError/, "dial-fail during rejoin must retry, first join must not");
+  assert.match(social, /isStaleLocalBye/, "late room_close bye must not idle a live guest");
+  assert.match(social, /shouldKeepRejoinAfterBye/, "cleanup bye must not cancel a lost-socket redial");
+  assert.match(social, /Still connecting/, "chat while joining must not local-echo");
+  assert.match(social, /"ended"/, "auto-advance must broadcast immediately");
   // The sidecar bridge is dormant: nothing in the UI drives it any more.
   assert.ok(!/sidecar\.js/.test(social), "social.js must not import the retired sidecar bridge");
 });

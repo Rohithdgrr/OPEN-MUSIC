@@ -6,7 +6,7 @@ import { openPlaylist, pdCurrentId, plFeatured, renderFavs, renderLibrary, rende
 import { fmtTime } from "./util.js";
 import { refreshVault } from "./vault.js";
 
-/* TRANCE MUSIC — frontend controller (vanilla ES module, no build step).
+/* OPEN MUSIC — frontend controller (vanilla ES module, no build step).
  *
  * Wires the three Stitch views (home / search / now-playing) to the Rust
  * backend: search_songs -> results, resolve_song -> badge -> <audio>,
@@ -20,7 +20,7 @@ window.addEventListener("error", (e) => {
     banner.textContent = "JS error: " + (e.message || "unknown");
     banner.classList.remove("hidden");
   }
-  console.error("[TRANCE MUSIC]", e.error || e.message);
+  console.error("[OPEN MUSIC]", e.error || e.message);
 });
 window.addEventListener("unhandledrejection", (e) => {
   const banner = document.getElementById("error");

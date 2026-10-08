@@ -447,7 +447,7 @@ export function hqArt(url, target = "500x500") {
   return proxied(out);
 }
 
-/// Android's default artwork: the REON mark shipped with the mobile shell
+/// Android's default artwork: the OPEN MUSIC mark shipped with the mobile shell
 /// (desktop keeps its own src/logo.png — this path is mobile-only).
 export const LOGO = "logo.png";
 

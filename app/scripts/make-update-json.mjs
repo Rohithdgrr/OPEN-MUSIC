@@ -54,7 +54,7 @@ const files = walk(resolve(bundleRoot));
 // so an arm64 Mac and an x64 Linux box both land on the right entry.
 const archOf = (name) => (/aarch64|arm64/i.test(name) ? "aarch64" : "x86_64");
 
-// Tauri 2 signs the installer file itself (`TRANCE MUSIC_0.3.0_x64-setup.exe`
+// Tauri 2 signs the installer file itself (`OPEN MUSIC_0.4.0_x64-setup.exe`
 // + `.exe.sig`), while older builds wrapped it in a `.zip`. Accept either so
 // the manifest keeps working across versions. Older installers from previous
 // builds sit in the same folder, so a file carrying this release's version
@@ -134,7 +134,7 @@ if (!Object.keys(platforms).length) {
 
 const manifest = {
   version,
-  notes: process.env.RELEASE_NOTES || `TRANCE MUSIC ${version}`,
+  notes: process.env.RELEASE_NOTES || `OPEN MUSIC ${version}`,
   pub_date: new Date().toISOString(),
   platforms,
 };

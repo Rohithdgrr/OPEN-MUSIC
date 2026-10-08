@@ -222,7 +222,7 @@ fn parse_callback_target(head: &str) -> Result<(String, String), String> {
     }
 }
 
-const SUCCESS_PAGE: &str = "<!doctype html><html><body style=\"font-family:sans-serif;display:flex;height:100vh;align-items:center;justify-content:center\"><div><h2>Signed in to TRANCE MUSIC</h2><p>You can close this tab and return to the app.</p></div></body></html>";
+const SUCCESS_PAGE: &str = "<!doctype html><html><body style=\"font-family:sans-serif;display:flex;height:100vh;align-items:center;justify-content:center\"><div><h2>Signed in to OPEN MUSIC</h2><p>You can close this tab and return to the app.</p></div></body></html>";
 
 async fn read_head(stream: &mut tokio::net::TcpStream) -> Result<String, String> {
     use tokio::io::AsyncReadExt;

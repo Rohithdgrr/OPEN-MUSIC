@@ -687,6 +687,22 @@ User asked to "run emulator with my app". Done — emulator left running.
 
 **Status:** ✅ emulator up ✅ app installed + rendering ⏳ nothing committed or pushed (rule 1).
 
+## 2026-10-08b — Push record: P36 fix commit `6522ca7` on `main` (pushed, in sync)
+
+User said "push code to github", answered scope Q with "push whole code
+changes". Committed all 6 tracked-modified files as `6522ca7`
+(`Rohithdgrr <rohit93dgrr@gmail.com>`, verified via `git config`):
+`AGENTS.md` (P36 session log), `CHANGELOG.md`, `proxy.rs` (relay ACAO),
+`mobile/player.js` (crossOrigin), `tailwind.css` (1-line rebuild),
+`docs/mobile/09-problems-solutions.md` (P36). Deliberately NOT committed:
+`temporary/`, `temporary data/`, `app/src-tauri/.cargo/` (probe artifacts +
+machine-local linker config, per 07j precedent). Procedure per rule 8:
+`git log origin/main..HEAD` showed empty before committing (no riders),
+staged → committed → re-verified range (exactly `6522ca7`) → pushed as
+three separate commands. Push `41a263e..6522ca7  main -> main`, post-push
+ahead-range empty. (Note: PowerShell `git push` exit-1 via stderr is
+spurious — the `main -> main` line is the real proof.)
+
 **Postscript:** the emulator process later exited on its own (background-shell log:
 graceful shutdown + `Saving snapshot 'default_boot'`; `adb devices` empty, no emulator
 proc). App/install state on the AVD persists — just cold-boot again to resume.

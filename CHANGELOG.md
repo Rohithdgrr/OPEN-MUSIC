@@ -14,6 +14,25 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ## [Unreleased]
 
+### Changed · Jam sync, reconnect, scale (`docs/jam-upgrade.md` C/F + `docs/jam-professional-grade.md`)
+- Host tick **1000 → 250 ms** (`HOST_TICK_MS` in `room.js`, both surfaces).
+  Guests rate-nudge in the 40–150 ms band and hard-seek only past 150 ms —
+  closest LAN-honest bound to “same second”; 0 ms RTT is not claimed.
+- Guest **auto-rejoin** on a lost socket (same invite, 5 attempts); Leave and
+  host-close stay idle. Role swap is leave-until-idle then open or join.
+- Room cap **8 → 16 guests**. Rust fan-out + leave/rejoin cycle tests; hand-run
+  `app/tests/live-scale.mjs` (N=4/8/16, 17th refused, host close→reopen).
+- Jam roster uses Settings **Display name** (`tm-name`; `tm-username` fallback).
+- Desktop Social **adopts** a live host room on entry instead of closing it.
+- Chat/presence no longer **reset the 250 ms tick** (extra staleness in a
+  chatty room). Lost-socket rejoin retries on `connect_failed` error frames,
+  not only invoke throws. First-join failures stay idle. Mobile host
+  heartbeats while paused; host-adopt uses `room_info.urls`.
+- Rejoin no longer calls `room_close` on `connect_failed` (that emitted
+  `bye{left}` and cancelled the next dial). Terminal join errors stay
+  terminal. Host/guest ticks fire **immediately** then every 250 ms. Chat
+  while connecting is held, not locally echoed.
+
 ### Added · Jam upgrade (sub-project A of `docs/jam-upgrade.md`)
 - **Unified invite link:** one canonical string
   `trancemusic://join?host=…&port=…&code=…` is now the invite the invite row,

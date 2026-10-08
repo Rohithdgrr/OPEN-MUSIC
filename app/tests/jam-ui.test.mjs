@@ -17,6 +17,7 @@ const src = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src")
 const html = fs.readFileSync(path.join(src, "mobile", "screens", "nowplaying.html"), "utf8");
 const screenJs = fs.readFileSync(path.join(src, "mobile", "screens", "nowplaying.js"), "utf8");
 const jam = fs.readFileSync(path.join(src, "mobile", "jam.js"), "utf8");
+const settingsHtml = fs.readFileSync(path.join(src, "mobile", "screens", "settings.html"), "utf8");
 const app = fs.readFileSync(path.join(src, "mobile", "app.js"), "utf8");
 const binders = fs.readFileSync(path.join(src, "mobile", "binders.js"), "utf8");
 
@@ -110,6 +111,10 @@ test("social chrome ships hidden: Solo is the default state", () => {
   assert.ok(html.includes("no room append frame"), "the append row must state why it is disabled");
 });
 
+test("display name copy names Home and Jam", () => {
+  assert.match(settingsHtml, /Home greeting and as your name in a Jam/);
+});
+
 test("jam.js is the mobile twin of the desktop glue", () => {
   for (const cmd of ["room_open", "room_join_uri", "room_chat", "room_playback", "room_report", "room_close", "room_info"]) {
     assert.ok(jam.includes(`"${cmd}"`), `jam.js never calls ${cmd}`);
@@ -120,6 +125,16 @@ test("jam.js is the mobile twin of the desktop glue", () => {
   assert.match(jam, /inviteText\(room\)/, "the invite line comes from the reducer");
   assert.match(jam, /syncDecision\(room,/, "drift must use the shared measurement");
   assert.match(jam, /listen\("room:\/\/msg"/, "frames must arrive through the room://msg event");
+  assert.match(jam, /roomDisplayName/, "Jam roster name comes from Settings tm-name");
+  assert.match(jam, /roomName\("Host"\)/, "reload-adopt must use the profile name, not the literal Host");
+  assert.match(jam, /roomTickKind/, "chat frames must not reset the host/guest tick");
+  assert.match(jam, /shouldRetryJoinAfterError/, "dial-fail during rejoin must retry, first join must not");
+  assert.match(jam, /isStaleLocalBye/, "late room_close bye must not idle a live guest");
+  assert.match(jam, /shouldKeepRejoinAfterBye/, "cleanup bye must not cancel a lost-socket redial");
+  assert.match(jam, /Still connecting/, "chat while joining must not local-echo");
+  assert.match(jam, /Array.isArray\(info.urls\)/, "host adopt uses room_info urls, not loopback");
+  assert.match(jam, /"ended"/, "auto-advance must broadcast immediately");
+  assert.ok(!/key !== hostKey \|\| !st\.paused/.test(jam), "paused host must still heartbeat");
   // No socket of its own: Rust owns both ends.
   for (const api of ["new WebSocket", "EventSource", "XMLHttpRequest", "fetch(\""]) {
     assert.ok(!jam.includes(api), `jam.js must not open a socket (${api})`);

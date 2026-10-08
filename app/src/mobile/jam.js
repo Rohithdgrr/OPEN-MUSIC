@@ -24,24 +24,28 @@ import { paintQr } from "../qrview.js";
 import { onPaint, playerState, playList, queueHistory, queueUpNext, repaint, seek, toggle } from "./player.js";
 import {
   createRoomState,
-  DRIFT_TOLERANCE_MS,
-  expectedPositionMs,
   inviteText,
   memberCount,
   parseInvite,
   reduceRoom,
-  sanitizeRoomName,
+  roomDisplayName,
   setLocalRole,
   syncDecision,
+  shouldReportDrift,
+  shouldAutoRejoin,
+  shouldRetryJoinAfterError,
+  isStaleLocalBye,
+  shouldKeepRejoinAfterBye,
+  rejoinDelayMs,
+  roomTickKind,
+  HOST_TICK_MS,
+  ROOM_LOST_REASON,
   worstDriftMs,
 } from "../room.js";
 import { resolveFromCatalog } from "../jam/follow.js";
 import { startScanner } from "./scanner.js";
 
-const TICK_MS = 1000; // C-5: a state frame on every change + 1 s while playing
-
 let room = createRoomState();
-let roomPort = 0;
 let joining = false;
 let listenerReady = false;
 let tickTimer = 0;
@@ -49,10 +53,13 @@ let appliedFrames = 0; // real `playback` frames applied this session
 let lastDrift = null; // this device's own measured drift, ms
 let mirrorNote = ""; // the host's track is not on this device (§4.5)
 let followKey = ""; // last playback frame this guest resolved
-let hostSentAt = 0;
-let hostSentPos = 0;
-let hostSentKey = "";
 let hostKey = "";
+let guestTickCount = 0;
+let lastJoinUri = "";
+let userLeft = false;
+let rejoinTimer = 0;
+let rejoinAttempts = 0;
+let armedTick = "";
 
 const el = (id) => document.getElementById(id);
 
@@ -218,11 +225,11 @@ function openScanner(joinWrap, inviteInput) {
 }
 
 // -------------------------------------------------------------------- mode --
-function roomName() {
+function roomName(fallback = "Guest") {
   try {
-    return sanitizeRoomName(localStorage.getItem("tm-username") || "", "Guest");
+    return roomDisplayName((k) => localStorage.getItem(k), fallback);
   } catch {
-    return "Guest";
+    return fallback;
   }
 }
 
@@ -249,12 +256,14 @@ function openModeSheet() {
 
 async function startRoom() {
   if (room.role !== "idle" || joining) return;
+  userLeft = false;
+  lastJoinUri = "";
+  cancelRejoin();
   socialChrome = true;
   paintJam();
-  const name = roomName();
+  const name = roomName("Host");
   try {
     const info = await invoke("room_open", { name });
-    roomPort = Number(info && info.port) || 0;
     applyFrame({
       t: "hosted",
       selfId: "host", // the server's own member row is always id "host"
@@ -273,6 +282,9 @@ async function startRoom() {
 
 async function joinRoom(uri) {
   if (room.role !== "idle" || joining) return;
+  userLeft = false;
+  lastJoinUri = uri;
+  rejoinAttempts = 0;
   socialChrome = true;
   joining = true;
   paintJam();
@@ -281,6 +293,7 @@ async function joinRoom(uri) {
     await invoke("room_join_uri", { uri, name: roomName() });
   } catch (e) {
     joining = false;
+    lastJoinUri = "";
     socialChrome = false;
     toast(String(e).slice(0, 160), 5000, "error");
     paintJam();
@@ -288,7 +301,11 @@ async function joinRoom(uri) {
 }
 
 async function leaveRoom(announce) {
+  userLeft = true;
+  cancelRejoin();
+  lastJoinUri = "";
   stopTick();
+  resetGuestRate();
   try {
     await invoke("room_close");
   } catch {
@@ -300,6 +317,7 @@ async function leaveRoom(announce) {
   joining = false;
   appliedFrames = 0;
   lastDrift = null;
+  guestTickCount = 0;
   mirrorNote = "";
   followKey = "";
   hostKey = "";
@@ -324,6 +342,7 @@ async function copyInvite() {
 // ------------------------------------------------------------------ frames --
 function applyFrame(frame) {
   if (!frame || typeof frame.t !== "string") return;
+  if (frame.t === "bye" && isStaleLocalBye(frame.reason, userLeft, room.role)) return;
   room = reduceRoom(room, frame);
   setLocalRole(room.role);
 
@@ -337,6 +356,8 @@ function applyFrame(frame) {
     case "joined":
       joining = false;
       socialChrome = true;
+      rejoinAttempts = 0;
+      cancelRejoin();
       if (room.role === "guest") toast(`Joined room ${room.code}`, 3500, "success");
       break;
     case "playback":
@@ -359,40 +380,96 @@ function applyFrame(frame) {
       // Verbatim (§8): the server's own words are the diagnosis.
       toast(frame.message || String(frame.code || "Room error"), 5000, "error");
       if (room.role === "idle") socialChrome = false;
-      // D2, layer 2: a refusal can arrive over an already-connected socket
-      // (wrong code, room full) and so never passes through the backend's own
-      // failure exits. Ask it to drop the half-open guest mode, or the next
-      // join is refused with "Leave the current room…" while the UI reads Solo.
-      if (wasJoining) invoke("room_close").catch(() => {});
+      if (wasJoining && shouldRetryJoinAfterError(lastJoinUri, userLeft, rejoinAttempts, frame.code)) {
+        socialChrome = true;
+        scheduleRejoin();
+      } else if (wasJoining) {
+        lastJoinUri = "";
+        cancelRejoin();
+        invoke("room_close").catch(() => {});
+      }
       break;
     }
     case "bye":
       joining = false;
+      resetGuestRate();
       if (frame.reason && frame.reason !== "left") toast(String(frame.reason), 4000);
       if (room.role === "idle") socialChrome = false;
       appliedFrames = 0;
+      guestTickCount = 0;
       stopTick();
+      if (shouldKeepRejoinAfterBye(frame.reason, userLeft, lastJoinUri, rejoinAttempts)) {
+        socialChrome = true;
+        break;
+      }
+      if (shouldAutoRejoin(frame.reason, lastJoinUri, userLeft, rejoinAttempts)) {
+        socialChrome = true;
+        scheduleRejoin();
+      } else {
+        lastJoinUri = "";
+        cancelRejoin();
+      }
       break;
     default:
       return;
   }
 
-  if (room.role === "host") startTick(hostTick);
-  else if (room.role === "guest") startTick(guestTick);
-  else stopTick();
-
+  syncRoomTick();
   paintJam();
 }
 
 // ------------------------------------------------------------------- ticks --
 function startTick(fn) {
-  stopTick();
-  tickTimer = setInterval(fn, TICK_MS);
+  if (tickTimer) clearInterval(tickTimer);
+  fn();
+  tickTimer = setInterval(fn, HOST_TICK_MS);
+}
+
+function syncRoomTick() {
+  const next = roomTickKind(room.role);
+  if (next === armedTick) return;
+  if (next === "host") startTick(hostTick);
+  else if (next === "guest") startTick(guestTick);
+  else stopTick();
+  armedTick = next;
+}
+
+function resetGuestRate() {
+  const audio = el("audio");
+  try {
+    if (audio) audio.playbackRate = 1;
+  } catch {
+    /* element gone */
+  }
+}
+
+function cancelRejoin() {
+  if (rejoinTimer) clearTimeout(rejoinTimer);
+  rejoinTimer = 0;
+}
+
+function scheduleRejoin() {
+  cancelRejoin();
+  if (!shouldAutoRejoin(ROOM_LOST_REASON, lastJoinUri, userLeft, rejoinAttempts)) return;
+  const delay = rejoinDelayMs(rejoinAttempts);
+  rejoinAttempts += 1;
+  rejoinTimer = setTimeout(() => {
+    if (room.role !== "idle" || userLeft || !lastJoinUri) return;
+    joining = true;
+    socialChrome = true;
+    paintJam();
+    invoke("room_join_uri", { uri: lastJoinUri, name: roomName() }).catch((e) => {
+      joining = false;
+      toast(String(e).slice(0, 160), 5000, "error");
+      scheduleRejoin();
+    });
+  }, delay);
 }
 
 function stopTick() {
   if (tickTimer) clearInterval(tickTimer);
   tickTimer = 0;
+  armedTick = "";
 }
 
 function broadcastPlayback() {
@@ -400,47 +477,22 @@ function broadcastPlayback() {
   const st = playerState();
   const t = st.track;
   if (!t || !t.id) return;
-  hostSentAt = Date.now();
-  hostSentPos = Math.round((st.pos || 0) * 1000);
-  hostSentKey = `${t.id}|${st.paused ? "paused" : "playing"}`;
-  hostKey = hostSentKey;
+  hostKey = `${t.id}|${st.paused ? "paused" : "playing"}`;
   invoke("room_playback", {
     playing: !st.paused,
     trackId: t.id,
     title: t.title || "",
     artist: t.artist || "",
-    positionMs: Math.max(0, hostSentPos),
+    positionMs: Math.max(0, Math.round((st.pos || 0) * 1000)),
   }).catch(() => {});
 }
 
-/// Host heartbeat. Repaint runs ~4×/s while playing, so this catches play,
-/// pause, track changes and seeks — a position that no longer matches the
-/// wall clock is a seek — without patching every control in player.js. The 1 s
-/// tick that keeps a guest in step is the same function (C-5).
+/// Host heartbeat every HOST_TICK_MS, including while paused (N9). D4's
+/// play/pause/seeked listeners still fire immediately; this is the belt
+/// so a missed pause cannot leave guests playing.
 function hostTick() {
   if (room.role !== "host") return;
-  const st = playerState();
-  const t = st.track;
-  if (!t || !t.id) return;
-  // D4: the key check comes *before* the pause guard. A paused host has no
-  // playhead to correct, but it still has a pause (or a resume, or a track
-  // change made while paused) to announce — the old order returned first and
-  // withheld all three until playback resumed.
-  const key = `${t.id}|${st.paused ? "paused" : "playing"}`;
-  if (key !== hostKey) {
-    broadcastPlayback();
-    return;
-  }
-  if (st.paused) return;
-  const expected = expectedPositionMs({
-    positionMs: hostSentPos,
-    playing: true,
-    arrivedAt: hostSentAt,
-  });
-  const actual = Math.round((st.pos || 0) * 1000);
-  if (Math.abs(actual - (expected || 0)) > DRIFT_TOLERANCE_MS) {
-    broadcastPlayback();
-  }
+  broadcastPlayback();
 }
 
 function guestTick() {
@@ -476,11 +528,24 @@ function guestApply() {
   // "Synchronized" badge claims, and the only thing that may set it.
   appliedFrames += 1;
 
-  const { driftMs, seekToSec } = syncDecision(room, st.pos || 0);
-  if (seekToSec !== null) seek(seekToSec);
-  if (driftMs !== null) {
+  guestTickCount += 1;
+  const { driftMs, seekToSec, playbackRate } = syncDecision(room, st.pos || 0);
+  let seekApplied = false;
+  if (seekToSec !== null) {
+    seek(seekToSec);
+    seekApplied = true;
+  }
+  const audio = el("audio");
+  try {
+    if (audio) audio.playbackRate = pb.playing ? playbackRate : 1;
+  } catch {
+    /* rate not writable */
+  }
+  if (shouldReportDrift(driftMs, seekApplied, guestTickCount) && driftMs !== null) {
     lastDrift = driftMs;
     invoke("room_report", { driftMs }).catch(() => {});
+  } else if (driftMs !== null) {
+    lastDrift = driftMs;
   }
   paintJam();
 }
@@ -649,6 +714,16 @@ function paintChat() {
     return;
   }
   for (const entry of room.chat) {
+    // F7: server-origin system line ("X joined" / "X left") — a centred
+    // line, not a bubble. The `chat-system` class is also the probe's hook.
+    if (entry.system) {
+      const line = document.createElement("div");
+      line.className =
+        "chat-system text-[10px] font-mono text-secondary text-center py-1";
+      line.textContent = entry.text; // textContent, never innerHTML
+      list.append(line);
+      continue;
+    }
     const row = document.createElement("div");
     row.className = entry.mine ? "flex items-end gap-2 flex-row-reverse" : "flex items-end gap-2";
 
@@ -883,9 +958,17 @@ function wireControls() {
   });
 }
 
-function sendChatText(text) {
+function sendChatText(text, restore) {
   text = (text || "").trim();
   if (!text) return;
+  if (joining || rejoinTimer) {
+    if (restore) {
+      const input = el("jamChatInput");
+      if (input) input.value = restore;
+    }
+    toast("Still connecting — wait to chat.", 2500);
+    return;
+  }
   if (room.role === "idle") {
     room = reduceRoom({ ...room, selfId: "me" }, {
       t: "chat",
@@ -898,6 +981,13 @@ function sendChatText(text) {
     return;
   }
   invoke("room_chat", { text }).catch((e) => {
+    // G2: desktop gives the text back on a refusal (social.js:768-771) —
+    // the typed line must not vanish because the server said no. Reaction
+    // buttons pass no restore: their text never came from the input.
+    if (restore) {
+      const input = el("jamChatInput");
+      if (input) input.value = restore;
+    }
     toast(String(e).slice(0, 160), 5000, "error");
   });
 }
@@ -907,7 +997,7 @@ function sendChat() {
   const text = (input && input.value ? input.value : "").trim();
   if (!text) return;
   if (input) input.value = "";
-  sendChatText(text);
+  sendChatText(text, text);
 }
 
 /// D4: the desktop host's `play`/`pause`/`seeked` listeners
@@ -921,7 +1011,7 @@ function wireHostAudio() {
   const audio = el("audio");
   if (!audio || audio.dataset.jamHostWired) return;
   audio.dataset.jamHostWired = "1";
-  for (const ev of ["play", "pause", "seeked"]) {
+  for (const ev of ["play", "pause", "seeked", "ended"]) {
     audio.addEventListener(ev, () => {
       if (room.role === "host") broadcastPlayback();
     });
@@ -941,7 +1031,15 @@ export function initJam() {
   document.addEventListener("smount", (e) => {
     if (e.detail && e.detail.dir === "nowplaying") mountJam();
   });
-  onPaint(paintJam);
+  onPaint(() => {
+    paintJam();
+    if (room.role === "host") {
+      const st = playerState();
+      const t = st.track;
+      const key = t && t.id ? `${t.id}|${st.paused ? "paused" : "playing"}` : "";
+      if (key && key !== hostKey) broadcastPlayback();
+    }
+  });
 
   // The NowPlaying screen may already be up (deep link): bind to that DOM now,
   // and to every later mount through the `smount` handler above.
@@ -962,14 +1060,13 @@ export function initJam() {
           // A guest socket does not survive a reload, so nothing to adopt.
           return invoke("room_close");
         }
-        roomPort = Number(info.port) || 0;
         applyFrame({
           t: "hosted",
           selfId: "host",
           code: info.code || "",
-          urls: [`ws://127.0.0.1:${roomPort}`],
+          urls: Array.isArray(info.urls) ? info.urls : [],
           invite: info.invite || "",
-          members: [{ id: "host", name: "Host", host: true }],
+          members: [{ id: "host", name: roomName("Host"), host: true }],
         });
         toast(`Room ${room.code} is running on this device`, 4000, "success");
       })
@@ -980,5 +1077,5 @@ export function initJam() {
 }
 
 // Exported for the gate: the tick cadence is the number the docs promise
-// (C-5: a state frame on every change + 1 s while playing).
-export const JAM_TICK_MS = TICK_MS;
+// (C-5: a state frame on every change + 250 ms while playing).
+export const JAM_TICK_MS = HOST_TICK_MS;

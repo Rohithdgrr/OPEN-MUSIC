@@ -173,7 +173,7 @@ export function splitBackupDoc(doc) {
 /// Structural check for one pulled envelope. Null when usable.
 export function validateDocEnvelope(env, expectedDoc) {
   if (!env || typeof env !== "object") return "not a JSON object";
-  if (env.app !== BACKUP_APP) return "not a TRANCE MUSIC sync doc";
+  if (env.app !== BACKUP_APP) return "not an OPEN MUSIC sync doc";
   if (!Number.isInteger(env.version) || env.version < 1 || env.version > SYNC_VERSION)
     return `unsupported sync version ${String(env.version)}`;
   if (env.doc !== expectedDoc) return `expected the ${expectedDoc} doc, got ${String(env.doc)}`;

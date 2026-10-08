@@ -617,5 +617,5 @@ if (invoke && String(load(AUTOUPDATE_KEY, "1")) === "1") {
 // Seed the Notifications feed once so it is not an empty box on first run.
 if (!load("tm-welcomed", 0)) {
   save("tm-welcomed", 1);
-  pushEvent("system", "Welcome to REON", "Download results, update notices and backup events appear in Notifications.");
+  pushEvent("system", "Welcome to OPEN MUSIC", "Download results, update notices and backup events appear in Notifications.");
 }

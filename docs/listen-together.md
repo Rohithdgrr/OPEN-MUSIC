@@ -84,10 +84,12 @@ a `t` (type) and `v: 1`.
 | `error` | `code`, `message` | shown to the user **verbatim** (`bad_code`, `not_host`, `room_full`, `rate_limited`) |
 | `bye` | `reason` | room closed / host left |
 
-Room rules (v1): one room per server, max 8 members, code = 8 chars from
-`23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (no `0/O/1/I`), host authority = first
-creator; if the host disconnects the room closes (`bye{host_left}`) rather
-than silently electing a new host.
+Room rules (v1): one room per server, max **16 guests** (+ host), code = 8
+chars from `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (no `0/O/1/I`), host
+authority = first creator; if the host disconnects the room closes
+(`bye{host_left}`) rather than silently electing a new host. A guest whose
+socket dies (`Connection to the room was lost.`) auto-rejoins that invite;
+a deliberate Leave or host-close does not.
 
 **No approval queue in v1** — the code *is* the credential on a LAN you
 already trust (see §7). Approval/kick is milestone-2 scope if you want it.
@@ -97,21 +99,25 @@ already trust (see §7). Approval/kick is milestone-2 scope if you want it.
 Host-authoritative timeline, guest drift correction:
 
 1. **Host** emits state on every real change — `play`, `pause`, `seeked`,
-   track switch — and every **1 s** as a tick: `{playing, trackId, positionMs}`.
-   `positionMs` is read at send time; the guest anchors it to its *local
-   arrival time*, so no wall-clock sync between PCs is needed. Error is then
-   bounded by one LAN one-way hop (sub-5 ms on Wi-Fi) plus ≤1 s of local
-   audio-clock drift (≈0.02 % → sub-ms).
+   track switch — and every **250 ms** as a tick (`HOST_TICK_MS` in
+   `room.js`): `{playing, trackId, positionMs}`. `positionMs` is read at send
+   time; the guest anchors it to its *local arrival time*, so no wall-clock
+   sync between PCs is needed. Error is then bounded by one LAN one-way hop
+   (sub-5 ms on Wi-Fi) plus ≤250 ms of tick staleness. True 0 ms is
+   impossible on a network; this is the v1 bound (`docs/jam-upgrade.md` §C).
 2. **Guest** resolves the track by `trackId` through its own pipeline (same
    app → same catalog id → its own local proxy stream), seeks to
    `positionMs`, and follows `playing`.
 3. **Correction:** each tick the guest compares `audio.currentTime` against
-   the expected position. `|diff| > 0.4 s` (the tolerance the UI already
-   advertises) → seek; otherwise leave it alone so playback doesn't stutter.
+   the expected position (`syncDecision`). `|diff| ≤ 40 ms` → leave it
+   (noise); `40 < |diff| ≤ 150 ms` → rate-nudge `playbackRate` in
+   `[0.95, 1.05]`; `|diff| > 150 ms` (`DRIFT_TOLERANCE_MS`) → hard seek and
+   reset rate to 1. Rate resets on pause, track change, seek, and `bye`.
 4. **Measurement is honest:** the diff computed each tick *is* the reported
-   `driftMs` (it carries up to one tick of latency bias — stated in the UI
-   note). Host shows the worst peer drift in `#jam-sync-value`; a guest shows
-   its own. No peer → `—`, never a fake `±0.4s`.
+   `driftMs`. `room_report` fires every tick when `|drift| > 40 ms` or a
+   seek landed, otherwise every 4th tick (~1/s). Host shows the worst peer
+   drift in `#jam-sync-value`; a guest shows its own. No peer → `—`, never a
+   fake `±0.1s`.
 5. **Track the guest cannot resolve** (host-only local file, missing vault
    entry): the guest keeps showing title/artist/progress as a *mirror* and
    says `Not on this device` — it never claims to be playing.
@@ -266,6 +272,7 @@ bye regression checks. Nothing here pushes (AGENTS rule 1).
 | 4 | `node app/tests/live-android-emulator.mjs` | adb-forward loopback (raw node client vs the device's own server) | `---- 28 pass / 0 fail` |
 | 5 | `node app/tests/live-lan-join.mjs` | **real LAN** `ws://<pc-ip>:8787` — removes all adb tunnels first | every check PASS, `LAN-JOIN exit=0` — incl. guest `room_info → idle` + rejoin after host bye (D5) |
 | 6 | `node app/tests/live-reverse-pair.mjs` | adb-forward (Android host ↔ desktop guest) | `REVERSE-PAIR exit=0` (19 checks) — incl. D4 pause/resume broadcast and the desktop-side D5 revert + rejoin |
+| 7 | `node app/tests/live-scale.mjs` | desktop host + node guests (N=4/8/16) | fan-out chat+playback to all N; 17th `room_full`; drop+rejoin; host close then reopen accepts a join |
 
 Known traps (each cost real time during Tasks 6–7):
 - **CLI skew (P28):** `npx tauri …` from the repo root resolves the *global*
@@ -547,10 +554,10 @@ lives in the reducer module next to the frames (pure, DOM-free, `node --test`):
 - `expectedPositionMs(playback, nowMs)` — `positionMs` advanced by the local
   time since the frame **arrived** (`arrivedAt`), which is why no wall-clock
   sync between two PCs is needed (§4.1).
-- `syncDecision(state, audioPosSec, nowMs)` → `{driftMs, seekToSec}`: the
-  measured difference, and a seek target **only** past the ±400 ms tolerance
-  (`DRIFT_TOLERANCE_MS`) so playback never stutters for sub-tolerance noise.
-  `driftMs` is `null` — not `0` — before the first `playback` frame.
+- `syncDecision(state, audioPosSec, nowMs)` → `{driftMs, seekToSec, playbackRate}`:
+  measured difference; a seek target only past ±150 ms; a rate nudge in the
+  40–150 ms band. `driftMs` is `null` — not `0` — before the first `playback`
+  frame. Shared cadence: `HOST_TICK_MS = 250`.
 
 ### 13.4 What was actually verified (and what was not)
 

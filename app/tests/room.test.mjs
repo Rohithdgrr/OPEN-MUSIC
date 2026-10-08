@@ -13,7 +13,21 @@ import {
   expectedPositionMs,
   syncDecision,
   sanitizeRoomName,
+  roomDisplayName,
+  DRIFT_DEADBAND_MS,
   DRIFT_TOLERANCE_MS,
+  HOST_TICK_MS,
+  nudgeRate,
+  shouldReportDrift,
+  shouldAutoRejoin,
+  shouldRetryJoinAfterError,
+  isStaleLocalBye,
+  shouldKeepRejoinAfterBye,
+  rejoinDelayMs,
+  roomTickKind,
+  ROOM_LOST_REASON,
+  CONNECT_FAILED_CODE,
+  REJOIN_MAX_ATTEMPTS,
 } from "../src/room.js";
 
 // ------------------------------------------------------------------ honest -
@@ -32,6 +46,21 @@ test("error frames pass through byte-for-byte", () => {
   assert.equal(s.error, msg);
 });
 
+test("server chat-validation errors arrive verbatim with their code", () => {
+  // The exact frames room.rs emits for chat refusal (§3): the message is
+  // what gets shown, the code is what the UI may key on — neither is
+  // paraphrased on the way through the reducer.
+  const refusals = [
+    { code: "empty", message: "Message is empty." },
+    { code: "too_long", message: "Message too long (max 500 characters)." },
+    { code: "rate_limited", message: "Slow down — at most 5 messages every 10 seconds." },
+  ];
+  for (const r of refusals) {
+    const s = reduceRoom(createRoomState(), { t: "error", ...r });
+    assert.equal(s.error, r.message, `${r.code} must surface verbatim`);
+  }
+});
+
 test("a failed join drops back to idle but keeps the reason", () => {
   const connecting = { ...createRoomState(), status: "connecting" };
   const s = reduceRoom(connecting, { t: "error", message: "Connection refused." });
@@ -48,9 +77,10 @@ test("chat marks mine by selfId, nothing else", () => {
   assert.equal(s.chat[1].mine, false);
   assert.deepEqual(
     Object.keys(s.chat[0]).sort(),
-    ["from", "mine", "text", "ts"],
-    "chat entries keep exactly from/text/ts + mine",
+    ["from", "mine", "system", "text", "ts"],
+    "chat entries keep from/text/ts + mine + system",
   );
+  assert.equal(s.chat[0].system, false);
 });
 
 test("bye with reason 'left' leaves no error; a lost connection surfaces it once", () => {
@@ -251,6 +281,59 @@ test("the host's own chat echo reads as mine (selfId is the server's 'host')", (
   assert.equal(s.chat[0].mine, true);
 });
 
+// ------------------------------------------------------------ G5 / G4 rows --
+test("a device-local echo does not survive opening a room (G5)", () => {
+  let s = reduceRoom({ ...createRoomState(), selfId: "me" }, {
+    t: "chat",
+    from: { id: "me", name: "You" },
+    text: "typed with no room open",
+    ts: 1,
+  });
+  assert.equal(s.chat.length, 1);
+  s = reduceRoom(s, {
+    t: "hosted",
+    selfId: "host",
+    code: "ABCD1234",
+    members: [{ id: "host", name: "Rohit", host: true }],
+  });
+  assert.equal(s.chat.length, 0, "the server's history starts empty — local lines stay local");
+});
+
+test("a system line is stored, never mine, and keeps its system flag (F7)", () => {
+  const s = reduceRoom({ ...createRoomState(), selfId: "host" }, {
+    t: "chat",
+    system: true,
+    text: "Ann joined",
+    ts: 1,
+  });
+  assert.equal(s.chat.length, 1);
+  assert.equal(s.chat[0].system, true);
+  assert.equal(s.chat[0].mine, false, "no sender on a system line can resolve as mine");
+  assert.equal(s.chat[0].text, "Ann joined");
+});
+
+test("a user chat frame is not a system line", () => {
+  const s = reduceRoom(createRoomState(), {
+    t: "chat",
+    from: { id: "g1", name: "Ann" },
+    text: "hello",
+    ts: 1,
+  });
+  assert.equal(s.chat[0].system, false);
+});
+
+test("history replay carries system lines through untouched (F3)", () => {
+  const s = reduceRoom(createRoomState(), {
+    t: "history",
+    msgs: [
+      { from: { id: "g1", name: "Ann" }, text: "hi", ts: 1 },
+      { t: "chat", system: true, text: "Ann joined", ts: 0 },
+    ],
+  });
+  assert.equal(s.chat[1].system, true, "the raw server frame already carries the flag");
+  assert.equal(s.chat[0].system, undefined, "a user frame has no system flag at all");
+});
+
 // -------------------------------------------------- the shared sync math ---
 // One measurement for both surfaces (docs/listen-together.md §4.3/§13.3): the
 // number the tiles show has to be the number the guest seeks by.
@@ -275,16 +358,106 @@ test("syncDecision seeks only past the advertised tolerance", () => {
   });
   const arrived = state.playback.arrivedAt;
 
-  // 200 ms behind: measured, but left alone so playback cannot stutter.
+  // 80 ms behind: nudge band — no seek, rate slightly above 1.
+  const nudge = syncDecision(state, 29.92, arrived + 0);
+  assert.equal(nudge.driftMs, -80);
+  assert.equal(nudge.seekToSec, null);
+  assert.ok(nudge.playbackRate > 1);
+  assert.ok(nudge.playbackRate <= 1.05);
+
+  // 200 ms behind: past 150 ms → hard seek, rate reset.
   const inside = syncDecision(state, 29.8, arrived + 0);
   assert.equal(inside.driftMs, -200);
-  assert.equal(inside.seekToSec, null);
+  assert.equal(inside.seekToSec, 30);
+  assert.equal(inside.playbackRate, 1);
 
   // 1.5 s ahead: past the tolerance → seek to the host's playhead.
   const outside = syncDecision(state, 31.5, arrived);
   assert.equal(outside.driftMs, 1500);
   assert.equal(outside.seekToSec, 30);
   assert.ok(Math.abs(outside.driftMs) > DRIFT_TOLERANCE_MS);
+});
+
+test("syncDecision deadband does nothing", () => {
+  const state = reduceRoom(createRoomState(), {
+    t: "playback",
+    playing: true,
+    trackId: "t1",
+    positionMs: 10_000,
+  });
+  const arrived = state.playback.arrivedAt;
+  const quiet = syncDecision(state, 10.02, arrived);
+  assert.equal(quiet.driftMs, 20);
+  assert.equal(quiet.seekToSec, null);
+  assert.equal(quiet.playbackRate, 1);
+  assert.ok(20 <= DRIFT_DEADBAND_MS);
+});
+
+test("nudgeRate clamps and resets outside the band", () => {
+  assert.equal(nudgeRate(0), 1);
+  assert.equal(nudgeRate(DRIFT_DEADBAND_MS), 1);
+  assert.equal(nudgeRate(DRIFT_TOLERANCE_MS + 1), 1);
+  assert.equal(nudgeRate(null), 1);
+  const ahead = nudgeRate(100);
+  assert.ok(ahead < 1 && ahead >= 0.95);
+  const behind = nudgeRate(-100);
+  assert.ok(behind > 1 && behind <= 1.05);
+  assert.equal(HOST_TICK_MS, 250);
+});
+
+test("shouldReportDrift thins the 250 ms tick to ~1/s when quiet", () => {
+  assert.equal(shouldReportDrift(null, false, 0), false);
+  assert.equal(shouldReportDrift(10, false, 1), false);
+  assert.equal(shouldReportDrift(10, false, 4), true);
+  assert.equal(shouldReportDrift(80, false, 1), true);
+  assert.equal(shouldReportDrift(0, true, 1), true);
+});
+
+test("shouldAutoRejoin is lost-socket only and bounded", () => {
+  const invite = "trancemusic://join?host=10.0.0.2&port=8787&code=ABCD2345";
+  assert.equal(shouldAutoRejoin(ROOM_LOST_REASON, invite, false, 0), true);
+  assert.equal(shouldAutoRejoin(ROOM_LOST_REASON, invite, true, 0), false);
+  assert.equal(shouldAutoRejoin(ROOM_LOST_REASON, "", false, 0), false);
+  assert.equal(shouldAutoRejoin("The host closed the room.", invite, false, 0), false);
+  assert.equal(shouldAutoRejoin("left", invite, false, 0), false);
+  assert.equal(shouldAutoRejoin(ROOM_LOST_REASON, invite, false, REJOIN_MAX_ATTEMPTS), false);
+  assert.equal(rejoinDelayMs(0), 250);
+  assert.equal(rejoinDelayMs(4), 4000);
+  assert.equal(rejoinDelayMs(99), 4000);
+});
+
+test("roomTickKind only changes when the role does", () => {
+  assert.equal(roomTickKind("host"), "host");
+  assert.equal(roomTickKind("guest"), "guest");
+  assert.equal(roomTickKind("idle"), "");
+  assert.equal(roomTickKind("connecting"), "");
+  assert.equal(roomTickKind("host") === roomTickKind("host"), true);
+});
+
+test("shouldRetryJoinAfterError is in-flight rejoin only", () => {
+  const invite = "trancemusic://join?host=10.0.0.2&port=8787&code=ABCD2345";
+  assert.equal(shouldRetryJoinAfterError(invite, false, 0), false, "first join must not start backoff");
+  assert.equal(shouldRetryJoinAfterError(invite, false, 1), true);
+  assert.equal(shouldRetryJoinAfterError(invite, false, 1, CONNECT_FAILED_CODE), true);
+  assert.equal(shouldRetryJoinAfterError(invite, false, 1, "bad_code"), false, "dead invite must not be hammered");
+  assert.equal(shouldRetryJoinAfterError(invite, false, 1, "room_full"), false);
+  assert.equal(shouldRetryJoinAfterError(invite, false, 1, "rate_limited"), false);
+  assert.equal(shouldRetryJoinAfterError(invite, true, 1), false);
+  assert.equal(shouldRetryJoinAfterError("", false, 1), false);
+  assert.equal(shouldRetryJoinAfterError(invite, false, REJOIN_MAX_ATTEMPTS), false);
+});
+
+test("stale room_close bye must not idle a live session or cancel rejoin", () => {
+  const invite = "trancemusic://join?host=10.0.0.2&port=8787&code=ABCD2345";
+  assert.equal(isStaleLocalBye("left", false, "guest"), true);
+  assert.equal(isStaleLocalBye("left", false, "host"), true);
+  assert.equal(isStaleLocalBye("left", true, "guest"), false, "user Leave is real");
+  assert.equal(isStaleLocalBye("left", false, "idle"), false);
+  assert.equal(isStaleLocalBye(ROOM_LOST_REASON, false, "guest"), false);
+  assert.equal(shouldKeepRejoinAfterBye("left", false, invite, 1), true);
+  assert.equal(shouldKeepRejoinAfterBye("left", true, invite, 1), false);
+  assert.equal(shouldKeepRejoinAfterBye(ROOM_LOST_REASON, false, invite, 1), false);
+  assert.equal(shouldKeepRejoinAfterBye("The host closed the room.", false, invite, 1), false);
 });
 
 test("syncDecision reports null, not 0, before any playback frame", () => {
@@ -311,6 +484,41 @@ test("room names are sanitised the way the Rust server sanitises them", () => {
   assert.equal(sanitizeRoomName("\u0007evil"), "evil");
   assert.equal(sanitizeRoomName("x".repeat(80)).length, 24);
   assert.equal(sanitizeRoomName(null), "Guest", "a missing name is not the string 'null'");
+});
+
+test("roomDisplayName prefers tm-name and falls back to tm-username", () => {
+  const store = { "tm-name": "  Ann  ", "tm-username": "Old" };
+  assert.equal(roomDisplayName((k) => store[k], "Host"), "Ann");
+  assert.equal(roomDisplayName((k) => ({ "tm-username": "Old" })[k], "Host"), "Old");
+  assert.equal(roomDisplayName((k) => ({})[k], "Host"), "Host");
+  assert.equal(roomDisplayName((k) => ({})[k], "Guest"), "Guest");
+  assert.equal(roomDisplayName(() => { throw new Error("storage"); }, "Host"), "Host");
+});
+
+test("hosted then bye then hosted clears chat and invite between rooms", () => {
+  let s = reduceRoom(createRoomState(), {
+    t: "hosted",
+    selfId: "host",
+    code: "AAAA1111",
+    invite: "trancemusic://join?host=10.0.0.1&port=8787&code=AAAA1111",
+    members: [{ id: "host", name: "Ann", host: true }],
+  });
+  s = reduceRoom(s, { t: "chat", from: { id: "g1", name: "Bob" }, text: "hi", ts: 1 });
+  assert.equal(s.chat.length, 1);
+  s = reduceRoom(s, { t: "bye", reason: "left" });
+  assert.equal(s.role, "idle");
+  assert.equal(s.chat.length, 0);
+  assert.equal(s.invite, "");
+  s = reduceRoom(s, {
+    t: "hosted",
+    selfId: "host",
+    code: "BBBB2222",
+    invite: "trancemusic://join?host=10.0.0.1&port=8787&code=BBBB2222",
+    members: [{ id: "host", name: "Ann", host: true }],
+  });
+  assert.equal(s.role, "host");
+  assert.equal(s.chat.length, 0);
+  assert.equal(s.code, "BBBB2222");
 });
 
 // ----------------------------------------------- the unified invite (A)

@@ -676,7 +676,7 @@ pub async fn search_songs(
         // log only. The Err string reaches the UI verbatim, so it stays one
         // short line — the frontend classifies further from connectivity.
         for e in &errs {
-            eprintln!("[TRANCE MUSIC] search page error: {e}");
+            eprintln!("[OPEN MUSIC] search page error: {e}");
         }
         return Err(format!(
             "search failed — {} upstream page(s) unreachable",

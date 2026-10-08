@@ -509,7 +509,7 @@ export function trackMenu(track, ctx, idx) {
   items.push({
     icon: "image",
     label: "Share Card",
-    action: () => shareCard({ title: track.title, subtitle: track.artist, image: track.image, badge: "TRANCE" }),
+    action: () => shareCard({ title: track.title, subtitle: track.artist, image: track.image, badge: "OPEN MUSIC" }),
   });
   if (track.id) {
     items.push({
@@ -598,7 +598,7 @@ export function entityMenu(kind) {
     {
       icon: "image",
       label: "Share Card",
-      action: () => shareCard({ title: meta.title || label, subtitle: meta.subtitle || label, image: meta.image, badge: "TRANCE" }),
+      action: () => shareCard({ title: meta.title || label, subtitle: meta.subtitle || label, image: meta.image, badge: "OPEN MUSIC" }),
     },
   ];
   // Local playlists are LIBRARY_KEY records — Rename + Delete for them only.
@@ -688,7 +688,7 @@ export async function libraryMenu(item) {
         {
           icon: "image",
           label: "Share Card",
-          action: () => shareCard({ title: t.title, subtitle: t.artist, image: t.image, badge: "TRANCE" }),
+          action: () => shareCard({ title: t.title, subtitle: t.artist, image: t.image, badge: "OPEN MUSIC" }),
         },
         { icon: "info", label: "Track Details", action: () => detailsSheet(t) },
         ...(t.id ? [{ icon: "tune", label: "EQ for this track", action: () => { try { if (typeof window.__tmTrackEq === "function") window.__tmTrackEq(t); else toast("EQ panel unavailable", 3000, "error"); } catch {} } }] : []),
@@ -749,7 +749,7 @@ export async function libraryMenu(item) {
   items.push({
     icon: "image",
     label: "Share Card",
-    action: () => shareCard({ title: item.title, subtitle: item.sub, image: item.image, badge: "TRANCE" }),
+    action: () => shareCard({ title: item.title, subtitle: item.sub, image: item.image, badge: "OPEN MUSIC" }),
   });
   if (item.local) {
     items.push({

@@ -62,6 +62,10 @@ export function reduceRoom(state, frame) {
         // omits it leaves the fallbacks in inviteText() to do their job.
         invite: typeof frame.invite === "string" ? frame.invite : state.invite,
         members: copyList(frame.members),
+        // G5: a device-local echo (sent while no room was open) was never
+        // relayed to anyone — the server's history starts empty, so opening a
+        // room must not carry the local line across with it.
+        chat: [],
         error: "",
       };
 
@@ -78,6 +82,9 @@ export function reduceRoom(state, frame) {
         text: frame.text,
         ts: frame.ts,
         mine: !!frame.from && frame.from.id === state.selfId,
+        // Server-origin system lines ("X joined" / "X left") — no sender, so
+        // `mine` is false above; renderers key on this flag (F7).
+        system: frame.system === true,
       };
       return { ...state, chat: [...state.chat, entry] };
     }
@@ -165,23 +172,100 @@ export function expectedPositionMs(playback, nowMs = Date.now()) {
   return playback.positionMs + Math.max(0, nowMs - arrived);
 }
 
-/// Past this the guest seeks; below it the mismatch is measurement noise and
-/// seeking would stutter — the ±0.4 s the UI advertises (docs §4.3).
-export const DRIFT_TOLERANCE_MS = 400;
+/// Host (and guest) tick cadence — one export so desktop/mobile cannot drift
+/// apart (docs/jam-upgrade.md §C). 250 ms is the v1 staleness bound; 0 ms is
+/// not achievable on a LAN.
+export const HOST_TICK_MS = 250;
+
+/// Below this, leave the playhead alone (measurement noise).
+export const DRIFT_DEADBAND_MS = 40;
+
+/// Past this the guest hard-seeks; between deadband and here it rate-nudges
+/// so a 100 ms miss is inaudible instead of a click (docs §4.3).
+export const DRIFT_TOLERANCE_MS = 150;
+
+export const ROOM_LOST_REASON = "Connection to the room was lost.";
+export const CONNECT_FAILED_CODE = "connect_failed";
+const REJOIN_BACKOFF_MS = [250, 500, 1000, 2000, 4000];
+export const REJOIN_MAX_ATTEMPTS = 5;
+
+/// Rate nudge in the 40–150 ms band: ahead → slow down, behind → speed up.
+/// Outside the band the caller seeks (or does nothing) and this returns 1.
+export function nudgeRate(driftMs) {
+  if (typeof driftMs !== "number" || !Number.isFinite(driftMs)) return 1;
+  const abs = Math.abs(driftMs);
+  if (abs <= DRIFT_DEADBAND_MS || abs > DRIFT_TOLERANCE_MS) return 1;
+  const rate = 1 - driftMs / 2000;
+  return Math.min(1.05, Math.max(0.95, rate));
+}
+
+/// Thin `room_report`: always on a seek or a real miss, else ~1/s (every 4th
+/// 250 ms tick) so the host tile still moves without 4 reports/s on the wire.
+export function shouldReportDrift(driftMs, seekApplied, tickIndex) {
+  if (typeof driftMs !== "number" || !Number.isFinite(driftMs)) return false;
+  if (seekApplied || Math.abs(driftMs) > DRIFT_DEADBAND_MS) return true;
+  return tickIndex % 4 === 0;
+}
+
+/// Lost-socket only. Leave / host-close / empty invite / exhausted retries
+/// stay idle so a dead room is not hammered (docs/jam-upgrade.md §5.4).
+export function shouldAutoRejoin(reason, lastInvite, userLeft, attempts) {
+  if (userLeft || !lastInvite || attempts >= REJOIN_MAX_ATTEMPTS) return false;
+  return reason === ROOM_LOST_REASON;
+}
+
+export function rejoinDelayMs(attempt) {
+  const i = Math.min(Math.max(0, attempt), REJOIN_BACKOFF_MS.length - 1);
+  return REJOIN_BACKOFF_MS[i];
+}
+
+/// Which interval the surface should be running. Chat/presence must not
+/// re-arm a running tick — resetting it adds up to HOST_TICK_MS of extra
+/// playhead staleness (docs/jam-professional-grade.md N8).
+export function roomTickKind(role) {
+  return role === "host" || role === "guest" ? role : "";
+}
+
+/// After an `error` frame during a join: retry only if a lost-socket rejoin
+/// is already in flight (`attempts > 0`) **and** the failure is a dial
+/// (`connect_failed`). `bad_code` / `room_full` / chat refusals must not
+/// hammer a dead invite (N13). A first-join refusal must not start backoff
+/// (N10).
+export function shouldRetryJoinAfterError(lastInvite, userLeft, attempts, errorCode) {
+  if (errorCode && errorCode !== CONNECT_FAILED_CODE) return false;
+  return attempts > 0 && shouldAutoRejoin(ROOM_LOST_REASON, lastInvite, userLeft, attempts);
+}
+
+/// `room_close` on a half-open guest emits `bye{reason:"left"}`. If this
+/// window already reduced a `joined`/`hosted` frame, that bye is stale
+/// cleanup — reducing it would idle a live room (N12).
+export function isStaleLocalBye(reason, userLeft, role) {
+  return reason === "left" && !userLeft && (role === "host" || role === "guest");
+}
+
+/// Same cleanup bye, but we are still idle waiting to redial. Must not
+/// clear `lastJoinUri` or cancel the timer (N12).
+export function shouldKeepRejoinAfterBye(reason, userLeft, lastInvite, attempts) {
+  return reason === "left" && !userLeft && shouldAutoRejoin(ROOM_LOST_REASON, lastInvite, userLeft, attempts);
+}
 
 /// The one place drift is measured, shared by both surfaces so neither can
 /// report a different number for the same audio (docs/listen-together.md §8):
-/// `driftMs` is the measured difference (positive = this device is ahead), and
-/// `seekToSec` is a target **only** past the tolerance, else `null`.
+/// `driftMs` is the measured difference (positive = this device is ahead),
+/// `seekToSec` is a target **only** past the tolerance, else `null`, and
+/// `playbackRate` is 1 outside the nudge band.
 export function syncDecision(state, audioPosSec, nowMs = Date.now()) {
   const expected = expectedPositionMs(state && state.playback, nowMs);
   if (expected === null || typeof audioPosSec !== "number" || !Number.isFinite(audioPosSec)) {
-    return { driftMs: null, seekToSec: null };
+    return { driftMs: null, seekToSec: null, playbackRate: 1 };
   }
   const driftMs = Math.round(audioPosSec * 1000 - expected);
+  const abs = Math.abs(driftMs);
+  const seekToSec = abs > DRIFT_TOLERANCE_MS ? expected / 1000 : null;
   return {
     driftMs,
-    seekToSec: Math.abs(driftMs) > DRIFT_TOLERANCE_MS ? expected / 1000 : null,
+    seekToSec,
+    playbackRate: seekToSec !== null ? 1 : nudgeRate(driftMs),
   };
 }
 
@@ -234,6 +318,19 @@ export function sanitizeRoomName(raw, fallback = "Guest") {
     .join("")
     .slice(0, 24);
   return clean || fallback;
+}
+
+/// Settings writes `tm-name`; an older key `tm-username` is read as fallback
+/// so a value set before the rename still appears on the roster. `read` is
+/// injected (no `localStorage` here) so node:test can drive it.
+export function roomDisplayName(read, fallback = "Guest") {
+  let raw;
+  try {
+    raw = (typeof read === "function" && (read("tm-name") || read("tm-username"))) || "";
+  } catch {
+    raw = "";
+  }
+  return sanitizeRoomName(raw, fallback);
 }
 
 /// Largest |driftMs| across non-host members, or null when there is nothing

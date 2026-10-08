@@ -36,7 +36,7 @@ use tokio_tungstenite::tungstenite::Message as ClientMessage;
 /// Default listen port for the room server (docs/listen-together.md §2).
 pub const DEFAULT_PORT: u16 = 8787;
 /// Maximum remote members in one room (the host is not counted against this).
-const MAX_GUESTS: usize = 8;
+const MAX_GUESTS: usize = 16;
 /// Room code: 32 symbols with `0/O/1/I` removed so it survives being read
 /// aloud or typed across two desks.
 const CODE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -368,10 +368,31 @@ impl RoomCore {
         }
     }
 
+    /// One server-origin system line ("<name> joined" / "<name> left"):
+    /// straight into history (F3 — cap applies) and out to every member still
+    /// connected (F1/F2). Deliberately NOT `chat()`: no sender stamp, no rate
+    /// budget consumed (F4), and only the two call sites below can construct
+    /// one — `serve_conn` reads a client chat's `text` alone, so a wire
+    /// `system:true` never survives (docs/chat-test-plan.md §F).
+    fn system_line(&mut self, text: String) {
+        let frame = json!({ "t": "chat", "system": true, "text": text, "ts": now_ms() });
+        self.history.push_back(frame.clone());
+        while self.history.len() > HISTORY_CAP {
+            self.history.pop_front();
+        }
+        self.broadcast(&frame);
+    }
+
     /// Accept a join. Sends the welcome frames (joined → history → cached
     /// playback) to the new member's sink *inside the lock*, then broadcasts
-    /// presence and asks the host for a fresh playback state — the ordering
-    /// guarantee is why this is not three separate calls.
+    /// the system join line, presence and a request for a fresh playback
+    /// state — the ordering guarantee is why this is not three separate calls.
+    ///
+    /// The join line goes **after** the welcome (so the joiner sees its own
+    /// line exactly once — via the broadcast, not again from history) and
+    /// **before** presence (frame-skipping tests land on presence where they
+    /// expect it). Built here, not through `chat()`: server-origin only,
+    /// no rate stamps, no sender (docs/chat-test-plan.md §F).
     fn join(&mut self, code_in: &str, name: &str, sink: Sink) -> Result<String, (String, String)> {
         if !self.code.eq_ignore_ascii_case(code_in.trim()) {
             return Err((
@@ -409,13 +430,18 @@ impl RoomCore {
             sink.send(frame);
         }
 
+        let display = sanitize_name(name);
         self.members.push(Member {
             id: id.clone(),
-            name: sanitize_name(name),
+            name: display.clone(),
             host: false,
             drift_ms: None,
         });
         self.sinks.insert(id.clone(), sink);
+
+        // F1: one system line for everyone — joiner included (its welcome is
+        // already on the wire, so history never double-draws this join).
+        self.system_line(format!("{display} joined"));
 
         let presence = self.presence_frame();
         self.broadcast(&presence);
@@ -509,8 +535,18 @@ impl RoomCore {
         if self.sinks.remove(id).is_none() {
             return; // never was a member (failed join)
         }
+        // F2: name read before the row is dropped; the leaver's own sink is
+        // already gone, so the line reaches only the members who remain.
+        let left = self
+            .members
+            .iter()
+            .find(|m| m.id == id)
+            .map(|m| m.name.clone());
         self.members.retain(|m| m.id != id);
         self.chat_stamps.remove(id);
+        if let Some(name) = left {
+            self.system_line(format!("{name} left"));
+        }
         let presence = self.presence_frame();
         self.broadcast(&presence);
     }
@@ -1206,13 +1242,17 @@ mod tests {
     }
 
     async fn recv_t(ws: &mut Client, t: &str) -> Value {
-        for _ in 0..16 {
+        recv_matching(ws, 16, |v| v.get("t").and_then(Value::as_str) == Some(t)).await
+    }
+
+    async fn recv_matching(ws: &mut Client, skip: usize, pred: impl Fn(&Value) -> bool) -> Value {
+        for _ in 0..skip {
             let v = recv(ws).await;
-            if v.get("t").and_then(Value::as_str) == Some(t) {
+            if pred(&v) {
                 return v;
             }
         }
-        panic!("frame type {t} never arrived");
+        panic!("matching frame never arrived");
     }
 
     async fn host_recv(rx: &mut mpsc::UnboundedReceiver<String>) -> Value {
@@ -1507,9 +1547,13 @@ mod tests {
         assert_eq!(presence_a["members"].as_array().unwrap().len(), 3);
 
         // Chat relays to both guests AND the host window (single render path).
+        // The host's first pending chat frame is Bob's system join line (F1).
         send(&mut a, &json!({ "t": "chat", "text": "hello" })).await;
         let chat_a = recv_t(&mut a, "chat").await;
         let chat_b = recv_t(&mut b, "chat").await;
+        let join_line = host_recv_t(&mut h.host_rx, "chat").await;
+        assert_eq!(join_line["system"], true);
+        assert_eq!(join_line["text"], "Bob joined");
         let chat_h = host_recv_t(&mut h.host_rx, "chat").await;
         for chat in [chat_a, chat_b, chat_h] {
             assert_eq!(chat["from"]["name"], "Ann");
@@ -1529,6 +1573,131 @@ mod tests {
         drop(a);
         let presence = recv_t(&mut b, "presence").await;
         assert_eq!(presence["members"].as_array().unwrap().len(), 2);
+    }
+
+    // -- system join/leave lines (F1–F8, docs/chat-test-plan.md §F) ---------
+
+    #[tokio::test]
+    async fn join_and_leave_lines_reach_every_member_exactly_once() {
+        // F8: opening a room emits nothing — no self-"joined" line.
+        let mut h = start("SYS001").await;
+        assert!(
+            matches!(
+                h.host_rx.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ),
+            "the host opening a room must see no join line for itself (F8)"
+        );
+
+        // F1: joiner, existing member and host each see ONE "Ann joined".
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("SYS001", "Ann")).await;
+        let line = recv_t(&mut a, "chat").await; // skips joined/history
+        assert_eq!(line["system"], true);
+        assert_eq!(line["text"], "Ann joined");
+        assert!(
+            line.get("from").is_none(),
+            "system lines carry no sender (F4)"
+        );
+        assert!(line["ts"].as_u64().is_some());
+        let host_line = host_recv_t(&mut h.host_rx, "chat").await;
+        assert_eq!(host_line["text"], "Ann joined");
+
+        let mut b = dial(h.port).await;
+        send(&mut b, &join_frame("SYS001", "Bob")).await;
+        let b_own = recv_t(&mut b, "chat").await; // Bob hears its own join (F1)
+        assert_eq!(b_own["text"], "Bob joined");
+        let a_sees = recv_t(&mut a, "chat").await; // Ann hears Bob join
+        assert_eq!(a_sees["system"], true);
+        assert_eq!(a_sees["text"], "Bob joined");
+        let host_sees = host_recv_t(&mut h.host_rx, "chat").await;
+        assert_eq!(host_sees["text"], "Bob joined");
+
+        // F2: Bob leaves → the remaining members (Ann + host) each see one
+        // "Bob left"; the leaver's own sink is gone before the broadcast.
+        drop(b);
+        let left_a = recv_t(&mut a, "chat").await;
+        assert_eq!(left_a["system"], true);
+        assert_eq!(left_a["text"], "Bob left");
+        let left_h = host_recv_t(&mut h.host_rx, "chat").await;
+        assert_eq!(left_h["text"], "Bob left");
+
+        // F3: a late joiner replays BOTH system lines from history — but its
+        // own join is not in there (welcome first, line after → exactly once).
+        let mut c = dial(h.port).await;
+        send(&mut c, &join_frame("SYS001", "Cara")).await;
+        let _ = recv_t(&mut c, "joined").await;
+        let history = recv_t(&mut c, "history").await;
+        let texts: Vec<&str> = history["msgs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["text"].as_str())
+            .collect();
+        assert_eq!(texts, vec!["Ann joined", "Bob joined", "Bob left"], "F3");
+        assert!(
+            !texts.contains(&"Cara joined"),
+            "the joiner's own line must not be replayed to itself"
+        );
+        let c_own = recv_t(&mut c, "chat").await;
+        assert_eq!(c_own["text"], "Cara joined");
+    }
+
+    #[tokio::test]
+    async fn system_lines_never_touch_the_rate_budget_and_cannot_be_spoofed() {
+        // F4: two joins = two system lines, yet both members still hold a
+        // full 5-message budget — system lines bypass `chat()` by construction.
+        let h = start("SYS002").await;
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("SYS002", "Ann")).await;
+        let _ = recv_t(&mut a, "chat").await; // Ann's own join line
+        let mut b = dial(h.port).await;
+        send(&mut b, &join_frame("SYS002", "Bob")).await;
+        let _ = recv_t(&mut b, "chat").await; // Bob's own join line
+
+        for i in 0..CHAT_MAX {
+            send(&mut a, &json!({ "t": "chat", "text": format!("m{i}") })).await;
+            let _ = recv_t(&mut a, "chat").await;
+        }
+        send(&mut a, &json!({ "t": "chat", "text": "m6" })).await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(
+            err["code"], "rate_limited",
+            "5 sends after 2 joins still hit the cap"
+        );
+
+        // A wire `system:true` is dropped on the floor: `serve_conn` reads the
+        // `text` alone and the server stamps its own frame — so the relayed
+        // line comes back as a normal user message, never as a system line.
+        send(
+            &mut b,
+            &json!({ "t": "chat", "system": true, "text": "fake system" }),
+        )
+        .await;
+        let spoof = recv_t(&mut b, "chat").await;
+        assert_eq!(spoof["text"], "fake system");
+        assert_eq!(spoof["from"]["id"], "g2", "stamped by the member table");
+        assert!(
+            spoof.get("system").is_none(),
+            "a client must not be able to mint a system line (F4)"
+        );
+    }
+
+    #[tokio::test]
+    async fn system_line_carries_the_sanitised_name() {
+        // F5: "<name> joined" uses the stored sanitize_name output — control
+        // characters stripped and the 24-char cap — never the raw wire string.
+        let h = start("SYS003").await;
+        let mut a = dial(h.port).await;
+        let hostile = format!("\u{7}evil{}", "x".repeat(80));
+        send(&mut a, &join_frame("SYS003", &hostile)).await;
+        let line = recv_t(&mut a, "chat").await;
+        let text = line["text"].as_str().unwrap();
+        let name = text
+            .strip_suffix(" joined")
+            .expect("system join line reads '<name> joined'");
+        assert!(!name.contains('\u{7}'), "control char survived: {name:?}");
+        assert_eq!(name.len(), 24, "24-char cap, same as sanitize_name");
     }
 
     #[tokio::test]
@@ -1608,7 +1777,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ninth_guest_is_refused() {
+    async fn seventeenth_guest_is_refused() {
         let h = start("FULL01").await;
         let mut sockets = Vec::new();
         for i in 0..MAX_GUESTS {
@@ -1621,7 +1790,105 @@ mod tests {
         send(&mut late, &join_frame("FULL01", "Late")).await;
         let err = recv_t(&mut late, "error").await;
         assert_eq!(err["code"], "room_full");
+        assert_eq!(
+            err["message"],
+            format!("Room is full ({MAX_GUESTS} members maximum).")
+        );
         drop(sockets);
+    }
+
+    #[tokio::test]
+    async fn sixteen_guests_chat_and_playback_fan_out() {
+        let h = start("SCALE1").await;
+        let mut sockets = Vec::new();
+        for i in 0..MAX_GUESTS {
+            let mut ws = dial(h.port).await;
+            send(&mut ws, &join_frame("SCALE1", &format!("G{i}"))).await;
+            let _ = recv_t(&mut ws, "joined").await;
+            sockets.push(ws);
+        }
+        {
+            let mut g = h.core.lock().unwrap();
+            g.chat("host", "fan-out-ping").unwrap();
+            g.playback(true, "fan-out-track", "T", "A", 1_000);
+        }
+        for (i, ws) in sockets.iter_mut().enumerate() {
+            let chat = recv_matching(ws, 128, |v| {
+                v.get("t").and_then(Value::as_str) == Some("chat")
+                    && v.get("text").and_then(Value::as_str) == Some("fan-out-ping")
+            })
+            .await;
+            assert_eq!(chat["from"]["id"], "host", "guest {i} chat");
+            let pb = recv_matching(ws, 128, |v| {
+                v.get("t").and_then(Value::as_str) == Some("playback")
+                    && v.get("trackId").and_then(Value::as_str) == Some("fan-out-track")
+            })
+            .await;
+            assert_eq!(pb["positionMs"], 1_000, "guest {i} playback");
+        }
+        drop(sockets);
+    }
+
+    #[tokio::test]
+    async fn dropped_guest_can_rejoin_same_code() {
+        let h = start("REJOIN1").await;
+        {
+            let mut g = h.core.lock().unwrap();
+            g.playback(true, "cached-track", "T", "A", 9_000);
+            g.chat("host", "before-drop").unwrap();
+        }
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("REJOIN1", "Ann")).await;
+        let _ = recv_t(&mut a, "joined").await;
+        drop(a);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+
+        let mut b = dial(h.port).await;
+        send(&mut b, &join_frame("REJOIN1", "Ann")).await;
+        let joined = recv_t(&mut b, "joined").await;
+        assert_eq!(joined["t"], "joined");
+        let history = recv_t(&mut b, "history").await;
+        let texts: Vec<&str> = history["msgs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["text"].as_str())
+            .collect();
+        assert!(
+            texts.contains(&"before-drop"),
+            "history missing cached chat: {texts:?}"
+        );
+        let pb = recv_t(&mut b, "playback").await;
+        assert_eq!(pb["trackId"], "cached-track");
+    }
+
+    #[tokio::test]
+    async fn guest_leave_rejoin_cycles_keep_the_room() {
+        let h = start("CYCLE1").await;
+        {
+            let mut g = h.core.lock().unwrap();
+            g.playback(true, "cycle-track", "T", "A", 2_000);
+        }
+        for n in 0..3 {
+            let mut a = dial(h.port).await;
+            send(&mut a, &join_frame("CYCLE1", "Ann")).await;
+            let joined = recv_t(&mut a, "joined").await;
+            assert_eq!(joined["t"], "joined", "cycle {n}");
+            send(&mut a, &json!({ "t": "leave" })).await;
+            drop(a);
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        let mut b = dial(h.port).await;
+        send(&mut b, &join_frame("CYCLE1", "Bob")).await;
+        let _ = recv_t(&mut b, "joined").await;
+        let pb = recv_matching(&mut b, 32, |v| {
+            v.get("t").and_then(Value::as_str) == Some("playback")
+                && v.get("trackId").and_then(Value::as_str) == Some("cycle-track")
+        })
+        .await;
+        assert_eq!(pb["positionMs"], 2_000);
+        let members = h.core.lock().unwrap().members.len();
+        assert_eq!(members, 2, "host + Bob after three Ann leave cycles");
     }
 
     #[tokio::test]
@@ -1662,5 +1929,200 @@ mod tests {
             msgs.last().unwrap()["text"],
             format!("msg{}", HISTORY_CAP + 9)
         );
+    }
+
+    // -- chat validation matrix (empty / too_long / boundary / spoofing) ----
+    //
+    // Before this test existed only `rate_limited` had a server-side test:
+    // `empty` and `too_long` were reachable code with zero coverage, and the
+    // 500-char boundary (accept vs refuse) had never been pinned at either
+    // edge. See docs/listen-together.md §3.
+
+    #[tokio::test]
+    async fn chat_rejects_empty_and_too_long_verbatim_at_the_500_boundary() {
+        let h = start("VAL001").await;
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("VAL001", "Ann")).await;
+        let _ = recv_t(&mut a, "joined").await;
+
+        // Whitespace-only trims to empty → verbatim refusal.
+        send(&mut a, &json!({ "t": "chat", "text": "   \n\t  " })).await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(err["code"], "empty");
+        assert_eq!(err["message"], "Message is empty.");
+
+        // A missing `text` field is the same refusal, not a panic.
+        send(&mut a, &json!({ "t": "chat" })).await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(err["code"], "empty");
+
+        // A non-string `text` is coerced to "" and refused, not a panic.
+        send(&mut a, &json!({ "t": "chat", "text": 42 })).await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(err["code"], "empty");
+
+        // Exactly CHAT_MAX_CHARS is accepted — the boundary's near edge.
+        send(
+            &mut a,
+            &json!({ "t": "chat", "text": "x".repeat(CHAT_MAX_CHARS) }),
+        )
+        .await;
+        let ok = recv_t(&mut a, "chat").await;
+        assert_eq!(ok["text"].as_str().unwrap().chars().count(), CHAT_MAX_CHARS);
+
+        // One scalar more is refused, verbatim with the limit in it.
+        send(
+            &mut a,
+            &json!({ "t": "chat", "text": "x".repeat(CHAT_MAX_CHARS + 1) }),
+        )
+        .await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(err["code"], "too_long");
+        assert!(err["message"].as_str().unwrap().contains("500"));
+
+        // Rejections happen before the limiter stamps: a member whose sends
+        // all failed must still have a full rate budget.
+        for _ in 0..CHAT_MAX {
+            send(
+                &mut a,
+                &json!({ "t": "chat", "text": "y".repeat(CHAT_MAX_CHARS + 1) }),
+            )
+            .await;
+            let err = recv_t(&mut a, "error").await;
+            assert_eq!(err["code"], "too_long");
+        }
+        send(&mut a, &json!({ "t": "chat", "text": "budget intact" })).await;
+        let ok = recv_t(&mut a, "chat").await;
+        assert_eq!(ok["text"], "budget intact"); // not rate_limited
+
+        // The connection survived every rejection above.
+        send(&mut a, &json!({ "t": "chat", "text": "still alive" })).await;
+        let ok = recv_t(&mut a, "chat").await;
+        assert_eq!(ok["text"], "still alive");
+    }
+
+    #[tokio::test]
+    async fn astral_emoji_count_as_one_character_each() {
+        let h = start("VAL002").await;
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("VAL002", "Ann")).await;
+        let _ = recv_t(&mut a, "joined").await;
+        // Drain the welcome (and Ann's own system join line) so the first
+        // `chat` below is the answer to what this test sends.
+        let _ = recv_t(&mut a, "history").await;
+        let _ = recv_t(&mut a, "presence").await;
+
+        // 🎵 is one Unicode scalar, so 500 of them are 500 "characters" —
+        // the limit counts scalars, not bytes (4× that in UTF-8).
+        let emoji500: String = "🎵".repeat(CHAT_MAX_CHARS);
+        assert_eq!(emoji500.chars().count(), CHAT_MAX_CHARS);
+        send(&mut a, &json!({ "t": "chat", "text": emoji500 })).await;
+        let ok = recv_t(&mut a, "chat").await;
+        assert_eq!(ok["text"].as_str().unwrap().chars().count(), CHAT_MAX_CHARS);
+
+        // 501 emoji crosses the same boundary as ASCII.
+        let emoji501: String = "🎵".repeat(CHAT_MAX_CHARS + 1);
+        send(&mut a, &json!({ "t": "chat", "text": emoji501 })).await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(err["code"], "too_long");
+    }
+
+    #[tokio::test]
+    async fn sender_identity_is_stamped_by_the_server_not_the_wire() {
+        let mut h = start("VAL003").await;
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("VAL003", "Ann")).await;
+        let _ = recv_t(&mut a, "joined").await;
+        // Drain the welcome (and the system join lines) on both sinks: the
+        // assertions below want the FIRST chat frame to be the spoofed one.
+        let _ = recv_t(&mut a, "history").await;
+        let _ = recv_t(&mut a, "presence").await;
+        let ann_join = host_recv_t(&mut h.host_rx, "chat").await;
+        assert_eq!(
+            ann_join["system"], true,
+            "host hears the join line too (F1)"
+        );
+
+        // A hostile guest claims to BE the host in the frame body: the wire
+        // `from` must be ignored and replaced with the member-table stamp.
+        send(
+            &mut a,
+            &json!({
+                "t": "chat",
+                "text": "I am totally the host",
+                "from": { "id": "host", "name": "Admin" },
+            }),
+        )
+        .await;
+        let chat = recv_t(&mut a, "chat").await;
+        assert_eq!(chat["from"]["id"], "g1"); // server-assigned guest id
+        assert_eq!(chat["from"]["name"], "Ann"); // from the join, not the wire
+        assert_eq!(chat["text"], "I am totally the host");
+
+        // The host window sees the same stamp.
+        let host_chat = host_recv_t(&mut h.host_rx, "chat").await;
+        assert_eq!(host_chat["from"]["id"], "g1");
+        assert_eq!(host_chat["from"]["name"], "Ann");
+    }
+
+    #[tokio::test]
+    async fn malformed_and_unknown_frames_do_not_kill_the_connection() {
+        let h = start("VAL004").await;
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("VAL004", "Ann")).await;
+        let _ = recv_t(&mut a, "joined").await;
+        // Drain the rest of the welcome so raw `recv` below sees only
+        // answers to what this test sends.
+        let _ = recv_t(&mut a, "history").await;
+        let _ = recv_t(&mut a, "presence").await;
+
+        // Malformed JSON is dropped with NO answer at all: the very next
+        // frame the client sees must be the echo of the message after it.
+        a.send(ClientMessage::Text("{not json".into()))
+            .await
+            .unwrap();
+        send(&mut a, &json!({ "t": "chat", "text": "after garbage" })).await;
+        let first = recv(&mut a).await;
+        assert_eq!(first["t"], "chat", "malformed frame must answer nothing");
+        assert_eq!(first["text"], "after garbage");
+
+        // An unknown frame type is refused verbatim…
+        send(&mut a, &json!({ "t": "bogus" })).await;
+        let err = recv(&mut a).await;
+        assert_eq!(err["t"], "error");
+        assert_eq!(err["code"], "unknown_message_type");
+
+        // …and chat still works afterwards: both refusals are survivable.
+        send(&mut a, &json!({ "t": "chat", "text": "survived" })).await;
+        let ok = recv(&mut a).await;
+        assert_eq!(ok["t"], "chat");
+        assert_eq!(ok["text"], "survived");
+    }
+
+    #[test]
+    fn host_command_path_surfaces_validation_errors_synchronously() {
+        // `room_chat` for the host calls `guard.chat("host", &text)` and
+        // returns its Err straight to the UI (room.rs:933-938) — the guest
+        // path gets the same codes as asynchronous error frames instead.
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut core = RoomCore::new("HOST01", "Host", Sink::Chan(tx));
+
+        assert_eq!(
+            core.chat("host", "   ").unwrap_err().0,
+            "empty",
+            "host sees empty synchronously"
+        );
+        assert_eq!(
+            core.chat("host", &"z".repeat(CHAT_MAX_CHARS + 1))
+                .unwrap_err()
+                .0,
+            "too_long",
+            "host sees too_long synchronously"
+        );
+        // Accepted and stamped under the host's own id.
+        core.chat("host", "fine by me").unwrap();
+        let back = core.history.back().unwrap();
+        assert_eq!(back["from"]["id"], "host");
+        assert_eq!(back["text"], "fine by me");
     }
 }

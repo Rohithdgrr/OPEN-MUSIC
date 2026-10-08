@@ -26,17 +26,24 @@ import {
   parseInvite,
   memberCount,
   reduceRoom,
-  sanitizeRoomName,
+  roomDisplayName,
   setLocalRole,
   syncDecision,
+  shouldReportDrift,
+  shouldAutoRejoin,
+  shouldRetryJoinAfterError,
+  isStaleLocalBye,
+  shouldKeepRejoinAfterBye,
+  rejoinDelayMs,
+  roomTickKind,
+  HOST_TICK_MS,
+  ROOM_LOST_REASON,
   worstDriftMs,
 } from "./room.js";
 import { resolveFromCatalog } from "./jam/follow.js";
 import { entryTrack, vaultEntries } from "./vault.js";
 
-/// The host's sync tick (§4.1). C-5: a state frame on every real change *and*
-/// once a second while playing.
-const HOST_TICK_MS = 1000;
+/// The host's sync tick (§4.1 / jam-upgrade §C). Cadence lives in room.js.
 /// Every room-code surface, painted from one list with one fallback: a
 /// refusal, a disconnect or a leave must blank **all** of them together
 /// (docs/social-nowplaying.md §3b-i).
@@ -60,10 +67,16 @@ let room = createRoomState();
 let roomPort = 0;
 let joining = false;
 let listenerReady = false;
-let tickTimer = 0; // the 1 s host broadcast / guest apply loop
+let tickTimer = 0; // HOST_TICK_MS host broadcast / guest apply loop
 let lastDrift = null; // this guest's measured drift, ms
 let guestMirror = ""; // set when the host's track is not on this device
 let guestApplied = ""; // last playback frame key this guest applied
+let guestTickCount = 0;
+let lastJoinUri = "";
+let userLeft = false;
+let rejoinTimer = 0;
+let rejoinAttempts = 0;
+let armedTick = ""; // roomTickKind currently running; chat must not reset it
 
 function el(id) {
   return document.getElementById(id);
@@ -74,11 +87,11 @@ function setRoomNote(text) {
   if (note) note.textContent = text;
 }
 
-function roomName() {
+function roomName(fallback = "Host") {
   try {
-    return sanitizeRoomName(window.localStorage.getItem("tm-username") || "", "Host");
+    return roomDisplayName((k) => window.localStorage.getItem(k), fallback);
   } catch {
-    return "Host";
+    return fallback;
   }
 }
 
@@ -205,6 +218,20 @@ function paintRoom() {
   }
   if (copyQr) copyQr.disabled = !haveCode;
 
+  // G1: the rate chip must tell the truth about the current surface. Idle it
+  // IS local (sendChat echoes without IPC); in a room the line relays to
+  // everyone, so the sidecar-era "LOCAL ONLY" copy would be a lie.
+  const rateNote = el("chat-rate-note");
+  if (rateNote) {
+    if (idle) {
+      rateNote.textContent = "LOCAL ONLY";
+      rateNote.title = "No room open — messages stay on this device.";
+    } else {
+      rateNote.textContent = "5 / 10s";
+      rateNote.title = "Room chat: up to 500 characters, 5 messages every 10 seconds.";
+    }
+  }
+
   const session = el("jam-session-mode");
   if (session) {
     session.textContent =
@@ -250,10 +277,21 @@ function paintRoom() {
 function renderChat() {
   const list = el("chat-messages-container");
   if (!list) return;
-  list.replaceChildren();
+  // G6: #chat-empty / #chat-typing live INSIDE this list — capture them
+  // before the wipe and re-insert first, so the toggle below can still find
+  // them on every render (they used to be destroyed by the first one).
   const empty = el("chat-empty");
-  if (empty) empty.classList.toggle("hidden", room.chat.length > 0);
   const typing = el("chat-typing");
+  list.replaceChildren(...[empty, typing].filter(Boolean));
+  if (empty) {
+    // G1: honest copy for the surface's current role — same two strings
+    // mobile paints (jam.js:575-577), so the shells cannot drift apart.
+    empty.textContent =
+      room.role === "idle"
+        ? "No messages yet — open or join a room to chat."
+        : "No messages yet. Say something.";
+    empty.classList.toggle("hidden", room.chat.length > 0);
+  }
   if (typing) typing.classList.add("hidden"); // no typing protocol exists
   for (const entry of room.chat) list.append(chatMessage(entry));
   list.scrollTop = list.scrollHeight;
@@ -263,6 +301,14 @@ function renderChat() {
 /// included) or this client's local echo when no room is open. Built with
 /// createElement + textContent — never innerHTML (docs/social-nowplaying.md §3a).
 function chatMessage(entry) {
+  // F7: server-origin system line ("X joined" / "X left") — a centred line,
+  // not a bubble: no avatar, no sender, textContent-only like everything else.
+  if (entry.system) {
+    const line = document.createElement("div");
+    line.className = "soc-chat-system";
+    line.textContent = entry.text;
+    return line;
+  }
   const mine = !!entry.mine;
   const msg = document.createElement("div");
   msg.className = mine ? "soc-chat-msg mine" : "soc-chat-msg";
@@ -313,10 +359,21 @@ function broadcastPlayback() {
   }).catch((e) => diag("room playback", false, String(e).slice(0, 160)));
 }
 
+function resetGuestRate() {
+  try {
+    if (audio) audio.playbackRate = 1;
+  } catch {
+    /* element gone */
+  }
+}
+
 function startHostTick() {
-  if (tickTimer) return;
+  if (tickTimer) clearInterval(tickTimer);
+  // N14: the interval's first fire is HOST_TICK_MS away — run once now so
+  // open/join is not a quarter-second late on the wire.
+  if (room.role === "host") broadcastPlayback();
   tickTimer = setInterval(() => {
-    if (room.role !== "host" || audio.paused) return;
+    if (room.role !== "host") return;
     broadcastPlayback();
   }, HOST_TICK_MS);
 }
@@ -324,6 +381,16 @@ function startHostTick() {
 function stopHostTick() {
   if (tickTimer) clearInterval(tickTimer);
   tickTimer = 0;
+  armedTick = "";
+}
+
+function syncRoomTick() {
+  const next = roomTickKind(room.role);
+  if (next === armedTick) return;
+  if (next === "host") startHostTick();
+  else if (next === "guest") startGuestTick();
+  else stopHostTick();
+  armedTick = next;
 }
 
 /// Guest: find the host's track in what this device already has. Same sources
@@ -402,27 +469,64 @@ function guestTick() {
   if (pb.playing && audio.paused) audio.play().catch(() => {});
   if (!pb.playing && !audio.paused) audio.pause();
 
-  const { driftMs, seekToSec } = syncDecision(room, audio.currentTime);
+  guestTickCount += 1;
+  const { driftMs, seekToSec, playbackRate } = syncDecision(room, audio.currentTime);
+  let seekApplied = false;
   if (seekToSec !== null) {
     audio.currentTime = seekToSec;
+    seekApplied = true;
     diag("room sync", true, `seek ${seekToSec.toFixed(2)}s (drift ${driftMs}ms)`);
   }
-  if (driftMs !== null) {
+  try {
+    audio.playbackRate = pb.playing ? playbackRate : 1;
+  } catch {
+    /* rate not writable */
+  }
+  if (shouldReportDrift(driftMs, seekApplied, guestTickCount) && driftMs !== null) {
     lastDrift = driftMs;
     invoke("room_report", { driftMs }).catch(() => {});
+  } else if (driftMs !== null) {
+    lastDrift = driftMs;
   }
   paintRoom();
 }
 
 function startGuestTick() {
-  if (tickTimer) return;
+  if (tickTimer) clearInterval(tickTimer);
+  guestTick();
   tickTimer = setInterval(guestTick, HOST_TICK_MS);
+}
+
+function cancelRejoin() {
+  if (rejoinTimer) clearTimeout(rejoinTimer);
+  rejoinTimer = 0;
+}
+
+function scheduleRejoin() {
+  cancelRejoin();
+  if (!shouldAutoRejoin(ROOM_LOST_REASON, lastJoinUri, userLeft, rejoinAttempts)) return;
+  const delay = rejoinDelayMs(rejoinAttempts);
+  rejoinAttempts += 1;
+  rejoinTimer = setTimeout(() => {
+    if (room.role !== "idle" || userLeft || !lastJoinUri) return;
+    joining = true;
+    setRoomNote("Reconnecting to the room…");
+    paintRoom();
+    invoke("room_join_uri", { uri: lastJoinUri, name: roomName("Guest") }).catch((e) => {
+      joining = false;
+      setRoomNote(String(e).slice(0, 200));
+      scheduleRejoin();
+    });
+  }, delay);
 }
 
 /// Reduce one `room://msg` frame and drive the UI from the result. Frame
 /// semantics are the frozen contract in docs/listen-together.md §6a.
 function applyRoomFrame(frame) {
   if (!frame || typeof frame.t !== "string") return;
+  // N12: a D2 `room_close` emits bye{left}. If we already joined (or hosted),
+  // reducing that bye would idle a live room.
+  if (frame.t === "bye" && isStaleLocalBye(frame.reason, userLeft, room.role)) return;
   room = reduceRoom(room, frame);
   setLocalRole(room.role);
 
@@ -435,12 +539,18 @@ function applyRoomFrame(frame) {
     case "hosted":
     case "joined":
       joining = false;
+      rejoinAttempts = 0;
+      cancelRejoin();
+      if (room.role === "host") resetGuestRate();
       setRoomNote(
         room.role === "host"
           ? `Room ${room.code} open — guests join with the code.`
           : `Joined room ${room.code}.`,
       );
       diag("room", true, `${room.role} ${room.code}`);
+      // G5: `hosted` dropped any device-local echo in the reducer — repaint so
+      // the cleared list reaches the DOM (mobile does this via paintJam).
+      renderChat();
       break;
     case "history":
     case "chat":
@@ -458,34 +568,47 @@ function applyRoomFrame(frame) {
       // Verbatim: the server's message is the diagnosis (§8).
       setRoomNote(frame.message || frame.code || "Room error.");
       toast(frame.message || String(frame.code || "Room error."), "error", 5000);
-      // D2, layer 2: a refusal on an already-open socket (wrong code, room
-      // full) never reaches the backend's own failure exits, so drop the
-      // half-open guest mode here or the next join is refused as "already in a
-      // room" while the UI reads Solo.
-      if (wasJoining) invoke("room_close").catch(() => {});
+      // N10/N12/N13: dial-fail during an in-flight rejoin — guest_run already
+      // reverted to Idle. Do not room_close (that emits bye{left} and cancels
+      // the next dial). Terminal refusals still close the half-open guest.
+      if (wasJoining && shouldRetryJoinAfterError(lastJoinUri, userLeft, rejoinAttempts, frame.code)) {
+        scheduleRejoin();
+      } else if (wasJoining) {
+        lastJoinUri = "";
+        cancelRejoin();
+        invoke("room_close").catch(() => {});
+      }
       break;
     }
     case "bye": {
       joining = false;
       stopHostTick();
+      resetGuestRate();
       guestMirror = "";
       lastDrift = null;
       guestApplied = "";
+      guestTickCount = 0;
       roomPort = 0;
       if (frame.reason && frame.reason !== "left") {
         toast(String(frame.reason), "info", 4000);
       }
       renderChat(); // the reducer emptied the room's chat
+      if (shouldKeepRejoinAfterBye(frame.reason, userLeft, lastJoinUri, rejoinAttempts)) {
+        break;
+      }
+      if (shouldAutoRejoin(frame.reason, lastJoinUri, userLeft, rejoinAttempts)) {
+        scheduleRejoin();
+      } else {
+        lastJoinUri = "";
+        cancelRejoin();
+      }
       break;
     }
     default:
       return;
   }
 
-  if (room.role === "host") startHostTick();
-  else if (room.role === "guest") startGuestTick();
-  else stopHostTick();
-
+  syncRoomTick();
   paintRoom();
 }
 
@@ -503,11 +626,23 @@ function startRoomListener() {
 
 async function enterSocial() {
   startRoomListener();
-  // A room server can outlive the window (reload, crash): reconcile before
-  // offering to open a new one, and close anything stale.
+  // A host room server can outlive the window (reload). Adopt it — do not
+  // `room_close` a live host. A guest socket does not survive a reload.
   try {
     const info = await invoke("room_info");
-    if (info && info.role && info.role !== "idle") await invoke("room_close");
+    if (info && info.role === "host") {
+      roomPort = Number(info.port) || 0;
+      applyRoomFrame({
+        t: "hosted",
+        selfId: "host",
+        code: info.code || "",
+        urls: Array.isArray(info.urls) ? info.urls : [],
+        invite: typeof info.invite === "string" ? info.invite : "",
+        members: [{ id: "host", name: roomName("Host"), host: true }],
+      });
+      return;
+    }
+    if (info && info.role === "guest") await invoke("room_close");
   } catch {
     /* no IPC, or nothing to reconcile */
   }
@@ -518,12 +653,21 @@ async function enterSocial() {
   lastDrift = null;
   guestMirror = "";
   guestApplied = "";
+  guestTickCount = 0;
+  lastJoinUri = "";
+  userLeft = false;
+  cancelRejoin();
+  resetGuestRate();
   stopHostTick();
   paintRoom();
 }
 
 async function leaveRoom(note) {
+  userLeft = true;
+  cancelRejoin();
+  lastJoinUri = "";
   stopHostTick();
+  resetGuestRate();
   try {
     await invoke("room_close");
   } catch {
@@ -536,12 +680,16 @@ async function leaveRoom(note) {
   lastDrift = null;
   guestMirror = "";
   guestApplied = "";
+  guestTickCount = 0;
   setRoomNote(note || DEFAULT_ROOM_NOTE);
   paintRoom();
 }
 
 async function openRoom() {
   if (room.role !== "idle" || joining) return;
+  userLeft = false;
+  lastJoinUri = "";
+  cancelRejoin();
   const name = roomName();
   try {
     const info = await invoke("room_open", { name });
@@ -576,13 +724,17 @@ async function joinRoom() {
     return;
   }
   joining = true;
+  userLeft = false;
+  lastJoinUri = uri;
+  rejoinAttempts = 0;
   setRoomNote(`Connecting to ${parsed.addr}…`);
   paintRoom();
   try {
     // The outcome arrives as frames (`joined` / `error`), not as a return value.
-    await invoke("room_join_uri", { uri, name: roomName() });
+    await invoke("room_join_uri", { uri, name: roomName("Guest") });
   } catch (e) {
     joining = false;
+    lastJoinUri = "";
     setRoomNote(String(e).slice(0, 200));
     paintRoom();
   }
@@ -747,7 +899,7 @@ function wireReactions() {
 
   // The host's other two transport changes, straight from the element every
   // other module already listens to.
-  for (const ev of ["play", "pause", "seeked"]) {
+  for (const ev of ["play", "pause", "seeked", "ended"]) {
     audio.addEventListener(ev, () => {
       if (room.role === "host") broadcastPlayback();
     });
@@ -759,6 +911,10 @@ function sendChat() {
   const input = $("#chat-input");
   const text = (input?.value || "").trim();
   if (!text) return;
+  if (joining || rejoinTimer) {
+    toast("Still connecting — wait to chat.", "info", 2500);
+    return;
+  }
   if (input) input.value = "";
 
   if (room.role === "host" || room.role === "guest") {

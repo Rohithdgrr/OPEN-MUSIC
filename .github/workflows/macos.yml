@@ -123,7 +123,7 @@ jobs:
           APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
 
       - name: Verify build artifacts
-        # An .app bundle is a DIRECTORY. The old `[ -f "...TRANCE MUSIC.app" ]`
+        # An .app bundle is a DIRECTORY. The old `[ -f "...OPEN MUSIC.app" ]`
         # was always false and exited 1 — latent until the build started
         # succeeding, because every earlier run died at "Build Tauri app".
         # -e so the check passes for a directory and a file alike.
@@ -150,9 +150,9 @@ jobs:
             echo "⚠ DMG not found (may require code signing)"
           fi
 
-          if [ -e "app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app" ]; then
+          if [ -e "app/src-tauri/target/release/bundle/macos/OPEN MUSIC.app" ]; then
             echo "✓ .app bundle built successfully"
-            ls -la "app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app/"
+            ls -la "app/src-tauri/target/release/bundle/macos/OPEN MUSIC.app/"
           else
             echo "✗ .app bundle not found"
             exit 1
@@ -178,7 +178,7 @@ jobs:
         # Each exit 1 below is annotated: these logs are unreachable (403), so
         # an unannotated failure here is undiagnosable.
         run: |
-          APP_BUNDLE="app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app"
+          APP_BUNDLE="app/src-tauri/target/release/bundle/macos/OPEN MUSIC.app"
           if [ -d "$APP_BUNDLE" ]; then
             echo "✓ App bundle exists"
             # Verify app structure
@@ -213,7 +213,7 @@ jobs:
         # runs: mount the disk image, launch the binary, assert it survives.
         run: |
           set -uo pipefail
-          APP_BUNDLE="app/src-tauri/target/release/bundle/macos/TRANCE MUSIC.app"
+          APP_BUNDLE="app/src-tauri/target/release/bundle/macos/OPEN MUSIC.app"
           BIN="$APP_BUNDLE/Contents/MacOS/trance-music"
           DMG=$(ls app/src-tauri/target/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
           MOUNT=/tmp/dmg-verify
@@ -228,15 +228,15 @@ jobs:
             mkdir -p "$MOUNT"
             if hdiutil attach -nobrowse -readonly -mountpoint "$MOUNT" "$DMG" >/dev/null 2>&1; then
               echo "✓ DMG mounted"
-              if [ -d "$MOUNT/TRANCE MUSIC.app" ]; then
-                echo "✓ TRANCE MUSIC.app present inside the DMG"
+              if [ -d "$MOUNT/OPEN MUSIC.app" ]; then
+                echo "✓ OPEN MUSIC.app present inside the DMG"
                 # Notice emitted only AFTER the check it describes. Emitting
                 # it earlier would let a success annotation coexist with a
                 # failure annotation for the same fact.
-                echo "::notice title=DMG verification::mounted and found TRANCE MUSIC.app inside — $(basename "$DMG")"
+                echo "::notice title=DMG verification::mounted and found OPEN MUSIC.app inside — $(basename "$DMG")"
               else
-                echo "✗ TRANCE MUSIC.app missing from the DMG"; FAIL=1
-                echo "::error title=DMG verification (macOS)::DMG mounted but TRANCE MUSIC.app is not inside it: $(basename "$DMG")"
+                echo "✗ OPEN MUSIC.app missing from the DMG"; FAIL=1
+                echo "::error title=DMG verification (macOS)::DMG mounted but OPEN MUSIC.app is not inside it: $(basename "$DMG")"
                 ls -la "$MOUNT" || true
               fi
               hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true

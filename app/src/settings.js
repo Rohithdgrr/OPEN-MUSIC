@@ -37,7 +37,7 @@ import { importCsvToPlaylist, readCsvFile } from "./importer.js";
 // ---------------------------------------------------------------- settings -
 // One native <dialog>, three entries and nothing else. The body swaps between
 // the menu and a single section, so a nested dialog is never needed.
-export const APP = { name: "TRANCE MUSIC", version: "0.3.0", id: "com.openmusic.trancemusic" };
+export const APP = { name: "OPEN MUSIC", version: "0.3.0", id: "com.openmusic.trancemusic" };
 
 /// What to call this machine wherever the copy used to hard-code "Windows".
 export const PLATFORM = /windows/i.test(navigator.userAgent)
@@ -416,7 +416,7 @@ export const SETTINGS_VIEWS = {
           setRow(
             "person",
             "Display name",
-            "Shown in the greeting on Home.",
+            "Shown in the Home greeting and as your name in a Jam.",
             `<input id="set-name" type="text" maxlength="32" value="${esc(name)}" placeholder="Listener"
               class="w-40 shrink-0 bg-surface-container-lowest border border-surface-container-highest/70 rounded-lg px-2 py-1.5 text-sm text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20" />`,
           ) +
@@ -819,7 +819,7 @@ export const SETTINGS_VIEWS = {
     eyebrow: "Settings / Licences",
     body: () => `
     <div class="flex flex-col gap-4">
-      <p class="text-[13px] leading-relaxed text-on-surface-variant">TRANCE MUSIC itself is MIT licensed &mdash; see <span class="font-label-mono">LICENSE</span> in the repository. The Rust core links the direct dependencies below; every one is MIT or dual MIT&nbsp;/&nbsp;Apache-2.0.</p>
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">OPEN MUSIC itself is MIT licensed &mdash; see <span class="font-label-mono">LICENSE</span> in the repository. The Rust core links the direct dependencies below; every one is MIT or dual MIT&nbsp;/&nbsp;Apache-2.0.</p>
       <div class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden">
         <table class="w-full font-label-mono text-[11px] border-collapse">
           <thead>
@@ -870,7 +870,7 @@ export const SETTINGS_VIEWS = {
         ${kv("Catalog", "JioSaavn first-party, 5 community mirrors as fallback")}
         ${kv("Playback", "Local axum relay on 127.0.0.1, Range forwarded verbatim")}
         ${kv("Lyrics", "LRCLIB, Better Lyrics, then JioSaavn, LRCLIB search")}
-        ${kv("Vault", "App data folder · TRANCE MUSIC")}
+        ${kv("Vault", "App data folder · OPEN MUSIC")}
         ${kv("Licence", "MIT")}
       </dl>
       ${setNote("No installer and no code signing yet &mdash; this build runs from source. Development status is in <span class='font-label-mono'>CHANGELOG.md</span>.")}
@@ -883,9 +883,9 @@ export const SETTINGS_VIEWS = {
     <div class="flex flex-col gap-4">
       <p class="text-[13px] leading-relaxed text-on-surface-variant">Last updated 30 September 2026. By using ${esc(APP.name)} you accept these terms.</p>
       <ol class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70 list-none">
-        ${clause(1, "Personal, non-commercial use", "You may use TRANCE MUSIC for your own personal, non-commercial listening. Reselling access, redistributing the application, or operating a public service built on it requires written permission.")}
-        ${clause(2, "No content is bundled", "TRANCE MUSIC ships no audio. It is a player: tracks, artwork and lyrics are fetched at request time from third-party services. Rights to that content stay with their owners, and those services' own terms also apply to you.")}
-        ${clause(3, "Your downloads are yours", "Anything you save lands in this app's own data folder on your disk and is your responsibility to keep, back up and delete. TRANCE MUSIC is not liable for lost or damaged files.")}
+        ${clause(1, "Personal, non-commercial use", "You may use OPEN MUSIC for your own personal, non-commercial listening. Reselling access, redistributing the application, or operating a public service built on it requires written permission.")}
+        ${clause(2, "No content is bundled", "OPEN MUSIC ships no audio. It is a player: tracks, artwork and lyrics are fetched at request time from third-party services. Rights to that content stay with their owners, and those services' own terms also apply to you.")}
+        ${clause(3, "Your downloads are yours", "Anything you save lands in this app's own data folder on your disk and is your responsibility to keep, back up and delete. OPEN MUSIC is not liable for lost or damaged files.")}
         ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by JioSaavn, LRCLIB, or any mirror listed in the source.`)}
         ${clause(5, "Limitation of liability", "To the fullest extent permitted by law, the authors and contributors are not liable for any indirect, incidental or consequential damages arising from use of the software, including lost data, lost profits, or unavailable services.")}
         ${clause(6, "Copyright complaints", "Copyright holders may ask for stored media to be removed. Contact the maintainers through the repository and the relevant item will be deleted from the vault promptly.")}
@@ -1087,7 +1087,7 @@ async function doBackupExport() {
     const path = await invoke("export_file", {
       content: JSON.stringify(doc, null, 2),
       suggestedName: backupFilename(doc.exportedAt),
-      filterLabel: "TRANCE MUSIC backup",
+      filterLabel: "OPEN MUSIC backup",
       extensions: ["json"],
     });
     toast(`Backup saved (${doc.favorites.records.length} favorites, ${doc.playlists.records.length} playlists).`, "success");

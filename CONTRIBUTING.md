@@ -1,4 +1,4 @@
-# Contributing to TRANCE MUSIC
+# Contributing to OPEN MUSIC
 
 Thanks for looking. This is a small project with a hard rule about scope: **the
 Rust core is the heavily tested part; the front end has unit tests but every

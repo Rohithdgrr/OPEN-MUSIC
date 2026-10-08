@@ -1,6 +1,6 @@
 # Jam upgrade — one master doc (spec + plan, all seven requests)
 
-**Status:** design complete, ready to execute · **Date:** 2026-10-08
+**Status:** A complete · C1–C3 in tree · N1–N15 in `docs/jam-professional-grade.md` (2026-10-09, third pass: reconnect `bye{left}` race, retry only `connect_failed`, immediate first tick, chat-while-joining) · **Date:** 2026-10-08
 **Rules:** docs-first (this document precedes all code) · commits local, **no
 push without an explicit go-ahead** · recommended options are pre-approved
 (AGENTS.md rule 9).
@@ -38,7 +38,7 @@ truth from here.
 | QR already encodes `inviteText` on both surfaces | `social.js:708`, `jam.js:616-643 paintQrSurface` |
 | `tm-username` read by both surfaces, **written nowhere** → everyone is "Host"/"Guest" | `social.js:78`, `jam.js:157`; no `setItem("tm-username")` anywhere |
 | Pause broadcast: desktop `social.js:736/744`, mobile was missing until D4 fix; track changes reach guests via tick ≤1 s | D4 (P34), `jam.js:364/375` |
-| Room cap = 8 guests | `room.rs:39 MAX_GUESTS=8`, test `ninth_guest_is_refused:1400` |
+| Room cap = 16 guests (docs) vs 8 (code, pre-2026-10-09) | `listen-together.md` already 16; `room.rs MAX_GUESTS` is **16** as of the professional-grade pass |
 | No scanner; a dead `jam/qr-scanner.js` was deleted in Task 1 (never integrated — do not resurrect blindly) | `0e3744d` |
 | Live gates: desktop 32/0 · emulator 28/0 · reverse-pair 19/0 · LAN all-pass | `app/tests/live-*.mjs`, §10 of `listen-together.md` |
 
@@ -253,9 +253,31 @@ transit).
 - Live: `live-desktop` (drift fields), `live-reverse-pair`, `live-lan-join`
   re-run; record p95/max drift in the run log + `listen-together.md` §8 table.
 - **AC:** live steady-state **p95 |drift| ≤ 100 ms, max ≤ 250 ms** across the
-  probes; guests in steady state never seek more than once per 5 s (no
-  stutter); gates green. Failure to hit target with the documented evidence →
-  v2 ping task, not silent acceptance.
+probes; guests in steady state never seek more than once per 5 s (no
+stutter); gates green. Failure to hit target with the documented evidence →
+v2 ping task, not silent acceptance.
+
+**Status 2026-10-09 — C1–C3 landed in tree (measurement C4 still live):**
+`HOST_TICK_MS = 250` is the single export; `syncDecision` returns
+`playbackRate` (deadband 40 ms / nudge / hard seek at 150 ms);
+`shouldReportDrift` thins `room_report`; both host ticks heartbeat every
+250 ms while playing and still fire immediately on play/pause/seek/track.
+True 0 ms latency is physically impossible (LAN RTT); this is the v1 bound.
+
+### 5.4 Reconnect + role cycling (same campaign)
+
+Host leaving **still ends the room** (M2 host-migration stays a non-goal).
+Professional-grade here means the *cycle* is reliable:
+
+| Cycle | Expected |
+|---|---|
+| Host close → guest idle → either device opens a new room → the other joins | D5 idle + no "already in a room" latch |
+| Guest leave → same invite join again | welcome + history + cached playback |
+| Socket drop (`bye` reason `Connection to the room was lost.`) | guest auto-rejoins the **same** invite, 5 attempts, 250 ms…4 s backoff |
+| User Leave / host closed the room | **no** auto-rejoin (that invite is dead) |
+| Host ↔ guest role swap | leave until idle, then open or join — backend `Mode::Idle` before UI proceeds |
+
+Helpers: `shouldAutoRejoin` / `rejoinDelayMs` in `room.js` (pure, unit-tested).
 
 ---
 

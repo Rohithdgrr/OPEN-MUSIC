@@ -1,5 +1,5 @@
 /* ==========================================================================
-   TRANCE MUSIC — Desktop Application Stylesheet
+   OPEN MUSIC — Desktop Application Stylesheet
    Pure Vanilla CSS — Zero build steps, zero compiler dependencies.
    ========================================================================== */
 
@@ -4130,7 +4130,7 @@ img,video {
 /* --------------------------------------------------------------------------
    PART 3: Custom Desktop Components & Overrides
    -------------------------------------------------------------------------- */
-@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}/* TRANCE MUSIC — custom layer on top of the Stitch/Tailwind markup.
+@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}/* OPEN MUSIC — custom layer on top of the Stitch/Tailwind markup.
  * Vanilla CSS only. Critical utilities are re-declared here so the app
  * stays usable even if the Tailwind CDN is unreachable. */
 
@@ -8480,6 +8480,15 @@ body.soc-social .soc-solo-only {
   color: #8a8a91;
 }
 
+/* Server-origin system line ("X joined" / "X left") — centred, no bubble */
+.soc-chat-system {
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: #8a8a91;
+  padding: 3px 0;
+}
+
 /* ==========================================================================
    8. JAM STATUS PANE — session control, members, room actions
    ========================================================================== */
@@ -9086,6 +9095,11 @@ html.dark .soc-chat-input:focus {
 
 .dark .soc-empty,
 html.dark .soc-empty {
+  color: #8f8f97;
+}
+
+.dark .soc-chat-system,
+html.dark .soc-chat-system {
   color: #8f8f97;
 }
 

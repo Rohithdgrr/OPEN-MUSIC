@@ -36,8 +36,8 @@ function recordTest(name, passed, message = '') {
 // Platform-specific binary paths
 //
 // NEVER hardcode an artifact filename. Tauri names bundles from `productName`
-// + `version` (both read from tauri.conf.json -- "TRANCE MUSIC" / "0.4.0"), so
-// a pinned path like `trance-music.AppImage` or `TRANCE MUSIC_0.3.0_*.msi`
+// + `version` (both read from tauri.conf.json -- "OPEN MUSIC" / "0.4.0"), so
+// a pinned path like `trance-music.AppImage` or `OPEN MUSIC_0.3.0_*.msi`
 // misses the real file after any version bump or rename. Glob the extension.
 //
 // The old hardcoded Linux path silently fell through to a bare PATH lookup
@@ -59,24 +59,24 @@ function getBinaryPath() {
   const bundle = join(__dirname, '../app/src-tauri/target/release/bundle');
 
   if (PLATFORM === 'linux') {
-    // e.g. "TRANCE MUSIC_0.4.0_amd64.AppImage"
+    // e.g. "OPEN MUSIC_0.4.0_amd64.AppImage"
     const appimage = firstMatch(join(bundle, 'appimage'), '.appimage');
     if (appimage) return appimage;
     // Fallback: a system binary, present only if the app is installed.
     return 'trance-music';
   }
   if (PLATFORM === 'darwin') {
-    // e.g. "TRANCE MUSIC.app"
+    // e.g. "OPEN MUSIC.app"
     const app = firstMatch(join(bundle, 'macos'), '.app');
     if (app) return app;
-    return '/Applications/TRANCE MUSIC.app';
+    return '/Applications/OPEN MUSIC.app';
   }
   if (PLATFORM === 'win32') {
-    // e.g. "TRANCE MUSIC_0.4.0_x64_en-US.msi" -- was pinned to 0.3.0 while
+    // e.g. "OPEN MUSIC_0.4.0_x64_en-US.msi" -- was pinned to 0.3.0 while
     // the app is at 0.4.0, so this branch never matched either.
     const msi = firstMatch(join(bundle, 'msi'), '.msi');
     if (msi) return msi;
-    return 'C:\\Program Files\\TRANCE MUSIC\\trance-music.exe';
+    return 'C:\\Program Files\\OPEN MUSIC\\trance-music.exe';
   }
   throw new Error(`Unsupported platform: ${PLATFORM}`);
 }

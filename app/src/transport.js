@@ -247,7 +247,7 @@ export const shareBtn = document.querySelector('[title="Share Session"]');
 shareBtn?.addEventListener("click", async () => {
   const t = queue[queueIndex]?.track;
   const url = t ? `${location.origin}${location.pathname}#track=${t.id}` : location.href;
-  const data = { title: "TRANCE MUSIC", text: t ? `Listening to "${t.title}"` : "TRANCE MUSIC", url };
+  const data = { title: "OPEN MUSIC", text: t ? `Listening to "${t.title}"` : "OPEN MUSIC", url };
   try {
     if (navigator.share) {
       await navigator.share(data);

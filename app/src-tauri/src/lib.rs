@@ -1,4 +1,4 @@
-//! TRANCE MUSIC — application shell.
+//! OPEN MUSIC — application shell.
 //!
 //! Owns: IPC command surface, DTO shaping, app lifecycle (window + proxy
 //! port binding). Nothing here talks HTTP directly — that is `jiosaavn.rs`
@@ -781,7 +781,7 @@ async fn promote_song(id: String, state: State<'_, Arc<AppState>>) -> Result<boo
             Ok(true)
         }
         Err(e) => {
-            eprintln!("[TRANCE MUSIC] promote {id} failed: {e}");
+            eprintln!("[OPEN MUSIC] promote {id} failed: {e}");
             // Put the old row back so the vault keeps playing what it had.
             let _ = state.record(entry);
             Err(e)
@@ -880,7 +880,7 @@ async fn save_to_vault(
                 (opus, bytes, sha, format!("opus{target}"))
             }
             Err(e) => {
-                eprintln!("[TRANCE MUSIC] keeping the source rendition: {e}");
+                eprintln!("[OPEN MUSIC] keeping the source rendition: {e}");
                 (path, written, sha, chosen.quality.clone())
             }
         }
@@ -902,7 +902,7 @@ async fn save_to_vault(
         if let Some(channel) = progress {
             let _ = channel.send(msg);
         }
-        eprintln!("[TRANCE MUSIC] {id} dedupes to vault entry {}", dup.id);
+        eprintln!("[OPEN MUSIC] {id} dedupes to vault entry {}", dup.id);
         return Ok(DownloadOutcome {
             path: dup.path,
             sha256: sha,
@@ -937,7 +937,7 @@ async fn save_to_vault(
         let _ = channel.send(msg);
     }
 
-    eprintln!("[TRANCE MUSIC] saved {written} bytes to {}", path.display());
+    eprintln!("[OPEN MUSIC] saved {written} bytes to {}", path.display());
     Ok(DownloadOutcome {
         path: path.display().to_string(),
         sha256: sha,
@@ -1151,7 +1151,7 @@ fn read_import_file(app: tauri::AppHandle) -> Result<String, String> {
     let picked = app
         .dialog()
         .file()
-        .add_filter("TRANCE MUSIC backup", &["json"])
+        .add_filter("OPEN MUSIC backup", &["json"])
         .blocking_pick_file();
     let path = picked
         .as_ref()
@@ -1460,7 +1460,7 @@ fn autostart_set(on: bool) -> Result<(), String> {
         let (file, body) = (
             PathBuf::from(&home).join(".config/autostart/trance-music.desktop"),
             format!(
-                "[Desktop Entry]\nType=Application\nName=TRANCE MUSIC\nExec={}\n",
+                "[Desktop Entry]\nType=Application\nName=OPEN MUSIC\nExec={}\n",
                 exe.display()
             ),
         );
@@ -1500,7 +1500,7 @@ fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&play, &next, &prev, &show, &quit])?;
     TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("TRANCE MUSIC")
+        .tooltip("OPEN MUSIC")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -1773,7 +1773,7 @@ pub fn run() {
             update::update_rollback
         ])
         .run(tauri::generate_context!())
-        .expect("error while running TRANCE MUSIC");
+        .expect("error while running OPEN MUSIC");
 }
 
 #[cfg(test)]

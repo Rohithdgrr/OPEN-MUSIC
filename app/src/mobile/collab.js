@@ -47,7 +47,7 @@ export function sharePlaylist(pl) {
   // shareThing lives in shared.js — dynamic import keeps collab.js out of
   // the critical boot path and avoids any import-order surprises.
   import("./shared.js")
-    .then((m) => m.shareThing({ title: `${title} — TRANCE MUSIC`, text: `${title} · ${pl.tracks.length} tracks. Open TRANCE MUSIC → Settings → Import shared playlist and paste this:\n\n${code}` }))
+    .then((m) => m.shareThing({ title: `${title} — OPEN MUSIC`, text: `${title} · ${pl.tracks.length} tracks. In OPEN MUSIC → Settings → Import shared playlist and paste this:\n\n${code}` }))
     .catch(() => {
       try {
         if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => toast("Share code copied", 3000, "success"));

@@ -2,9 +2,9 @@
 
 <div align="center">
 
-<img src="app/src/logo.png" alt="TRANCE MUSIC logo" width="112" />
+<img src="app/src/logo.png" alt="OPEN MUSIC logo" width="112" />
 
-# TRANCE MUSIC
+# OPEN MUSIC
 
 **A bit-perfect streaming music player for Windows, Linux and macOS — Tauri 2 shell, Rust core, zero-build vanilla-JS front end.**
 
@@ -27,11 +27,11 @@
 *A 60-second tour of the v0.3.0 Windows build — Home, search, live playback with
 synced lyrics, Library, charts, album and artist pages, and the offline vault.*
 
-![TRANCE MUSIC home screen](docs/screenshots/01-home.png)
+![OPEN MUSIC home screen](docs/screenshots/01-home.png)
 
 ## What this is
 
-TRANCE MUSIC is a desktop music player that streams from JioSaavn through a
+OPEN MUSIC is a desktop music player that streams from JioSaavn through a
 local relay, keeps an offline vault on disk, and ships as one signed,
 self-updating package for Windows, Linux and macOS.
 
@@ -57,8 +57,10 @@ The interesting part is not the chrome — it is what happens underneath:
 - **Five quality tiers** — 96 kbps to 320 kbps FLAC/DSD paths; every track
   resolves to a complete file, never a preview.
 - **Offline vault** — save anything to the app's own data folder
-  (`%LOCALAPPDATA%\TRANCE MUSIC` on Windows, `~/.local/share/TRANCE MUSIC` on
-  Linux, `~/Library/Application Support/TRANCE MUSIC` on macOS) and play it with
+  (`%LOCALAPPDATA%\com.openmusic.trancemusic\TRANCE MUSIC` on Windows,
+  `~/.local/share/com.openmusic.trancemusic/TRANCE MUSIC` on Linux,
+  `~/Library/Application Support/com.openmusic.trancemusic/TRANCE MUSIC` on
+  macOS) and play it with
   the network off; the Downloads view filters, searches, reveals and deletes.
   A vault left behind in `Downloads/TRANCE MUSIC` by an older build is migrated
   across once on first launch.
@@ -352,9 +354,10 @@ maintainer's machine, not the runner. The *update* package is signed with the
 project release key and the app verifies it before running anything.
 
 **Where do my downloads live?**
-In the app's own data folder — `%LOCALAPPDATA%\TRANCE MUSIC` on Windows,
-`~/.local/share/TRANCE MUSIC` on Linux, `~/Library/Application Support/TRANCE
-MUSIC` on macOS. The Downloads view lists them, plays them with no network at
+In the app's own data folder — `%LOCALAPPDATA%\com.openmusic.trancemusic\TRANCE
+MUSIC` on Windows, `~/.local/share/com.openmusic.trancemusic/TRANCE MUSIC` on
+Linux, `~/Library/Application Support/com.openmusic.trancemusic/TRANCE MUSIC` on
+macOS. The Downloads view lists them, plays them with no network at
 all, and can reveal or delete them. Older builds saved to
 `Downloads/TRANCE MUSIC`; that folder is migrated automatically on first launch.
 

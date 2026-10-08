@@ -46,7 +46,7 @@ try {
 } catch (err) {
   diag("proxy base", false, String(err));
 }
-diag("boot", true, "TRANCE MUSIC ready");
+diag("boot", true, "OPEN MUSIC ready");
 
 // Seed the catalog so every control has real data on first paint:
 // the box opens on the last query that was searched, not a blank slot.

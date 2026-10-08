@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TRANCE MUSIC — one-shot build. Builds whatever this machine can make and
+# OPEN MUSIC — one-shot build. Builds whatever this machine can make and
 # says plainly what needs another machine or CI.
 #
 #   ./build.sh            verify + every target available here
