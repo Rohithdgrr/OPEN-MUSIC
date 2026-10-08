@@ -1,6 +1,8 @@
 # Jam unified invite URI — design spec (sub-project A)
 
-**Status:** approved design, ready for planning · **Date:** 2026-10-08
+**Status:** FOLDED IN — superseded by `docs/jam-upgrade.md` §3 (single master
+doc for all seven requests, 2026-10-08). Kept for history; the master doc
+governs. · **Date:** 2026-10-08
 **Series:** this is sub-project **A** of the Jam upgrade series (A unified link →
 B scan-to-join → C sync upgrade → D parity + profile names → E logo → F
 multi-device scale), decomposed from the user's 2026-10-08 request.
