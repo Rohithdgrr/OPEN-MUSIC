@@ -35,6 +35,10 @@ exit code, or URL). Unverified entries are marked `HYPOTHESIS`.
    (b) confirm every commit and author is intended, (c) only then push,
    (d) if an unintended push lands, **report it immediately and do not
    rewrite history** — force-push is forbidden by rule 2.
+9. **Recommended options are pre-approved** (2026-10-08): whenever a question
+   offers a "(Recommended)" option, take it and proceed — do not wait for the
+   user to confirm. Only stop for genuinely open choices with no recommended
+   path.
 
 ## 2026-10-06 — Social + Jam landed on both surfaces (verified)
 
