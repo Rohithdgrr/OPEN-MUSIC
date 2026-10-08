@@ -66,7 +66,7 @@ jobs:
           # build. Absent = the app compiles and runs unconfigured.
           TRANCE_MUSIC_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
       - name: Upload bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: bundle-${{ matrix.artifact }}
           path: app/src-tauri/target/release/bundle
