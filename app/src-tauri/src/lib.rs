@@ -1572,11 +1572,19 @@ pub fn run() {
     // and the shortcut plugin are desktop-only — their Rust API does not
     // exist on mobile (Android gets single-task semantics from the OS and
     // has no global shortcuts).
+    // `TM_MULTI_INSTANCE=1` opts out: two real windows on one PC, which is
+    // how the Windows↔Windows Jam pair is tested (docs/listen-together.md
+    // §13.8). Production launches never set it.
     #[cfg(desktop)]
-    let builder = builder
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let builder = if std::env::var("TM_MULTI_INSTANCE").is_ok_and(|v| v == "1") {
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
+    };
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         // Signed updates: pubkey + manifest endpoint live in tauri.conf.json.
         .plugin(tauri_plugin_updater::Builder::new().build())
