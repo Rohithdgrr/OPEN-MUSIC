@@ -240,6 +240,42 @@ Chat check:
 Failure reporting: paste what the Jam pane showed (status line text) and any
 `error` code — the UI shows server words unchanged, so the code is enough.
 
+### Standing two-device gate (automated — verified 2026-10-08)
+
+The sequences below are the exact commands Tasks 6–7 of
+`docs/jam-stabilization-plan.md` ran green; each row's count is the pass bar.
+They are self-contained (each establishes its own precondition), run from the
+repo root in PowerShell, and cover **both directions** plus the D4 pause and D5
+bye regression checks. Nothing here pushes (AGENTS rule 1).
+
+| # | Command | Transport exercised | Expected |
+|---|---|---|---|
+| 1 | `npm run tauri dev` — leave running; CDP needs `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` set **before** launch | — | window up; `Invoke-RestMethod http://127.0.0.1:9222/json/list` lists the page |
+| 2 | `node app/tests/live-desktop.mjs` | in-process node guest ↔ desktop server (loopback) | `---- desktop live: 32 pass / 0 fail` |
+| 3 | `npm run tauri -- android build --debug --target x86_64`, then `adb install -r app\src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk` | — | `BUILD_EXIT=0`, `Success` |
+| 4 | `node app/tests/live-android-emulator.mjs` | adb-forward loopback (raw node client vs the device's own server) | `---- 28 pass / 0 fail` |
+| 5 | `node app/tests/live-lan-join.mjs` | **real LAN** `ws://<pc-ip>:8787` — removes all adb tunnels first | every check PASS, `LAN-JOIN exit=0` — incl. guest `room_info → idle` + rejoin after host bye (D5) |
+| 6 | `node app/tests/live-reverse-pair.mjs` | adb-forward (Android host ↔ desktop guest) | `REVERSE-PAIR exit=0` (19 checks) — incl. D4 pause/resume broadcast and the desktop-side D5 revert + rejoin |
+
+Known traps (each cost real time during Tasks 6–7):
+- **CLI skew (P28):** `npx tauri …` from the repo root resolves the *global*
+  CLI (2.11.2 here) and dies with `npm.bat CreateProcess error=2`. Always
+  `npm run tauri -- …` (local 2.12.0).
+- **CDP:** the WebView2 env var must be set before `tauri dev` starts; it *does*
+  propagate through `npm run tauri dev` (the old "CDP cannot attach through
+  tauri dev" note is stale for this setup — falsified 2026-10-08). A second
+  app launch is swallowed by `tauri-plugin-single-instance` and never appears
+  in `/json/list`.
+- **PowerShell:** `$env:NAME="x"` (no `export`); a `NativeCommandError`
+  claiming `exit code 1` can be spurious — re-check `$LASTEXITCODE`. `>`
+  re-encodes bytes (UTF-16), so never capture binary output through it.
+- **The live probes are hand-run**, not part of `npm test` (its glob only
+  picks `tests/**/*.test.mjs`); never chain a stage-check and `git push` in
+  one command (AGENTS rule 8).
+- **Transport is asserted per row:** rows 2/4 are loopback-only and prove the
+  protocol; row 5 is the only *real-LAN* path (Review Focus 1 — cleartext
+  config scopes to `127.0.0.1`, so a LAN join is the one untested surface).
+
 ## 11. Milestones
 
 | # | Scope | State |
