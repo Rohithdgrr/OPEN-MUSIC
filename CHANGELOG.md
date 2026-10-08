@@ -14,6 +14,17 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ## [Unreleased]
 
+### Added · Jam upgrade (sub-project A of `docs/jam-upgrade.md`)
+- **Unified invite link:** one canonical string
+  `trancemusic://join?host=…&port=…&code=…` is now the invite the invite row,
+  the Copy button and both QR surfaces all show — UI, clipboard and backend
+  agree on a single artifact. `room_open`/`room_info` gain an additive
+  `invite` field (`urls`/`code` unchanged).
+- New **`room_join_uri {uri, name}`** command: Rust validates the pasted link
+  (canonical *or* legacy `ws://ip:port · CODE`) before any mode change;
+  `room_join {addr, code, name}` remains as a thin legacy wrapper. Both join
+  sheets collapse to a single paste field.
+
 ### Changed · Brand → **OPEN MUSIC** (user-facing strings only)
 - The platform now reads **OPEN MUSIC** on both surfaces (`TRANCE MUSIC` on
   desktop, `REON` on mobile): window/installer/launcher `productName`, both

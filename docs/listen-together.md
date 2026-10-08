@@ -131,13 +131,14 @@ Tauri commands (Rust, `room.rs`):
 
 | Command | Args → returns |
 |---|---|
-| `room_open` | `{port?}` → `{port, code, urls: ["ws://192.168.1.5:8787", …], members}` |
-| `room_join` | `{addr, code, name}` → `{ok}` (errors arrive as events) |
+| `room_open` | `{port?}` → `{port, code, urls: ["ws://192.168.1.5:8787", …], invite, members}` — `invite` is the canonical join link `trancemusic://join?host=…&port=…&code=…` (empty when no LAN address was detected) |
+| `room_join_uri` | `{uri, name}` → `{ok}` (errors arrive as events) — `uri` is the canonical invite link; a legacy `ws://ip:port · CODE` line parses too. The link is validated **in Rust** before any mode change |
+| `room_join` | **legacy** `{addr, code, name}` → `{ok}` — kept for old links and probes; builds the canonical URI and runs the same join path |
 | `room_chat` | `{text}` → `{ok}` |
 | `room_playback` | `{playing, trackId, title, artist, positionMs}` → `{ok}` |
 | `room_report` | `{driftMs}` → `{ok}` |
 | `room_close` | `—` → `{ok}` (host: shuts server down; guest: leaves) |
-| `room_info` | `—` → current role/status snapshot: `{role, port, code, urls}` (`urls` empty unless this device is hosting; recomputed live, so a re-attached UI can re-offer the same invite) |
+| `room_info` | `—` → current role/status snapshot: `{role, port, code, urls, invite}` (`urls`/`invite` empty unless this device is hosting; recomputed live, so a re-attached UI can re-offer the same invite) |
 
 Event `room://msg` carries one protocol frame per emit
 (`joined`/`presence`/`chat`/`history`/`playback`/`error`/`bye`), so
@@ -153,10 +154,10 @@ path gets tested for real with `cargo test` on this machine.
 `app/src/room.js` is DOM-free and pure (style: `sidecar.js`), unit-testable
 in Node with no sockets. Frozen API:
 
-- `createRoomState()` → `{role: "idle"|"host"|"guest", status: "idle"|"connecting"|"hosting"|"joined", code, selfId, urls, members, chat, historyLoaded, playback, driftMs, error}`
+- `createRoomState()` → `{role: "idle"|"host"|"guest", status: "idle"|"connecting"|"hosting"|"joined", code, selfId, urls, invite, members, chat, historyLoaded, playback, driftMs, error}`
 - `reduceRoom(state, frame)` → **new** state; never mutates the input
 - `memberCount(state)` → `max(1, members.length)` — honest "1" before any frame
-- `inviteText(state)` → `"<url> · <CODE>"` when hosting, `""` otherwise
+- `inviteText(state)` → the canonical invite URI (`state.invite`) when hosting with an address; falls back to `"<url> · <CODE>"` and then the bare code for a host without a detected address; `""` otherwise. Never renders `undefined`
 - `worstDriftMs(state)` → max `|driftMs|` across non-host members, else `null`
 
 Frame semantics (additions to §3; §8 truthfulness rules all apply):
@@ -302,9 +303,9 @@ navigation; header comment records the source).
 
 | Design element | Wired to |
 |---|---|
-| `modeToggleBtn` (Solo ↔ Social Jam) | `room.js` state: no room → Solo; `room_open` → Social (host); `room_join` → Social (guest) |
+| `modeToggleBtn` (Solo ↔ Social Jam) | `room.js` state: no room → Solo; `room_open` → Social (host); `room_join_uri` → Social (guest) |
 | `jamSessionBanner` code · count · ping | `joined`/`presence` frames — server-derived code, `memberCount(state)`; **no placeholder ping** |
-| `copyUriBtn` invite | `inviteText(state)` → `ws://<lan-ip>:<port> · CODE` |
+| `copyUriBtn` invite | `inviteText(state)` → canonical `trancemusic://join?host=<lan-ip>&port=<port>&code=<CODE>` |
 | Queue tab | local queue via `player.js queueUpNext()`. Social mode: host appends normally; **guest append is disabled with a stated reason** (M1 has no queue frame — never imply sync we don't have) |
 | Chat tab | `room_chat` → `history`/`chat` frames → shared reducer |
 | Jam Data tab | **honest telemetry only**: real role, real code, real member count, measured `driftMs` from §4. The design's placeholder metrics (bitrate, jitter, buffer %, loss, RTT, "DEMOCRATIC NTP") are **not shown** — we don't measure them (§8) |
@@ -374,9 +375,10 @@ New Tailwind classes require `npm run css` — mobile ships a compiled
 (Start a Jam / Join a Jam / Cancel). Start → `room_open` → host state
 (`role:"host"`, code/urls from the return value — the host gets no `joined`
 frame by design; it hears every broadcast through `host_sink`). Join → an
-input sheet accepts a **pasted invite line** (`ws://ip:port · CODE`, smart
-split) or address + code typed separately; `room_join` uppercases/trims the
-code and refuses non-LAN addresses server-side. Leaving → `room_close` →
+input sheet accepts **one pasted invite link** — the canonical
+`trancemusic://join?host=…&port=…&code=…` (a legacy `ws://ip:port · CODE`
+line still parses) — and joins through `room_join_uri`, which validates the
+link in Rust and refuses non-LAN addresses server-side. Leaving → `room_close` →
 `bye` → Solo.
 
 **Guest track resolution (M1):** match `playback.trackId` against the local
@@ -451,8 +453,8 @@ every byte goes through `room_*` IPC and comes back as a `room://msg` frame.
 | Trigger | Call / effect | Honest fallback |
 |---|---|---|
 | entering Social | `room_info` → adopt or reset the room (a reload can leave a stale server) | idle → Solo-style placeholder text, nothing enabled |
-| **Open room** (jam pane) | `room_open {port?, name}` → `{port, code, urls, members}` | error string shown verbatim in the join note; slots stay `NO ROOM` |
-| **Join room** (C-4 form) | `room_join {addr, code, name}`; the outcome arrives as frames | `bad_code`/`connect_failed` etc. verbatim; the button re-enables |
+| **Open room** (jam pane) | `room_open {port?, name}` → `{port, code, urls, invite, members}` | error string shown verbatim in the join note; slots stay `NO ROOM` |
+| **Join room** (C-4 form) | `room_join_uri {uri, name}` — one pasted link; `room_join {addr, code, name}` stays as the legacy entry point; the outcome arrives as frames | `bad_code`/`connect_failed` etc. verbatim; the button re-enables |
 | `play`/`pause`/`seeked`/track change **+ 1 s tick while playing** (host) | `room_playback {playing, trackId, title, artist, positionMs}` | a guest never calls it — the transport is disabled with a stated reason |
 | chat send | `room_chat {text}`; the line is drawn **only** from the echoed `chat` frame | no room → the local echo of §3a, unchanged |
 | each 1 s tick (guest) | `room_report {driftMs}` from `syncDecision()` (§13.3) | no `playback` frame yet → no report, `#jam-sync-value` stays `—` |
@@ -485,7 +487,7 @@ DOM and `onPaint` (from `player.js`) for repaints.
 |---|---|
 | `modeToggleBtn` in Solo | choice sheet: Start a Jam / Join a Jam / Cancel (§12) |
 | Start | `room_open` → host state; `jamSessionBanner`, role badge and invite fill in |
-| Join | sheet accepting a pasted invite line (`ws://ip:port · CODE`) or addr + code → `room_join` |
+| Join | sheet with **one paste field** for the canonical invite link (legacy `ws://ip:port · CODE` line also parses) → `room_join_uri` |
 | host transport | enabled; broadcasts on play/pause/seek/track change + 1 s tick (§4, C-5) |
 | guest transport | disabled with a stated reason; applies incoming `playback` (§12 guest resolution) and reports `driftMs` per tick |
 | chat | `room_chat` → `history`/`chat` frames; rendered from frames only |
