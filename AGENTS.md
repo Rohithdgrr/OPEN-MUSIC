@@ -1034,3 +1034,49 @@ streaming and playing but nothing is audible.
 Status: ✅ fixed + verified live (meter > 0) ✅ docs (P36, CHANGELOG) ⏳
 nothing committed or pushed (rule 1) — emulator left running with the fixed
 APK installed and a track playing.
+
+---
+
+## 2026-10-08c — Jam stabilization pass: Tasks 6–9 complete (plan executed inline)
+
+Executed `docs/jam-stabilization-plan.md` (spec `a27943e`, plan `102cf73`);
+Tasks 1–5 were committed earlier in this chain. What closed today:
+
+**D5 — the pass's one code defect (fixed, `d1752ef`):** after the host closed a
+room, the guest's `guest_pump` forwarded the server `bye` and then waited forever
+(axum's graceful drain never closes the socket) → mode stuck at `Mode::Guest` →
+every later join refused verbatim "Leave the current room before joining another."
+while every surface read Solo — same toast as P32/D2, different trigger. Fix: pump
+ends on server `bye` (`PumpEnd::ServerBye`), mode reverted *before* the frame
+reaches the UI, the server's own reason forwarded (single toast), socket closed.
+Docs-first: `jam-audit-findings.md` §C, `listen-together.md` §12 D5 quote,
+mobile `09-problems-solutions.md` P37. TDD: 3 duplex pump tests; the bye test was
+RED at a 2.01 s timeout → GREEN.
+
+**Audit verdicts adopted (`jam-audit-findings.md`):** A1 KNOWN-LIMITATION
+(encode-side GPU decode) · A2 OK (join spinner lives) · A3 OK · B1 OK
+(live-validated) · B2 UNKNOWN → first-checklist `docs/jam-apple-field-runbook.md`
+· D5 DEFECT → fixed. Stale-marker grep expectation resolved: the 5 remaining hits
+are this effort's own spec/plan/quotes — zero in feature docs.
+
+**Live evidence (Task 7):** `live-desktop.mjs` 32/0 · `live-android-emulator.mjs`
+28/0 (rebuilt APK; packaged `libapp_lib.so` byte-matches the target build) ·
+`live-lan-join.mjs` ALL PASS with REAL LAN (tunnels removed, nc RC=0; guest
+`room_info` after bye now `{"role":"idle"}` — was stuck `guest` — rejoin OK) ·
+`live-reverse-pair.mjs` 19/0 (Android host ↔ desktop guest; D4 pause/resume
+broadcast, D5 desktop revert + rejoin). Final gates: npm 250/0, eslint clean,
+fmt clean, clippy clean, `OP_OFFLINE=1 cargo test --lib` 185/185.
+
+**Task 8:** standing two-device gate table in `listen-together.md` §10 (6
+commands + expected counts + traps); `docs/jam-apple-field-runbook.md` (Apple =
+build-verified only — ATS / Local Network / invite / backgrounding checks first,
+results table unfilled); probes copied to `app/tests/live-lan-join.mjs` +
+`live-reverse-pair.mjs` (hand-run; excluded from `npm test` by the `*.test.mjs`
+glob).
+
+**Files:** `room.rs` (pump extraction + fix + 3 tests), 4 docs, CHANGELOG, 2 new
+probes, this entry. Commits: `d1752ef` (fix), `0bcf04b` (runbooks), then this
+docs commit — **committed locally, not pushed (rule 1)**. Chain: `6522ca7`
+(origin/main) + 12 local commits. Note: another session's `2026-10-08b` push
+record (publishing `6522ca7`) stays uncommitted in the working tree — split out
+of this commit per the 07i hunk-split precedent.

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to TRANCE MUSIC are recorded here.
+All notable changes to OPEN MUSIC are recorded here.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -13,6 +13,27 @@ Work landing after the latest tag sits in `Unreleased`.
 ---
 
 ## [Unreleased]
+
+### Changed · Brand → **OPEN MUSIC** (user-facing strings only)
+- The platform now reads **OPEN MUSIC** on both surfaces (`TRANCE MUSIC` on
+  desktop, `REON` on mobile): window/installer/launcher `productName`, both
+  window titles, in-app wordmarks, About & Legal copy, widget, tray tooltip,
+  file-picker filter, Linux desktop entry, OAuth success pages, share sheets and
+  share-card badges, the diagnostics line and the updater release note. Full
+  file+line inventory: `docs/branding/open-music-string-rename.md`.
+- Deliberately **unchanged**: app id `com.openmusic.trancemusic`, the backup
+  format id `trance-music-backup`, the vault folder `<data>/TRANCE MUSIC` and
+  its legacy `Downloads/TRANCE MUSIC` source, the keyring service names, the
+  `TRANCE-SHARE:` codec, the `TRANCE_MUSIC_*_CLIENT_ID` build env vars, the
+  `trance-music` binary name and the Windows autostart registry value. Renaming
+  any of those would reject existing backups, orphan saved logins or strand the
+  user's offline library.
+- CI moved with `productName`: `macos.yml` bundle paths (6 sites),
+  `release.yml` artifact name and the smoke test's fallback install paths.
+- Known residuals: the icon art still carries the old wordmark
+  (`app/src/logo.png`, `app/src-tauri/icons/*`), the Authenticode publisher is
+  still `CN=TRANCE MUSIC`, and the Android launcher label only refreshes when
+  `gen/android` is re-inited.
 
 ### Social · Listen Together (desktop **and** mobile)
 - Both surfaces now drive the in-app Rust room server — `room_open`, `room_join`,
@@ -66,6 +87,45 @@ Work landing after the latest tag sits in `Unreleased`.
   while `room_open` returned the `ws://` list, so a window re-attaching to an
   open room could not re-offer the address it was serving on. `room_info` now
   returns `urls` too.
+- **Guest track resolution (D1) + role-gated crossfade/shortcuts**
+  (`6f2f302`): a guest whose device lacks the host's track now falls back to
+  the catalog (`resolve_song`) instead of stalling at `NOT ON THIS DEVICE`;
+  crossfade is disabled while a room is live, and every transport shortcut
+  checks the room role first — no guest-driven desync.
+- **D5 — after the host ended the jam, the guest could never join another
+  room** (`d1752ef`, `room.rs` `guest_pump`): the pump treated the server's
+  `bye` like any frame and kept waiting, but after `room_close` the server
+  only *drains* — so the pump never ended, the mode stayed `Mode::Guest`,
+  and the next join was refused verbatim
+  `Leave the current room before joining another.` while every surface read
+  Solo (same toast as P32, different trigger). The pump now ends on a server
+  `bye`, reverts the mode **before** the frame reaches the UI (D2's ordering
+  rule), forwards the server's own reason (one toast, no synthetic second),
+  and closes the socket so the host's drain completes. Covered by three
+  duplex-socket unit tests (the bye case failed RED at a 2.01s timeout
+  before the fix) plus the live LAN-rejoin and reverse-pair probes.
+
+### Added
+- **Standing two-device gate** — `docs/listen-together.md` §10 now lists the
+  exact Task 6/7 commands with pass counts and known traps (P28 CLI skew,
+  CDP env var, PowerShell pitfalls), including two new hand-run probes:
+  `app/tests/live-lan-join.mjs` (real-LAN guest join with all adb tunnels
+  removed + the D5 rejoin regression) and `app/tests/live-reverse-pair.mjs`
+  (Android host ↔ desktop guest: chat both ways, playback follow, D4 pause
+  broadcast, D5 desktop revert).
+- **Apple field runbook** — `docs/jam-apple-field-runbook.md`: standalone
+  macOS + iPhone steps with the iOS unknowns (ATS on the relay, Local Network
+  permission, invite IP, backgrounding) as check-first items and a results
+  table. iOS stays *build-verified only* until that table is filled.
+- **Jam audit findings** — `docs/jam-audit-findings.md`: audit A
+  (bind/invite derivation, listener reconnect, platform `cfg`), audit B
+  (Android cleartext map, iOS/ATS unknowns), and the live-verification
+  defect D5 with its TDD record.
+
+### CI
+- `ios.yml` runs `npm test` (frontend suites incl. the jam ones) before the
+  iOS build. **Effect pending push** — workflow changes only take effect on
+  GitHub, and nothing is pushed per repo rule 1.
 
 ### Verified live (this run, real apps — not stubs)
 - **Desktop, 32/32**: `node app/tests/live-desktop.mjs` against a real
