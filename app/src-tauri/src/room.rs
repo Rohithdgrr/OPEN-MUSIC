@@ -582,11 +582,14 @@ async fn serve(
 
 // -------------------------------------------------------------- guest task --
 
-/// The guest socket loop. `join_frame` goes out first; after that every
+/// The guest socket task. `join_frame` goes out first; after that every
 /// inbound text frame is forwarded to the window as `room://msg` and every
 /// outbound string from `rx` goes to the server. Ends with a `bye` unless
-/// the local side closed it deliberately.
-/// Drop the half-open `Mode::Guest` that a failed dial left behind (D2).
+/// the local side closed it deliberately — including the host's own `bye`,
+/// which is shown only after this task has reverted the mode (D5).
+///
+/// Drop the half-open `Mode::Guest` that a failed dial (D2) or a session the
+/// host ended (D5) left behind.
 ///
 /// `room_join` writes the mode *before* connecting, so every early return below
 /// used to leave the backend convinced it was in a room the UI had already
@@ -651,7 +654,53 @@ async fn guest_run(
         return;
     }
 
+    let end = guest_pump(&mut ws, &mut rx, &out).await;
+    // Backend state settles before the window sees any bye (D2/D5 ordering):
+    // on `LocalClosed` `room_close` already replaced the mode with `Idle`, so
+    // this is a guarded no-op; on the other two arms it is what frees this
+    // guest to join another room instead of being refused forever.
+    revert_failed_guest(&app, &own_tx).await;
+    match end {
+        PumpEnd::LocalClosed => {}
+        PumpEnd::ServerBye(frame) => out.send(&frame),
+        PumpEnd::Lost => {
+            // Server went away, or it closed us after an error frame — the UI
+            // keeps the specific error (if any) and shows this only as fallback.
+            out.send(&json!({
+                "t": "bye",
+                "reason": "Connection to the room was lost."
+            }));
+        }
+    }
+}
+
+/// Why `guest_pump` returned.
+#[derive(Debug, PartialEq)]
+enum PumpEnd {
+    /// The local side asked to leave (`room_close` dropped `rx`).
+    LocalClosed,
+    /// The socket died: EOF, error, or a close frame from the server.
+    Lost,
+    /// The server said `bye` (host closed the room). The frame is handed
+    /// back for the caller to deliver *after* the mode has reverted —
+    /// backend state and the frame the UI reacts to must agree (D2/D5).
+    ServerBye(Value),
+}
+
+/// Drive one connected guest socket: strings from `rx` go to the server,
+/// inbound text frames go to the window, until the local side leaves or the
+/// socket dies. Split out of `guest_run` so the end conditions are unit
+/// testable (`guest_pump_*` tests at the bottom of this file).
+async fn guest_pump<S>(
+    ws: &mut tokio_tungstenite::WebSocketStream<S>,
+    rx: &mut mpsc::UnboundedReceiver<String>,
+    out: &Sink,
+) -> PumpEnd
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
     let mut local_close = false;
+    let mut server_bye: Option<Value> = None;
     loop {
         tokio::select! {
             item = rx.recv() => match item {
@@ -669,6 +718,17 @@ async fn guest_run(
             incoming = ws.next() => match incoming {
                 Some(Ok(ClientMessage::Text(t))) => {
                     if let Ok(v) = serde_json::from_str::<Value>(t.as_ref()) {
+                        if v.get("t").and_then(Value::as_str) == Some("bye") {
+                            // D5: the host said goodbye. After `room_close` the
+                            // server only drains (axum graceful shutdown) and
+                            // never closes the socket itself — waiting for EOF
+                            // would hang this pump forever with the backend
+                            // still `Mode::Guest`. Close our end and let the
+                            // caller settle state before the frame is shown.
+                            let _ = ws.close(None).await;
+                            server_bye = Some(v);
+                            break;
+                        }
                         out.send(&v);
                     }
                 }
@@ -678,13 +738,12 @@ async fn guest_run(
             },
         }
     }
-    if !local_close {
-        // Server went away, or it closed us after an error frame — the UI
-        // keeps the specific error (if any) and shows this only as fallback.
-        out.send(&json!({
-            "t": "bye",
-            "reason": "Connection to the room was lost."
-        }));
+    if let Some(v) = server_bye {
+        PumpEnd::ServerBye(v)
+    } else if local_close {
+        PumpEnd::LocalClosed
+    } else {
+        PumpEnd::Lost
     }
 }
 
@@ -1049,6 +1108,110 @@ mod tests {
 
     fn join_frame(code: &str, name: &str) -> Value {
         json!({ "t": "join", "v": 1, "code": code, "name": name })
+    }
+
+    /// Build both halves of an in-memory guest socket pair: the pump runs on
+    /// the client end, the test plays the server on the other one. Returns
+    /// `(client ws, server ws, guest tx, guest rx, sink tx, sink rx)`.
+    async fn duplex_pump() -> (
+        tokio_tungstenite::WebSocketStream<tokio::io::DuplexStream>,
+        tokio_tungstenite::WebSocketStream<tokio::io::DuplexStream>,
+        mpsc::UnboundedSender<String>,
+        mpsc::UnboundedReceiver<String>,
+        mpsc::UnboundedSender<String>,
+        mpsc::UnboundedReceiver<String>,
+    ) {
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let ws = WebSocketStream::from_raw_socket(
+            client_io,
+            tokio_tungstenite::tungstenite::protocol::Role::Client,
+            None,
+        )
+        .await;
+        let server = WebSocketStream::from_raw_socket(
+            server_io,
+            tokio_tungstenite::tungstenite::protocol::Role::Server,
+            None,
+        )
+        .await;
+        let (tx, rx) = mpsc::unbounded_channel::<String>();
+        let (sink_tx, sink_rx) = mpsc::unbounded_channel::<String>();
+        (ws, server, tx, rx, sink_tx, sink_rx)
+    }
+
+    /// D5: the host's `bye` must end the pump even though axum's graceful
+    /// drain never closes the socket. Before the fix this timed out — the
+    /// pump forwarded the bye to the window and waited forever with the
+    /// backend mode still `Mode::Guest`, so the next join was refused
+    /// "Leave the current room before joining another."
+    #[tokio::test]
+    async fn guest_pump_ends_promptly_on_server_bye() {
+        let (mut ws, mut server, _tx, mut rx, sink_tx, mut sink_rx) = duplex_pump().await;
+        let out = Sink::Chan(sink_tx);
+
+        // An ordinary frame first — it must still reach the window.
+        server
+            .send(ClientMessage::Text(
+                json!({ "t": "presence", "members": 1 }).to_string().into(),
+            ))
+            .await
+            .unwrap();
+        // The host's goodbye — and then the server just waits: after
+        // `room_close` it drains, it never closes the socket itself.
+        server
+            .send(ClientMessage::Text(
+                json!({ "t": "bye", "reason": "The host closed the room." })
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .unwrap();
+
+        let end = tokio::time::timeout(Duration::from_secs(2), guest_pump(&mut ws, &mut rx, &out))
+            .await
+            .expect("pump must end when the server says bye, drain or not");
+
+        let first = sink_rx.try_recv().expect("presence must be forwarded");
+        let first: Value = serde_json::from_str(&first).expect("sink frame is JSON");
+        assert_eq!(first["t"], "presence");
+        // The bye is *returned* for the caller to deliver after the mode has
+        // reverted (D2/D5 ordering) — the pump never sends a bye itself, so
+        // the window can never see two toasts for one close.
+        assert!(
+            sink_rx.try_recv().is_err(),
+            "pump must not emit its own bye"
+        );
+        match end {
+            PumpEnd::ServerBye(v) => assert_eq!(v["reason"], "The host closed the room."),
+            other => panic!("expected ServerBye, got {other:?}"),
+        }
+    }
+
+    /// `room_close` drops its sender: the pump must report a deliberate
+    /// local close so the caller emits nothing (the command already sent
+    /// `bye{left}` and set `Idle`).
+    #[tokio::test]
+    async fn guest_pump_reports_local_close() {
+        let (mut ws, _server, tx, mut rx, sink_tx, _sink_rx) = duplex_pump().await;
+        let out = Sink::Chan(sink_tx);
+        drop(tx);
+        let end = tokio::time::timeout(Duration::from_secs(2), guest_pump(&mut ws, &mut rx, &out))
+            .await
+            .expect("pump must end when rx closes");
+        assert_eq!(end, PumpEnd::LocalClosed);
+    }
+
+    /// The network disappearing (EOF/error, no bye frame) is `Lost` — the
+    /// caller reverts the mode and sends the fallback bye.
+    #[tokio::test]
+    async fn guest_pump_reports_lost_socket() {
+        let (mut ws, server, _tx, mut rx, sink_tx, _sink_rx) = duplex_pump().await;
+        let out = Sink::Chan(sink_tx);
+        drop(server);
+        let end = tokio::time::timeout(Duration::from_secs(2), guest_pump(&mut ws, &mut rx, &out))
+            .await
+            .expect("pump must end when the socket dies");
+        assert_eq!(end, PumpEnd::Lost);
     }
 
     #[test]

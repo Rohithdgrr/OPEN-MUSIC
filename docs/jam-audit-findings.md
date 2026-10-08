@@ -187,6 +187,68 @@ only).
 
 ---
 
+## C - Live verification defect D5 (found 2026-10-08, Task 7)
+
+Audits A/B were code-read at rest; D5 only shows up when a real host leaves a
+real room with a guest still connected. Found by the Task 7 LAN-join probe
+(emulator guest over real LAN) and confirmed the same evening by the Task 6
+blip probe's raw-socket evidence.
+
+**Symptom.** Host closes the room while a guest is connected. The guest UI
+resets correctly (Solo / NO ROOM — it applies the server's `bye`), but the
+guest **backend stays `Mode::Guest`**: `room_info` → `{role:"guest"}`. The
+next join attempt is refused verbatim —
+`Leave the current room before joining another.` — while every visible surface
+reads Solo, so the guest cannot join *any* room until an app restart (or an
+explicit `room_close`, e.g. the mobile sheet's Leave Jam). This is P32's exact
+toast with a different trigger: P32/D2 covered the *failed dial*; D5 is the
+*successful session ended by the host*.
+
+**Evidence (2026-10-08).**
+- Blip probe (Task 6): host `Leave` → raw guest received
+  `bye` +29 ms (`The host closed the room.`), listener immediately
+  `ECONNREFUSED`, yet the guest socket stayed **open 30 s+** — axum's
+  `with_graceful_shutdown` (`room.rs:579`) drains existing connections and
+  waits for the *client* to close; a server that already said bye never does.
+- LAN probe (Task 7): after the same sequence the mobile guest's backend read
+  `{"role":"guest"}` while the banner read `NO ROOM`; rejoining the fresh
+  room showed `Leave the current room` in the body for ~4.5 s, the join card
+  closed, host stayed `1 online`.
+
+**Root cause.** `guest_run`'s pump loop (`room.rs:655-680`) treats the
+server's `bye` text frame like any other inbound frame: it is forwarded to the
+UI and the loop keeps waiting — but after a host `close()` the server
+broadcasts `bye` (`room.rs:438`) and then only *drains*, so the loop never
+exits, the D2 failure-exit reverts (`:623/:631/:646`) never run, and the
+socket is never dropped. The desktop guest shares this code path; the phone
+was simply where it was observed.
+
+**Fix (this pass).** The pump is extracted into `guest_pump` returning an end
+state (`LocalClosed` / `ServerBye(frame)` / `Lost`). On `ServerBye`,
+`guest_run` reverts the mode to `Idle` **before** forwarding the `bye` to the
+UI (the D2 ordering rule: backend state and the frame the UI reacts to must
+agree), sends the server's own frame (no synthetic fallback → one toast), and
+closes the socket so the host's drain completes. `Lost` keeps the existing
+`Connection to the room was lost.` fallback; `LocalClosed` emits nothing
+(`room_close` already sent `bye{left}` and set `Idle` —
+`room.rs:911` replaces the mode up front, so the revert there is a guarded
+no-op).
+
+**Verification (all 2026-10-08, this pass).** TDD: `cargo test --lib` — the new
+`guest_pump_ends_promptly_on_server_bye` failed RED at the 2.01s timeout against
+the old loop (the standoff reproduced mechanically) and went green with the fix;
+`guest_pump_reports_local_close` and `guest_pump_reports_lost_socket` cover the
+other two end states. Full gates: fmt, clippy `-D warnings`, cargo **185/185**,
+npm **250/0**, lint. End-to-end on rebuilt surfaces: the LAN probe (emulator
+guest, real LAN, no adb tunnels) — after the host left, the guest's `room_info`
+read `{"role":"idle"}` (the pre-fix failure mode was `guest`) and the guest
+rejoined the fresh room, exit 0; the reverse probe (Android host, desktop guest
+over adb forward) — host bye → desktop backend `idle` → rejoined, plus the D4
+pause/resume broadcast regression, 19 pass / 0 fail. The mobile harness stayed
+28/0.
+
+---
+
 ## Summary
 
 | Item | Verdict | Action |
@@ -196,10 +258,12 @@ only).
 | A3 platform cfg surface | OK | none |
 | B1 Android cleartext vs Jam transports | OK — room WS is native, only relay is WebView-cleartext and loopback is permitted | none; Task 7 still runs LAN join as evidence |
 | B2 iOS readiness | UNKNOWN — CI proves build only; ATS + backgrounding unchecked (`gen/apple` absent locally) | runbook checklist (Task 8); `npm test` into `ios.yml` (Task 5) |
+| D5 guest mode after host bye | **DEFECT (live verification, Task 7)** — fixed this pass (§C) | unit test + live rejoin probe |
 
-No DEFECT verdicts anywhere in the audit — nothing in the bind/invite,
+No DEFECT verdicts in the code-read audits (A/B) — nothing in the bind/invite,
 reconnect, platform-cfg, Android-cleartext or iOS-readiness surfaces can be
-shown to break documented behavior at this HEAD. Known gaps are recorded
+shown to break documented behavior at this HEAD. The one DEFECT this effort
+found (D5) only appeared under live two-device verification — see §C. Known gaps are recorded
 honestly above: invite can show a VPN IP on a multi-homed host; IPv6-only
 LANs unsupported; iOS is build-verified only until the Apple runbook is
 executed on hardware (spec D-b). Recoverability holds throughout: the room

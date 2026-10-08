@@ -302,6 +302,25 @@ navigation; header comment records the source).
 > wires `play`/`pause`/`seeked` on the shell `<audio>` — `mobile/jam.js`.
 > Design/fix record: `docs/jam-defects-d1-d4.md`.
 
+> **Defect (D5, found 2026-10-08 — fixed 2026-10-08, Task 7; full evidence in
+> `docs/jam-audit-findings.md` §C).** When the host closes a room while a
+> guest is still connected, the guest UI resets correctly on the server's
+> `bye`, but the guest **backend stays `Mode::Guest`** — `room_info` reads
+> `{role:"guest"}` and the next join is refused verbatim
+> `Leave the current room before joining another.` while every surface reads
+> Solo (same toast as P32/D2, different trigger: that one was a failed dial,
+> this one is a session the host ended). Cause: `guest_run`'s pump
+> (`room.rs:655-680`) forwards the server's `bye` to the UI and keeps
+> waiting, but after `room_close` the server only *drains* (axum graceful
+> shutdown, `room.rs:579`) and never closes the socket — so the pump never
+> ends, the D2 failure-exit reverts never run, and the guest's socket lingers
+> (observed open 30 s+ in the Task 6 blip probe). **Fix:** the pump now ends
+> on a server `bye` (`guest_pump` → `PumpEnd::ServerBye`), the mode is
+> reverted to `Idle` *before* the `bye` reaches the UI (D2's ordering rule),
+> the server's own frame is forwarded (no synthetic second toast), and the
+> socket is closed so the host's drain completes. Affects desktop and mobile
+> guests alike — both run this one Rust path.
+
 **Shared code:** one reducer for both surfaces — `app/src/room.js` (contract
 §6a) imported by desktop `social.js` and mobile
 `screens/nowplaying.js`/`jam.js`. Mobile sync drives the same `<audio>`
