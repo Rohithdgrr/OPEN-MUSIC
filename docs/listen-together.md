@@ -70,6 +70,7 @@ a `t` (type) and `v: 1`.
 | `chat` | `text` (≤500 chars) | rate-limited 5/10s; empty text rejected |
 | `playback` | `playing`, `trackId`, `title`, `artist`, `positionMs` | **host only**; server rejects with `not_host` otherwise. Also serves as the 1 s sync tick |
 | `report` | `driftMs` | guest's measured drift; relayed in `presence` |
+| `queue` | `tracks[{id,title,artist}]` (≤10) | **host only**; up-next snapshot sent on change (track switch, enqueue, reorder, room open); server caches it and replays to late joiners; guests refused like `playback` |
 | `leave` | — | polite disconnect |
 
 ### Server → client
@@ -81,6 +82,7 @@ a `t` (type) and `v: 1`.
 | `chat` | `from{id,name}`, `text`, `ts` | includes the author's own echo, so the UI renders exactly one path |
 | `history` | `msgs[]` | last 50 room messages, sent right after `joined` |
 | `playback` | `playing`, `trackId`, `title`, `artist`, `positionMs`, `at` | `at` = server receive time (ms), the guest's timeline anchor |
+| `queue` | `tracks[{id,title,artist}]`, `at` | host's up-next snapshot (current track excluded — `playback` already carries it); guests render it **read-only**, never as playback |
 | `error` | `code`, `message` | shown to the user **verbatim** (`bad_code`, `not_host`, `room_full`, `rate_limited`) |
 | `bye` | `reason` | room closed / host left |
 
@@ -121,6 +123,20 @@ Host-authoritative timeline, guest drift correction:
 5. **Track the guest cannot resolve** (host-only local file, missing vault
    entry): the guest keeps showing title/artist/progress as a *mirror* and
    says `Not on this device` — it never claims to be playing.
+6. **One follow attempt per track id.** `at`/`positionMs` change on every
+   250 ms tick but a catalog resolve takes seconds — re-firing the follow on
+   every tick stacked concurrent resolves that each `enqueue`+`play` (queue
+   pollution, audio restarts, "the guest is not following"). Both guests gate
+   on the track id: one in-flight attempt per id, re-armed when the track
+   lands, the host moves on, or the room ends (30 s expiry backstop). A
+   settled miss stays a mirror until the track changes — no per-tick retry
+   storm.
+7. **Up-next is shared, read-only.** The host broadcasts its queue snapshot
+   (next ≤10, `{id,title,artist}`, current track excluded) on every change;
+   the server caches and replays it to late joiners. Guests render it as the
+   host's queue with no controls — both sides see what plays next. Queue
+   control (add/reorder/remove) stays host-only; guest queue edits, if any,
+   stay device-local and are labelled as such.
 
 ## 5. Chat
 
@@ -130,6 +146,18 @@ messages once connected). Sender name comes from the `join` name, history
 (50 frames) is replayed to late joiners, rate limit 5/10s. **Offline
 fallback unchanged:** with no room, chat behaves exactly as Phase 3 (local
 echo labelled local).
+
+### Chat visibility (unread badge)
+
+Messages render into the Chat tab, which is **not** the default tab on either
+surface (desktop opens on Live Lyrics, mobile on Queue) — so a line arriving
+while the user looks elsewhere is invisible, and nothing teaches where chat
+lives. Both surfaces therefore keep an unread count: +1 per new `chat` frame
+(user lines and system join/leave lines; never the author's own echo, never
+`history` replay, never while the Chat tab is the visible one), shown as a
+count pill on the Chat tab button, plus a one-line toast (💬 name: snippet)
+so the first message teaches the way. Opening the Chat tab, sending a line,
+or any room boundary (open/join/leave/bye) clears it.
 
 ## 6. App surface (contract for the JS side)
 
@@ -142,18 +170,31 @@ Tauri commands (Rust, `room.rs`):
 | `room_join` | **legacy** `{addr, code, name}` → `{ok}` — kept for old links and probes; builds the canonical URI and runs the same join path |
 | `room_chat` | `{text}` → `{ok}` |
 | `room_playback` | `{playing, trackId, title, artist, positionMs}` → `{ok}` |
+| `room_queue` | `{tracks: [{id, title, artist}]}` (≤10, enforced server-side) → `{ok}` — host only; cached + broadcast |
 | `room_report` | `{driftMs}` → `{ok}` |
 | `room_close` | `—` → `{ok}` (host: shuts server down; guest: leaves) |
 | `room_info` | `—` → current role/status snapshot: `{role, port, code, urls, invite}` (`urls`/`invite` empty unless this device is hosting; recomputed live, so a re-attached UI can re-offer the same invite) |
 
 Event `room://msg` carries one protocol frame per emit
-(`joined`/`presence`/`chat`/`history`/`playback`/`error`/`bye`), so
+(`joined`/`presence`/`chat`/`history`/`playback`/`queue`/`error`/`bye`), so
 `app/src/room.js` is a pure reducer over synthetic frames — unit-testable in
 Node with no sockets, exactly like `sidecar.js`.
 
 **Why Rust owns both sockets:** the WebView CSP stays untouched (no
 `connect-src ws://*` relaxation, no mixed-content question), and every socket
 path gets tested for real with `cargo test` on this machine.
+
+## 6b. Room chrome rule (Leave always works)
+
+Room state and Social chrome must never disagree: opening or joining a room
+engages the Social chrome; leaving, or a `bye` with no rejoin, clears it.
+The Leave control tears the room down **unconditionally** — it must not route
+through a mode toggle that early-returns when the flag is already Solo.
+2026-10-09: rooms opened without the mode switch (programmatic open after a
+Solo-flipping leave) hosted with Solo chrome — the Chat/Jam tabs stayed
+`display:none` and Leave silently no-op'd, so the session never ended. Note
+there is nothing to "delete": history lives in room RAM, so closing the room
+wipes it — End **is** delete.
 
 ## 6a. Frontend contract (frozen — `room.js` + join form)
 

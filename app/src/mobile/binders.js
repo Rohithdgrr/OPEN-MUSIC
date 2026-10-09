@@ -3002,6 +3002,18 @@ function maybeAiLyrics(box, t, r) {
 
 let upNextKey = "";
 
+/// §4.7 shared-queue signature: the host snapshot jam.js publishes for
+/// guests. Part of the up-next paint key so a new snapshot repaints by
+/// itself; empty (local view) contributes nothing.
+function sharedSig() {
+  try {
+    const v = window.__hostQueueView;
+    return Array.isArray(v) && v.length > 0 ? v.map((t) => t && t.id).join(",") : "";
+  } catch {
+    return "";
+  }
+}
+
 function paintNowplaying(st) {
   const m = main();
   if (!m || !m.querySelector("#scrubber-bar")) {
@@ -3112,7 +3124,7 @@ function paintNowplaying(st) {
     const n = Math.max(0, st.queue.length - st.qi - 1);
     if (qc.textContent !== String(n)) qc.textContent = String(n);
   }
-  const key = `${st.qi}:${st.queue.length}:${t ? t.id : ""}`;
+  const key = `${st.qi}:${st.queue.length}:${t ? t.id : ""}:${sharedSig()}`;
   if (key !== upNextKey) {
     upNextKey = key;
     // The host is explicit (`data-upnext-list` in nowplaying.html). The
@@ -3120,10 +3132,27 @@ function paintNowplaying(st) {
     // its padding/radius, leaving the mock rows on screen forever.
     const host = m.querySelector("[data-upnext-list]");
     if (host) {
-      const rest = st.queue.slice(st.qi + 1);
+      // §4.7: a guest sees the host's up-next as read-only rows (no tap
+      // targets — guest transport is locked). jam.js publishes the snapshot
+      // on window.__hostQueueView so neither module imports the other; an
+      // empty slot means the local view, unchanged. The shared signature is
+      // part of the paint key above, so a new snapshot repaints by itself.
+      const shared = Array.isArray(window.__hostQueueView) && window.__hostQueueView.length > 0
+        ? window.__hostQueueView
+        : null;
+      const rest = shared || st.queue.slice(st.qi + 1);
       host.innerHTML = rest.length
         ? rest
-            .map((x, i) => `<div data-list="npq" data-idx="${st.qi + 1 + i}" class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container/60 cursor-pointer active:bg-surface-container-low transition-colors flex items-center gap-2">
+            .map((x, i) => shared ? `
+            <div class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container/60 flex items-center gap-2">
+            <div class="flex items-center gap-3 min-w-0 flex-1">
+              <div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0 flex items-center justify-center"><span class="font-label-mono text-[11px] text-secondary font-medium">${i + 1}</span></div>
+              <div class="flex flex-col min-w-0 flex-1">
+                <span class="font-body-md font-medium text-on-surface truncate">${esc(x.title || "")}</span>
+                <span class="font-body-sm text-[11px] text-secondary truncate">${esc(x.artist || "")}</span>
+              </div>
+            </div>
+          </div>` : `<div data-list="npq" data-idx="${st.qi + 1 + i}" class="p-2 rounded-xl bg-surface-container-lowest border border-surface-container/60 cursor-pointer active:bg-surface-container-low transition-colors flex items-center gap-2">
             <div class="flex items-center gap-3 min-w-0 flex-1">
               <div class="w-10 h-10 rounded-lg bg-surface-container-highest overflow-hidden shrink-0"><img alt="" class="w-full h-full object-cover" ${art(x.image)}></div>
               <div class="flex flex-col min-w-0 flex-1">

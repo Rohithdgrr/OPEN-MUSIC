@@ -73,9 +73,16 @@ async function main() {
 
   const t0 = Date.now();
   guest.send({ t: "chat", text: "hello from the node guest" });
-  const echo = await guest.await("chat");
+  // F-era: the first `chat` frame on a fresh join is the server-origin system
+  // line ("Node Guest joined"), so match OUR text, not the first frame.
+  let echo = null;
+  while (Date.now() - t0 < 3000) {
+    echo = guest.frames.find((f) => f.t === "chat" && /node guest/i.test(String(f.text || "")) && !f.system);
+    if (echo) break;
+    await sleep(50);
+  }
   const rtt = Date.now() - t0;
-  t.check("chat round-trips through the desktop server", !!echo && /node guest/.test(echo.text), `echo in ${rtt}ms`);
+  t.check("chat round-trips through the desktop server", !!echo, `echo in ${rtt}ms`);
   t.check("chat round-trip is local-LAN-grade", rtt < 250, `${rtt}ms`);
 
   guest.send({ t: "report", driftMs: -250 });

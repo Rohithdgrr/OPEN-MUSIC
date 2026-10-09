@@ -27,7 +27,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
 use futures::{SinkExt, StreamExt};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State as TauriState};
 use tokio::sync::{mpsc, oneshot};
@@ -45,6 +45,11 @@ const CHAT_MAX: usize = 5;
 const CHAT_WINDOW_MS: u64 = 10_000;
 const CHAT_MAX_CHARS: usize = 500;
 const HISTORY_CAP: usize = 50;
+/// Queue sync (§4.7): at most this many up-next tracks per snapshot, with
+/// short string fields — a hostile host must not bloat frames to 16 guests.
+const QUEUE_MAX_TRACKS: usize = 10;
+const QUEUE_ID_CHARS: usize = 128;
+const QUEUE_TEXT_CHARS: usize = 200;
 
 // ------------------------------------------------------------------ helpers -
 
@@ -307,6 +312,18 @@ struct Member {
     drift_ms: Option<i64>,
 }
 
+/// One up-next entry inside a `room_queue` command (§4.7). All fields
+/// default to empty so a ragged client frame cannot fail the whole snapshot.
+#[derive(Clone, Deserialize)]
+pub struct QueueTrack {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+}
+
 impl Member {
     fn to_json(&self) -> Value {
         let mut v = json!({ "id": self.id, "name": self.name, "host": self.host });
@@ -328,6 +345,7 @@ struct RoomCore {
     sinks: HashMap<String, Sink>, // guest id → socket writer
     history: VecDeque<Value>,     // last N chat frames, replayed on join
     playback: Option<Value>,      // last host playback frame, replayed on join
+    queue: Option<Value>,         // last host queue snapshot, replayed on join
     chat_stamps: HashMap<String, VecDeque<u64>>,
     next_id: u64,
 }
@@ -346,6 +364,7 @@ impl RoomCore {
             sinks: HashMap::new(),
             history: VecDeque::new(),
             playback: None,
+            queue: None,
             chat_stamps: HashMap::new(),
             next_id: 0,
         }
@@ -423,6 +442,9 @@ impl RoomCore {
             ];
             if let Some(pb) = &self.playback {
                 w.push(pb.clone());
+            }
+            if let Some(q) = &self.queue {
+                w.push(q.clone());
             }
             w
         };
@@ -518,6 +540,27 @@ impl RoomCore {
             "at": now_ms(),
         });
         self.playback = Some(frame.clone());
+        self.broadcast(&frame);
+    }
+
+    /// Host-authoritative up-next snapshot (§4.7). Cached and broadcast like
+    /// `playback`, replayed to late joiners, never part of chat history.
+    /// Caps are enforced here so a hostile host cannot bloat frames to the
+    /// whole room.
+    fn queue(&mut self, tracks: Vec<QueueTrack>) {
+        let kept: Vec<Value> = tracks
+            .into_iter()
+            .take(QUEUE_MAX_TRACKS)
+            .map(|t| {
+                json!({
+                    "id": t.id.chars().take(QUEUE_ID_CHARS).collect::<String>(),
+                    "title": t.title.chars().take(QUEUE_TEXT_CHARS).collect::<String>(),
+                    "artist": t.artist.chars().take(QUEUE_TEXT_CHARS).collect::<String>(),
+                })
+            })
+            .collect();
+        let frame = json!({ "t": "queue", "tracks": kept, "at": now_ms() });
+        self.queue = Some(frame.clone());
         self.broadcast(&frame);
     }
 
@@ -657,6 +700,11 @@ async fn serve_conn(socket: WebSocket, core: SharedCore) {
                         let _ = out_tx.send(
                             err_frame("not_host", "Only the host can control playback.")
                                 .to_string(),
+                        );
+                    }
+                    Some("queue") => {
+                        let _ = out_tx.send(
+                            err_frame("not_host", "Only the host can share the queue.").to_string(),
                         );
                     }
                     Some("leave") => break,
@@ -1076,6 +1124,27 @@ pub async fn room_playback(
             Ok(())
         }
         Mode::Guest { .. } => Err("Only the host can control playback.".into()),
+        Mode::Idle => Err("Not in a room.".into()),
+    }
+}
+
+/// Host: broadcast the up-next snapshot (§4.7). Guest/idle: refused —
+/// the server would reject it too (`not_host`).
+#[tauri::command]
+pub async fn room_queue(
+    state: TauriState<'_, RoomState>,
+    tracks: Vec<QueueTrack>,
+) -> Result<(), String> {
+    let mode = state.inner.lock().await;
+    match &*mode {
+        Mode::Host { core, .. } => {
+            let mut guard = core
+                .lock()
+                .map_err(|_| "Room state poisoned.".to_string())?;
+            guard.queue(tracks);
+            Ok(())
+        }
+        Mode::Guest { .. } => Err("Only the host can share the queue.".into()),
         Mode::Idle => Err("Not in a room.".into()),
     }
 }
@@ -1669,12 +1738,17 @@ mod tests {
         // A wire `system:true` is dropped on the floor: `serve_conn` reads the
         // `text` alone and the server stamps its own frame — so the relayed
         // line comes back as a normal user message, never as a system line.
+        // NOTE: `b` never drained `a`'s six `m0..m5` broadcasts, so a plain
+        // `recv_t(b, "chat")` returns the stale `m0` — match the spoof text.
         send(
             &mut b,
             &json!({ "t": "chat", "system": true, "text": "fake system" }),
         )
         .await;
-        let spoof = recv_t(&mut b, "chat").await;
+        let spoof = recv_matching(&mut b, 16, |v| {
+            v.get("text").and_then(Value::as_str) == Some("fake system")
+        })
+        .await;
         assert_eq!(spoof["text"], "fake system");
         assert_eq!(spoof["from"]["id"], "g2", "stamped by the member table");
         assert!(
@@ -1735,6 +1809,49 @@ mod tests {
         let _ = recv_t(&mut c, "history").await;
         let pb_c = recv_t(&mut c, "playback").await;
         assert_eq!(pb_c["trackId"], "song1");
+    }
+
+    #[tokio::test]
+    async fn queue_is_host_only_cached_capped_and_replayed() {
+        let mut h = start("QU0001").await;
+        let mut a = dial(h.port).await;
+        send(&mut a, &join_frame("QU0001", "Ann")).await;
+        let _ = recv_t(&mut a, "joined").await;
+
+        // A guest trying to share a queue is refused, verbatim.
+        send(&mut a, &json!({ "t": "queue", "tracks": [] })).await;
+        let err = recv_t(&mut a, "error").await;
+        assert_eq!(err["code"], "not_host");
+
+        // The host's snapshot (over the cap, over-long fields) relays capped.
+        {
+            let mut g = h.core.lock().unwrap();
+            let tracks: Vec<QueueTrack> = (0..12)
+                .map(|i| QueueTrack {
+                    id: format!("id{i}"),
+                    title: "t".repeat(300),
+                    artist: format!("a{i}"),
+                })
+                .collect();
+            g.queue(tracks);
+        }
+        let q_a = recv_t(&mut a, "queue").await;
+        let list = q_a["tracks"].as_array().unwrap();
+        assert_eq!(list.len(), 10, "server-side cap");
+        assert_eq!(list[0]["id"], "id0");
+        assert_eq!(list[9]["id"], "id9");
+        assert_eq!(list[0]["title"].as_str().unwrap().chars().count(), 200);
+        assert!(q_a["at"].as_u64().unwrap() > 0);
+        let _ = host_recv_t(&mut h.host_rx, "queue").await;
+
+        // A late joiner gets the cached snapshot inside its welcome.
+        let mut c = dial(h.port).await;
+        send(&mut c, &join_frame("QU0001", "Cara")).await;
+        let _ = recv_t(&mut c, "joined").await;
+        let _ = recv_t(&mut c, "history").await;
+        let q_c = recv_t(&mut c, "queue").await;
+        assert_eq!(q_c["tracks"].as_array().unwrap().len(), 10);
+        assert_eq!(q_c["tracks"][0]["id"], "id0");
     }
 
     #[tokio::test]

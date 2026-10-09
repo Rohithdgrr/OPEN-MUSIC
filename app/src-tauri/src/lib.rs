@@ -1678,6 +1678,7 @@ pub fn run() {
             room::room_join_uri,
             room::room_chat,
             room::room_playback,
+            room::room_queue,
             room::room_report,
             room::room_close,
             room::room_info,

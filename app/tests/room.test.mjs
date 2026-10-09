@@ -25,6 +25,8 @@ import {
   shouldKeepRejoinAfterBye,
   rejoinDelayMs,
   roomTickKind,
+  shouldStartFollow,
+  FOLLOW_ATTEMPT_TTL_MS,
   ROOM_LOST_REASON,
   CONNECT_FAILED_CODE,
   REJOIN_MAX_ATTEMPTS,
@@ -599,4 +601,49 @@ test("parseInvite reads the canonical link as one pasted string", () => {
     code: "ABCD2345",
   });
   assert.equal(parseInvite("garbage"), null);
+});
+
+// ------------------------------------------------------------------ follow -
+test("follow gate: one in-flight attempt per track id (docs §4.6)", () => {
+  const now = 1_000_000;
+  assert.equal(shouldStartFollow("", 0, "abc", now), true, "first attempt fires");
+  assert.equal(shouldStartFollow("abc", now, "abc", now), false, "same id in flight does not re-fire");
+  assert.equal(shouldStartFollow("abc", now, "def", now), true, "a new track id re-arms");
+  assert.equal(shouldStartFollow("", 0, "", now), false, "empty track id never fires");
+  assert.equal(
+    shouldStartFollow("abc", now - FOLLOW_ATTEMPT_TTL_MS - 1, "abc", now),
+    true,
+    "a hung attempt expires after the TTL backstop",
+  );
+  assert.equal(
+    shouldStartFollow("abc", now - FOLLOW_ATTEMPT_TTL_MS + 1000, "abc", now),
+    false,
+    "a fresh attempt inside the TTL stays gated",
+  );
+});
+
+// ------------------------------------------------------------- host queue -
+test("queue frames land as a guest read-only snapshot (§4.7)", () => {
+  const guest = { ...createRoomState(), role: "guest" };
+  const s = reduceRoom(guest, {
+    t: "queue",
+    tracks: [
+      { id: "a", title: "A", artist: "X" },
+      { id: "b", title: "B", artist: "Y", extra: 1 },
+      null,
+    ],
+  });
+  assert.deepEqual(s.hostQueue, [
+    { id: "a", title: "A", artist: "X" },
+    { id: "b", title: "B", artist: "Y" },
+    { id: "", title: "", artist: "" },
+  ]);
+  // The host never applies its own broadcast back onto itself.
+  const host = { ...createRoomState(), role: "host", hostQueue: [{ id: "z", title: "Z", artist: "" }] };
+  assert.equal(reduceRoom(host, { t: "queue", tracks: [] }), host, "host arm returns state untouched");
+  // Bye wipes it with everything else.
+  assert.deepEqual(reduceRoom(s, { t: "bye", reason: "left" }).hostQueue, []);
+  // Ragged frames cannot poison the list.
+  assert.deepEqual(reduceRoom(guest, { t: "queue" }).hostQueue, []);
+  assert.deepEqual(reduceRoom(guest, { t: "queue", tracks: "nope" }).hostQueue, []);
 });

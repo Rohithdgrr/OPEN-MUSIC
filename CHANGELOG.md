@@ -143,8 +143,29 @@ Work landing after the latest tag sits in `Unreleased`.
   and closes the socket so the host's drain completes. Covered by three
   duplex-socket unit tests (the bye case failed RED at a 2.01s timeout
   before the fix) plus the live LAN-rejoin and reverse-pair probes.
+- **Leaving a jam could silently do nothing (desktop).** `setMode(false)`
+  early-returned when the Social flag was already Solo — but a room opened
+  without the mode switch hosts with Solo chrome, so Leave never reached
+  `room_close` and the session never ended (reproduced live: backend stayed
+  `host` while the UI sat unchanged). Leave now tears down an open room even
+  from Solo chrome, and opening/joining a room engages the Social chrome, so
+  the flag cannot desync again; a `bye` with no rejoin clears it.
+- **Guests re-fired track-follow on every 250 ms tick** while a catalog
+  resolve takes seconds — stacking concurrent resolves that each
+  `enqueue`+`play` (queue pollution, audio restarts, "not following"). Both
+  guests now gate on the track id: one in-flight attempt per id (`room.js`
+  `shouldStartFollow`, 30 s expiry backstop), re-armed on land / track
+  change / room end. A settled miss stays a mirror until the track changes.
 
 ### Added
+- **Room chat unread badge (both surfaces).** New lines arriving while the
+  Chat tab is hidden count up on a tab pill plus a one-line toast
+  (💬 name: snippet), so the first message teaches where chat lives;
+  opening the tab, sending, or any room boundary clears it.
+- **Shared up-next queue (host → guests, read-only).** New cached `queue`
+  protocol frame + `room_queue` command (host-only, ≤10 tracks, server-side
+  caps, replayed to late joiners): both sides see what plays next, and the
+  guest list carries no controls.
 - **Standing two-device gate** — `docs/listen-together.md` §10 now lists the
   exact Task 6/7 commands with pass counts and known traps (P28 CLI skew,
   CDP env var, PowerShell pitfalls), including two new hand-run probes:

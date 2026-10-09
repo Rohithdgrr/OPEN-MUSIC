@@ -11,6 +11,7 @@ import { addBtn, contentIndex, findDuplicate } from "./search.js";
 import { metaLinks } from "./util.js";
 import { downloadTrack, isDownloaded } from "./vault.js";
 import { netMode } from "./net.js";
+import { localRole } from "./room.js";
 
 // -------------------------------------------------------------------- queue -
 export const queue = []; // { track, state: null | "done" | "failed" }
@@ -39,6 +40,17 @@ export function renderQueue() {
 }
 
 export function renderQueueNow() {
+  // §4.7: a guest sees the host's up-next, read-only — its own queue keeps
+  // existing underneath (the follow logic owns it), but the panel answers
+  // "what plays next" with the room's truth. Counts follow the shared list;
+  // tabs/emit/persist stay local-only (never persist the host's queue).
+  if (localRole() === "guest" && guestQueueView.length > 0 && queueListEl) {
+    queueListEl.replaceChildren(hostQueueNote(), ...guestQueueView.map(hostQueueRow));
+    if (queueCountEl) queueCountEl.textContent = String(guestQueueView.length);
+    const barCount = $("#queue-count-badge-bar");
+    if (barCount) barCount.textContent = String(guestQueueView.length);
+    return;
+  }
   // Off-DOM build, one attach: N live appends would reflow N times (4.2).
   const frag = document.createDocumentFragment();
   const visible = queue
@@ -228,6 +240,7 @@ export function enqueue(track) {
   if (dup >= 0) return dup;
   queue.push({ track, state: null });
   renderQueue();
+  emitQueueChanged();
   return queue.length - 1;
 }
 
@@ -236,6 +249,7 @@ export function insertNext(track) {
   if (queueIndex < 0 || !queue[queueIndex]) return enqueue(track);
   queue.splice(queueIndex + 1, 0, { track, state: null });
   renderQueue();
+  emitQueueChanged();
   return queueIndex + 1;
 }
 
@@ -249,6 +263,62 @@ export function moveQueue(from, to) {
   else if (from < queueIndex && to >= queueIndex) queueIndex -= 1;
   else if (from > queueIndex && to <= queueIndex) queueIndex += 1;
   renderQueue();
+  emitQueueChanged();
+}
+
+/// Queue membership changed — the host side re-broadcasts the shared
+/// snapshot from this (§4.7). Window-only by nature; the node test graph
+/// has no window, so a missing one is silence, not an error.
+function emitQueueChanged() {
+  try {
+    window.dispatchEvent(new CustomEvent("queue-changed"));
+  } catch {
+    /* no window */
+  }
+}
+
+// ------------------------------------------------------- shared (room) view -
+// The host's up-next as the room sees it. Set by social.js from `queue`
+// frames; rendered read-only for guests (no drag, no row actions — the
+// guest's transport is locked and its taps must not dequeue anything).
+let guestQueueView = []; // [{id,title,artist}]
+
+export function paintGuestQueue(tracks) {
+  guestQueueView = Array.isArray(tracks)
+    ? tracks.slice(0, 10).map((t) => ({
+      id: String(t?.id ?? ""),
+      title: String(t?.title ?? ""),
+      artist: String(t?.artist ?? ""),
+    }))
+    : [];
+  renderQueue();
+}
+
+function hostQueueNote() {
+  const note = document.createElement("div");
+  note.className = "font-mono text-[10px] text-on-surface-variant uppercase tracking-wider px-1";
+  note.textContent = "Host's up next — read-only";
+  return note;
+}
+
+function hostQueueRow(t, i) {
+  const div = document.createElement("div");
+  div.className = "flex items-center gap-3 min-w-0 p-2.5 rounded-xl border border-transparent";
+  const pos = document.createElement("span");
+  pos.className = "font-mono text-[10px] text-on-surface-variant w-4 shrink-0";
+  pos.textContent = String(i + 1);
+  const meta = document.createElement("div");
+  meta.className = "flex flex-col min-w-0 flex-1";
+  const title = document.createElement("span");
+  title.className = "text-[13px] text-on-surface font-semibold truncate";
+  title.dir = "auto";
+  title.textContent = t.title || t.id;
+  const artist = document.createElement("span");
+  artist.className = "text-xs text-on-surface-variant truncate";
+  artist.textContent = t.artist || "";
+  meta.append(title, artist);
+  div.append(pos, meta);
+  return div;
 }
 
 export function markQueue(state) {

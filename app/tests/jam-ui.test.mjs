@@ -32,7 +32,7 @@ const C6 = [
   // jam set
   "jamBannerCode", "jamBannerCount", "jamBannerDrift", "jamBannerMembers",
   "jamMemberValue", "jamQueueList", "jamAppendInput", "jamAppendBtn",
-  "jamChatList", "jamChatInput", "jamChatSend", "jamRoleBadge", "jamRoomTitle",
+  "jamChatList", "jamChatInput", "jamChatSend", "jamChatUnread", "jamRoleBadge", "jamRoomTitle",
   "jamInviteUri", "jamInviteCopy", "jamDriftValue", "jamMemberRow", "jamLeaveBtn", "jamEndBtn",
 ];
 

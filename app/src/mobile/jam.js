@@ -38,6 +38,7 @@ import {
   shouldKeepRejoinAfterBye,
   rejoinDelayMs,
   roomTickKind,
+  shouldStartFollow,
   HOST_TICK_MS,
   ROOM_LOST_REASON,
   worstDriftMs,
@@ -52,7 +53,9 @@ let tickTimer = 0;
 let appliedFrames = 0; // real `playback` frames applied this session
 let lastDrift = null; // this device's own measured drift, ms
 let mirrorNote = ""; // the host's track is not on this device (§4.5)
-let followKey = ""; // last playback frame this guest resolved
+let chatUnread = 0; // chat lines arrived while the chat view was hidden (§5)
+let followBusyFor = ""; // track id with a follow attempt in flight (§4.6)
+let followBusyAt = 0; // when that attempt started (30 s expiry backstop)
 let hostKey = "";
 let guestTickCount = 0;
 let lastJoinUri = "";
@@ -273,6 +276,7 @@ async function startRoom() {
       members: [{ id: "host", name, host: true }],
     });
     toast(`Room ${room.code} open — share the code with someone on this network.`, 5000, "success");
+    broadcastQueue(); // share the up-next list with whoever joins (§4.7)
   } catch (e) {
     socialChrome = false;
     toast(String(e).slice(0, 160), 5000, "error");
@@ -319,8 +323,11 @@ async function leaveRoom(announce) {
   lastDrift = null;
   guestTickCount = 0;
   mirrorNote = "";
-  followKey = "";
+  followBusyFor = "";
+  followBusyAt = 0;
   hostKey = "";
+  clearChatUnread();
+  paintSharedQueue();
   if (announce) toast("Left the Jam — back to Solo", 3000);
   paintJam();
 }
@@ -351,6 +358,7 @@ function applyFrame(frame) {
       // The host is asked for a fresh playhead the moment someone joins, so a
       // newcomer never waits a full tick (§4.1).
       broadcastPlayback();
+      broadcastQueue();
       return;
     case "hosted":
     case "joined":
@@ -358,6 +366,8 @@ function applyFrame(frame) {
       socialChrome = true;
       rejoinAttempts = 0;
       cancelRejoin();
+      clearChatUnread();
+      paintSharedQueue();
       if (room.role === "guest") toast(`Joined room ${room.code}`, 3500, "success");
       break;
     case "playback":
@@ -369,7 +379,12 @@ function applyFrame(frame) {
       break;
     case "chat":
     case "history":
+      noteChatArrived(frame);
       paintChat();
+      break;
+    case "queue":
+      paintSharedQueue();
+      paintJam();
       break;
     case "presence":
       paintJam();
@@ -396,7 +411,11 @@ function applyFrame(frame) {
       if (frame.reason && frame.reason !== "left") toast(String(frame.reason), 4000);
       if (room.role === "idle") socialChrome = false;
       appliedFrames = 0;
+      followBusyFor = "";
+      followBusyAt = 0;
       guestTickCount = 0;
+      clearChatUnread();
+      paintSharedQueue();
       stopTick();
       if (shouldKeepRejoinAfterBye(frame.reason, userLeft, lastJoinUri, rejoinAttempts)) {
         socialChrome = true;
@@ -507,14 +526,18 @@ function guestApply() {
   const currentId = st.track ? st.track.id : "";
 
   if (pb.trackId && pb.trackId !== currentId) {
-    // Resolve once per frame; the next tick measures the result (§12).
-    const key = `${pb.at}|${pb.trackId}`;
-    if (followKey !== key) {
-      followKey = key;
+    // §4.6: one in-flight attempt per track id — `at` changes every tick
+    // while a resolve takes seconds, so keying on the frame re-fired every
+    // 250 ms and stacked concurrent resolves.
+    if (shouldStartFollow(followBusyFor, followBusyAt, pb.trackId)) {
+      followBusyFor = pb.trackId;
+      followBusyAt = Date.now();
       void followGuest(pb);
     }
     return;
   }
+  followBusyFor = ""; // on the host's track — re-arm for the next one
+  followBusyAt = 0;
 
   // We are on the host's track, so "not on this device" is false — §8 says the
   // note must go even though the resolve that would have cleared it (D3) never
@@ -700,7 +723,36 @@ function paintMembers() {
   }
 }
 
+/// §5 visibility: the Chat tab is not the default tab, so a line arriving
+/// while the user looks elsewhere must surface — count it on the tab pill
+/// and teach the way with one toast. Own echoes, history replay, and lines
+/// arriving while the view is open never count.
+function paintUnread() {
+  const pill = el("jamChatUnread");
+  if (!pill) return;
+  pill.textContent = chatUnread > 0 ? String(chatUnread) : "";
+  pill.hidden = chatUnread === 0;
+}
+
+function clearChatUnread() {
+  if (chatUnread === 0) return;
+  chatUnread = 0;
+  paintUnread();
+}
+
+function noteChatArrived(frame) {
+  if (!frame || frame.t !== "chat") return;
+  if (frame.from && frame.from.id && frame.from.id === room.selfId) return;
+  if (!el("view-chat")?.classList.contains("hidden")) return;
+  chatUnread += 1;
+  paintUnread();
+  const text = String(frame.text || "").slice(0, 80);
+  const who = frame.system ? "" : `${frame.from?.name || "Guest"}: `;
+  toast(`💬 ${who}${text}`, 4000);
+}
+
 function paintChat() {
+  paintUnread();
   const list = el("jamChatList");
   if (!list) return;
   list.replaceChildren();
@@ -838,9 +890,11 @@ function paintJam() {
         ? "ROOM QUEUE"
         : "FOLLOWING HOST");
 
-  // The queue tab is local: in the host's session its queue *is* the room's.
-  setText("queueTabLabel", !social ? "Queue" : room.role === "guest" ? "Local Queue" : "Room Queue");
-  setText("queueHeaderLabel", !social ? "Queue" : room.role === "guest" ? "PERSONAL QUEUE" : "ROOM QUEUE");
+  // The queue tab is local — except for a guest with the host's snapshot,
+  // which answers "what plays next" with the room's truth (§4.7).
+  const shared = room.role === "guest" && room.hostQueue.length > 0;
+  setText("queueTabLabel", !social ? "Queue" : room.role === "guest" ? (shared ? "Host Queue" : "Local Queue") : "Room Queue");
+  setText("queueHeaderLabel", !social ? "Queue" : room.role === "guest" ? (shared ? "HOST'S QUEUE · READ-ONLY" : "PERSONAL QUEUE") : "ROOM QUEUE");
   // "Synchronized" only after a real playback frame was received and applied.
   show(el("queueSyncBadge"), appliedFrames > 0, "flex");
 
@@ -934,6 +988,13 @@ function wireControls() {
     send.dataset.jamWired = "1";
     send.addEventListener("click", sendChat);
   }
+  // Opening the Chat tab means the count served its purpose — clear it. A
+  // second listener alongside the screen's tab switcher is fine; both run.
+  const chatTab = el("chatTabBtn");
+  if (chatTab && !chatTab.dataset.jamUnreadWired) {
+    chatTab.dataset.jamUnreadWired = "1";
+    chatTab.addEventListener("click", clearChatUnread);
+  }
   const input = el("jamChatInput");
   if (input && !input.dataset.jamWired) {
     input.dataset.jamWired = "1";
@@ -996,8 +1057,33 @@ function sendChat() {
   const input = el("jamChatInput");
   const text = (input && input.value ? input.value : "").trim();
   if (!text) return;
+  clearChatUnread(); // sending means looking — the count is stale now
   if (input) input.value = "";
   sendChatText(text, text);
+}
+
+/// §4.7: the host's up-next snapshot (current track excluded — `playback`
+/// already carries it). The mobile queue has no edit UI in a room (the
+/// append row ships disabled), so track changes + open + refresh cover it.
+function broadcastQueue() {
+  if (room.role !== "host") return;
+  const tracks = queueUpNext()
+    .slice(0, 10)
+    .map((t) => ({ id: t?.id || "", title: t?.title || "", artist: t?.artist || "" }))
+    .filter((t) => t.id);
+  invoke("room_queue", { tracks }).catch(() => {});
+}
+
+/// Push the shared queue into the up-next painter's view. The painter lives
+/// in binders.js (concurrently edited) — this window slot is the seam, so
+/// neither module imports the other. Guests see the host's list; everyone
+/// else sees their own (empty slot = local view).
+function paintSharedQueue() {
+  try {
+    window.__hostQueueView = room.role === "guest" ? room.hostQueue : [];
+  } catch {
+    /* node test graph — no window */
+  }
 }
 
 /// D4: the desktop host's `play`/`pause`/`seeked` listeners
@@ -1037,7 +1123,10 @@ export function initJam() {
       const st = playerState();
       const t = st.track;
       const key = t && t.id ? `${t.id}|${st.paused ? "paused" : "playing"}` : "";
-      if (key && key !== hostKey) broadcastPlayback();
+      if (key && key !== hostKey) {
+        broadcastPlayback();
+        broadcastQueue(); // the track changed, so did up-next (§4.7)
+      }
     }
   });
 

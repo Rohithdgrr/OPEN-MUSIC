@@ -35,7 +35,7 @@ const IDS = [
   // chat
   "np-panel-chat", "chat-messages-container", "chat-empty", "chat-input",
   "btn-chat-send", "btn-chat-quote", "chat-typing", "chat-online-count",
-  "chat-rate-note",
+  "chat-rate-note", "chat-unread-pill",
   // jam (`jam-ua` was removed in §13.1 — it only served the retired sidecar's
   // UA allow-list, so it is asserted *absent* in the "retired sidecar chrome"
   // test below)

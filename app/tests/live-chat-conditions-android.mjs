@@ -243,6 +243,20 @@ async function main() {
   t.check("guest line painted on host exactly once",
     (await count("line back from node guest")) === 1, await count("line back from node guest"));
 
+  // ---- unread badge (§5): parked on queue, a line arrives → pill + toast
+  await click('document.querySelector(\'[data-tab="queue"]\')?.click()');
+  await sleep(300);
+  guest.send({ t: "chat", text: "badge probe line" });
+  await sleep(900);
+  const pill = String(await app.evalJs('(document.getElementById("jamChatUnread")?.textContent || "")'));
+  const pillHidden = await app.evalJs('!!document.getElementById("jamChatUnread")?.hidden');
+  t.check("unread: pill counts the hidden line", pill === "1" && !pillHidden, `${pill}/${pillHidden}`);
+  t.check("unread: toast teaches the way", (await toastText()).includes("badge probe line"), (await toastText()).slice(0, 80));
+  await click('document.getElementById("chatTabBtn")?.click()');
+  await sleep(400);
+  t.check("unread: opening chat clears the pill",
+    (await app.evalJs('(document.getElementById("jamChatUnread")?.textContent || "")')) === "");
+
   // ---- F2: guest leave → one system line (desired) -----------------------
   guest.send({ t: "leave" });
   await sleep(900);

@@ -20,6 +20,7 @@ export function createRoomState() {
     chat: [],
     historyLoaded: false,
     playback: null,
+    hostQueue: [], // host's up-next snapshot (§4.7); guests render read-only
     driftMs: null,
     error: "",
   };
@@ -41,6 +42,9 @@ export function reduceRoom(state, frame) {
         selfId: typeof frame.selfId === "string" ? frame.selfId : state.selfId,
         code: typeof frame.code === "string" ? frame.code : state.code,
         members: copyList(frame.members),
+        // A previous room's shared queue must not leak in — the welcome
+        // `queue` frame (if the host shares one) replaces it (§4.7).
+        hostQueue: [],
         error: "",
       };
 
@@ -64,8 +68,10 @@ export function reduceRoom(state, frame) {
         members: copyList(frame.members),
         // G5: a device-local echo (sent while no room was open) was never
         // relayed to anyone — the server's history starts empty, so opening a
-        // room must not carry the local line across with it.
+        // room must not carry the local line across with it. Same for a
+        // previous room's shared queue (§4.7).
         chat: [],
+        hostQueue: [],
         error: "",
       };
 
@@ -98,6 +104,22 @@ export function reduceRoom(state, frame) {
       if (state.role === "host") return state;
       return { ...state, playback: { ...frame, arrivedAt: Date.now() } };
 
+    case "queue": {
+      // §4.7: the host's up-next snapshot — guests render it read-only, the
+      // host ignores its own broadcast. Entries are coerced to strings so a
+      // ragged frame cannot poison the list; the server already caps at 10.
+      if (state.role === "host") return state;
+      const tracks = Array.isArray(frame.tracks) ? frame.tracks.slice(0, 10) : [];
+      return {
+        ...state,
+        hostQueue: tracks.map((t) => ({
+          id: String(t?.id ?? ""),
+          title: String(t?.title ?? ""),
+          artist: String(t?.artist ?? ""),
+        })),
+      };
+    }
+
     case "error": {
       const next = {
         ...state,
@@ -128,6 +150,7 @@ export function reduceRoom(state, frame) {
         chat: [],
         historyLoaded: false,
         playback: null,
+        hostQueue: [],
         driftMs: null,
         error,
       };
@@ -224,6 +247,20 @@ export function rejoinDelayMs(attempt) {
 /// playhead staleness (docs/jam-professional-grade.md N8).
 export function roomTickKind(role) {
   return role === "host" || role === "guest" ? role : "";
+}
+
+/// A follow attempt (resolve + play) takes seconds while `at`/`positionMs`
+/// change on every 250 ms tick. Firing per tick stacks concurrent attempts
+/// that each enqueue+play — queue pollution, audio restarts, "the guest is
+/// not following". Gate on the track id: one in-flight attempt per id. The
+/// timestamp expires it after 30 s so a hung resolve can never wedge the
+/// guest forever (docs/listen-together.md §4.6).
+export const FOLLOW_ATTEMPT_TTL_MS = 30_000;
+
+export function shouldStartFollow(inFlightId, inFlightAtMs, trackId, nowMs = Date.now()) {
+  if (!trackId) return false;
+  if (!inFlightId || inFlightId !== trackId) return true;
+  return nowMs - (inFlightAtMs || 0) > FOLLOW_ATTEMPT_TTL_MS;
 }
 
 /// After an `error` frame during a join: retry only if a lost-socket rejoin

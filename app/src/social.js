@@ -18,7 +18,7 @@ import { playerSnapshot } from "./bridge.js";
 import { loadPlays } from "./home.js";
 import { loadFavs } from "./library.js";
 import { playQueueItem } from "./playback.js";
-import { enqueue, queue } from "./queue.js";
+import { enqueue, queue, queueIndex, paintGuestQueue } from "./queue.js";
 import { paintQr } from "./qrview.js";
 import {
   createRoomState,
@@ -36,6 +36,7 @@ import {
   shouldKeepRejoinAfterBye,
   rejoinDelayMs,
   roomTickKind,
+  shouldStartFollow,
   HOST_TICK_MS,
   ROOM_LOST_REASON,
   worstDriftMs,
@@ -70,10 +71,12 @@ let listenerReady = false;
 let tickTimer = 0; // HOST_TICK_MS host broadcast / guest apply loop
 let lastDrift = null; // this guest's measured drift, ms
 let guestMirror = ""; // set when the host's track is not on this device
-let guestApplied = ""; // last playback frame key this guest applied
+let followBusyFor = ""; // track id with a follow attempt in flight (§4.6)
+let followBusyAt = 0; // when that attempt started (30 s expiry backstop)
 let guestTickCount = 0;
 let lastJoinUri = "";
 let userLeft = false;
+let chatUnread = 0; // chat lines arrived while the chat panel was hidden (§5)
 let rejoinTimer = 0;
 let rejoinAttempts = 0;
 let armedTick = ""; // roomTickKind currently running; chat must not reset it
@@ -271,6 +274,7 @@ function paintRoom() {
   setGuestLock(room.role === "guest");
   paintCounts();
   paintReactionNote();
+  paintUnread();
 }
 
 // ------------------------------------------------------------------ frames -
@@ -295,6 +299,34 @@ function renderChat() {
   if (typing) typing.classList.add("hidden"); // no typing protocol exists
   for (const entry of room.chat) list.append(chatMessage(entry));
   list.scrollTop = list.scrollHeight;
+}
+
+/// §5 visibility: the Chat tab is not the default tab, so a line arriving
+/// while the user looks elsewhere must surface — count it on the tab pill
+/// and teach the way with one toast. Own echoes, history replay, and lines
+/// arriving while the panel is open never count.
+function paintUnread() {
+  const pill = el("chat-unread-pill");
+  if (!pill) return;
+  pill.textContent = chatUnread > 0 ? String(chatUnread) : "";
+  pill.hidden = chatUnread === 0;
+}
+
+function clearChatUnread() {
+  if (chatUnread === 0) return;
+  chatUnread = 0;
+  paintUnread();
+}
+
+function noteChatArrived(frame) {
+  if (!frame || frame.t !== "chat") return;
+  if (frame.from && frame.from.id && frame.from.id === room.selfId) return;
+  if (!el("np-panel-chat")?.classList.contains("hidden")) return;
+  chatUnread += 1;
+  paintUnread();
+  const text = String(frame.text || "").slice(0, 80);
+  const who = frame.system ? "" : `${frame.from?.name || "Guest"}: `;
+  toast(`💬 ${who}${text}`, "info", 4000);
 }
 
 /// One chat bubble. `entry` comes from the reducer: a `chat` frame (own echo
@@ -429,9 +461,10 @@ async function followHostTrack(pb) {
     }
     // §4.5: mirror the host's metadata, never claim to be playing it.
     guestMirror = `Host is on “${pb.title || pb.trackId}” — not on this device.`;
-    // D3: the sync this UI advertises stopped in this frame — drop the applied
-    // frame and the drift that described a playhead we are no longer following.
-    guestApplied = "";
+    // D3: the sync this UI advertises stopped in this frame — drop the drift
+    // that described a playhead we are no longer following. The follow gate
+    // keeps this id claimed, so there is no per-tick retry storm: the mirror
+    // stands until the host moves on (§4.6).
     lastDrift = null;
     paintRoom();
     return;
@@ -448,20 +481,47 @@ async function followHostTrack(pb) {
 }
 
 /// Guest tick: apply the host's playhead, measure the drift, report it.
+/// §4.7: the host's up-next snapshot (current track excluded — `playback`
+/// already carries it). Guests render it read-only via paintGuestQueue.
+function queueSnapshot() {
+  return queue
+    .slice(queueIndex + 1, queueIndex + 11)
+    .map((q) => ({
+      id: q.track?.id || "",
+      title: q.track?.title || "",
+      artist: q.track?.artist || "",
+    }))
+    .filter((t) => t.id);
+}
+
+function broadcastQueue() {
+  if (room.role !== "host") return;
+  invoke("room_queue", { tracks: queueSnapshot() }).catch(() => {});
+}
+
+/// The room's shared queue changed (or the room boundary crossed it) — push
+/// it into the queue panel's guest view. Hosts and Solo ignore it.
+function paintSharedQueue() {
+  paintGuestQueue(room.role === "guest" ? room.hostQueue : []);
+}
+
 function guestTick() {
   if (room.role !== "guest" || !room.playback) return;
   const pb = room.playback;
   const snap = playerSnapshot();
-  const key = `${pb.at}:${pb.trackId}:${pb.positionMs}:${pb.playing}`;
   if (snap.id !== pb.trackId) {
-    // Resolve once per frame; the next tick measures the result.
-    const applyKey = `follow:${key}`;
-    if (guestApplied !== applyKey) {
-      guestApplied = applyKey;
+    // §4.6: one in-flight attempt per track id. The old per-frame key
+    // (`at`+`positionMs`) changed on every 250 ms tick while a resolve takes
+    // seconds — stacking concurrent resolves that each enqueue+play.
+    if (shouldStartFollow(followBusyFor, followBusyAt, pb.trackId)) {
+      followBusyFor = pb.trackId;
+      followBusyAt = Date.now();
       followHostTrack(pb).catch((e) => diag("room follow", false, String(e).slice(0, 160)));
     }
     return;
   }
+  followBusyFor = ""; // landed on the host's track — re-arm for the next one
+  followBusyAt = 0;
 
   // We are on the host's track, so the mirror note (if any) is false — D3.
   guestMirror = "";
@@ -535,6 +595,7 @@ function applyRoomFrame(frame) {
       // The server asks the host for a fresh playhead the moment someone
       // joins, so the newcomer never waits a full tick.
       broadcastPlayback();
+      broadcastQueue();
       return;
     case "hosted":
     case "joined":
@@ -542,6 +603,15 @@ function applyRoomFrame(frame) {
       rejoinAttempts = 0;
       cancelRejoin();
       if (room.role === "host") resetGuestRate();
+      // §6b: a room is open, so the Social chrome must be on — no matter
+      // which path opened it (UI switch, programmatic open, adopted host).
+      // Without this the room hosts with Solo chrome: room tabs stay hidden
+      // and Leave early-returns, so the session can never end.
+      if (!isSocial()) {
+        document.body.classList.add("soc-social");
+        $("#btn-mode-solo")?.classList.remove("active");
+        $("#btn-mode-social")?.classList.add("active");
+      }
       setRoomNote(
         room.role === "host"
           ? `Room ${room.code} open — guests join with the code.`
@@ -550,11 +620,17 @@ function applyRoomFrame(frame) {
       diag("room", true, `${room.role} ${room.code}`);
       // G5: `hosted` dropped any device-local echo in the reducer — repaint so
       // the cleared list reaches the DOM (mobile does this via paintJam).
+      clearChatUnread();
+      paintSharedQueue();
       renderChat();
       break;
     case "history":
     case "chat":
+      noteChatArrived(frame);
       renderChat();
+      break;
+    case "queue":
+      paintSharedQueue();
       break;
     case "playback":
       guestTick();
@@ -586,13 +662,16 @@ function applyRoomFrame(frame) {
       resetGuestRate();
       guestMirror = "";
       lastDrift = null;
-      guestApplied = "";
+      followBusyFor = "";
+      followBusyAt = 0;
       guestTickCount = 0;
       roomPort = 0;
       if (frame.reason && frame.reason !== "left") {
         toast(String(frame.reason), "info", 4000);
       }
       renderChat(); // the reducer emptied the room's chat
+      clearChatUnread();
+      paintSharedQueue();
       if (shouldKeepRejoinAfterBye(frame.reason, userLeft, lastJoinUri, rejoinAttempts)) {
         break;
       }
@@ -601,6 +680,11 @@ function applyRoomFrame(frame) {
       } else {
         lastJoinUri = "";
         cancelRejoin();
+        // §6b: truly idle now (no rejoin armed) — drop the Social chrome too,
+        // or Solo keeps showing room tabs for a room that is gone.
+        document.body.classList.remove("soc-social");
+        $("#btn-mode-solo")?.classList.add("active");
+        $("#btn-mode-social")?.classList.remove("active");
       }
       break;
     }
@@ -652,13 +736,16 @@ async function enterSocial() {
   joining = false;
   lastDrift = null;
   guestMirror = "";
-  guestApplied = "";
+  followBusyFor = "";
+  followBusyAt = 0;
   guestTickCount = 0;
   lastJoinUri = "";
   userLeft = false;
   cancelRejoin();
   resetGuestRate();
   stopHostTick();
+  clearChatUnread();
+  paintSharedQueue();
   paintRoom();
 }
 
@@ -679,9 +766,12 @@ async function leaveRoom(note) {
   joining = false;
   lastDrift = null;
   guestMirror = "";
-  guestApplied = "";
+  followBusyFor = "";
+  followBusyAt = 0;
   guestTickCount = 0;
   setRoomNote(note || DEFAULT_ROOM_NOTE);
+  clearChatUnread();
+  paintSharedQueue();
   paintRoom();
 }
 
@@ -703,6 +793,7 @@ async function openRoom() {
       invite: typeof info?.invite === "string" ? info.invite : "",
       members: [{ id: "host", name, host: true }],
     });
+    broadcastQueue(); // share the up-next list with whoever joins (§4.7)
   } catch (e) {
     setRoomNote(String(e).slice(0, 200));
     toast(String(e).slice(0, 160), "error", 5000);
@@ -787,7 +878,13 @@ function setActiveTab(tabId) {
 }
 
 function setMode(social) {
-  if (social === isSocial()) return;
+  if (social === isSocial()) {
+    // §6b: the chrome flag can desync from room state (a room opened without
+    // the mode switch hosts with Solo chrome). Ending the session must never
+    // be a silent no-op — tear down an open room even from here.
+    if (!social && room.role !== "idle") void leaveRoom(DEFAULT_ROOM_NOTE);
+    return;
+  }
   document.body.classList.toggle("soc-social", social);
   $("#btn-mode-solo")?.classList.toggle("active", !social);
   $("#btn-mode-social")?.classList.toggle("active", social);
@@ -894,6 +991,7 @@ function wireReactions() {
       }
       paintReactionNote();
       if (room.role === "host") broadcastPlayback();
+      if (room.role === "host") broadcastQueue();
     }).observe(title, { childList: true, characterData: true, subtree: true });
   }
 
@@ -911,6 +1009,7 @@ function sendChat() {
   const input = $("#chat-input");
   const text = (input?.value || "").trim();
   if (!text) return;
+  clearChatUnread(); // sending means looking — the count is stale now
   if (joining || rejoinTimer) {
     toast("Still connecting — wait to chat.", "info", 2500);
     return;
@@ -1024,10 +1123,12 @@ function addToRoom() {
 
   const already = queue.some((q) => q.track?.id === hit.id);
   enqueue(hit);
+  broadcastQueue(); // the host's up-next changed — guests see it (§4.7)
   if (input) input.value = "";
   diag("room queue", true, already ? `duplicate ${hit.id}` : `enqueued ${hit.id}`);
-  // A guest's queue is local: the room's queue has no protocol frame, so this
-  // says "this device" rather than implying the host saw it (§8).
+  // A guest's queue is local: it renders what it added itself, and the room
+  // never hears it — so this says "this device", never implying the host
+  // saw it (§8). The host's adds go out through broadcastQueue above.
   const scope = room.role === "guest" ? "this device" : "the queue";
   toast(
     already
@@ -1067,6 +1168,9 @@ export function initSocial() {
   $("#btn-qr-copy")?.addEventListener("click", () => void copyInvite());
 
   $("#btn-chat-send")?.addEventListener("click", sendChat);
+  // Opening the Chat tab means the count served its purpose — clear it. A
+  // second listener alongside main.js's tab switcher is fine; both run.
+  $("#tab-btn-chat")?.addEventListener("click", clearChatUnread);
   $("#chat-input")?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -1089,6 +1193,10 @@ export function initSocial() {
   // be reached without the mode switch (a restored session, a programmatic
   // open), and a room whose frames nobody hears is a UI frozen at "1 online".
   startRoomListener();
+
+  // Queue membership changed anywhere (enqueue, play-next, drag-reorder) —
+  // the host side re-broadcasts the shared snapshot from this (§4.7).
+  window.addEventListener("queue-changed", broadcastQueue);
 
   // Boot state: no room, no code, nothing enabled that needs one.
   paintRoom();

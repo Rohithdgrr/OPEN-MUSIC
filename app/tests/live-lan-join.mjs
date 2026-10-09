@@ -148,6 +148,19 @@ const guestFollowed = await waitForCli(mob, `(() => { const a = document.getElem
 const drift = await atM("jamBannerDrift");
 assert(guestFollowed, "guest followed playback (own audio running)", `drift=${drift}`);
 
+console.log("== shared queue (§4.7: guest sees the host's up-next) ==");
+const gList0 = String((await mEval('document.getElementById("jamQueueList")?.innerText || ""')));
+const gHead0 = await atM("queueHeaderLabel");
+assert(/HOST'S QUEUE/.test(gHead0), "guest queue header names the host list", gHead0);
+assert(gList0.trim().length > 0, "guest renders host up-next rows", gList0.slice(0, 120));
+// Host NEXT → the guest's list updates and still excludes the now-playing track.
+await dEval('(document.getElementById("bar-next")||{}).click?.()');
+await delay(5000);
+const gList1 = String((await mEval('document.getElementById("jamQueueList")?.innerText || ""')));
+const hostNow = String((await dEval('(document.getElementById("bar-title")||{}).textContent')) || "").trim();
+assert(gList1.trim().length > 0 && gList1 !== gList0, "guest up-next updated on host next", `${gList0.slice(0, 60)} -> ${gList1.slice(0, 60)}`);
+assert(!hostNow || !gList1.includes(hostNow), "now-playing stays out of the guest up-next", `playing=${hostNow} list=${gList1.slice(0, 120)}`);
+
 console.log("== open question: host leaves -> guest rejoin ==");
 await deskLeave();
 const byeApplied = await waitForCli(mob, `document.getElementById("jamBannerCode")?.textContent === "NO ROOM" || document.getElementById("jamRoleBadge")?.textContent !== "GUEST"`, 8000);

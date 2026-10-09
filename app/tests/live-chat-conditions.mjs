@@ -46,23 +46,26 @@ async function main() {
       `(()=>{const i=document.getElementById("chat-input");i.value=${JSON.stringify(text)};i.dispatchEvent(new Event("input",{bubbles:true}));return i.value.length})()`,
     );
 
-  // ---- Phase 0: known state (no room, THEN Social mode, chat tab) --------
-  // Order matters: the Leave button also flips to Solo (setMode(false)), so
-  // the stale-room cleanup must run BEFORE engaging Social mode — otherwise
-  // the mode is off for the rest of the probe and the final leave click
-  // early-returns at setMode (2026-10-08 sweep lesson).
-  const roomOpen = await app.evalJs('document.getElementById("jam-room-id").textContent');
-  if (String(roomOpen) !== "NO ROOM") {
-    await click("btn-leave-room");
-    t.check("left any stale room", await waitFor(app, 'document.getElementById("jam-room-id").textContent==="NO ROOM"', 8000));
-  } else {
-    t.check("starts with no room", true);
-  }
+  // ---- Phase 0: known state (Social mode FIRST, then leave, then chat) --
+  // Order matters twice: (1) Jam controls are display:none in Solo, so the
+  // Leave button only works with Social engaged — leaving before engaging
+  // clicks a hidden button and silently reuses the stale room (2026-10-09:
+  // reused NZS96JY6, poisoning G5 + history order + device-local leak);
+  // (2) Leave flips back to Solo, so Social must be re-engaged after.
   if (!(await waitFor(app, 'document.body.classList.contains("soc-social")', 4000))) {
     await click("btn-mode-social");
     t.check("Social mode engaged", await waitFor(app, 'document.body.classList.contains("soc-social")'));
   } else {
     t.check("Social mode already engaged", true);
+  }
+  const roomOpen = await app.evalJs('document.getElementById("jam-room-id").textContent');
+  if (String(roomOpen) !== "NO ROOM") {
+    await click("btn-leave-room");
+    t.check("left any stale room", await waitFor(app, 'document.getElementById("jam-room-id").textContent==="NO ROOM"', 8000));
+    await click("btn-mode-social");
+    t.check("Social re-engaged after leave", await waitFor(app, 'document.body.classList.contains("soc-social")'));
+  } else {
+    t.check("starts with no room", true);
   }
   await click("tab-btn-chat");
   t.check("chat tab active", await waitFor(app, '!document.getElementById("np-panel-chat").classList.contains("hidden")'));
@@ -115,6 +118,10 @@ async function main() {
   // replaceChildren() destroys it, so null here = defect G6.
   const emptyAlive = await app.evalJs('!!document.getElementById("chat-empty")');
   t.check("G6: empty-state node survives renderChat", !!emptyAlive, emptyAlive ? "present" : "DESTROYED");
+  // F8: the host's own room-open emits no self-"joined" line (plan §F).
+  const sysLines = async () =>
+    Number(await app.evalJs('document.querySelectorAll("#chat-messages-container .soc-chat-system").length'));
+  t.check("F8: no self-join line on room open", (await sysLines()) === 0, await sysLines());
   t.check("G5: empty state visible after open (chat truly empty)",
     emptyAlive ? !(await app.evalJs('document.getElementById("chat-empty").classList.contains("hidden")')) : false);
   const emptyCopy = String(await at("chat-empty"));
@@ -210,14 +217,36 @@ async function main() {
   }
 
   // ---- C12: guest → host paints once -------------------------------------
+  // F1/F7: the guest's join also painted exactly one centred system line.
+  const sysText = async () =>
+    String(await app.evalJs(
+      '[...document.querySelectorAll("#chat-messages-container .soc-chat-system")].map(n=>n.textContent).join("\\n")'));
+  t.check("F1: guest join painted one system line once",
+    (await sysLines()) === 1 && (await sysText()).includes("Hist Guest joined"), await sysText());
   guest.send({ t: "chat", text: "line back from hist guest" });
   await sleep(900);
   t.check("guest line painted on host exactly once", (await count("line back from hist guest")) === 1,
     await count("line back from hist guest"));
+  // ---- unread badge (§5): parked on lyrics, a line arrives → pill + toast
+  await click("tab-btn-lyrics");
+  await sleep(300);
+  guest.send({ t: "chat", text: "badge probe line" });
+  await sleep(900);
+  const pill = String(await app.evalJs('(document.getElementById("chat-unread-pill")?.textContent || "")'));
+  const pillHidden = await app.evalJs('!!document.getElementById("chat-unread-pill")?.hidden');
+  t.check("unread: pill counts the hidden line", pill === "1" && !pillHidden, `${pill}/${pillHidden}`);
+  t.check("unread: toast teaches the way", (await toastText()).includes("badge probe line"), (await toastText()).slice(0, 80));
+  await click("tab-btn-chat");
+  await sleep(400);
+  t.check("unread: opening chat clears the pill",
+    (await app.evalJs('(document.getElementById("chat-unread-pill")?.textContent || "")')) === "");
   t.check("online count follows presence", (await at("chat-online-count")) === "2 online", await at("chat-online-count"));
 
   guest.send({ t: "leave" });
   await sleep(900);
+  // F2: one "left" system line, exactly once — the join line stays (history).
+  t.check("F2: guest leave painted one system line once",
+    (await sysLines()) === 2 && (await sysText()).includes("Hist Guest left"), await sysText());
 
   // ---- C10: leave wipes chat ---------------------------------------------
   await click("btn-leave-room");
