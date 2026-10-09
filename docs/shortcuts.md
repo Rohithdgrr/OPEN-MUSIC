@@ -12,6 +12,7 @@ can never fire twice:
 | Desktop widget on/off | `Caps Lock` + `W` | `Ctrl + Alt + W` |
 | Download the playing track | `Caps Lock` + `D` | `Ctrl + Alt + D` |
 | Track credits | `Caps Lock` + `I` | `Ctrl + Alt + I` |
+| Notepad (open / close the panel) | `Caps Lock` + `P` | `Ctrl + Alt + P` |
 | Play / pause (media key) | — | `Media Play/Pause` |
 | Next track (media key) | — | `Media Next` |
 | Previous track (media key) | — | `Media Previous` |
@@ -57,6 +58,7 @@ n::Send("^!+#n")
 w::Send("^!+#w")
 d::Send("^!+#d")
 i::Send("^!+#i")
+p::Send("^!+#p")
 #HotIf
 CapsLock::Escape
 ```

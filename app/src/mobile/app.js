@@ -177,6 +177,15 @@ document.addEventListener("click", (e) => {
     go("nowplaying");
     return;
   }
+  const plPlay = el("[data-pl-play]");
+  if (plPlay) {
+    // A playlist/chart Play control: load its track list before opening
+    // NowPlaying, since playList() needs songs, not a playlist id. Checked
+    // before data-nav so a card's play bubble plays instead of navigating.
+    go("nowplaying");
+    playPlaylist(plPlay.dataset.plPlay);
+    return;
+  }
   const nav = el("[data-nav]");
   if (nav) {
     go(nav.dataset.nav);
@@ -215,14 +224,6 @@ document.addEventListener("click", (e) => {
     const row = dl.closest("[data-list][data-idx]");
     const track = row && store[row.dataset.list]?.[+row.dataset.idx];
     if (track) downloadTrack(track, dl);
-    return;
-  }
-  const plPlay = el("[data-pl-play]");
-  if (plPlay) {
-    // A playlist/chart Play control: load its track list before opening
-    // NowPlaying, since playList() needs songs, not a playlist id.
-    go("nowplaying");
-    playPlaylist(plPlay.dataset.plPlay);
     return;
   }
   // Three-dot triggers resolve their own target (row, NowPlaying, header,
@@ -368,7 +369,7 @@ function ensureWidget() {
       <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" class="relative h-1.5 bg-surface-container-high/70 cursor-pointer touch-none"><div id="tm-w-buf" class="absolute inset-y-0 left-0 bg-surface-container-highest rounded-full transition-all duration-150" style="width:0%"></div><div id="tm-w-fill" class="absolute inset-y-0 left-0 bg-primary rounded-full transition-all duration-75" style="width:0%"></div></div>
       <div class="flex items-center gap-2 px-2.5 py-1.5">
         <div class="relative w-11 h-11 rounded-xl bg-surface-container-highest flex-shrink-0 overflow-hidden shadow-sm ring-1 ring-black/5" data-w-open><img id="tm-w-art" alt="" class="w-full h-full object-cover"><span id="tm-w-vault" class="hidden absolute bottom-0.5 left-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white items-center justify-center text-[10px] leading-none">⬇</span></div>
-        <div class="flex flex-col min-w-0 flex-1 cursor-pointer select-none" data-w-open>
+        <div class="flex flex-col min-w-0 flex-1 cursor-pointer select-none overflow-hidden" data-w-open>
           <span id="tm-w-title" class="font-body-md text-[13px] text-on-surface font-semibold tracking-tight truncate leading-tight">Nothing playing</span>
           <span id="tm-w-artist" class="font-body-sm text-[11px] text-secondary truncate mt-0.5 leading-tight"></span>
         </div>
@@ -423,8 +424,15 @@ function ensureWidget() {
 ensureWidget();
 
 // ------------------------------------------------------- first-run onboarding
-// Language chips + starter artists; persists to LANG_KEY + taste, then gates
-// forever via the shared onboard flag. Runs once per install.
+// Three steps, one decision each — persisted on Start, then gates forever
+// via the shared onboard flag. Runs once per install.
+// 1. Languages (LANG_KEY, same values as always).
+// 2. Artists of those languages only, resolved live and sorted by the
+//    backend's own monthly-listener count (missing data sorts last, offline
+//    still offers the names with no image and no count). Picks save to
+//    tm-taste as names, exactly like before.
+// 3. Theme (tm-theme, applied immediately) + profile name (tm-name, read by
+//    the home greeting).
 (function onboard() {
   let done = true;
   try {
@@ -432,61 +440,152 @@ ensureWidget();
   } catch {}
   if (done || document.getElementById("tm-onboard")) return;
   const LANGS = ["All", "Telugu", "Hindi", "Tamil", "English"];
-  const STARTERS = [
-    "A. R. Rahman",
-    "Anirudh Ravichander",
-    "Sid Sriram",
-    "Shreya Ghoshal",
-    "Devi Sri Prasad",
-    "Arijit Singh",
-  ];
+  const LANG_SEEDS = {
+    Telugu: ["Sid Sriram", "Devi Sri Prasad", "Thaman S", "Anirudh Ravichander", "Shreya Ghoshal", "S. P. Balasubrahmanyam"],
+    Hindi: ["Arijit Singh", "Shreya Ghoshal", "Pritam", "A. R. Rahman", "Kishore Kumar", "Lata Mangeshkar"],
+    Tamil: ["Anirudh Ravichander", "A. R. Rahman", "Harris Jayaraj", "Sid Sriram", "Yuvan Shankar Raja", "Shreya Ghoshal"],
+    English: ["Ed Sheeran", "Taylor Swift", "A. R. Rahman", "Anirudh Ravichander", "Arijit Singh", "Sid Sriram"],
+  };
   const langs = new Set(["All"]);
   const picks = new Set();
+  let step = 1;
+  let artists = []; // {name, image, listeners|null}
+  let artistsFor = "";
+  let theme = "system";
+  try {
+    theme = localStorage.getItem("tm-theme") || "system";
+  } catch {}
   const ov = document.createElement("div");
   ov.id = "tm-onboard";
   ov.className = "fixed inset-0 z-[100] bg-surface overflow-y-auto";
-  ov.innerHTML = `
-    <div class="max-w-lg mx-auto px-5 pt-14 pb-10 flex flex-col gap-6 min-h-full">
-      <div class="flex flex-col gap-1.5">
-        <h1 class="font-headline-md text-[22px] font-bold tracking-tight text-on-surface">What moves you?</h1>
-        <p class="font-body-sm text-[13px] text-secondary">Pick languages and artists — Home tunes itself to your taste.</p>
-      </div>
+  document.body.appendChild(ov);
+
+  const escH = (s) => String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const seedNames = () => {
+    const keys = [...langs].filter((l) => l !== "All");
+    const list = keys.length ? keys : Object.keys(LANG_SEEDS);
+    const out = [];
+    for (const k of list) for (const n of LANG_SEEDS[k] || []) if (!out.includes(n)) out.push(n);
+    return out.slice(0, 12);
+  };
+  const fmtCount = (n) => (typeof n === "number" && n > 0 ? (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1e3)}K`) + " monthly" : "");
+
+  function paint() {
+    const dots = [1, 2, 3].map((i) => `<span class="h-1.5 rounded-full transition-all ${i === step ? "w-6 bg-primary" : "w-1.5 bg-surface-container-high"}"></span>`).join("");
+    let body;
+    if (step === 1) {
+      body = `
       <div class="flex flex-col gap-2.5">
         <h2 class="font-body-md text-[13px] font-semibold text-on-surface">Languages</h2>
         <div class="flex flex-wrap gap-2" data-ob-langs>
-          ${LANGS.map(
-            (l) =>
-              `<button type="button" data-ob-lang="${l}" class="px-4 py-2 rounded-full font-body-md text-[13px] font-semibold transition-all ${
-                l === "All" ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface"
-              }">${l}</button>`,
-          ).join("")}
+          ${LANGS.map((l) => `<button type="button" data-ob-lang="${l}" class="px-4 py-2 rounded-full font-body-md text-[13px] font-semibold transition-all ${langs.has(l) ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface"}">${l}</button>`).join("")}
+        </div>
+      </div>`;
+    } else if (step === 2) {
+      body = `
+      <div class="flex flex-col gap-2.5">
+        <h2 class="font-body-md text-[13px] font-semibold text-on-surface">Artists <span class="font-normal text-secondary">· most listened first</span></h2>
+        <div class="grid grid-cols-2 gap-2.5" data-ob-artists>
+          ${artists.map((a) => `
+          <button type="button" data-ob-artist="${escH(a.name)}" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-surface-container text-left transition-all ${picks.has(a.name) ? "ring-2 ring-primary" : ""}">
+            ${a.image ? `<img src="${escH(a.image)}" alt="" class="w-10 h-10 rounded-full object-cover shrink-0" loading="lazy" onerror="this.style.display='none'"/>` : `<span class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 font-headline-md text-[15px] font-bold text-secondary">${escH(a.name.charAt(0))}</span>`}
+            <span class="flex flex-col min-w-0"><span class="font-body-md text-[13px] font-semibold text-on-surface truncate">${escH(a.name)}</span>${fmtCount(a.listeners) ? `<span class="font-label-sm text-[10px] text-secondary">${fmtCount(a.listeners)}</span>` : ""}</span>
+          </button>`).join("") || `<p class="font-body-sm text-[13px] text-secondary">Looking up artists…</p>`}
+        </div>
+      </div>`;
+    } else {
+      body = `
+      <div class="flex flex-col gap-2.5">
+        <h2 class="font-body-md text-[13px] font-semibold text-on-surface">Theme</h2>
+        <div class="flex gap-2" data-ob-themes>
+          ${["system", "light", "dark"].map((t) => `<button type="button" data-ob-theme="${t}" class="flex-1 py-2.5 rounded-2xl font-body-md text-[13px] font-semibold capitalize transition-all ${theme === t ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface"}">${t}</button>`).join("")}
         </div>
       </div>
       <div class="flex flex-col gap-2.5">
-        <h2 class="font-body-md text-[13px] font-semibold text-on-surface">Starter artists</h2>
-        <div class="grid grid-cols-2 gap-2.5" data-ob-artists>
-          ${STARTERS.map(
-            (name) =>
-              `<button type="button" data-ob-artist="${name}" class="flex items-center gap-3 px-3 py-2.5 rounded-2xl bg-surface-container text-left transition-all">
-            <span class="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 font-headline-md text-[15px] font-bold text-secondary">${name.charAt(0)}</span>
-            <span class="font-body-md text-[13px] font-semibold text-on-surface truncate">${name}</span>
-          </button>`,
-          ).join("")}
-        </div>
+        <h2 class="font-body-md text-[13px] font-semibold text-on-surface">Profile name</h2>
+        <input type="text" data-ob-name maxlength="32" placeholder="Listener" value="${escH(nameVal)}" class="w-full bg-surface-container-low border border-surface-container-high rounded-xl px-3.5 py-3 font-body-md text-[14px] text-on-surface placeholder:text-secondary focus:outline-none focus:border-primary/50" />
+      </div>`;
+    }
+    ov.innerHTML = `
+    <div class="max-w-lg mx-auto px-5 pt-14 pb-10 flex flex-col gap-6 min-h-full">
+      <div class="flex items-center gap-1.5">${dots}</div>
+      <div class="flex flex-col gap-1.5">
+        <h1 class="font-headline-md text-[22px] font-bold tracking-tight text-on-surface">${step === 1 ? "What moves you?" : step === 2 ? "Who do you love?" : "Make it yours"}</h1>
+        <p class="font-body-sm text-[13px] text-secondary">${step === 1 ? "Pick languages — artists come from those regions." : step === 2 ? "Tap the artists you want more of." : "Theme applies instantly; the name greets you on Home."}</p>
       </div>
-      <button type="button" data-ob-start class="w-full py-3.5 rounded-2xl bg-primary text-on-primary font-body-md text-[15px] font-bold active:scale-[0.98] transition-all mt-auto">Start listening</button>
+      ${body}
+      <div class="flex gap-2 mt-auto">
+        ${step > 1 ? `<button type="button" data-ob-back class="py-3.5 px-5 rounded-2xl bg-surface-container text-on-surface font-body-md text-[15px] font-bold active:scale-[0.98] transition-all">Back</button>` : ""}
+        <button type="button" data-ob-next class="flex-1 py-3.5 rounded-2xl bg-primary text-on-primary font-body-md text-[15px] font-bold active:scale-[0.98] transition-all">${step < 3 ? "Continue" : "Start listening"}</button>
+      </div>
     </div>`;
-  document.body.appendChild(ov);
+  }
+
+  let nameVal = "";
+  async function loadArtists() {
+    const key = [...langs].sort().join("|");
+    if (key === artistsFor) return;
+    artistsFor = key;
+    artists = seedNames().map((name) => ({ name, image: "", listeners: null }));
+    paint();
+    if (!invoke) return;
+    try {
+      const settled = await Promise.allSettled(
+        artists.map(async (a) => {
+          const r = await invoke("search_entities", { query: a.name, kind: "artist", limit: 3, page: 1 });
+          const items = (r && r.items) || [];
+          const want = a.name.toLowerCase();
+          const hit = items.find((x) => String(x.title || "").toLowerCase() === want) || items[0];
+          if (!hit || !(hit.token || hit.id)) return a;
+          let listeners = null;
+          let image = hit.image || "";
+          try {
+            const ov2 = await invoke("artist_overview", { token: String(hit.token || hit.id) });
+            if (ov2 && typeof ov2.listeners === "number") listeners = ov2.listeners;
+            if (!image && ov2 && ov2.image) image = ov2.image;
+          } catch {}
+          return { name: a.name, image, listeners };
+        }),
+      );
+      if (key !== artistsFor) return; // languages changed mid-lookup
+      artists = settled.map((s, i) => (s.status === "fulfilled" ? s.value : artists[i]));
+      artists.sort((x, y) => (y.listeners || -1) - (x.listeners || -1));
+      if (step === 2) paint();
+    } catch {}
+  }
+
+  function applyTheme(t) {
+    theme = t;
+    try {
+      localStorage.setItem("tm-theme", t);
+      const dark = t === "dark" || (t === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+      document.documentElement.classList.toggle("dark", !!dark);
+    } catch {}
+  }
+
+  paint();
   ov.addEventListener("click", (e) => {
     if (!e.target || !e.target.closest) return;
     const lang = e.target.closest("[data-ob-lang]");
     if (lang) {
       const v = lang.dataset.obLang;
-      if (langs.has(v)) langs.delete(v);
-      else langs.add(v);
-      lang.className = `px-4 py-2 rounded-full font-body-md text-[13px] font-semibold transition-all ${
-        langs.has(v) ? "bg-primary text-on-primary" : "bg-surface-container text-on-surface"
-      }`;
+      if (v === "All") {
+        langs.clear();
+        langs.add("All");
+      } else {
+        langs.delete("All");
+        if (langs.has(v)) langs.delete(v);
+        else langs.add(v);
+        if (!langs.size) langs.add("All");
+      }
+      artistsFor = "";
+      paint();
+      return;
+    }
+    const th = e.target.closest("[data-ob-theme]");
+    if (th) {
+      applyTheme(th.dataset.obTheme);
+      paint();
       return;
     }
     const art = e.target.closest("[data-ob-artist]");
@@ -498,10 +597,30 @@ ensureWidget();
       art.classList.toggle("ring-primary", picks.has(v));
       return;
     }
-    if (e.target.closest("[data-ob-start]")) {
+    if (e.target.closest("[data-ob-back]")) {
+      step -= 1;
+      paint();
+      return;
+    }
+    const next = e.target.closest("[data-ob-next]");
+    if (next) {
+      const inp = ov.querySelector("[data-ob-name]");
+      if (inp) nameVal = inp.value;
+      if (step === 1) {
+        step = 2;
+        paint();
+        void loadArtists();
+        return;
+      }
+      if (step === 2) {
+        step = 3;
+        paint();
+        return;
+      }
       try {
         saveTaste([...picks]);
         save(LANG_KEY, [...langs]);
+        save("tm-name", String(nameVal || "").trim());
         setOnboarded();
       } catch {}
       ov.remove();

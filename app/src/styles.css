@@ -5973,12 +5973,7 @@ html.dark #now-playing-stage .lyric-line:not(.lyric-active):not(.lyric-past) .ly
   font-size: 13px !important;
 }
 
-/* Telemetry and Badges in Dark Mode */
-.dark #now-playing-stage #np-quality,
-html.dark #now-playing-stage #np-quality {
-  background: #27272a !important;
-  color: #ffffff !important;
-}
+/* Telemetry in Dark Mode */
 
 .dark #now-playing-stage select,
 html.dark #now-playing-stage select {
@@ -7258,38 +7253,25 @@ body.soc-social .soc-solo-only {
   z-index: 3;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 1.35rem 1rem 0.9rem;
-  background: transparent;
+  gap: 0.45rem;
+  padding: 0.75rem 0.75rem 0.6rem;
+  /* Legibility scrim, not glass (§6e): a bottom-anchored darkening gradient
+     with no backdrop-filter, so bright artwork stays sharp above the text
+     while white metadata stays readable. */
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.85) 0%,
+    rgba(0, 0, 0, 0.55) 45%,
+    rgba(0, 0, 0, 0.15) 75%,
+    rgba(0, 0, 0, 0) 100%
+  );
   color: #ffffff;
 }
 
-/* The glass lives on a pseudo-element, not on .np-art-overlay itself.
-   `backdrop-filter` paints over the element's whole box, so a blurred
-   rectangle would show a hard top edge even where the gradient is fully
-   transparent — masking .np-art-overlay directly would fix the edge but
-   also fade the eyebrow text out along with it. Separating the layer means
-   the mask touches only the glass. z-index:-1 keeps it behind the flex
-   children (positioned, so it would otherwise paint over them). */
-.np-art-overlay::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: linear-gradient(
-    to top,
-    rgba(6, 6, 8, 0.94) 0%,
-    rgba(6, 6, 8, 0.86) 34%,
-    rgba(6, 6, 8, 0.6) 62%,
-    rgba(6, 6, 8, 0.22) 84%,
-    rgba(6, 6, 8, 0) 100%
-  );
-  backdrop-filter: blur(10px) saturate(130%);
-  -webkit-backdrop-filter: blur(10px) saturate(130%);
-  -webkit-mask-image: linear-gradient(to top, #000 82%, transparent 100%);
-  mask-image: linear-gradient(to top, #000 82%, transparent 100%);
-  pointer-events: none;
-}
+/* The metadata card carries a gradient scrim, not glass (§6d/§6e of
+   docs/social-nowplaying.md): no backdrop-filter anywhere near the
+   artwork, so it stays sharp. Legibility is carried by the scrim plus
+   the text-shadows on the title / artist, not by a backdrop. */
 
 .np-art-overlay-top {
   display: flex;
@@ -7305,33 +7287,6 @@ body.soc-social .soc-solo-only {
   flex: 1;
 }
 
-.np-art-trackline {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.np-art-eyebrow {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #d4d4d8;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
-}
-
-.np-art-quality {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #ffffff;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  font-weight: 500;
-}
-
 .np-art-title {
   margin: 3px 0 0;
   font-size: 22px;
@@ -7339,7 +7294,7 @@ body.soc-social .soc-solo-only {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #ffffff;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7351,7 +7306,7 @@ body.soc-social .soc-solo-only {
   font-size: 12px;
   font-weight: 500;
   color: #e4e4e7;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85), 0 1px 3px rgba(0, 0, 0, 0.9);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7411,6 +7366,7 @@ body.soc-social .soc-solo-only {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   color: #d4d4d8;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
 }
 
 .np-art-info-group {
@@ -9219,21 +9175,8 @@ html.dark .soc-btn.soc-btn-danger {
   color: #f87171;
 }
 
-/* Artwork overlay: dark-glass in both themes. Only the gradient's stops
-   shift for dark. It must target ::before — a flat `background` on
-   .np-art-overlay would paint over the pseudo-element's gradient and
-   re-hide the cover. */
-.dark .np-art-overlay::before,
-html.dark .np-art-overlay::before {
-  background: linear-gradient(
-    to top,
-    rgba(3, 3, 5, 0.95) 0%,
-    rgba(3, 3, 5, 0.87) 34%,
-    rgba(3, 3, 5, 0.62) 62%,
-    rgba(3, 3, 5, 0.24) 84%,
-    rgba(3, 3, 5, 0) 100%
-  );
-}
+/* Artwork overlay: transparent in both themes (§6d) — the dark-glass
+   ::before gradient used to live here and was removed with the blur. */
 
 /* ==========================================================================
    10. PHASE 2 ADDENDUM — guards the new markup relies on

@@ -1,0 +1,522 @@
+/* notepad-blocks.css — Vijay: editing power (slash palette, preview, TOC,
+   find & replace, version history, focus/typewriter).
+   Spec: docs/notepad/vijay.md. Every selector here is npdb- prefixed except
+   the focus-mode rules, which gate Govinda's own mount ids (#npd-side,
+   #npd-rail, #npd-tabmeta) and his status/tabs strip — hiding, never
+   renaming or restructuring them.
+   Colours: app tokens only (README §2.4), light + html.dark pairs. */
+
+/* ------------------------------------------------------------- layering -
+   The layer itself never intercepts clicks (the editor stays clickable);
+   only my popups do. Popups are position:fixed off the textarea's rect, so
+   nothing here depends on the panel's internal layout. */
+.npdb-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+.npdb-layer > *,
+.npdb-toc {
+  pointer-events: auto;
+}
+.npdb-menu[hidden],
+.npdb-preview[hidden],
+.npdb-history[hidden],
+.npdb-replace[hidden],
+.npdb-toc[hidden] {
+  display: none !important;
+}
+
+/* -------------------------------------------------------- slash palette - */
+.npdb-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 258px;
+  max-width: 330px;
+  max-height: 46vh;
+  overflow: auto;
+  padding: 4px;
+  background: #f9f9fb;
+  border: 1px solid #e2e2e4;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  color: #1a1c1d;
+}
+.npdb-menu-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.npdb-menu-row.is-active {
+  background: #e8e8ea;
+}
+.npdb-menu-label {
+  font-weight: 600;
+}
+.npdb-menu-hint {
+  color: #71717a;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+}
+.npdb-menu-empty {
+  padding: 9px;
+  color: #71717a;
+}
+
+/* ------------------------------------------------------------- preview - */
+.npdb-preview {
+  position: fixed;
+  z-index: 40;
+  overflow: auto;
+  padding: 20px 26px 32px;
+  background: #f9f9fb;
+  color: #1a1c1d;
+  font-size: 15px;
+  line-height: 1.62;
+  border: 1px solid #e2e2e4;
+  border-radius: 6px;
+}
+.npdb-preview .npdb-h {
+  margin: 1.1em 0 0.4em;
+  line-height: 1.25;
+  font-weight: 700;
+}
+.npdb-preview h1:first-child,
+.npdb-preview .npdb-h:first-child {
+  margin-top: 0;
+}
+.npdb-preview h1 { font-size: 1.85em; }
+.npdb-preview h2 { font-size: 1.5em; }
+.npdb-preview h3 { font-size: 1.24em; }
+.npdb-preview h4,
+.npdb-preview h5,
+.npdb-preview h6 { font-size: 1.05em; }
+.npdb-preview .npdb-p {
+  margin: 0.55em 0;
+}
+.npdb-preview .npdb-quote {
+  margin: 0.7em 0;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid #e2e2e4;
+  color: #71717a;
+}
+.npdb-preview .npdb-hr {
+  border: 0;
+  border-top: 1px solid #e2e2e4;
+  margin: 1.1em 0;
+}
+.npdb-preview .npdb-pre,
+.npdb-preview .npdb-diagram {
+  margin: 0.75em 0;
+  padding: 10px 12px;
+  background: #f3f3f5;
+  border: 1px solid #e2e2e4;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.npdb-preview .npdb-diagram {
+  border-style: dashed;
+}
+.npdb-preview .npdb-pre code,
+.npdb-preview .npdb-diagram code {
+  display: block;
+  white-space: pre;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.npdb-code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.92em;
+  padding: 1px 4px;
+  background: #f3f3f5;
+  border-radius: 4px;
+}
+.npdb-list {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+.npdb-list .npdb-list {
+  margin: 0.15em 0;
+}
+.npdb-li {
+  margin: 0.2em 0;
+}
+.npdb-cb {
+  display: inline-block;
+  width: 1.15em;
+  margin-right: 5px;
+  cursor: pointer;
+  color: #71717a;
+  user-select: none;
+}
+.npdb-cb-on {
+  color: #1a1c1d;
+}
+.npdb-table-wrap {
+  margin: 0.8em 0;
+  overflow-x: auto;
+}
+.npdb-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95em;
+}
+.npdb-table th,
+.npdb-table td {
+  border: 1px solid #e2e2e4;
+  padding: 6px 9px;
+  text-align: left;
+}
+.npdb-table th {
+  background: #f3f3f5;
+  font-weight: 600;
+}
+.npdb-toggle {
+  margin: 0.6em 0;
+  padding: 4px 8px;
+  border: 1px solid #e2e2e4;
+  border-radius: 8px;
+  background: #f3f3f5;
+}
+.npdb-toggle .npdb-summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.npdb-toggle .npdb-summary::-webkit-details-marker { display: none; }
+.npdb-toggle[open] .npdb-summary { margin-bottom: 4px; }
+.npdb-callout {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin: 0.7em 0;
+  padding: 9px 11px;
+  background: #f3f3f5;
+  border: 1px solid #e2e2e4;
+  border-radius: 9px;
+}
+.npdb-callout-icon {
+  line-height: 1.5;
+  color: #71717a;
+}
+.npdb-callout-body {
+  flex: 1;
+}
+.npdb-mathblock {
+  margin: 0.7em 0;
+  padding: 8px 11px;
+  background: #f3f3f5;
+  border: 1px solid #e2e2e4;
+  border-radius: 8px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-style: italic;
+}
+.npdb-math {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-style: italic;
+}
+.npdb-frac {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: -0.5em;
+  text-align: center;
+  font-style: normal;
+  font-size: 0.85em;
+}
+.npdb-frac-n {
+  border-bottom: 1px solid currentColor;
+  padding: 0 3px;
+}
+.npdb-frac-d {
+  padding: 0 3px;
+}
+
+/* typewriter (preview mode): everything but the caret's block fades.
+   Scoped to .npdb-typewriter so a plain preview never dims anything. */
+.npdb-typewriter .npdb-preview .npdb-type-dim {
+  opacity: 0.34;
+  transition: opacity 0.18s ease;
+}
+.npdb-typewriter .npdb-preview .npdb-type-active {
+  opacity: 1;
+}
+
+/* ----------------------------------------------------------------- TOC - */
+.npdb-toc {
+  padding: 10px 8px 16px;
+  min-width: 0;
+}
+.npdb-toc-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #71717a;
+  padding: 0 6px 6px;
+}
+.npdb-toc-empty {
+  padding: 0 6px;
+  font-size: 12px;
+  color: #71717a;
+}
+.npdb-toc-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #1a1c1d;
+  font-size: 12.5px;
+  line-height: 1.35;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.npdb-toc-row:hover {
+  background: #f3f3f5;
+}
+.npdb-toc-row.is-active {
+  background: #e8e8ea;
+  font-weight: 600;
+}
+.npdb-toc-row.level-2 { padding-left: 16px; }
+.npdb-toc-row.level-3 { padding-left: 28px; }
+
+/* ----------------------------------------------------- find & replace -- */
+.npdb-replace {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  background: #f9f9fb;
+  border: 1px solid #e2e2e4;
+  border-radius: 9px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.13);
+}
+.npdb-find,
+.npdb-repl {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid #e2e2e4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1a1c1d;
+  font-size: 13px;
+}
+.npdb-find:focus,
+.npdb-repl:focus {
+  outline: 2px solid #71717a;
+  outline-offset: -1px;
+}
+.npdb-replace-status {
+  min-width: 86px;
+  padding: 0 4px;
+  font-size: 11.5px;
+  color: #71717a;
+  font-variant-numeric: tabular-nums;
+}
+.npdb-btn {
+  padding: 6px 9px;
+  border: 1px solid #e2e2e4;
+  border-radius: 6px;
+  background: #f3f3f5;
+  color: #1a1c1d;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.npdb-btn:hover {
+  background: #e8e8ea;
+}
+.npdb-btn-close {
+  padding: 6px 8px;
+}
+/* the two write actions read as primary against the plain Close */
+.npdb-btn-replace,
+.npdb-btn-all {
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------- version history -- */
+.npdb-history {
+  position: fixed;
+  z-index: 60;
+  overflow: auto;
+  padding: 8px;
+  background: #f9f9fb;
+  border: 1px solid #e2e2e4;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+}
+.npdb-hist-title {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #71717a;
+  padding: 2px 6px 8px;
+}
+.npdb-hist-empty {
+  padding: 0 6px;
+  font-size: 12.5px;
+  color: #71717a;
+}
+.npdb-hist-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.npdb-hist-row.is-active,
+.npdb-hist-row:hover {
+  background: #e8e8ea;
+}
+.npdb-hist-time {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1c1d;
+  font-variant-numeric: tabular-nums;
+}
+.npdb-hist-snip {
+  font-size: 12px;
+  color: #71717a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------ focus / typewriter ----
+   Class lives on #npd-panel (core.panel()). We hide Govinda's chrome —
+   header, rails, status — never rename or restructure it. */
+.npdb-focus .npd-tabs,
+.npdb-focus #npd-side,
+.npdb-focus #npd-rail,
+.npdb-focus #npd-tabmeta,
+.npdb-focus .npd-status {
+  display: none !important;
+}
+
+/* ------------------------------------------------------------- dark ----- */
+html.dark .npdb-menu {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+html.dark .npdb-menu-row.is-active {
+  background: #1a1a1e;
+}
+html.dark .npdb-menu-hint,
+html.dark .npdb-menu-empty {
+  color: #a1a1aa;
+}
+
+html.dark .npdb-preview {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+html.dark .npdb-preview .npdb-quote {
+  border-left-color: #242429;
+  color: #a1a1aa;
+}
+html.dark .npdb-preview .npdb-hr {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .npdb-preview .npdb-pre,
+html.dark .npdb-preview .npdb-diagram,
+html.dark .npdb-mathblock,
+html.dark .npdb-code {
+  background: #141416;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+html.dark .npdb-cb {
+  color: #a1a1aa;
+}
+html.dark .npdb-cb-on {
+  color: #f4f4f5;
+}
+html.dark .npdb-table th,
+html.dark .npdb-table td {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .npdb-table th {
+  background: #141416;
+}
+html.dark .npdb-toggle {
+  background: #141416;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .npdb-callout {
+  background: #141416;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .npdb-callout-icon {
+  color: #a1a1aa;
+}
+
+html.dark .npdb-toc-title,
+html.dark .npdb-toc-empty,
+html.dark .npdb-hist-title,
+html.dark .npdb-hist-empty,
+html.dark .npdb-hist-snip,
+html.dark .npdb-replace-status,
+html.dark .npdb-menu-hint {
+  color: #a1a1aa;
+}
+html.dark .npdb-toc-row {
+  color: #f4f4f5;
+}
+html.dark .npdb-toc-row:hover,
+html.dark .npdb-toc-row.is-active {
+  background: #1a1a1e;
+}
+
+html.dark .npdb-replace {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .npdb-find,
+html.dark .npdb-repl {
+  background: #141416;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+html.dark .npdb-find:focus,
+html.dark .npdb-repl:focus {
+  outline-color: #a1a1aa;
+}
+html.dark .npdb-btn {
+  background: #1a1a1e;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+html.dark .npdb-btn:hover {
+  background: #242429;
+}
+
+html.dark .npdb-history {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+html.dark .npdb-hist-time {
+  color: #f4f4f5;
+}
+html.dark .npdb-hist-row.is-active,
+html.dark .npdb-hist-row:hover {
+  background: #1a1a1e;
+}

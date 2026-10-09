@@ -1478,25 +1478,43 @@ fn art_origin_ok(raw: &str) -> Result<url::Url, String> {
     Ok(u)
 }
 
+/// Magic-byte detection for the formats a catalog cover ever uses. `None`
+/// means the bytes are not an image at all (an HTML error page, a redirect
+/// stub, an audio file) — the `/art` upstream gate needs that distinction,
+/// while disk hits keep the historical jpeg fallback via `sniff_image_mime`.
+fn detect_image_mime(b: &[u8]) -> Option<&'static str> {
+    if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg");
+    }
+    if b.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return Some("image/png");
+    }
+    if b.len() >= 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
+        return Some("image/gif");
+    }
+    if b.len() >= 12 && &b[4..8] == b"ftyp" && (&b[8..12] == b"avif" || &b[8..12] == b"avis") {
+        return Some("image/avif");
+    }
+    None
+}
+
 /// Magic-byte content type for disk hits (the file stores bytes, not
 /// headers). Unknown shapes fall back to jpeg — every catalog cover is.
 fn sniff_image_mime(b: &[u8]) -> &'static str {
-    if b.starts_with(&[0xFF, 0xD8, 0xFF]) {
-        return "image/jpeg";
-    }
-    if b.starts_with(&[0x89, b'P', b'N', b'G']) {
-        return "image/png";
-    }
-    if b.len() >= 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WEBP" {
-        return "image/webp";
-    }
-    if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
-        return "image/gif";
-    }
-    if b.len() >= 12 && &b[4..8] == b"ftyp" && (&b[8..12] == b"avif" || &b[8..12] == b"avis") {
-        return "image/avif";
-    }
-    "image/jpeg"
+    detect_image_mime(b).unwrap_or("image/jpeg")
+}
+
+/// Is an upstream `/art` answer usable? A declared `image/*` type is trusted;
+/// otherwise the bytes themselves must be an image. Some SaavnCDN edges serve
+/// real covers as `application/octet-stream` (observed live on `/artists/…`
+/// paths), which the old type-only gate turned into a 502 — every such
+/// thumbnail fell back to the brand mark. Bytes decide instead: a genuine
+/// cover is served, an HTML error page still fails.
+fn art_answer_is_image(ct: &str, bytes: &[u8]) -> bool {
+    ct.starts_with("image/") || detect_image_mime(bytes).is_some()
 }
 
 fn image_response(bytes: &[u8], upstream_ct: Option<&str>) -> Response {
@@ -1572,17 +1590,19 @@ async fn art(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if !ct.starts_with("image/") {
+    // Read before the type gate: some edges wrongly label covers
+    // `application/octet-stream`, so the bytes are the authority.
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => return (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+    };
+    if !art_answer_is_image(&ct, &bytes) {
         return (
             StatusCode::BAD_GATEWAY,
             format!("upstream sent {ct} instead of art"),
         )
             .into_response();
     }
-    let bytes = match resp.bytes().await {
-        Ok(b) => b,
-        Err(e) => return (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
-    };
     if bytes.len() as u64 > crate::cache::MAX_ART_BYTES {
         return (
             StatusCode::BAD_GATEWAY,
@@ -2200,6 +2220,21 @@ mod tests {
             "image/jpeg",
             "unknown bytes fall back to the only format covers ever use"
         );
+    }
+
+    /// A cover the CDN labels `application/octet-stream` must still be served
+    /// (found live: SaavnCDN `/artists/…` thumbs). The bytes decide — a real
+    /// JPEG passes, an HTML error page does not.
+    #[test]
+    fn art_answer_accepts_octet_stream_covers_but_not_junk() {
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 9, 9, 9];
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        assert!(art_answer_is_image("application/octet-stream", &jpeg));
+        assert!(art_answer_is_image("", &png));
+        assert!(art_answer_is_image("image/jpeg", b"anything"));
+        assert!(!art_answer_is_image("application/octet-stream", b"<html>"));
+        assert!(!art_answer_is_image("text/html", b"<html>not art</html>"));
+        assert_eq!(detect_image_mime(b"<html>"), None);
     }
 
     /// L3 disk tier through the real router: a seeded file serves without

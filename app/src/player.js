@@ -24,7 +24,6 @@ export function setBadge(status, info) {
   bar.badge.classList.remove("hidden");
   if (np.badge) np.badge.textContent = badgeText;
   if (np.format) np.format.textContent = info.chosen_quality;
-  npText("np-quality", info.chosen_quality);
   emitState(true);
   document.title = full
     ? "▶ " + bar.title.textContent

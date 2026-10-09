@@ -175,7 +175,6 @@ function paintTrackUI(index, resolving = true) {
   npText("np-artist-tile", track.artist || "—");
   stampEntity(document.getElementById("np-artist-tile"), "artist", track.artist);
   npText("np-length", track.duration || "—");
-  npText("np-trackline", `TRACK ${String(index + 1).padStart(2, "0")} • STEREO DIRECT`);
   if (np.favIcon) np.favIcon.dataset.favIcon = track.id;
   paintFavHearts();
   emitState(true);

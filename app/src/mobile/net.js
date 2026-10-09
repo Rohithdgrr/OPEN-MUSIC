@@ -9,7 +9,6 @@ const SLOW_RTT_MS = 300;
 const FAILS_TO_LOST = 2;
 const OKS_TO_ONLINE = 3;
 const MIN_SWITCH_MS = 10000;
-const SHOW_AFTER_MS = 8000; // banner unhides only after 8 s of sustained trouble
 const RETRY_DOWN_MS = 2000;
 const RETRY_OK_MS = 5000;
 
@@ -27,16 +26,20 @@ const MODES = { online: "online", slow: "degraded", reconnecting: "degraded", lo
 export const mode = (s) => MODES[s] || "degraded";
 
 const COPY = {
-  lost: { icon: "wifi_off", msg: "No internet connection — retrying…" },
-  reconnecting: { icon: "sync", msg: "Reconnecting…" },
-  slow: { icon: "network_check", msg: "Slow internet — streams may buffer" },
-  online: { icon: "", msg: "" },
+  lost: { msg: "No internet connection — retrying…" },
+  reconnecting: { msg: "Reconnecting…" },
+  slow: { msg: "Slow internet — streams may buffer" },
+  online: { msg: "Online — streaming at full quality" },
 };
 
-const MODE_COPY = {
-  online: { msg: "Back online — streaming at full quality", kind: "success" },
-  degraded: { msg: "Network is slow — preferring downloaded songs", kind: "info" },
-  offline: { msg: "Offline — playing from your downloads", kind: "error" },
+// The tile itself is the indicator: it fills with the state colour, white
+// mark on top (no banner text, no toasts — the user asked notifications
+// gone, one glanceable icon instead).
+const FILL = {
+  online: "#10b981",
+  slow: "#f59e0b",
+  reconnecting: "#f59e0b",
+  lost: "#ef4444",
 };
 
 let state = "online";
@@ -46,11 +49,8 @@ let lastMode = "online";
 let lastChange = Date.now() - MIN_SWITCH_MS;
 let force = null; // "online" | "offline" | null (auto)
 let timer = 0;
-let firstBadAt = 0; // when the current non-online stretch started (0 = online)
-let banner = null;
 let invoke = null;
 let diag = () => {};
-let toast = () => {};
 let onMode = null;
 
 function prefForce() {
@@ -73,62 +73,45 @@ export function setModePref(v) {
   modeChanged(netMode());
 }
 
-function modeChanged(m, { silent = false } = {}) {
+function modeChanged(m) {
   if (m === lastMode) return;
   lastMode = m;
-  if (silent) {
-    // Probe-driven: the banner owns bad-state display, so only recovery
-    // toasts — the banner just vanishes, leaving the toast as the sole
-    // "back online" confirmation.
-    if (m === "online") toast(MODE_COPY[m].msg, 4000, MODE_COPY[m].kind);
-  } else {
-    // User-initiated pref change: always confirm.
-    toast(MODE_COPY[m].msg, 4000, MODE_COPY[m].kind);
-  }
+  // No toasts, ever — the avatar fill is the whole notification.
   onMode?.(m);
 }
 
-const bannerBase = (next) =>
-  `fixed top-[calc(env(safe-area-inset-top,0px)+3.5rem+8px)] inset-x-0 mx-auto w-max max-w-[90vw] z-[85] flex items-center justify-center gap-1.5 px-3 py-1 rounded-full font-medium text-[11px] shadow-lg backdrop-blur-xl border transition-all duration-300 pointer-events-auto ${
-    next === "lost" ? "bg-red-500/95 text-white border-red-400/30 shadow-red-500/25" : "bg-zinc-900/90 text-zinc-100 border-zinc-700/50 shadow-black/30"
-  }`;
-
-function showBanner(next) {
-  const copy = COPY[next];
-  banner.className = bannerBase(next);
-  banner.innerHTML = `<span class="material-symbols-outlined text-[14px]">${copy.icon}</span><span>${copy.msg}</span>`;
-  banner.classList.remove("hidden");
+/// The indicator is the existing header profile avatar (the `person` glyph
+/// button that navigates to Settings) — its circle fills with the state
+/// colour; the glyph stays white on top and the button keeps working.
+/// Headers are rebuilt from their fragment on every navigation, so this is
+/// called on state changes AND on the router's `smount` event.
+function paintAvatar(next) {
+  const msg = COPY[next].msg;
+  document.querySelectorAll('[data-nav="settings"]').forEach((btn) => {
+    const glyph = btn.querySelector(":scope > .material-symbols-outlined");
+    if (!glyph || glyph.textContent.trim() !== "person") return;
+    const base = btn.dataset.netAria || btn.getAttribute("aria-label") || "Settings";
+    btn.dataset.netAria = base;
+    // Attribute + var paint, never an inline background: both themes paint
+    // this button with an !important gradient that beats inline styles
+    // (measured rgba(0,0,0,0) — see the [data-net-state] rules in index.html).
+    btn.dataset.netState = next;
+    btn.style.setProperty("--tm-net-fill", FILL[next]);
+    btn.classList.toggle("net-pulse", next === "reconnecting");
+    btn.title = msg;
+    btn.setAttribute("aria-label", `${base} — network: ${msg}`);
+  });
 }
 
 function paint(next) {
-  if (!banner) return;
-  if (next !== "online") {
-    if (!firstBadAt) firstBadAt = Date.now();
-    if (next === state) {
-      // Same bad stretch, no transition: the delayed show may still mature.
-      if (Date.now() - firstBadAt >= SHOW_AFTER_MS) showBanner(next);
-      return;
-    }
-  }
   if (next === state) return;
   if (Date.now() - lastChange < MIN_SWITCH_MS) return;
   const prev = state;
   state = next;
   lastChange = Date.now();
-  const copy = COPY[next];
-  if (next === "online") {
-    firstBadAt = 0;
-    banner.classList.add("hidden");
-    diag("net", true, `recovered from ${prev}`);
-  } else {
-    showBanner(next);
-    // Delayed show: transient blips (< SHOW_AFTER_MS) never unhide the pill.
-    // (className above wipes classes, so re-hide explicitly while waiting.)
-    if (Date.now() - firstBadAt >= SHOW_AFTER_MS) banner.classList.remove("hidden");
-    else banner.classList.add("hidden");
-    diag("net", next === "lost" ? false : null, `${copy.msg} (was ${prev})`);
-  }
-  modeChanged(netMode(), { silent: true });
+  paintAvatar(next);
+  diag("net", next === "online" ? true : next === "lost" ? false : null, `${COPY[next].msg} (was ${prev})`);
+  modeChanged(netMode());
 }
 
 async function probe() {
@@ -156,20 +139,17 @@ async function probe() {
   timer = setTimeout(probe, next === "online" || next === "slow" ? RETRY_OK_MS : RETRY_DOWN_MS);
 }
 
-export function startNet({ invoke: inv, diag: dg, toast: tt, onMode: om } = {}) {
+export function startNet({ invoke: inv, diag: dg, onMode: om } = {}) {
   invoke = inv;
   if (!invoke) return; // no Tauri IPC — stay optimistic, nothing to probe
   if (dg) diag = dg;
-  if (tt) toast = tt;
   if (om) onMode = om;
   force = prefForce();
   lastMode = netMode();
-  banner = document.createElement("div");
-  banner.id = "net-banner";
-  banner.setAttribute("role", "status");
-  banner.setAttribute("aria-live", "polite");
-  banner.className = bannerBase("reconnecting") + " hidden";
-  document.body.appendChild(banner);
+  paintAvatar(state);
+  // Every navigation rebuilds the header from its fragment, wiping the
+  // inline fill — repaint when a screen mounts.
+  document.addEventListener("smount", () => paintAvatar(state), { passive: true });
 
   window.addEventListener("offline", () => {
     fails = FAILS_TO_LOST;

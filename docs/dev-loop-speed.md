@@ -126,6 +126,33 @@ android.newDsl=false
   generated build scripts may not be configuration-cache clean; enabling it
   risks hard failures for little gain.
 
+## 3. Debug APK size budget (< 50 MiB)
+
+User requirement (2026-10-10): the debug APK must stay under 50 MiB. The
+bloat was DWARF: the x86_64 debug `libapp_lib.so` carried ~300 MB of debug
+info (~88 MB APK). Fix lives in `app/src-tauri/Cargo.toml`:
+
+```toml
+[profile.dev]
+strip = "debuginfo"          # DWARF out of the final link; symbol names stay
+                             # so panic backtraces still resolve
+[profile.dev.package."*"]
+debug = false                # third-party crates: no debug info at all
+opt-level = 1                # deps at -O1 — code section shrinks several-fold
+```
+
+First-party code keeps full debug semantics (assertions on, opt-level 0,
+symbols kept); only third-party crates lose DWARF/get -O1 — dep panics in
+tests lose source lines, which never mattered here. Side effect: deps must
+be recompiled once per machine after the change, and desktop `tauri dev` /
+`cargo test` get *faster* (deps at -O1, no debuginfo emission).
+
+Measure after every profile change:
+`Get-Item gen/android/app/build/outputs/apk/x86_64/debug/app-x86_64-debug.apk`
+— the single-arch debug APK. (The `universal/` outputs package whatever
+jniLibs symlinks exist, including stale release `.so`s — see mobile
+09-problems P29 — always read the x86_64 path for an x86_64-only build.)
+
 ## Rejected (do not re-add without evidence)
 
 | Proposal | Verdict | Why |

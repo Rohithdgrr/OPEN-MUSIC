@@ -56,6 +56,14 @@ pub const ACTIONS: &[Action] = &[
         event: "shortcut:info",
         focus: true,
     },
+    // Notepad toggle (docs/notepad/features.md): the ONLY way into the panel —
+    // there is deliberately no button, menu entry or route in the desktop UI.
+    Action {
+        name: "notepad",
+        key: Code::KeyP,
+        event: "shortcut:notepad",
+        focus: true,
+    },
 ];
 
 /// Media keys as plain global shortcuts: the shell still shows its volume

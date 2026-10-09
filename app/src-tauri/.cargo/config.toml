@@ -1,0 +1,7 @@
+# Desktop link speed — docs/dev-loop-speed.md §1.
+# rust-lld.exe ships with the stable MSVC toolchain (lib\rustlib\<host>\bin);
+# it links the final .exe far faster than link.exe. Mobile targets are NOT
+# listed: NDK already defaults to lld, so a section there is a no-op.
+# Safety valve: delete this file to fall back to link.exe.
+[target.x86_64-pc-windows-msvc]
+linker = "rust-lld"

@@ -29,6 +29,7 @@ import {
   PLAYS_KEY,
   HISTORY_KEY,
   LIBRARY_KEY,
+  VAULT_IDS_KEY,
   LANG_KEY,
   COUNTRY_KEY,
   dlQuality,
@@ -355,15 +356,91 @@ async function renderMadeForYou(m) {
       sec.dataset.shelf = key;
       sec.className = "flex flex-col space-y-space-sm";
       const why = explain(profile, shelf);
-      sec.innerHTML = `<div class="flex flex-col space-y-0.5"><div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">${esc(shelf.title)}</h2><span class="font-label-mono text-[9.5px] uppercase tracking-widest text-secondary">${esc(shelf.tag)}</span></div>${why ? `<p class="font-body-sm text-[11.5px] text-secondary truncate">${esc(why)}</p>` : ""}</div><div class="flex flex-col gap-1" data-cards></div>`;
+      sec.innerHTML = `<div class="flex flex-col space-y-0.5"><div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">${esc(shelf.title)}</h2><span class="font-label-mono text-[9.5px] uppercase tracking-widest text-secondary">${esc(shelf.tag)}</span></div>${why ? `<p class="font-body-sm text-[11.5px] text-secondary truncate">${esc(why)}</p>` : ""}</div><div class="flex gap-3 overflow-x-auto no-scrollbar py-1" data-cards></div>`;
       root.appendChild(sec);
     }
     setList(listName, shelf.tracks);
+    // One mix card per shelf (mockup "Your Mixes" rail): art from the top
+    // track, a real track count, tap plays the mix from the top.
+    const first = shelf.tracks[0] || {};
     const box = sec.querySelector("[data-cards]");
-    if (box) box.innerHTML = shelf.tracks.map((t, i) => rowHTML(listName, i, t)).join("");
+    if (box) {
+      box.innerHTML = homeTrackCardHTML(
+        { ...first, title: shelf.title, artist: `${shelf.tracks.length} Tracks` },
+        0,
+        listName,
+      );
+    }
   }
 
   paintFavs();
+}
+
+/// Home-rail cards in the mockup language (open_music_mobile_home.html):
+/// square art with a bottom gradient, title + sub overlaid, and a play
+/// bubble. The bubble is honest: playlist bubbles carry `data-pl-play`
+/// (the existing playPlaylist path — app.js checks it before `data-nav`);
+/// album/artist bubbles navigate with the card (no fake playback). Track
+/// cards play through the existing `[data-list][data-idx]` delegation.
+function homeBubble(playId) {
+  return `<span class="absolute z-[1] right-2 bottom-2 w-8 h-8 rounded-full bg-white text-black flex items-center justify-center shadow-md"${playId ? ` data-pl-play="${esc(playId)}"` : ""}><span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1;">play_arrow</span></span>`;
+}
+
+function homeCardHTML({ nav, playId, image, title, sub }) {
+  return `<div data-nav="${esc(nav)}" class="w-36 flex-shrink-0 cursor-pointer active:scale-[0.98] transition-all group">
+    <div class="relative w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest shadow-sm ring-1 ring-black/5">
+      <img alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(image)}>
+      <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none"></div>
+      ${homeBubble(playId)}
+      <div class="absolute left-2 right-11 bottom-2 pointer-events-none">
+        <div class="font-label-md text-[12px] font-semibold text-white leading-tight truncate">${esc(title || "")}</div>
+        <div class="font-body-sm text-[10px] text-white/80 truncate mt-0.5">${esc(sub || "")}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function homeTrackCardHTML(t, i, list) {
+  return `<div data-list="${esc(list)}" data-idx="${i}" class="w-36 flex-shrink-0 cursor-pointer active:scale-[0.98] transition-all group">
+    <div class="relative w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest shadow-sm ring-1 ring-black/5">
+      <img alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" ${art(t.image)}>
+      <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none"></div>
+      ${homeBubble(null)}
+      <div class="absolute left-2 right-11 bottom-2 pointer-events-none">
+        <div class="font-label-md text-[12px] font-semibold text-white leading-tight truncate">${esc(t.title || "")}</div>
+        <div class="font-body-sm text-[10px] text-white/80 truncate mt-0.5">${esc(t.artist || "")}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function homeArtistHTML(a, i, nav) {
+  return `<div data-nav="${esc(nav)}" class="w-[76px] flex-shrink-0 flex flex-col items-center cursor-pointer active:scale-95 transition-all">
+    <div class="w-[76px] h-[76px] rounded-full overflow-hidden bg-surface-container-highest ring-1 ring-black/5 shadow-sm"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
+    <div class="font-label-md text-[11px] font-semibold text-on-surface truncate mt-2 max-w-full">${esc(a.title || "")}</div>
+    ${a.subtitle ? `<div class="font-body-sm text-[10px] text-secondary truncate max-w-full">${esc(a.subtitle)}</div>` : ""}
+  </div>`;
+}
+
+/// Favorites shelf counts — every number is a real local list length.
+function paintFavorites(m) {
+  const set = (k, v) => {
+    const n = m.querySelector(`[data-fav-count="${k}"]`);
+    if (n && n.textContent !== v) n.textContent = v;
+  };
+  set("liked", `${load(FAVS_KEY, []).length} Tracks`);
+  set("recent", `${load(PLAYS_KEY, []).length} Tracks`);
+  set("playlists", `${load(LIBRARY_KEY, []).length} Playlists`);
+  const ids = load(VAULT_IDS_KEY, null);
+  if (Array.isArray(ids)) {
+    set("downloads", `${ids.length} Tracks`);
+  } else if (invoke) {
+    invoke("list_downloads")
+      .then((v) => set("downloads", `${((v && v.entries) || []).length} Tracks`))
+      .catch(() => {});
+  } else {
+    set("downloads", "0 Tracks");
+  }
 }
 
 async function mountHome() {
@@ -383,7 +460,11 @@ async function mountHome() {
   // launch feed fails below and this mount would otherwise bail out.
   await renderMadeForYou(m);
 
-  if (!invoke) return;
+  // Favorites counts are local too — paint before the feed guard so an
+  // offline cold boot still shows real numbers.
+  paintFavorites(m);
+
+  if (!invoke) { clearSkeletons(m); return; }
   let feed = null;
   try {
     // Offline: skip the upstream call entirely (it would sit on timeouts)
@@ -397,7 +478,7 @@ async function mountHome() {
     feed = load(HOME_SNAP_KEY, null);
     if (feed) toast("Offline — showing your saved Home", 3500, "info");
   }
-  if (!feed) return;
+  if (!feed) { clearSkeletons(m); return; }
   save(HOME_SNAP_KEY, feed); // the offline fallback for the next cold boot
   const sections = [...m.querySelectorAll("section")];
 
@@ -423,19 +504,7 @@ async function mountHome() {
     const c = afterHead(jump, "Jump Back In");
     if (plays.length && c) {
       setList("jump", plays);
-      c.innerHTML = plays
-        .map(
-          (t, i) => `<div data-list="jump" data-idx="${i}" class="p-space-sm bg-surface-container-lowest border border-surface-container rounded-lg shadow-sm flex flex-col space-y-2 cursor-pointer active:bg-surface-container-low transition-colors">
-          <div class="flex items-center gap-space-sm">
-            <div class="w-12 h-12 rounded bg-surface-container-highest flex-shrink-0 overflow-hidden relative"><img alt="" class="w-full h-full object-cover" ${art(t.image)}></div>
-            <div class="flex flex-col min-w-0 flex-1">
-              <span class="font-label-md text-label-md text-on-surface font-medium truncate">${esc(t.title || "")}</span>
-              <span class="font-body-sm text-[11px] text-secondary truncate">${esc(t.artist || "")}</span>
-            </div>
-          </div>
-        </div>`,
-        )
-        .join("");
+      c.innerHTML = plays.map((t, i) => homeTrackCardHTML(t, i, "jump")).join("");
     } else {
       jump.classList.add("hidden");
     }
@@ -450,25 +519,41 @@ async function mountHome() {
       setList("charts", charts);
       c.innerHTML = charts
         .slice(0, 10)
-        .map((p, i) => plCardHTML(p, i, entityNav("playlist", p)))
+        .map((p) =>
+          homeCardHTML({
+            nav: entityNav("playlist", p),
+            playId: p.id,
+            image: p.image,
+            title: p.title,
+            sub: p.subtitle || (p.count ? `${p.count} Tracks` : ""),
+          }),
+        )
         .join("");
     } else if (!charts.length) {
       chartsSec.classList.add("hidden");
     }
   }
 
-  // 2. Curated Playlists shelf
+  // 2. Featured Playlists shelf
   const curated = (feed.playlists && feed.playlists.length ? feed.playlists : (feed.charts || [])).filter(
     (p, i, all) => p && p.id && all.findIndex((x) => x && x.id === p.id) === i,
   );
-  const curS = sectionFor("Curated Playlists");
+  const curS = sectionFor("Featured Playlists");
   if (curS) {
-    const c = afterHead(curS, "Curated Playlists");
+    const c = afterHead(curS, "Featured Playlists");
     if (c) {
       setList("curated", curated);
       c.innerHTML = curated
         .slice(0, 12)
-        .map((p, i) => plCardHTML(p, i, entityNav("playlist", p)))
+        .map((p) =>
+          homeCardHTML({
+            nav: entityNav("playlist", p),
+            playId: p.id,
+            image: p.image,
+            title: p.title,
+            sub: p.subtitle || (p.count ? `${p.count} Tracks` : ""),
+          }),
+        )
         .join("");
     }
   }
@@ -504,14 +589,14 @@ async function mountHome() {
   }
 
   const artists = feed.artists || [];
-  const artS = sectionFor("Artists You May Like");
+  const artS = sectionFor("Top Artists");
   if (artS) {
-    const c = afterHead(artS, "Artists You May Like");
+    const c = afterHead(artS, "Top Artists");
     if (c) {
       setList("artists", artists);
       c.innerHTML = artists
         .slice(0, 10)
-        .map((a, i) => artistCardHTML(a, i, entityNav("artist", a)))
+        .map((a, i) => homeArtistHTML(a, i, entityNav("artist", a)))
         .join("");
     }
     // No "all artists" screen exists on mobile — hide the button rather than
@@ -536,9 +621,9 @@ async function mountHome() {
         const cat = chip.dataset.homeCat || "all";
         // Update active chip pill appearance
         chips.forEach((c) => {
-          c.className = "home-cat-chip px-4 py-1.5 rounded-full font-label-sm text-label-sm whitespace-nowrap transition-all font-medium active:scale-95 border border-surface-container-high/60 bg-surface-container-low text-on-surface-variant hover:bg-surface-container hover:text-on-surface";
+          c.className = "home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95";
         });
-        chip.className = "home-cat-chip px-4 py-1.5 rounded-full font-label-sm text-label-sm whitespace-nowrap shadow-sm font-semibold active:scale-95 transition-all bg-primary text-on-primary";
+        chip.className = "home-cat-chip px-4 py-2 bg-on-surface text-surface rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all";
 
         // Map category to shelf visibility
         const allShelves = m.querySelectorAll("section[data-shelf]");
@@ -567,8 +652,22 @@ async function mountHome() {
   // Two shelves the feed already returns: new releases and daily playlists
   const root = m.querySelector("section")?.parentElement;
   const shelves = [
-    ["tm-shelf-albums", "New Releases", groupLangAlbums(feed.albums || []).map((a, i) => plCardHTML(a, i, entityNav("album", a)))],
-    ["tm-shelf-daily", "Fresh Playlists", (feed.daily || []).map((p, i) => plCardHTML(p, i, entityNav("playlist", p)))],
+    ["tm-shelf-albums", "New Releases", groupLangAlbums(feed.albums || []).map((a) =>
+      homeCardHTML({
+        nav: entityNav("album", a),
+        playId: null,
+        image: a.image,
+        title: a.title,
+        sub: a.subtitle || a.year || "",
+      }))],
+    ["tm-shelf-daily", "Fresh Playlists", (feed.daily || []).map((p) =>
+      homeCardHTML({
+        nav: entityNav("playlist", p),
+        playId: p.id,
+        image: p.image,
+        title: p.title,
+        sub: p.subtitle || (p.count ? `${p.count} Tracks` : ""),
+      }))],
   ];
   for (const [key, title, cards] of shelves) {
     if (!root) break;
@@ -593,14 +692,14 @@ async function mountHome() {
   // survive an offline cold boot, and it renders all ten mixes from
   // recommend.js instead of the three play-counter shelves.
 
-  // Genre/mood grid fallback: the fragment may not ship one — inject eight
-  // chips wired exactly like the design's own genre cards (search the term).
+  // Genre/mood fallback: the fragment may not ship one — inject the same
+  // dark tiles, wired exactly like the fragment's own genre cards.
   if (root && !m.querySelector("#home-genres-grid")) {
-    const terms = ["Pop", "Hip-Hop", "Lo-Fi", "Workout", "Chill", "Party", "Devotional", "Retro"];
+    const terms = ["progressive trance", "uplifting trance", "tech trance", "ambient", "vocal trance", "psy trance"];
     const gsec = document.createElement("section");
     gsec.dataset.shelf = "genres";
     gsec.className = "flex flex-col space-y-space-sm";
-    gsec.innerHTML = `<div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Genres &amp; Moods</h2></div><div id="home-genres-grid" class="grid grid-cols-4 gap-2">${terms.map((t) => `<button type="button" class="genre-card px-3 py-2.5 rounded-xl bg-surface-container-low border border-surface-container-high/60 font-label-md text-label-md text-on-surface font-medium active:scale-95 transition-all" data-genre-q="${esc(t)}">${esc(t)}</button>`).join("")}</div>`;
+    gsec.innerHTML = `<div class="flex items-center justify-between"><h2 class="font-headline-md text-[19px] tracking-tight text-on-surface font-bold">Genres &amp; Moods</h2></div><div id="home-genres-grid" class="flex gap-2.5 overflow-x-auto no-scrollbar -mx-gutter px-gutter py-1">${terms.map((t) => `<div class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all" data-genre-q="${esc(t)}"><span class="font-body-sm font-semibold text-white text-[12px] leading-tight capitalize">${esc(t)}</span></div>`).join("")}</div>`;
     root.appendChild(gsec);
     gsec.querySelectorAll(".genre-card").forEach((gc) => {
       gc.addEventListener("click", () => {
@@ -610,20 +709,40 @@ async function mountHome() {
     });
   }
 
-  // SEE ALL: Jump Back In → the history it is drawn from; Curated → lift the
+  // SEE ALL: Jump Back In → the history it is drawn from; Featured → lift the
   // 12-card cap for this session.
   const jumpSeeAll = jump && [...jump.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent));
   if (jumpSeeAll) jumpSeeAll.addEventListener("click", () => go("history"));
   const curSeeAll = curS && [...curS.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent));
   if (curSeeAll) {
     curSeeAll.addEventListener("click", () => {
-      const c = afterHead(curS, "Curated Playlists");
-      if (c) c.innerHTML = curated.map((p, i) => plCardHTML(p, i, entityNav("playlist", p))).join("");
+      const c = afterHead(curS, "Featured Playlists");
+      if (c) {
+        c.innerHTML = curated.map((p) =>
+          homeCardHTML({
+            nav: entityNav("playlist", p),
+            playId: p.id,
+            image: p.image,
+            title: p.title,
+            sub: p.subtitle || (p.count ? `${p.count} Tracks` : ""),
+          }),
+        ).join("");
+      }
       curSeeAll.remove();
     });
   }
 
   paintFavs();
+  // Feed painters overwrite each skeleton rail by innerHTML; this is the
+  // safety net for partial failures so no shimmer block outlives the mount.
+  clearSkeletons(m);
+}
+
+/// Loading skeleton: the network shelves ship [data-skel] shimmer blocks in
+/// home.html and the painters replace them. Any mount path that ends without
+/// painting (no IPC, no feed) must remove them instead of shimmering forever.
+function clearSkeletons(root) {
+  root.querySelectorAll("[data-skel]").forEach((n) => n.remove());
 }
 
 // The search screen's auto-load observer survives between mounts only as a
@@ -3034,6 +3153,8 @@ function paintNowplaying(st) {
   };
   const el = document.getElementById("elapsed-time");
   setTxt(el, fmtTime(st.pos));
+  // Scrubber knob bubble mirrors the elapsed paint.
+  setTxt(document.getElementById("np-pos-bubble"), fmtTime(st.pos));
   const rm = document.getElementById("remaining-time");
   setTxt(rm, `-${fmtTime(Math.max(0, st.dur - st.pos))}`);
   const icon = document.getElementById("play-pause-icon");
@@ -3068,11 +3189,16 @@ function paintNowplaying(st) {
     if (artImg) paintArt(artImg, t.image || "");
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
+    // The action-row Like icon mirrors the same state (paintFavs covers every
+    // [data-fav-icon] on the page).
+    const ali = document.querySelector("#np-action-like [data-fav-icon]");
+    if (ali) ali.dataset.favIcon = t.id || "";
     paintFavs();
   }
   // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity). TRACK nn
   // and the length are real player state; STEREO DIRECT is desktop's exact
-  // wording (app/src/playback.js np-trackline), and the quality chip is fed
+  // historical wording (the desktop eyebrow row was removed 2026-10-10 —
+  // docs/social-nowplaying.md §6d), and the quality chip is fed
   // only by the resolve's own `chosen_quality` (st.badge "320KBPS") — a
   // transient state (RESOLVING/ERROR) hides the chip rather than inventing
   // a number (docs/mobile/06-features.md, Android UI parity batch).
@@ -3166,6 +3292,7 @@ function paintNowplaying(st) {
           )
           .join("")
         : '<div class="font-body-sm text-secondary py-1">Nothing queued</div>';
+      setTxt(document.getElementById("np-queue-count"), `${rest.length} TRACKS`);
       setList("npq", st.queue);
       paintFavs();
     }

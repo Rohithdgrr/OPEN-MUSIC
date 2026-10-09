@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f5f5">
+<title>OPEN-MUSIC — Home</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f5f5f5;--surface:#fff;--surface-2:#ededed;--ink:#111;--muted:#777;
+  --line:#e4e4e4;--radius:16px;--shadow:0 5px 18px rgba(0,0,0,.055);
+  --nav-h:66px;--player-h:76px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:18px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button,input{font:inherit}
+button{color:inherit;cursor:pointer}
+button:focus-visible,a:focus-visible{outline:2px solid #111;outline-offset:3px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.app{min-height:100dvh;max-width:1160px;margin:0 auto;background:var(--bg);padding-bottom:calc(var(--player-h) + var(--nav-h) + env(safe-area-inset-bottom) + 22px)}
+.topbar{height:64px;display:flex;align-items:center;gap:12px;padding:0 20px;position:sticky;top:0;z-index:20;background:rgba(247,247,247,.9);backdrop-filter:blur(18px);border-bottom:1px solid rgba(0,0,0,.035)}
+.brand-mark{width:38px;height:38px;border-radius:11px;background:#111;color:#fff;display:grid;place-items:center;flex:none}
+.brand-mark svg{width:23px;height:23px}
+.brand{font-size:15px;font-weight:800;letter-spacing:-.045em;white-space:nowrap}
+.version{font:10px ui-monospace,SFMono-Regular,monospace;color:#555;background:#e9e9e9;padding:5px 7px;border-radius:5px;white-space:nowrap}
+.top-spacer{flex:1}
+.icon-btn{width:42px;height:42px;border:0;background:transparent;border-radius:50%;display:grid;place-items:center;flex:none}
+.icon-btn:hover{background:#eaeaea}
+.icon-btn svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+main{padding:0 20px}
+.hero{position:relative;padding:27px 0 18px;overflow:hidden}
+.hero::before{content:"";position:absolute;right:-36px;top:-20px;width:64%;height:220px;pointer-events:none;opacity:.22;background:linear-gradient(135deg,transparent 28%,#b8b8b8 29%,#f9f9f9 31%,#b4b4b4 32%,transparent 33%,transparent 47%,#d1d1d1 48%,#fff 50%,#aaa 51%,transparent 52%),linear-gradient(160deg,transparent 40%,#c4c4c4 41%,#fff 43%,#b5b5b5 44%,transparent 45%);clip-path:polygon(18% 100%,38% 30%,55% 48%,73% 0,100% 17%,100% 100%)}
+.eyebrow{font:9px ui-monospace,SFMono-Regular,monospace;letter-spacing:.2em;color:#666;text-transform:uppercase}
+.hero h1{position:relative;font-size:clamp(29px,6vw,43px);line-height:1.03;letter-spacing:-.065em;margin:10px 0 13px;font-weight:760;max-width:360px}
+.hero .eyebrow{position:relative;line-height:1.8}
+.filters{display:flex;gap:8px;overflow:auto;padding:10px 0 14px;scrollbar-width:none}
+.filters::-webkit-scrollbar,.rail::-webkit-scrollbar{display:none}
+.chip{border:1px solid transparent;border-radius:999px;background:#eaeaea;padding:10px 15px;font-size:12px;white-space:nowrap;min-height:38px;transition:background .18s,color .18s}
+.chip.active{background:#111;color:#fff}
+.section{margin:18px 0 25px}
+.section-head{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.section-head h2{font-size:20px;letter-spacing:-.045em;margin:0;font-weight:750}
+.section-head .eyebrow{margin-left:1px}
+.see-all{margin-left:auto;border:0;background:transparent;color:#686868;font-size:12px;white-space:nowrap;display:flex;align-items:center;gap:5px;padding:7px 0 7px 8px}
+.see-all svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2}
+.rail{display:grid;grid-auto-flow:column;grid-auto-columns:clamp(132px,39vw,190px);gap:12px;overflow-x:auto;padding:1px 1px 7px;scroll-snap-type:x mandatory;scrollbar-width:none}
+.card{min-width:0;scroll-snap-align:start}
+.art{position:relative;aspect-ratio:1/1;border-radius:11px;overflow:hidden;background:#d4d4d4;box-shadow:var(--shadow)}
+.art img{width:100%;height:100%;display:block;object-fit:cover;filter:grayscale(1);transition:transform .35s}
+.card:hover .art img{transform:scale(1.035)}
+.art::after{content:"";position:absolute;inset:35% 0 0;background:linear-gradient(transparent,rgba(0,0,0,.72));pointer-events:none}
+.art-copy{position:absolute;z-index:1;left:11px;right:9px;bottom:10px;color:#fff}
+.art-copy strong{display:block;font-size:12px;line-height:1.22;letter-spacing:-.02em}
+.art-copy span{display:block;font-size:10px;color:#ddd;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.play-bubble{position:absolute;z-index:2;right:8px;bottom:9px;width:31px;height:31px;border:0;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;box-shadow:0 2px 8px #0002}
+.play-bubble svg{width:13px;height:13px;fill:currentColor;stroke:none}
+.art-copy.with-play{right:39px}
+.mix-card .art{border-radius:12px}
+.meta{padding:8px 2px 0}
+.meta strong{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.02em}
+.meta span{display:block;color:var(--muted);font-size:11px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.artist-rail{display:grid;grid-auto-flow:column;grid-auto-columns:88px;gap:15px;overflow-x:auto;padding:2px 1px 8px;scroll-snap-type:x mandatory;scrollbar-width:none}
+.artist{text-align:center;scroll-snap-align:start}
+.artist img{width:76px;height:76px;border-radius:50%;object-fit:cover;filter:grayscale(1);background:#ddd;display:block;margin:0 auto 9px}
+.artist strong{font-size:11px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.artist span{font-size:10px;color:var(--muted);display:block;margin-top:4px}
+.genre-rail{display:grid;grid-auto-flow:column;grid-auto-columns:105px;gap:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:5px}
+.genre{height:112px;border-radius:12px;background:linear-gradient(145deg,#555,#171717);color:#fff;border:0;padding:12px;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;text-align:left;scroll-snap-align:start}
+.genre svg{width:25px;height:25px;stroke:#fff;fill:none;stroke-width:1.5;opacity:.92}
+.genre span{font-size:11px;line-height:1.2;font-weight:650}
+.genre.active{outline:2px solid #111;outline-offset:2px}
+.favorites-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.favorite{min-height:67px;border:1px solid #eee;border-radius:12px;background:#fff;padding:12px;display:flex;align-items:center;gap:10px;text-align:left;box-shadow:0 2px 8px rgba(0,0,0,.025)}
+.favorite:hover{background:#f0f0f0}
+.favorite .fav-icon{width:32px;height:32px;display:grid;place-items:center;background:#f0f0f0;border-radius:9px;flex:none}
+.favorite svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.favorite strong{font-size:11px;display:block}
+.favorite small{font-size:10px;color:var(--muted);display:block;margin-top:4px}
+.favorite .arrow{margin-left:auto;color:#777}
+.release-rail{grid-auto-columns:clamp(120px,33vw,160px)}
+.release-rail .art{aspect-ratio:4/5}
+.release-rail .art::after{inset:45% 0 0}
+.release-rail .art-copy{left:9px;bottom:9px}
+.release-rail .art-copy strong{font-size:11px}
+.top-list{background:#fff;border:1px solid #ececec;border-radius:14px;padding:0 12px;box-shadow:0 2px 10px rgba(0,0,0,.025)}
+.track{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f0f0f0;min-width:0}
+.track:last-child{border-bottom:0}
+.rank{font:11px ui-monospace,monospace;color:#777;width:20px;flex:none}
+.track-art{width:43px;height:43px;border-radius:8px;object-fit:cover;filter:grayscale(1);flex:none;background:#ddd}
+.track-info{min-width:0;flex:1}
+.track-info strong{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track-info span{display:block;color:var(--muted);font-size:10px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quality{font:9px ui-monospace,monospace;color:#666;background:#eee;border-radius:4px;padding:5px 6px;white-space:nowrap}
+.duration{font:10px ui-monospace,monospace;color:#777;white-space:nowrap}
+.track-play{width:32px;height:32px;border:0;border-radius:50%;background:#f0f0f0;display:grid;place-items:center;flex:none}
+.track-play svg{width:12px;height:12px;fill:#111;stroke:none}
+.player{position:fixed;z-index:40;bottom:calc(var(--nav-h) + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:min(100%,1160px);min-height:var(--player-h);display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(255,255,255,.94);backdrop-filter:blur(18px);border:1px solid #e8e8e8;border-bottom:0;border-radius:16px 16px 0 0;box-shadow:0 -5px 25px rgba(0,0,0,.05)}
+.player-art{width:48px;height:48px;object-fit:cover;filter:grayscale(1);border-radius:8px;background:#ddd;flex:none}
+.player-info{min-width:0;flex:1}
+.player-info strong{font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-info span{font-size:10px;color:var(--muted);display:block;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-controls{display:flex;align-items:center;gap:7px}
+.player-controls button{width:32px;height:36px;border:0;background:transparent;display:grid;place-items:center}
+.player-controls svg{width:16px;height:16px;fill:currentColor;stroke:currentColor;stroke-width:1.5}
+.player-controls .main-play{width:42px;height:42px;border-radius:50%;background:#111;color:#fff}
+.player-controls .main-play svg{width:17px;height:17px}
+.timeline{width:100px;display:flex;align-items:center;gap:8px;margin-left:3px}
+.timeline span{font:9px ui-monospace,monospace;color:#777;white-space:nowrap}
+.progress{height:4px;background:#ddd;border-radius:10px;flex:1;overflow:hidden}
+.progress i{display:block;width:31%;height:100%;background:#111;border-radius:10px}
+.bottom-nav{position:fixed;z-index:41;bottom:0;left:50%;transform:translateX(-50%);width:min(100%,1160px);height:calc(var(--nav-h) + env(safe-area-inset-bottom));padding:7px 10px calc(7px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(4,1fr);background:rgba(250,250,250,.97);backdrop-filter:blur(18px);border-top:1px solid #e8e8e8}
+.nav-item{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#777;font-size:10px}
+.nav-item svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-item.active{color:#111;font-weight:700}
+.nav-item.active svg{fill:#111;stroke:#111}
+.toast{position:fixed;z-index:60;left:50%;bottom:calc(var(--nav-h) + var(--player-h) + 22px + env(safe-area-inset-bottom));transform:translate(-50%,12px);background:#111;color:#fff;border-radius:999px;padding:11px 16px;font-size:12px;opacity:0;pointer-events:none;transition:.2s;max-width:calc(100vw - 32px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.empty-state{display:none;border:1px dashed #ccc;border-radius:12px;padding:20px;text-align:center;color:#777;font-size:13px}
+@media(min-width:700px){
+  .app{padding-bottom:40px}
+  .topbar{padding:0 32px}
+  main{padding:0 32px}
+  .hero{padding-top:42px}
+  .hero::before{height:290px}
+  .rail{grid-auto-columns:170px;gap:16px}
+  .artist-rail{grid-auto-columns:100px}
+  .artist img{width:84px;height:84px}
+  .genre-rail{grid-auto-columns:125px}
+  .favorites-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .release-rail{grid-auto-columns:150px}
+  .section{margin:25px 0 32px}
+  .section-head h2{font-size:22px}
+  .player{bottom:0;border-radius:16px 16px 0 0;width:min(calc(100% - 40px),900px);left:50%;border:1px solid #e8e8e8}
+  .bottom-nav{display:none}
+  .app{padding-bottom:110px}
+}
+@media(max-width:380px){
+  main{padding:0 14px}
+  .topbar{padding:0 14px;gap:9px}
+  .brand{font-size:13px}
+  .version{font-size:9px;padding:4px 5px}
+  .hero h1{font-size:31px}
+  .section-head h2{font-size:18px}
+  .rail{grid-auto-columns:135px;gap:10px}
+  .player{padding:9px 10px;gap:8px}
+  .player-art{width:42px;height:42px}
+  .timeline{width:65px}
+  .timeline span:first-child{display:none}
+  .player-controls{gap:1px}
+  .player-controls button{width:28px}
+  .player-controls .main-play{width:38px;height:38px}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9v6M8 5v14M12 8v8M16 3v18M20 9v6"/></svg>
+    </div>
+    <div class="brand">OPEN-MUSIC</div>
+    <span class="version">CORE V2.4</span>
+    <div class="top-spacer"></div>
+    <button class="icon-btn" data-action="search" aria-label="Search">
+      <svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+    </button>
+    <button class="icon-btn" data-action="profile" aria-label="Profile">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.5-4 3-6 7-6s6.5 2 7 6z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Good evening,<br>Listener</h1>
+      <div class="eyebrow">Vault audiophile feed<br>Lossless bitstream discovery</div>
+    </section>
+
+    <div class="filters" role="group" aria-label="Filter by genre">
+      <button class="chip active" data-filter="All">All</button>
+      <button class="chip" data-filter="Deep Progressive">Deep Progressive</button>
+      <button class="chip" data-filter="Uplifting">Uplifting</button>
+      <button class="chip" data-filter="Hypnotic">Hypnotic</button>
+      <button class="chip" data-filter="Tech Trance">Tech Trance</button>
+      <button class="chip" data-filter="Ambient">Ambient</button>
+    </div>
+
+    <section class="section" id="jump-back">
+      <div class="section-head"><h2>Jump Back In</h2><button class="see-all" data-action="see-all" data-name="Listening history">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="rail" id="history-rail"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Your Mixes</h2><button class="see-all" data-action="see-all" data-name="Your Mixes">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="rail" id="mixes-rail"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Featured Playlists</h2><button class="see-all" data-action="see-all" data-name="Featured Playlists">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="rail" id="playlists-rail"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Top Artists</h2><button class="see-all" data-action="see-all" data-name="Artists">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="artist-rail" id="artists-rail"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Genres &amp; Moods</h2><button class="see-all" data-action="see-all" data-name="Genres and moods">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="genre-rail" id="genres-rail"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Favorites</h2><button class="see-all" data-action="see-all" data-name="Favorites">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="favorites-grid" id="favorites-grid"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>New Releases</h2><button class="see-all" data-action="see-all" data-name="New Releases">See All <svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg></button></div>
+      <div class="rail release-rail" id="releases-rail"></div>
+    </section>
+
+    <section class="section">
+      <div class="section-head"><h2>Top 5 Masters</h2><span class="eyebrow">Lossless selection</span></div>
+      <div class="top-list" id="top-list"></div>
+    </section>
+  </main>
+</div>
+
+<aside class="player" aria-label="Music player">
+  <img class="player-art" id="player-art" src="https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=160&q=80" alt="">
+  <div class="player-info"><strong id="player-title">Midnight City Lights</strong><span id="player-artist">Solaris &amp; Kaelen</span></div>
+  <div class="player-controls">
+    <button data-action="previous" aria-label="Previous track"><svg viewBox="0 0 24 24"><path d="M6 5v14M19 5 8 12l11 7z"/></svg></button>
+    <button class="main-play" data-action="toggle-play" aria-label="Play or pause" id="main-play"><svg viewBox="0 0 24 24" id="main-play-icon"><path d="M7 5h4v14H7zM15 5h4v14h-4z"/></svg></button>
+    <button data-action="next" aria-label="Next track"><svg viewBox="0 0 24 24"><path d="M18 5v14M5 5l11 7-11 7z"/></svg></button>
+  </div>
+  <div class="timeline"><span id="elapsed">2:16</span><div class="progress"><i id="progress-fill"></i></div><span id="duration">8:31</span></div>
+</aside>
+
+<nav class="bottom-nav" aria-label="Primary navigation">
+  <button class="nav-item active" data-nav="Home"><svg viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></button>
+  <button class="nav-item" data-nav="Search"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><span>Search</span></button>
+  <button class="nav-item" data-nav="Library"><svg viewBox="0 0 24 24"><path d="M4 4h12v16H4zM8 8h4M8 12h4M18 8h2v12h-2"/></svg><span>Library</span></button>
+  <button class="nav-item" data-nav="Downloads"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/></svg><span>Downloads</span></button>
+</nav>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+  const img = (id, w=480) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&q=82`;
+  const artwork = {
+    night: img("photo-1519608487953-e999c86e7455"),
+    architecture: img("photo-1487958449943-2429e8be8625"),
+    abstract: img("photo-1550684848-fac1c5b4e853"),
+    dunes: img("photo-1509316785289-025f5b846b35"),
+    building: img("photo-1511818966892-d7d671e672a2"),
+    sculpture: img("photo-1579783902614-a3fb3927b6a5"),
+    circles: img("photo-1550745165-9bc0b252726f"),
+    waves: img("photo-1518837695005-2083093ee35b"),
+    studio: img("photo-1598488035139-bdbb2231ce04"),
+    headphones: img("photo-1505740420928-5e560c06d30e"),
+    vinyl: img("photo-1461360228754-6e81c478b882"),
+    concert: img("photo-1501386761578-eac5c94b800a"),
+    portrait1: img("photo-1500648767791-00dcc994a43e", 220),
+    portrait2: img("photo-1506794778202-cad84cf45f1d", 220),
+    portrait3: img("photo-1534528741775-53994a69daeb", 220),
+    portrait4: img("photo-1507003211169-0a1dd7228f2d", 220),
+    portrait5: img("photo-1504593668824-9f5f7f4f3a7d", 220),
+    portrait6: img("photo-1531123897727-8f129e1688ce", 220)
+  };
+  const history = [
+    {title:"Atmospheric Drift LP",sub:"Aura Sound",art:"waves",tag:"Ambient"},
+    {title:"Monolith & Resonances",sub:"Mirage (Studio)",art:"sculpture",tag:"Deep Progressive"},
+    {title:"Equinox Redux",sub:"Solaris",art:"circles",tag:"Hypnotic"},
+    {title:"Hyperion Acoustic Sessions",sub:"Kaelen",art:"architecture",tag:"Tech Trance"},
+    {title:"Midnight City Lights",sub:"Solaris & Kaelen",art:"night",tag:"Uplifting"}
+  ];
+  const mixes = [
+    {title:"Daily Mix 1",sub:"50 tracks · Made for you",art:"building",tag:"Deep Progressive"},
+    {title:"Deep Focus",sub:"32 tracks",art:"dunes",tag:"Ambient"},
+    {title:"Chill State",sub:"40 tracks",art:"waves",tag:"Ambient"},
+    {title:"Tech Trance",sub:"48 tracks",art:"architecture",tag:"Tech Trance"},
+    {title:"Uplifting Drive",sub:"36 tracks",art:"concert",tag:"Uplifting"},
+    {title:"Hypnotic Flow",sub:"28 tracks",art:"abstract",tag:"Hypnotic"}
+  ];
+  const playlists = [
+    {title:"State of Euphoria Vol. VIII",sub:"138 tracks",art:"circles",tag:"Uplifting"},
+    {title:"Architectural Lows",sub:"118 tracks",art:"dunes",tag:"Deep Progressive"},
+    {title:"Subatomic Vocal Hall",sub:"92 tracks",art:"building",tag:"Hypnotic"},
+    {title:"Analog Synthesizer Archives",sub:"38 tracks",art:"waves",tag:"Tech Trance"},
+    {title:"Ambient Drone",sub:"64 tracks",art:"night",tag:"Ambient"},
+    {title:"Orchestral Hall",sub:"24 tracks",art:"studio",tag:"Deep Progressive"}
+  ];
+  const artists = [
+    {name:"Solaris",fans:"1.2M listeners",art:"portrait1"},
+    {name:"Kaelen",fans:"820K listeners",art:"portrait2"},
+    {name:"Mirage",fans:"690K listeners",art:"portrait3"},
+    {name:"Aura Sound",fans:"615K listeners",art:"portrait4"},
+    {name:"NexTone",fans:"492K listeners",art:"portrait5"},
+    {name:"Cortex",fans:"410K listeners",art:"portrait6"}
+  ];
+  const genres = [
+    {name:"Progressive Trance",icon:"wave",filter:"Deep Progressive"},
+    {name:"Uplifting Trance",icon:"sun",filter:"Uplifting"},
+    {name:"Tech Trance",icon:"hex",filter:"Tech Trance"},
+    {name:"Ambient",icon:"infinity",filter:"Ambient"},
+    {name:"Vocal Trance",icon:"bars",filter:"Hypnotic"},
+    {name:"Psy Trance",icon:"target",filter:"Hypnotic"}
+  ];
+  const releases = [
+    {title:"Nocturne Sessions Vol. IV",sub:"Solaris & Kaelen",art:"night",tag:"Deep Progressive"},
+    {title:"Atmospheric Drift LP",sub:"Aura Sound",art:"waves",tag:"Ambient"},
+    {title:"Monolith & Resonances",sub:"Mirage",art:"sculpture",tag:"Deep Progressive"},
+    {title:"Equinox Redux",sub:"Solaris",art:"circles",tag:"Hypnotic"},
+    {title:"Hyperion Sessions",sub:"Kaelen",art:"architecture",tag:"Tech Trance"},
+    {title:"Uplifting Horizons",sub:"NexTone",art:"concert",tag:"Uplifting"}
+  ];
+  const tracks = [
+    {title:"Nocturne Trance Sessions Vol. IV",artist:"Solaris & Kaelen feat. Aura Sound",art:"night",quality:"FLAC 24/192",duration:"08:42",tag:"Deep Progressive"},
+    {title:"Atmospheric Drift (Extended Master)",artist:"Aura Sound (2025 Master)",art:"waves",quality:"FLAC 24/96",duration:"07:18",tag:"Ambient"},
+    {title:"Monolith & Resonances",artist:"Mirage (Studio Edition)",art:"sculpture",quality:"DSD 5.6M",duration:"09:09",tag:"Deep Progressive"},
+    {title:"Crystalline Dispersion (Pure Vocal Mix)",artist:"Kaelen",art:"circles",quality:"WAV 32-bit",duration:"06:50",tag:"Hypnotic"},
+    {title:"Equinox Redux (Direct 1-Bit Take)",artist:"Solaris",art:"abstract",quality:"FLAC 1/192",duration:"07:44",tag:"Tech Trance"}
+  ];
+  const favorites = [
+    {title:"Liked Songs",sub:"102 tracks",icon:"heart"},
+    {title:"Downloads",sub:"47 tracks",icon:"download"},
+    {title:"Recently Played",sub:"24 tracks",icon:"clock"},
+    {title:"My Playlists",sub:"12 playlists",icon:"music"}
+  ];
+  const $ = (s, root=document) => root.querySelector(s);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const iconSvg = (name) => {
+    const paths = {
+      play:'<path d="M7 4.5v15l12-7.5z"/>',
+      heart:'<path d="M20.8 8.7c0 5.1-8.8 10.1-8.8 10.1S3.2 13.8 3.2 8.7A4.4 4.4 0 0 1 12 6.5a4.4 4.4 0 0 1 8.8 2.2Z"/>',
+      download:'<path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"/>',
+      clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      music:'<path d="M9 18V5l12-2v13M9 9l12-2"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+      wave:'<path d="M2 12h4l3-7 5 14 3-7h5"/>',
+      sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+      hex:'<path d="m12 2 8 4.5v11L12 22l-8-4.5v-11z"/><circle cx="12" cy="12" r="3"/>',
+      infinity:'<path d="M7 7c-5 0-5 10 0 10 3 0 7-10 10-10 5 0 5 10 0 10-3 0-7-10-10-10Z"/>',
+      bars:'<path d="M3 10v4m4-7v10m4-13v16m4-11v6m4-9v12m3-8v4"/>',
+      target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+      arrow:'<path d="m9 5 7 7-7 7"/>'
+    };
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]||paths.music}</svg>`;
+  };
+  const imgUrl = key => artwork[key] || artwork.night;
+
+  function card(item, type="standard") {
+    const title = esc(item.title), sub = esc(item.sub || ""), art = imgUrl(item.art);
+    return `<article class="card ${type==="mix"?"mix-card":""}" data-tag="${esc(item.tag||"")}" data-title="${title}">
+      <div class="art"><img src="${art}" alt="" loading="lazy"><div class="art-copy with-play"><strong>${title}</strong><span>${sub}</span></div>
+      <button class="play-bubble" data-action="play-item" data-title="${title}" data-artist="${sub}" data-art="${esc(item.art)}" aria-label="Play ${title}">${iconSvg("play")}</button></div>
+      ${type==="standard"?`<div class="meta"><strong>${title}</strong><span>${sub}</span></div>`:""}
+    </article>`;
+  }
+  function renderRail(id, items, type) { $("#"+id).innerHTML = items.map(x=>card(x,type)).join(""); }
+  renderRail("history-rail",history);
+  renderRail("mixes-rail",mixes,"mix");
+  renderRail("playlists-rail",playlists);
+  renderRail("releases-rail",releases);
+  $("#artists-rail").innerHTML = artists.map(a=>`<article class="artist"><img src="${imgUrl(a.art)}" alt="" loading="lazy"><strong>${esc(a.name)}</strong><span>${esc(a.fans)}</span></article>`).join("");
+  $("#genres-rail").innerHTML = genres.map(g=>`<button class="genre" data-genre="${esc(g.filter)}">${iconSvg(g.icon)}<span>${esc(g.name)}</span></button>`).join("");
+  $("#favorites-grid").innerHTML = favorites.map(f=>`<button class="favorite" data-action="favorite" data-name="${esc(f.title)}"><span class="fav-icon">${iconSvg(f.icon)}</span><span><strong>${esc(f.title)}</strong><small>${esc(f.sub)}</small></span><span class="arrow">${iconSvg("arrow")}</span></button>`).join("");
+  $("#top-list").innerHTML = tracks.map((t,i)=>`<div class="track" data-tag="${esc(t.tag)}">
+    <span class="rank">${String(i+1).padStart(2,"0")}</span><img class="track-art" src="${imgUrl(t.art)}" alt="" loading="lazy">
+    <div class="track-info"><strong>${esc(t.title)}</strong><span>${esc(t.artist)}</span></div>
+    <span class="quality">${esc(t.quality)}</span><span class="duration">${esc(t.duration)}</span>
+    <button class="track-play" data-action="play-item" data-title="${esc(t.title)}" data-artist="${esc(t.artist)}" data-art="${esc(t.art)}" aria-label="Play ${esc(t.title)}">${iconSvg("play")}</button>
+  </div>`).join("");
+
+  let playing = true, currentIndex = 0, toastTimer;
+  const allTracks = [...history,...mixes,...playlists,...releases,...tracks.map(t=>({title:t.title,sub:t.artist,art:t.art,tag:t.tag}))];
+  function toast(message){
+    const el=$("#toast");el.textContent=message;el.classList.add("show");
+    clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove("show"),2100);
+  }
+  function setPlaying(next){
+    playing=next;
+    $("#main-play-icon").innerHTML=playing?'<path d="M7 5h4v14H7zM15 5h4v14h-4z"/>':'<path d="M7 4.5v15l12-7.5z"/>';
+    $("#main-play").setAttribute("aria-label",playing?"Pause":"Play");
+    toast(playing?"Playback resumed":"Playback paused");
+  }
+  function playItem(title,artist,art){
+    $("#player-title").textContent=title||"Unknown track";
+    $("#player-artist").textContent=artist||"OPEN-MUSIC";
+    $("#player-art").src=imgUrl(art);
+    playing=true;
+    $("#main-play-icon").innerHTML='<path d="M7 5h4v14H7zM15 5h4v14h-4z"/>';
+    toast("Playing: "+(title||"selected track"));
+  }
+  document.addEventListener("click",e=>{
+    const action=e.target.closest("[data-action]");
+    if(action){
+      const a=action.dataset.action;
+      if(a==="toggle-play"){setPlaying(!playing);return;}
+      if(a==="play-item"){playItem(action.dataset.title,action.dataset.artist,action.dataset.art);return;}
+      if(a==="next"||a==="previous"){
+        currentIndex=(currentIndex+(a==="next"?1:-1)+allTracks.length)%allTracks.length;
+        const t=allTracks[currentIndex];playItem(t.title,t.sub,t.art);return;
+      }
+      if(a==="search"){toast("Search view: connect your existing search route");return;}
+      if(a==="profile"){toast("Profile view: connect your account route");return;}
+      if(a==="see-all"){toast(action.dataset.name+" — connect your view route");return;}
+      if(a==="favorite"){toast("Opening "+action.dataset.name);return;}
+    }
+    const nav=e.target.closest("[data-nav]");
+    if(nav){
+      document.querySelectorAll(".nav-item").forEach(n=>n.classList.toggle("active",n===nav));
+      const name=nav.dataset.nav;
+      if(name==="Home"){window.scrollTo({top:0,behavior:"smooth"});}
+      else toast(name+" view: connect your existing route");
+    }
+    const chip=e.target.closest("[data-filter]");
+    if(chip){
+      document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("active",c===chip));
+      applyFilter(chip.dataset.filter);
+    }
+    const genre=e.target.closest("[data-genre]");
+    if(genre){
+      document.querySelectorAll(".genre").forEach(g=>g.classList.toggle("active",g===genre));
+      const match=genre.dataset.genre;
+      document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("active",c.dataset.filter===match));
+      applyFilter(match);
+      toast("Showing "+match+" selections");
+    }
+  });
+  function applyFilter(filter){
+    document.querySelectorAll(".card[data-tag], .track[data-tag]").forEach(el=>{
+      el.style.display=(filter==="All"||el.dataset.tag===filter)?"":"none";
+    });
+    // Artist and genre rails remain visible as navigation/discovery elements.
+  }
+  // Simulated visual progress only; replace with real playback time from the Rust core.
+  let seconds=136, total=511;
+  setInterval(()=>{
+    if(!playing)return;
+    seconds=(seconds+1)%(total+1);
+    const fmt=n=>`${Math.floor(n/60)}:${String(n%60).padStart(2,"0")}`;
+    $("#elapsed").textContent=fmt(seconds);
+    $("#progress-fill").style.width=(seconds/total*100)+"%";
+  },1000);
+})();
+</script>
+</body>
+</html>

@@ -91,6 +91,18 @@ windows = { version = "0.62", features = [
   "Win32_System_Threading",
 ] }
 
+# Debug APKs ship this profile (`tauri android build --debug`): the x86_64
+# debug .so was ~300 MB of DWARF → ~88 MB APK. Strip debuginfo (symbol names
+# stay, so panic backtraces still resolve) and drop DWARF/optimization for
+# third-party crates only — first-party code keeps full debug semantics.
+# Budget: debug APK under 50 MiB (docs/dev-loop-speed.md).
+[profile.dev]
+strip = "debuginfo"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
+
 [profile.release]
 codegen-units = 1
 lto = true

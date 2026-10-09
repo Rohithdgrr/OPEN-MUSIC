@@ -4,6 +4,7 @@
 import { diag, invoke, showView, toast } from "./core.js";
 import { $ } from "./dom.js";
 import { toggleFavTrack } from "./library.js";
+import { toggleNotepad } from "./notepad.js";
 import { queue, queueIndex, restoredTrack } from "./queue.js";
 import { localRole } from "./room.js";
 import { creditsBtn, step, togglePlay } from "./transport.js";
@@ -53,6 +54,9 @@ const ACTIONS = {
   },
   "shortcut:download": () => downloadTrack(queue[queueIndex]?.track ?? restoredTrack, null),
   "shortcut:info": () => creditsBtn?.click(),
+  // The panel's only entry point (docs/notepad/features.md) — toggleNotepad
+  // opens or closes it; nothing else in the app can reach the panel.
+  "shortcut:notepad": () => toggleNotepad(),
   "media-play-pause": () => {
     if (guestLockNote()) return;
     togglePlay();

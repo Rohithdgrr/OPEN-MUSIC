@@ -14,6 +14,115 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ## [Unreleased]
 
+### Changed · Mobile Now Playing clean art + miniplayer truncation (2026-10-10)
+- **Now Playing artwork is art-only** (`mobile/screens/nowplaying.html`,
+  `docs/mobile/06-features.md`): the gradient scrim and both overlay pills
+  (`[data-badge]` quality chip, `#artworkCollabTag` room chip) are deleted,
+  and the `#np-quality` pill beside the title goes too. The cover renders
+  the existing max 500×500 rendition full-bleed. Painters are null-safe so
+  nothing else changed; `jam-ui.test.mjs` C-6 drops the retired id.
+- **Miniplayer long titles no longer bleed over the artwork** (`mobile/app.js`,
+  `mobile/index.html`): the text wrapper clips (`overflow-hidden`) and
+  `.tm-marquee` stops declaring `overflow:visible` — the scroll loop runs
+  inside its own box.
+- **Avatar network fill actually renders now** (`mobile/net.js`,
+  `mobile/index.html`): inline `backgroundColor` lost to the themes'
+  `!important` button gradients (measured `rgba(0,0,0,0)`); paint is now a
+  `data-net-state` attribute + `--tm-net-fill` var with winning-specificity
+  `!important` rules and a white glyph.
+
+### Changed · Mobile UI polish batch: skeleton, transitions, micro-interactions, network-on-avatar, logo mark (2026-10-10)
+- **Debug APK under 50 MiB** (`app/src-tauri/Cargo.toml`,
+  `docs/dev-loop-speed.md` §3): `[profile.dev] strip = "debuginfo"` plus
+  `[profile.dev.package."*"] debug = false / opt-level = 1` — the x86_64
+  debug `.so` no longer ships ~300 MB of DWARF. First-party code keeps full
+  debug semantics; symbols stay so backtraces resolve.
+- **Network state now lives on the header profile avatar** — no floating
+  tile (`mobile/net.js`): every `[data-nav="settings"]` button with a
+  `person` glyph fills with the state colour (emerald/amber/red, breathing
+  amber while reconnecting), keeps its Settings tap, and carries the state
+  message in `title`/`aria-label`. Repaints on the router `smount` event so
+  navigation cannot wipe the fill. The `#net-banner` element and its plug
+  SVG are gone; `net-pulse` keyframes stay.
+- **Chat action row entry fixed** (`mobile/screens/nowplaying.js`): the
+  Chat button now enters Social mode first (the Chat pill only exists
+  there) instead of clicking a `display:none` element — "chat and jam UI is
+  missing" from Solo.
+- **Home loading skeleton**: the five network shelves ship `[data-skel]`
+  shimmer blocks (`home.html`, `.skel` CSS); painters overwrite them and
+  `clearSkeletons()` covers the no-IPC/no-feed paths (`binders.js`).
+- **Screen transition**: `router.js paint()` wraps each fragment in
+  `.screen-anim` and restarts a 260ms opacity+rise keyframe; the tab bar
+  sits outside the wrapper and never moves. Reduced-motion respected.
+- **Micro-interactions**: every enabled `#screen`/onboarding button gets a
+  140ms state transition and `:active` press-scale layered over the
+  Tailwind `active:*` classes.
+- **Logo fallback is the mark** (contract v2,
+  `docs/branding/trance-music-guide.md`): `logo.png` on both surfaces is
+  now the derived 330×330 crop — dark tile keyed to alpha, caption gone,
+  mark fills the frame; the CSS zoom rule deleted (crop is in the bytes).
+  `icon.png` untouched. Gates updated: `logo-fallback.test.mjs`,
+  `jam-crossdevice.test.mjs` §C.
+- **NP artwork presentation**: deeper card shadow + hairline ring in both
+  themes (art bytes were already the CDN max, 500×500 —
+  `jiosaavn.rs image_url`/`upgrade_image` + `hqArt`).
+- Verified: `npm test` **403/403**, eslint clean, `node --check` clean,
+  `npm run css` rebuilt; live on the Pixel 6 emulator via CDP (avatar fill,
+  500px art, Solo→Chat entry, skeleton removed after feed).
+
+### Changed · Now Playing metadata card transparent, eyebrow + quality tag removed (2026-10-10)
+- **Desktop artwork overlay background is now transparent** instead of
+  the blurred dark glass — `.np-art-overlay::before` (gradient +
+  `backdrop-filter: blur(10px)` + mask, incl. the `.dark` re-state)
+  deleted; the artwork shows through the metadata card sharply
+  (`docs/social-nowplaying.md` §6d). Title/artist keep their
+  `text-shadow` for legibility.
+- **Eyebrow row removed from the desktop metadata card**
+  (`TRACK nn • STEREO DIRECT`: `#np-trackline` / `.np-art-trackline` /
+  `.np-art-eyebrow`, plus the `playback.js` fill) and **quality pill
+  removed** (`#np-quality` / `.np-art-quality`: markup, base rule,
+  `.dark` re-state, and the `player.js` `npText` fill). The card now
+  starts at the title; the telemetry strip keeps its live `#np-format`.
+  Mobile keeps both its eyebrow and its chip. Id/class contract updated
+  (`docs/social-nowplaying.md` §4/§5); `social-ui.test.mjs` guards the
+  removals.
+- **Legibility follow-up, same day** (`docs/social-nowplaying.md` §6e):
+  with the glass gone, white text washed out on bright covers — the
+  overlay now carries a bottom-anchored darkening scrim gradient (no
+  blur, no pseudo-element), padding tightened to
+  `0.75rem 0.75rem 0.6rem`, and title/artist/telemetry text-shadows
+  strengthened. Guarded by a new `social-ui.test.mjs` scrim test.
+
+### Fixed · Fallback artwork is the TRANCE MUSIC mark, zoom-cropped (2026-10-09)
+- **One default cover everywhere** (`docs/branding/trance-music-guide.md`
+  "Fallback artwork contract"): `app/src/logo.png` + `app/src/mobile/logo.png`
+  verified byte-identical to `src-tauri/icons/icon.png`. `icon.png` is RGBA
+  with fully transparent corners, so tiles back logo imgs with black and
+  zoom-crop `scale(1.18)` inside the `overflow-hidden` frame — no container
+  shade shows through (headless-Chrome proof: tile corners 9–45, stage
+  center bright).
+- **REVERTED on desktop 2026-10-09** (user call — full desktop UI revert to
+  HEAD): the desktop half is gone (`index.html` covers, `styles.css` rule,
+  `widget.js` backdrop). What stands: the mobile `index.html` rule, the
+  `mobile/logo.png` bytes, and the mobile ladder. Gate
+  `app/tests/logo-fallback.test.mjs` rescoped to mobile (4 tests).
+
+### Fixed · Android covers, Jam entry UI, launcher icon (2026-10-09)
+- **Covers the CDN labels `application/octet-stream` now load** (`proxy.rs`
+  `/art`): the relay read the declared content type and 502'd anything not
+  `image/*`, so several SaavnCDN `/artists/…` thumbnails fell back to the
+  brand mark. The bytes now decide (`detect_image_mime` + `art_answer_is_image`);
+  an HTML error page still fails. Mobile 09 **P39**.
+- **Mobile Social has explicit Create/Join room buttons** (`#jamCreateBtn` /
+  `#jamJoinBtn` in the Jam Data view), the invite QR shows once a room exists,
+  and creating a room lands on the Jam Data tab so the QR is immediately
+  visible. Before, the only entry point was the mode sheet behind the
+  Solo/Social toggle's padding. Mobile 09 **P40**.
+- **Android launcher icon is the TRANCE MUSIC logo** — regenerated with
+  `npx tauri icon src/mobile/logo.png`, tracked in `src-tauri/icons/android/`,
+  and synced into the generated project by `scripts/sync-android-icons.mjs`
+  (jam-upgrade §7). Brand source committed as `src-tauri/app-icon.png`.
+
 ### Changed · Jam sync, reconnect, scale (`docs/jam-upgrade.md` C/F + `docs/jam-professional-grade.md`)
 - Host tick **1000 → 250 ms** (`HOST_TICK_MS` in `room.js`, both surfaces).
   Guests rate-nudge in the 40–150 ms band and hard-seek only past 150 ms —

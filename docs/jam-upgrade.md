@@ -335,6 +335,38 @@ Helpers: `shouldAutoRejoin` / `rejoinDelayMs` in `room.js` (pure, unit-tested).
 - **AC:** Android launcher icon visibly branded; no hand-edits under `gen/`;
   gates green.
 
+**Status 2026-10-09 — E1 COMPLETE.** Discovery: the shipped Android launcher
+icon was the **default Tauri icon** (the tracked `icons/android/` set was still
+built from `REON Music Waveform Logo.png`), while the branded TRANCE MUSIC
+wordmark already existed as `src/mobile/logo.png` (in-app logo). Generated the
+full Android set with `npx tauri icon src/mobile/logo.png -o <tmp>`, then:
+- committed the brand source as `src-tauri/app-icon.png` and the generated
+  `src-tauri/icons/android/**` (REON source deleted);
+- added **`app/scripts/sync-android-icons.mjs`** — the reproducible copy from
+  `icons/android` into the gitignored `gen/…/res` (no hand-edits under `gen/`);
+- verified the generated mdpi/xxxhdpi `ic_launcher.png` render the TRANCE
+  waveform + wordmark (ASCII render), adaptive-icon XML +
+  `values/ic_launcher_background.xml` intact.
+
+**Live verification 2026-10-09** (x86_64 release APK `BUILD_EXIT=0`,
+`adb install`, `Pixel6_API36`):
+- APK launcher icons byte-identical to the source set (extracted `res/*.png`
+  hashes match all five `mipmap-*/ic_launcher.png` densities).
+- Mobile Social (`mobile-verify.mjs`): CTA visible with **Create a room** /
+  **Join a room**; Join opens the paste + Scan-QR sheet; Create → `HOST`,
+  invite QR painted (`dark 45186`, visible) and the deck lands on the Jam Data
+  tab; invite row shows the canonical `trancemusic://join?…`.
+- Thumbnails (P39): relay now answers `200 image/jpeg` for the two
+  `application/octet-stream` `/artists/…` covers; a scrolled Home pass shows
+  **0** CDN covers falling back to the brand mark (6 remaining are lazy
+  off-screen carousel tiles, not failures).
+- `live-reverse-pair.mjs` (Android host ↔ desktop guest): **exit 0** — join,
+  2-member roster, chat both ways, playback follow, D4 pause/resume, D5
+  host-end → guest idle → rejoin.
+- Desktop relink blocked by a pre-existing running `target/debug/trance-music.exe`
+  (another session; not killed — AGENTS.md precedent). `proxy.rs` compiles,
+  `cargo test --lib` 202/202, `cargo clippy --all-targets -D warnings` clean.
+
 ---
 
 ## 8. Sub-project F — multi-device scale

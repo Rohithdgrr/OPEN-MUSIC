@@ -23,10 +23,12 @@ const binders = fs.readFileSync(path.join(src, "mobile", "binders.js"), "utf8");
 
 // ROOM.md C-6 — the social-only ids. Renaming one breaks jam.js silently, which
 // is exactly the failure this list exists to catch.
+// `artworkCollabTag` was retired 2026-10-10 (clean-art batch): the artwork is
+// art-only now, and jam.js's setText no-ops on the missing node.
 const C6 = [
   // chrome
   "modeToggleBtn", "headerSubtitle", "headerTitle", "headerModeDot",
-  "jamSessionBanner", "copyUriBtn", "artworkCollabTag", "skipVoteBadge", "tabBar",
+  "jamSessionBanner", "copyUriBtn", "skipVoteBadge", "tabBar",
   "view-queue", "view-chat", "view-jam-data", "view-lyrics",
   "queueTabLabel", "queueSyncBadge", "queueHeaderLabel", "chatTabBtn", "jamDataTabBtn",
   // jam set
@@ -109,6 +111,26 @@ test("social chrome ships hidden: Solo is the default state", () => {
   assert.match(html, /id="jamAppendInput" disabled/, "the append row ships disabled");
   assert.match(html, /id="jamAppendBtn" disabled/, "the append button ships disabled");
   assert.ok(html.includes("no room append frame"), "the append row must state why it is disabled");
+});
+
+test("the Social view offers an explicit create/join entry point", () => {
+  // The report: "no UI in Social for create room / join room; create shows no
+  // QR". The screen now carries its own CTA with real buttons, and creating a
+  // room lands on the invite QR.
+  const tagFor = (id) => {
+    const at = html.indexOf(`id="${id}"`);
+    if (at < 0) return "";
+    return html.slice(html.lastIndexOf("<", at), html.indexOf(">", at));
+  };
+  for (const id of ["jamNoRoomCta", "jamCreateBtn", "jamJoinBtn"]) {
+    assert.ok(html.includes(`id="${id}"`), `${id} is missing from nowplaying.html`);
+    assert.equal(html.split(`id="${id}"`).length, 2, `${id} appears more than once`);
+  }
+  assert.match(tagFor("jamNoRoomCta"), /\bhidden\b/, "the CTA ships hidden — Solo is the default");
+  assert.match(jam, /createBtn\.addEventListener\("click", \(\) => void startRoom\(\)\)/, "Create must open a room");
+  assert.match(jam, /joinBtn\.addEventListener\("click", \(\) => promptJoin\(\)\)/, "Join must open the paste/scan sheet");
+  assert.match(jam, /show\(el\("jamNoRoomCta"\), social && !inRoom, "flex"\)/, "the CTA shows only in Social with no room");
+  assert.match(jam, /switchTab\("jam-data"\)/, "creating a room must reveal the invite QR");
 });
 
 test("display name copy names Home and Jam", () => {

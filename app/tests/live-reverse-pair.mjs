@@ -71,9 +71,16 @@ const mobAudio = () => mEval('(() => { const a = document.getElementById("audio"
 const setVal = (side, id, v) => side(`(() => { const e = document.getElementById(${JSON.stringify(id)}); if (!e) return "no-elon"; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set; set.call(e, ${JSON.stringify(v)}); e.dispatchEvent(new Event("input", { bubbles: true })); return "ok"; })()`);
 
 async function mobStartJam() {
-  await mEval(`(async () => { location.hash = "#/nowplaying"; await new Promise(r=>setTimeout(r,500));
-    document.getElementById("modeToggleBtn")?.click(); await new Promise(r=>setTimeout(r,400)); })()`);
-  await mEval(`([...document.querySelectorAll("button")].find(b=>b.textContent.trim().startsWith("Start a Jam"))||{click(){}}).click()`);
+  // Prefer the Social view's own Create-room CTA (the reported-missing button,
+  // mobile 09 P40); the mode sheet stays the fallback path for older trees.
+  await mEval(`(async () => { location.hash = "#/nowplaying"; await new Promise(r=>setTimeout(r,600));
+    document.getElementById("modeSocialTab")?.click(); await new Promise(r=>setTimeout(r,500)); })()`);
+  const via = await mEval(`(() => { const b = document.getElementById("jamCreateBtn"); if (b) { b.click(); return "cta"; }
+    document.getElementById("modeToggleBtn")?.click(); return "sheet"; })()`);
+  if (via !== "cta") {
+    await delay(400);
+    await mEval(`([...document.querySelectorAll("button")].find(b=>b.textContent.trim().startsWith("Start a Jam"))||{click(){}}).click()`);
+  }
   const ok = await waitForCli(mob, `(() => { const c = document.getElementById("jamBannerCode")?.textContent || ""; return /^[2-9A-HJ-NP-Z]{8}$/.test(String(c).replace(/[^A-Za-z0-9]/g,"")) && String(c).replace(/[^A-Za-z0-9]/g,"").length === 8; })()`, 8000);
   const code = String(await atM("jamBannerCode") || "").replace(/[^A-Za-z0-9]/g, "");
   return { ok, code };
@@ -159,8 +166,15 @@ assert(/rev-host-/.test(mChat), "android host rendered desktop-guest chat line",
 // ---------- playback follow: android host plays ----------
 console.log("== playback follow (android host plays) ==");
 await mEval(`(async () => { location.hash = "#/search"; await new Promise(r=>setTimeout(r,600)); })()`);
-await setVal(mEval, "search-input", "aashiq banke");
-const rowUp = await waitForCli(mob, `[...document.querySelectorAll("[data-sug-id]")].some(b => b.dataset.sugId)`, 12000);
+// The first query after a fresh install can come back empty while the
+// backend warms (seen live) — retry the query before calling it a failure.
+let rowUp = false;
+for (let attempt = 0; attempt < 3 && !rowUp; attempt += 1) {
+  await setVal(mEval, "search-input", "");
+  await delay(300);
+  await setVal(mEval, "search-input", "aashiq banke");
+  rowUp = await waitForCli(mob, `[...document.querySelectorAll("[data-sug-id]")].some(b => b.dataset.sugId)`, 12000);
+}
 let mPlayed = false;
 if (rowUp) mPlayed = await mEval(`(() => { const b = [...document.querySelectorAll("[data-sug-id]")].find(b => b.dataset.sugId); if (!b) return false; b.click(); return true; })()`);
 const mPlaying = await waitForCli(mob, `(() => { const a = document.getElementById("audio"); return a && !a.paused && a.currentTime > 0; })()`, 20000);
@@ -170,6 +184,10 @@ assert(dFollowed, "desktop guest followed playback", JSON.stringify(await deskAu
 
 // ---------- D4 regression: host pauses -> guest pauses ----------
 console.log("== D4: pause broadcast ==");
+// Playing a result may leave the shell on Search; the transport ids live on
+// the NowPlaying screen, so return there before touching the play button.
+await mEval(`location.hash = "#/nowplaying"`);
+await waitForCli(mob, `!!document.getElementById("master-play-pause")`, 8000);
 const before = await mobAudio();
 await mEval(`document.getElementById("master-play-pause").click()`);
 const mPaused = await waitForCli(mob, `document.getElementById("audio")?.paused === true`, 4000);

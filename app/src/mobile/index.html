@@ -272,7 +272,7 @@ button:active:not(:disabled), [role="button"]:active {
 .tm-marquee {
   display: inline-block;
   white-space: nowrap;
-  overflow: visible;
+  overflow: hidden;
   text-overflow: clip;
   animation: tm-marquee 8s linear infinite;
 }
@@ -295,6 +295,64 @@ button:active:not(:disabled), [role="button"]:active {
   inset: 0;
   z-index: 100;
   overflow-y: auto;
+}
+
+/* Network status: the header profile avatar fills with the state colour
+   (mobile/net.js paints it), and breathes while reconnecting. */
+.net-pulse { animation: net-pulse 1.2s ease-in-out infinite; }
+@keyframes net-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Home rails page instead of flinging: paced horizontal travel so every
+   card can be inspected mid-scroll. */
+#screen [data-shelf] .overflow-x-auto {
+  scroll-snap-type: x proximity;
+  scroll-padding: 1rem;
+}
+
+/* Loading skeleton: [data-skel] blocks (home.html) shimmer while home_feed
+   resolves; painters overwrite them, clearSkeletons() removes leftovers. */
+.skel {
+  background: linear-gradient(100deg, rgba(140, 144, 152, 0.12) 40%, rgba(140, 144, 152, 0.24) 50%, rgba(140, 144, 152, 0.12) 60%);
+  background-size: 200% 100%;
+  animation: skel-sweep 1.5s ease-in-out infinite;
+}
+@keyframes skel-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
+}
+
+/* Screen transition: the router wraps each fragment in .screen-anim and
+   restarts .screen-enter. Opacity + a small rise — a plain wrapper keeps
+   fixed headers viewport-anchored at rest (transform: none creates no
+   containing block), and the tab bar lives outside the wrapper. */
+.screen-anim { min-height: 100%; }
+.screen-enter { animation: screen-enter 0.26s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+@keyframes screen-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Micro-interactions: every button answers a press — a short scale plus a
+   smooth colour/shadow ramp. The id selector layers over the Tailwind
+   active:scale-90/95 classes instead of fighting them; disabled stays inert. */
+#screen button:not(:disabled),
+#tm-onboard button:not(:disabled) {
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.3, 1), background-color 0.18s ease,
+    color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+#screen button:not(:disabled):active,
+#tm-onboard button:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+  .screen-enter { animation: none; }
+  #screen button:not(:disabled):active,
+  #tm-onboard button:not(:disabled):active { transform: none; }
 }
 
 /* ==========================================================================
@@ -356,7 +414,7 @@ html:not(.dark) .rounded-xl.border {
 html:not(.dark) #np-art-card {
   background: #1b1b1e !important;
   border-color: rgba(0, 0, 0, 0.08) !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.12) !important;
 }
 
 /* 4. Interactive List Rows (Playlists, Albums, Tracklists, History) */
@@ -668,7 +726,17 @@ html.dark .rounded-xl.border {
 html.dark #np-art-card {
   background: #101013 !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Fallback artwork = the platform logo. Since 2026-10-10 the file is the
+   pre-cropped mark on a transparent square canvas (the dark tile and its
+   caption were keyed out — branding guide, fallback-artwork contract v2),
+   so the only rule left is the black backing that lets the white mark read
+   on any theme. The old CSS zoom-crop is gone — the crop is baked into
+   the bytes. */
+img[src$="logo.png"] {
+  background: #000;
 }
 
 .dark .genre-card,
@@ -954,6 +1022,19 @@ html.dark #tm-queue-sheet [data-q-panel] {
   background: #141417 !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.85) !important;
+}
+
+/* Network state on the header avatar (mobile/net.js paints data-net-state +
+   --tm-net-fill). Stylesheet !important beats an inline style, so the fill
+   rides an attribute + var — never an inline background (that measured
+   rgba(0,0,0,0) under the theme gradients). (0,2,3) beats both themes'
+   button rules (0,2,2); later in the file breaks any remaining tie. */
+html body button[data-nav="settings"][data-net-state] {
+  background: var(--tm-net-fill, #10b981) !important;
+  border-color: transparent !important;
+}
+html body button[data-nav="settings"][data-net-state] .material-symbols-outlined {
+  color: #ffffff !important;
 }
 </style>
 <script>

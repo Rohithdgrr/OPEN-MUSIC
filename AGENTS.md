@@ -1164,3 +1164,109 @@ out their brand hunk), `docs/jam-upgrade.md` (A status table + B verdict),
 plus A1-A6. **22 commits ahead of `origin/main`, nothing pushed (rule 1).**
 Probes live in `%TEMP%\opencode\` (outside repo). Desktop app + emulator left
 running for B live tests.
+
+## 2026-10-09 � Push record: jam bundle commit 79e89e1 on main (pushed, in sync)
+
+User said "push whole untracked commited code to github". Range before push:
+26 prior-session commits (jam stabilization, sub-project A unified invite,
+B-T1/B-T2 scan-to-join, audits, runbooks) + 1 new bundle commit 79e89e1
+(55 files: 49 modified + 6 new � 3 live probes + 3 docs). Procedure per rule 8:
+git log origin/main..HEAD verified first (all 27 commits authored
+Rohithdgrr), push as a separate command, 6522ca7..79e89e1 main -> main,
+post-push ahead-range empty.
+
+- Gates before commit: 
+pm test **275/275** � eslint clean �
+  cargo fmt --check clean � cargo clippy --all-targets -D warnings clean
+  (3 real fixes found by clippy: unused hostSentPos in mobile/jam.js,
+  2 unused mut + 1 manual_contains in oom.rs tests).
+- Deliberately NOT committed (untracked, per 07j precedent): 	emporary/,
+  	emporary data/, pp/src-tauri/.cargo/ (machine-local lld config),
+  pp/tests/_debug-*.mjs + _probe-dom.mjs (temp CDP probes whose headers
+  say "deleted after run").
+- PowerShell trap re-confirmed: native-tool stderr re-raises as
+  NativeCommandError; CLIPPY_EXIT=0 is the real signal.
+
+## 2026-10-09b — Logo fallback: one default mark, zoom-cropped, verified in a real browser (uncommitted)
+
+User: icon.png/ico is the logo for both surfaces and every default (slow
+network thumbnails included); zoom it in, no background shade. Jam/chat
+bidirectional confirmed working by design (one Rust room server + one
+room.js reducer) — no code touched there.
+
+- **Bytes:** `app/src/logo.png` + `app/src/mobile/logo.png` already
+  byte-identical to `src-tauri/icons/icon.png` (SHA-256 `DCDC7DAB…`, verified
+  via `Get-FileHash`). Nothing to copy.
+- **Root cause of the "shade":** icon.png is 512x512 RGBA with **fully
+  transparent corners** (PIL probe: corner alpha 0). Any light tile behind it
+  bled through. Fix per docs-first contract (`docs/branding/trance-music-guide.md`
+  "Fallback artwork contract"): `img[src$="logo.png"]{background:#000}` +
+  `.overflow-hidden > img[src$="logo.png"]{transform:scale(1.18)}` in
+  `styles.css` (desktop+widget) and `mobile/index.html` `<style>`. All tiles
+  are already `overflow-hidden` + `object-cover`, so the crop is free.
+- **Boot defaults went local:** `#master-album-cover` was a googleusercontent
+  URL (fetched every boot, even offline) → `logo.png`; `#bar-cover` was a
+  hidden img + `album` glyph → visible `logo.png`; widget `#wg-art`/`#wg-mini`
+  fall back to `LOGO` instead of empty (`widget.js`: `cover || LOGO`).
+  Dynamic paths needed nothing: desktop/mobile `artFail` ladders already end
+  at `LOGO`, router `stampImages` keeps static design `<img>`s on the ladder.
+- **Proof, not faith:** headless-Chrome screenshot of the exact tile markup
+  with the real `styles.css` + bytes → bar/row tile corners 9–45
+  (near-black; body gray is 136), stage center bright. New static gate
+  `app/tests/logo-fallback.test.mjs` 5/5.
+- **Gates:** `npm test` **304/304** · `eslint` clean. Live-device Jam runs
+  not re-run (no emulator / desktop CDP up; standing §10 runbook unchanged).
+- **Traps:** PS `&` backgrounding is a parse error — background servers go
+  through the shell tool's `background:true`; first probe server had a wrong
+  relative root (404s) → hardcoded absolute root on :8124; killed both node
+  servers by `static-server.mjs` command-line match (never bare `node.exe` —
+  other sessions build on this box). Probe HTML deleted from `app/src`.
+- Status: ✅ verified ✅ docs + CHANGELOG ⏳ **uncommitted, unpushed**
+  (rule 1). Files: `index.html`, `styles.css`, `mobile/index.html`,
+  `widget.js`, branding guide, CHANGELOG, new test.
+
+## 2026-10-09c — Desktop UI reverted to HEAD on user call (uncommitted)
+
+User: "revert ui changes in desktop application" → scope Q → chose **all
+desktop UI to HEAD** (warned it destroys other sessions' WIP; accepted).
+
+- `git checkout HEAD --` on 9 files: `home.js index.html library.js main.js
+  player.js settings.js styles.css transport.js widget.js`. All desktop WIP —
+  mine (logo covers/rule/widget backdrop) AND other sessions' — is gone from
+  the tree. Mobile (`mobile/*`), `room.rs`, tests, docs stand.
+- Deliberately left: untracked `app/src/survey.js` (no git copy exists —
+  deleting is unrecoverable; nothing imports it now, it's dead weight).
+- Follow-through: `logo-fallback.test.mjs` rescoped to mobile (4/4),
+  CHANGELOG + branding guide marked REVERTED-on-desktop, `npm test` **303/303**,
+  `eslint` clean.
+- Status: ⏳ uncommitted, unpushed (rule 1).
+
+## 2026-10-10 — Now Playing metadata card: transparent, eyebrow + quality tag removed (verified in Chrome)
+
+User: *"in nowplayings screen of desktop application in the title card of metadata convert the
+background from blur to transparent. remove the qualtiy tag"*, then *"TRACK 03 • STEREO DIRECT
+320kbps remove this text also"* (the eyebrow row). **Desktop only** — mobile keeps both.
+
+| Item | Evidence |
+|---|---|
+| Blur → transparent | the glass lived on `.np-art-overlay::before` (gradient + `backdrop-filter: blur(10px) saturate(130%)` + `mask-image`) plus a `.dark`/`html.dark` re-state — **both deleted**. `.np-art-overlay` itself was already `background: transparent` |
+| Quality tag gone | `#np-quality` / `.np-art-quality`: markup (`index.html`), base rule, `.dark #now-playing-stage` re-state, and the `player.js:27` `npText` fill all removed |
+| Eyebrow row gone | `#np-trackline` / `.np-art-trackline` / `.np-art-eyebrow` markup + both CSS rules + the `playback.js:178` `npText` fill. Card now starts at the title (`metaFirstChild: "np-art-title"`) |
+| **Real-browser proof** | headless Chrome 155 loaded the **actual** `index.html` + `styles.css` in a same-origin iframe and read computed styles: `overlayBgColor: rgba(0,0,0,0)`, `overlayBgImage: none`, `beforeContent: none`, `beforeBackdropFilter: none`, all five trackline/quality lookups `null`, `formatTile: "320kbps"` (the live telemetry readout still works) |
+| Gates | `node --test tests/social-ui.test.mjs` **27/27**; `npx eslint src/playback.js src/player.js src/mobile/binders.js` **exit 0**; `npm test` 379 tests / 361 pass / **18 fail — every failure in untracked `tests/notepad-blocks.test.mjs`** (another session's live WIP; it reads none of the touched files) |
+| Docs first | `docs/social-nowplaying.md` **§6d** (new) + §4 class inventory + §5 id contract; `CHANGELOG.md` Unreleased entry |
+
+**Contract note:** `social-ui.test.mjs` §6b removed-chrome test now guards all of it —
+`np-quality` + `np-trackline` absent from `index.html`, and no `.np-art-quality` /
+`.np-art-eyebrow` / `.np-art-trackline` rule in `styles.css`. Removing an id that the IDS list
+holds **fails** that suite; move it to the removed-chrome list or the doc and the test drift
+apart.
+
+**Traps:** the screenshots could not be read (this model has no image input) — the change was
+driven from markup/CSS instead. `npm run css` only rebuilds the mobile `tailwind.css`;
+`styles.css` is hand-written, so no rebuild is needed after editing it. A CSS-only "make it
+transparent" change still needs the markup+CSS pair checked together: the class contract test
+fails the moment a class loses its rule or vice versa.
+
+Status: ✅ verified in a real browser ✅ docs + CHANGELOG ⏳ **uncommitted, unpushed** (rule 1).
+Probe server + page lived in `%TEMP%\opencode\`, killed by command-line match, deleted.

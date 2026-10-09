@@ -1,0 +1,233 @@
+/* notepad-org.css — Devi's styles for the notepad organization layer.
+ * Prefix: npdo- only. Palette tokens only (no new colors); dark parity via
+ * html.dark. Injected by initNotepadOrg(); scoped so it never leaks into the
+ * rest of the app. Mounts styled: #npd-side (rail), #npd-tabmeta (badges),
+ * #npd-overlay (export menu). */
+
+/* ------------------------------------------------------------- rail - */
+.npdo-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  height: 100%;
+  overflow-y: auto;
+  font-size: 12px;
+  color: #1a1c1d;
+}
+html.dark .npdo-rail {
+  color: #f4f4f5;
+}
+.npdo-rail-head {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #71717a;
+  margin: 8px 2px 4px;
+}
+html.dark .npdo-rail-head {
+  color: #a1a1aa;
+}
+.npdo-nb {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.npdo-nb:hover {
+  background: #f3f3f5;
+}
+html.dark .npdo-nb:hover {
+  background: #1a1a1e;
+}
+.npdo-nb.active {
+  background: #e8e8ea;
+  font-weight: 600;
+}
+html.dark .npdo-nb.active {
+  background: #242429;
+}
+.npdo-nb-right {
+  color: #71717a;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+html.dark .npdo-nb-right {
+  color: #a1a1aa;
+}
+.npdo-add {
+  color: #71717a;
+  font-style: italic;
+}
+html.dark .npdo-add {
+  color: #a1a1aa;
+}
+.npdo-prompt {
+  margin: 4px 0;
+}
+.npdo-prompt-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: 1px solid #e2e2e4;
+  border-radius: 6px;
+  background: #f9f9fb;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+.npdo-prompt-input:focus {
+  border-color: #71717a;
+}
+html.dark .npdo-prompt-input {
+  background: #101013;
+  border-color: #242429;
+}
+
+/* ------------------------------------------------------------- tags - */
+.npdo-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 6px;
+}
+.npdo-tag {
+  border: 1px solid #e2e2e4;
+  border-radius: 999px;
+  background: transparent;
+  color: #71717a;
+  font: inherit;
+  font-size: 11px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.npdo-tag:hover {
+  background: #f3f3f5;
+  color: #1a1c1d;
+}
+html.dark .npdo-tag {
+  border-color: #242429;
+  color: #a1a1aa;
+}
+html.dark .npdo-tag:hover {
+  background: #1a1a1e;
+  color: #f4f4f5;
+}
+
+/* ----------------------------------------------------------- badges - */
+.npdo-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #f3f3f5;
+  color: #71717a;
+  font-size: 11px;
+  line-height: 1.5;
+}
+html.dark .npdo-badge {
+  background: #1a1a1e;
+  color: #a1a1aa;
+}
+
+/* ------------------------------------------------------- prefs segs - */
+.npdo-prefs {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.npdo-seg {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.npdo-seg-label {
+  width: 32px;
+  color: #71717a;
+  font-size: 11px;
+}
+html.dark .npdo-seg-label {
+  color: #a1a1aa;
+}
+.npdo-seg-item {
+  flex: 1;
+  border: 1px solid #e2e2e4;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 0;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.npdo-seg-item:hover {
+  background: #f3f3f5;
+}
+.npdo-seg-item.active {
+  background: #e8e8ea;
+  font-weight: 600;
+}
+html.dark .npdo-seg-item {
+  border-color: #242429;
+}
+html.dark .npdo-seg-item:hover {
+  background: #1a1a1e;
+}
+html.dark .npdo-seg-item.active {
+  background: #242429;
+}
+
+/* ------------------------------------------------------- export menu - */
+.npdo-menu {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid #e8e8ea;
+  border-radius: 8px;
+  background: #f9f9fb;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+html.dark .npdo-menu {
+  background: #141416;
+  border-color: #242429;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.npdo-menu-row {
+  text-align: left;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.npdo-menu-row:hover {
+  background: #f3f3f5;
+}
+html.dark .npdo-menu-row:hover {
+  background: #1a1a1e;
+}
+.npdo-menu-cancel {
+  color: #71717a;
+}
+html.dark .npdo-menu-cancel {
+  color: #a1a1aa;
+}

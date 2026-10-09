@@ -19,7 +19,7 @@ const IDS = [
   // header (the room code slot is filled only by a room_created frame)
   "btn-mode-solo", "btn-mode-social", "soc-room-chip", "soc-room-code", "soc-avatar",
   // artwork overlay
-  "np-trackline", "np-quality", "track-title-heading", "track-artist-heading",
+  "track-title-heading", "track-artist-heading",
   "track-fav-btn", "fav-icon", "np-download-btn", "np-add-btn", "np-share-btn",
   "np-album", "np-artist-tile", "np-length", "np-format", "spinning-vinyl-icon",
   "np-sleep", "np-speed", "np-room-members",
@@ -91,14 +91,33 @@ test("counts stay honest: one member, zero reactions, no room", () => {
 test("the removed artwork chrome stays removed", () => {
   // Regression guard: these were pulled on request (§6b). A future "restore"
   // must be deliberate, not an accident of re-adding a stray block.
-  for (const id of ["np-badge", "solo-prompt", "btn-activate-social"]) {
+  for (const id of ["np-badge", "solo-prompt", "btn-activate-social", "np-quality", "np-trackline"]) {
     assert.ok(!html.includes(`id="${id}"`), `${id} should be gone from index.html`);
   }
   assert.ok(!css.includes(".np-stream-pill"), "no .np-stream-pill rule should remain");
+  assert.ok(!css.includes(".np-art-quality"), "no .np-art-quality rule should remain");
+  assert.ok(!css.includes(".np-art-eyebrow"), "no .np-art-eyebrow rule should remain");
+  assert.ok(!css.includes(".np-art-trackline"), "no .np-art-trackline rule should remain");
   assert.ok(!css.includes(".soc-solo-prompt"), "no .soc-solo-prompt rule should remain");
   // @keyframes np-pulse must survive: .soc-live-dot still animates with it.
   assert.ok(css.includes("@keyframes np-pulse"), "np-pulse keyframes are still used by .soc-live-dot");
   assert.ok(css.includes("animation: np-pulse"), "a live dot must still animate");
+});
+
+test("the metadata card is a readable scrim, not glass (§6e)", () => {
+  // On request the overlay went fully transparent (§6d) and white text
+  // washed out on bright covers — so it now carries a bottom-anchored
+  // darkening gradient painted under the text. That must never become
+  // a blur again: no backdrop-filter, no ::before anywhere near it.
+  const overlay = (css.match(/\.np-art-overlay\s*\{[^}]*\}/)?.[0] ?? "").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  assert.ok(overlay.includes("linear-gradient"), "overlay needs the legibility scrim");
+  assert.ok(/padding:\s*0\.75rem 0\.75rem 0\.6rem/.test(overlay), "overlay padding must stay tight");
+  assert.ok(!overlay.includes("backdrop-filter"), "overlay must not blur the artwork");
+  assert.ok(!css.includes(".np-art-overlay::before"), "no glass pseudo-element may return");
+  assert.ok(css.includes("0 2px 12px rgba(0, 0, 0, 0.8)"), "title shadow must survive bright covers");
 });
 
 test("the room QR is a real symbol encoded in Rust, not a glyph", () => {

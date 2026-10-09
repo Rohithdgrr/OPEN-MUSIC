@@ -197,3 +197,42 @@ npm run tauri ios build
 - Website favicon
 - Email signature logo
 - Press kit materials
+
+## Fallback artwork contract (2026-10-09, revised 2026-10-10)
+
+The platform logo (`app/src/logo.png` + `app/src/mobile/logo.png`, byte-
+identical to each other) is the **only** default artwork on either surface —
+no-track idle covers, artless tracks, and every failed/slow thumbnail ladder
+end here. Rationale: on a slow network covers arrive late or not at all, and
+a local file paints instantly with zero network.
+
+- `LOGO` constants (`art.js`, `mobile/shared.js`, `widget.js`) stay
+  `"logo.png"` — same filename, new bytes; no import changes.
+- **Revised 2026-10-10** (user: *"zoom in this and set only the main, don't
+  show the background … still logo is not changed"*): `logo.png` is no longer
+  a byte copy of `icon.png`. It is a **derived crop** — the bright mark of
+  the 512×512 icon, background-keyed to alpha (luma ramp 30→110), padded to a
+  square transparent canvas. The dark app-tile, its rounded corners and the
+  `TRANCE MUSIC / CORE V2.4` caption are gone; the mark fills the frame.
+  `icon.png` (launcher/branding source) is untouched. The CSS keeps a black
+  backing so the white mark reads on any theme, and the zoom rule is deleted
+  — the crop is baked in:
+  ```css
+  img[src$="logo.png"] { background: #000; }
+  /* removed: .overflow-hidden > img[src$="logo.png"] { transform: scale(1.18); } */
+  ```
+  (desktop: `styles.css`; mobile: `mobile/index.html` `<style>`).
+- Static boot defaults point at the local file, never remote: desktop
+  `#master-album-cover` and `#bar-cover` ship `src="logo.png"` (the stage's
+  old googleusercontent URL fetched on every boot, even offline).
+- Widget blurred backdrops (`#wg-art`, `#wg-mini`, already `cover` + dark)
+  fall back to the logo instead of empty.
+- Ladder invariant (unchanged, verified by `app/tests/logo-fallback.test.mjs`):
+  desktop/mobile `artFail` ends at `LOGO`; router `stampImages` keeps static
+  design-export `<img>`s on the ladder so slow/dead demo URLs degrade to the
+  logo instead of blanking.
+
+> **REVERTED on desktop 2026-10-09** (user call — full desktop UI revert to
+> HEAD): the `styles.css` rule, the `index.html` boot defaults and the
+> `widget.js` backdrop fallback are gone. The mobile half (rule, bytes,
+> ladder) stands; the gate is rescoped to mobile.

@@ -139,11 +139,24 @@
   }
 
   function paint(html, key, dir, query) {
-    mount.innerHTML = html;
+    // Screen transition: the fragment rides a plain wrapper div so the whole
+    // screen can fade/rise into place. Fixed headers inside stay
+    // viewport-anchored (paint always runs right after scrollTo(0,0), and
+    // `transform: none` at rest creates no containing block); the bottom tab
+    // bar is appended below, OUTSIDE the wrapper, so it never moves.
+    mount.innerHTML = '<div class="screen-anim">' + html + "</div>";
     stripNavs(mount);
     if (dir !== "nowplaying") mount.insertAdjacentHTML("beforeend", navHTML(key));
     stampImages();
     window.scrollTo(0, 0);
+    var anim = mount.querySelector(".screen-anim");
+    if (anim) {
+      // Restart the keyframe: re-adding the class after a reflow makes every
+      // navigation animate, not just the first.
+      anim.classList.remove("screen-enter");
+      void anim.offsetWidth;
+      anim.classList.add("screen-enter");
+    }
     var s = document.createElement("script");
     s.src = "screens/" + dir + ".js";
     s.onload = s.onerror = function () {

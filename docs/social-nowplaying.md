@@ -120,12 +120,13 @@ body.soc-social       .soc-solo-only   { display: none !important; }
 | Area | Classes |
 |---|---|
 | Header | `.soc-header-actions`, `.soc-mode-switch`, `.soc-mode-btn(.active)`, `.soc-live-dot`, `.soc-room-chip`, `.soc-avatar` |
-| Artwork overlay | `.np-art-overlay(-top/-meta)`, `.np-art-trackline`, `.np-art-eyebrow`, `.np-art-quality`, `.np-art-title`, `.np-art-artist`, `.np-art-actions`, `.np-art-action`, `.np-art-info-row/-group/-item/-label/-value/-sep`, `.np-art-info-item--wide`, `.np-art-select` |
+| Artwork overlay | `.np-art-overlay(-top/-meta)`, `.np-art-title`, `.np-art-artist`, `.np-art-actions`, `.np-art-action`, `.np-art-info-row/-group/-item/-label/-value/-sep`, `.np-art-info-item--wide`, `.np-art-select` |
 
-`.np-art-trackline` is the **only** name for the eyebrow row. The markup
+`.np-art-trackline` was the **only** name for the eyebrow row. The markup
 shipped it as `class="np-trackline"`, which no rule matched — the flex row
 silently never applied. The class in `index.html` was renamed to match the
-documented inventory; `id="np-trackline"` is unchanged (id contract §5).
+documented inventory, then the whole row (`.np-art-trackline`,
+`.np-art-eyebrow`, `id="np-trackline"`) was removed on request — §6d.
 | Room QR | `.np-qr-btn`, `.np-qr-overlay(.hidden)`, `.np-qr-card`, `.np-qr-head(-label)`, `.np-qr-count`, `.np-qr-frame`, `.np-qr-canvas`, `.np-qr-empty(.hidden)`, `.np-qr-code`, `.np-qr-note`, `.np-qr-actions`, `.np-qr-copy`, `.np-qr-close` |
 | Reactions | `.soc-reaction-bar`, `.soc-reaction-pill(.active)`, `.soc-reaction-emoji`, `.soc-reaction-count`, `.soc-reaction-note` |
 | ~~Transport~~ | Removed 2026-10-06: the whole `.np-transport-card` block (`#timeline-bar`, `#sync-clock-label`, `#soc-grace`, `#btn-skip-vote`, `#volume-track`) is gone from the desktop Now Playing view. Only the bottom mini-player drives playback and volume now. The skip-vote and grace-period surfaces left with the card; `jam-vote-ratio` still paints the (now inert) tally. |
@@ -144,7 +145,7 @@ used in `index.html` has a rule in `styles.css` (and vice versa).
 
 Header: `btn-mode-solo` `btn-mode-social` `soc-room-chip` `soc-room-code`
 `soc-avatar`
-Artwork overlay: `np-trackline` `np-quality` `track-title-heading`
+Artwork overlay: `track-title-heading`
 `track-artist-heading` `track-fav-btn` `fav-icon` `np-download-btn`
 `np-add-btn` `np-share-btn` `np-album` `np-artist-tile` `np-length`
 `np-format` `spinning-vinyl-icon` `np-sleep` `np-speed` `np-room-members`
@@ -289,6 +290,63 @@ Size check: the longest realistic payload is ~36 bytes
 
 `app/tests/social-ui.test.mjs` guards the wiring (IPC path, the `!code` branch,
 the empty state, no CDN) and `styles.css` carries every `.np-qr-*` class.
+
+## 6d. Metadata card: transparent, no eyebrow row, no quality tag (on request)
+
+Three changes to the artwork overlay, all on request 2026-10-10:
+
+| Change | Was | Now |
+|---|---|---|
+| Background | `.np-art-overlay::before` — dark gradient + `backdrop-filter: blur(10px) saturate(130%)` + `mask-image` (the §6a glass, re-stated for `.dark`/`html.dark`) | **transparent** — the pseudo-element is deleted in both themes; `.np-art-overlay` itself was already `background: transparent`, so the artwork shows through the metadata card sharply, unblurred |
+| Eyebrow row | `#np-trackline` / `.np-art-trackline` / `.np-art-eyebrow` — `TRACK 03 • STEREO DIRECT`, and the `playback.js` fill that composed it | **removed** — markup, both CSS rules, and the `npText` fill |
+| Quality tag | `#np-quality` / `.np-art-quality` pill beside the eyebrow | **removed** — markup, the base rule, the `.dark #now-playing-stage` re-state, and the `player.js` `npText` fill are all gone |
+
+The metadata card now starts at the title: artwork → title → artist →
+telemetry strip. The telemetry strip keeps `#np-format` (the vinyl icon +
+quality), which stays live from the resolve's measured status.
+
+Why it is safe:
+
+- Legibility was never carried by the glass: title / artist already have
+  `text-shadow` (§6a), and the telemetry strip keeps its `border-top`
+  hairline.
+- `npText` (`util.js`) is a no-op on a missing id, but the dead calls
+  were removed anyway so nothing writes to a ghost element.
+- `index` (the queue position) is still used for prefetch and for the
+  `TRACK nn` numbering elsewhere — only the rendered eyebrow is gone.
+- The **mobile** Now Playing keeps its own eyebrow (`#np-trackline`,
+  `#np-qchip`) — this change is desktop-only.
+
+The §6a table stays as the historical record of why the glass was
+split onto a pseudo-element; those rules were deleted, not rewritten.
+Regression guard: `app/tests/social-ui.test.mjs` asserts `np-quality`
+and `np-trackline` are absent from `index.html` (§6b removed-chrome
+test) and that no `.np-art-quality` / `.np-art-eyebrow` rule survives in
+`styles.css`.
+
+## 6e. Metadata card legibility: tighter padding + scrim, still no blur (on request)
+
+Follow-up 2026-10-10: with the glass gone, white metadata washed out on
+bright covers (white title over a pale poster) and the card's padding
+(`1.35rem 1rem 0.9rem`) ate artwork for no reason. Changes, all in
+`styles.css`, no markup touched:
+
+| Change | Was | Now |
+|---|---|---|
+| Padding | `1.35rem 1rem 0.9rem`, `gap: 0.6rem` | `0.75rem 0.75rem 0.6rem`, `gap: 0.45rem` |
+| Background | `transparent` (fully — §6d) | bottom-anchored **scrim gradient** on `.np-art-overlay` itself: `rgba(0,0,0,0.85)` at the baseline → transparent by the top edge. **No `backdrop-filter`, no pseudo-element** — the artwork above the text stays perfectly sharp; only the strip behind the text darkens |
+| Shadows | title `0 2px 10px / 0.45`, artist `0 1px 6px / 0.5`, telemetry none | title `0 2px 12px / 0.8 + 0 1px 3px / 0.9`, artist `0 1px 8px / 0.85 + 0 1px 3px / 0.9`, `.np-art-info-row` `0 1px 4px / 0.85` |
+
+This does **not** reintroduce the §6a glass: there is no blur, no mask,
+no `::before` — a flat gradient painted *under* the text (the element's
+own background), so it cannot blur the artwork. If a future request
+wants the fully bare look back, delete the `background` on
+`.np-art-overlay` and the three `text-shadow` strengthenings; the
+removed-chrome guard (§6b test) is unaffected either way.
+
+Regression guard: `app/tests/social-ui.test.mjs` asserts the overlay
+rule carries a `linear-gradient` background, carries **no**
+`backdrop-filter`, and the padding values above.
 
 ## 7. Constraints carried forward
 

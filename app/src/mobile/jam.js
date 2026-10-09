@@ -276,6 +276,9 @@ async function startRoom() {
       members: [{ id: "host", name, host: true }],
     });
     toast(`Room ${room.code} open — share the code with someone on this network.`, 5000, "success");
+    // Land on Jam Data so the invite QR is on screen the moment a room
+    // exists (the user's "create → no QR shown" report).
+    if (typeof switchTab === "function") switchTab("jam-data");
     broadcastQueue(); // share the up-next list with whoever joins (§4.7)
   } catch (e) {
     socialChrome = false;
@@ -751,6 +754,19 @@ function noteChatArrived(frame) {
   toast(`💬 ${who}${text}`, 4000);
 }
 
+/// Relative timestamp for a chat line ("just now", "2 min ago") — only from
+/// the server frame's own `ts`, never invented.
+function chatTime(ts) {
+  if (typeof ts !== "number" || !Number.isFinite(ts)) return "";
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 45) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
 function paintChat() {
   paintUnread();
   const list = el("jamChatList");
@@ -777,31 +793,45 @@ function paintChat() {
       continue;
     }
     const row = document.createElement("div");
-    row.className = entry.mine ? "flex items-end gap-2 flex-row-reverse" : "flex items-end gap-2";
+    row.className = entry.mine ? "flex items-start gap-2 flex-row-reverse" : "flex items-start gap-2";
 
     const avatar = document.createElement("div");
     avatar.className = entry.mine
-      ? "w-6 h-6 rounded-full bg-primary text-on-primary text-[9px] font-mono font-bold flex items-center justify-center shadow-xs shrink-0 mb-0.5"
-      : "w-6 h-6 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface text-[9px] font-mono font-bold flex items-center justify-center shrink-0 mb-0.5";
+      ? "w-9 h-9 rounded-full bg-primary text-on-primary text-[10px] font-mono font-bold flex items-center justify-center shadow-xs shrink-0"
+      : "w-9 h-9 rounded-full bg-surface-container-high border border-outline-variant/30 text-on-surface text-[10px] font-mono font-bold flex items-center justify-center shrink-0";
     avatar.textContent = entry.mine ? "YOU" : initialsOf(entry.from && entry.from.name);
+
+    const col = document.createElement("div");
+    col.className = entry.mine ? "flex flex-col items-end max-w-[85%]" : "flex flex-col max-w-[85%]";
+
+    const meta = document.createElement("div");
+    meta.className = "flex items-baseline gap-1.5 px-1 pb-0.5";
+    const who = document.createElement("span");
+    who.className = "font-label-sm text-[11px] text-on-surface font-semibold";
+    who.textContent = entry.mine ? "You" : (entry.from && entry.from.name) || "Guest";
+    meta.append(who);
+    const when = chatTime(entry.ts);
+    if (when) {
+      const t = document.createElement("span");
+      t.className = "font-label-sm text-[10px] text-secondary";
+      t.textContent = when;
+      meta.append(t);
+    }
 
     const bubble = document.createElement("div");
     bubble.className = entry.mine
-      ? "flex flex-col bg-primary text-on-primary px-3 py-1.5 rounded-2xl rounded-br-xs max-w-[85%] shadow-xs"
-      : "flex flex-col bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 px-3 py-1.5 rounded-2xl rounded-bl-xs max-w-[85%] shadow-xs";
-
-    const who = document.createElement("span");
-    who.className = entry.mine ? "font-label-sm text-[8px] text-white/70 font-medium" : "font-label-sm text-[8px] text-secondary font-medium";
-    who.textContent = entry.mine ? "You" : (entry.from && entry.from.name) || "Guest";
+      ? "bg-primary text-on-primary px-3 py-2 rounded-2xl max-w-full shadow-xs"
+      : "bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 px-3 py-2 rounded-2xl max-w-full shadow-xs";
 
     const text = document.createElement("span");
     text.className = entry.mine
-      ? "font-body-sm text-[12px] text-white leading-relaxed whitespace-pre-wrap break-words"
-      : "font-body-sm text-[12px] text-on-surface leading-relaxed whitespace-pre-wrap break-words";
+      ? "font-body-sm text-[13px] text-white leading-relaxed whitespace-pre-wrap break-words"
+      : "font-body-sm text-[13px] text-on-surface leading-relaxed whitespace-pre-wrap break-words";
     text.textContent = entry.text; // textContent, never innerHTML
 
-    bubble.append(who, text);
-    row.append(avatar, bubble);
+    bubble.append(text);
+    col.append(meta, bubble);
+    row.append(avatar, col);
     list.append(row);
   }
   list.scrollTop = list.scrollHeight;
@@ -875,6 +905,11 @@ function paintJam() {
   }
 
   show(el("jamSessionBanner"), social, "flex");
+  // Social with no room → the explicit create/join CTA; hosting → the invite
+  // QR (only a host has one to share). This is the visible entry point the
+  // screen used to lack.
+  show(el("jamNoRoomCta"), social && !inRoom, "flex");
+  show(el("jamQrBlock"), room.role === "host", "flex");
   setText("jamBannerCode", inRoom ? `#${room.code}` : "NO ROOM");
   setText("jamBannerCount", String(memberCount(room)));
   setText(
@@ -888,7 +923,9 @@ function paintJam() {
       ? "NOT ON THIS DEVICE"
       : room.role === "host"
         ? "ROOM QUEUE"
-        : "FOLLOWING HOST");
+        : room.role === "guest"
+          ? "FOLLOWING HOST"
+          : "NO ROOM");
 
   // The queue tab is local — except for a guest with the host's snapshot,
   // which answers "what plays next" with the room's truth (§4.7).
@@ -911,6 +948,7 @@ function paintJam() {
 
   // Jam Data: real role, real code, real invite, measured drift, real members.
   setText("jamRoomTitle", inRoom ? `Jam Room #${room.code}` : "No room");
+  setText("jamLiveCount", inRoom ? `${memberCount(room)} listening together` : "Solo");
   setText("jamRoleBadge", room.role === "host" ? "HOST" : room.role === "guest" ? "GUEST" : "SOLO");
   const invite = inviteText(room);
   setText("jamInviteUri", invite || (inRoom ? "Invite unavailable — code only" : "Not in a room"));
@@ -937,6 +975,20 @@ function wireControls() {
       // If clicking directly on modeToggleBtn container rather than buttons:
       if (e.target === toggleBtn) openModeSheet();
     });
+  }
+
+  // The Social → Jam Data view's own create/join buttons. Before these, the
+  // only route to a room was the mode sheet hidden behind the toggle's
+  // padding — the screen read as "no create/join UI at all".
+  const createBtn = el("jamCreateBtn");
+  if (createBtn && !createBtn.dataset.jamWired) {
+    createBtn.dataset.jamWired = "1";
+    createBtn.addEventListener("click", () => void startRoom());
+  }
+  const joinBtn = el("jamJoinBtn");
+  if (joinBtn && !joinBtn.dataset.jamWired) {
+    joinBtn.dataset.jamWired = "1";
+    joinBtn.addEventListener("click", () => promptJoin());
   }
 
   const soloTab = el("modeSoloTab");

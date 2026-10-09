@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f5f5f5">
+<title>OPEN-MUSIC · Now Playing</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f5f5f5;--surface:#fff;--surface2:#ededed;--ink:#111;
+  --muted:#777;--line:#e4e4e4;--radius:18px;
+  --shadow:0 8px 30px rgba(0,0,0,.07);
+  --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
+*{box-sizing:border-box}
+html{background:var(--bg);scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+button,input{font:inherit}
+button{color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible{outline:2px solid #777;outline-offset:3px}
+.app{max-width:520px;min-height:100dvh;margin:auto;background:var(--bg);position:relative;overflow:hidden}
+.statusbar{height:calc(28px + var(--safe-top));padding:var(--safe-top) 24px 0;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:700}
+.status-icons{display:flex;gap:6px;align-items:center;font-size:12px}
+.topbar{height:54px;padding:0 20px;display:grid;grid-template-columns:44px 1fr 44px;align-items:center}
+.round-icon{width:42px;height:42px;border:1px solid var(--line);background:linear-gradient(145deg,#fff,#efefef);border-radius:50%;display:grid;place-items:center;box-shadow:0 2px 6px #00000008}
+.round-icon svg{width:19px;height:19px}
+.eyebrow{text-align:center;font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.24em;color:#555}
+.live-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#454545;margin-right:8px;vertical-align:middle}
+.content{padding:0 18px 22px}
+.artwork{width:100%;aspect-ratio:1/1;border-radius:15px;overflow:hidden;background:#111;position:relative;box-shadow:0 8px 20px #00000012}
+.artwork svg{width:100%;height:100%;display:block}
+.track-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin:16px 2px 0}
+.track-title{font-size:clamp(20px,5.2vw,27px);font-weight:760;letter-spacing:-.055em;line-height:1.13;margin:0}
+.artist{font-size:14px;color:var(--muted);margin-top:6px;line-height:1.3}
+.quality{font:600 10px ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;background:#e9e9e9;padding:7px 9px;border-radius:9px;margin-top:2px}
+.progress-wrap{margin-top:21px}
+.seek{width:100%;height:20px;display:flex;align-items:center;cursor:pointer;touch-action:pan-y}
+.seek input{width:100%;appearance:none;height:5px;border-radius:99px;background:linear-gradient(to right,#111 0%,#111 27%,#d7d7d7 27%,#d7d7d7 100%);outline:none}
+.seek input::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:#111;border:3px solid #fff;box-shadow:0 1px 4px #0003}
+.seek input::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:#111;border:3px solid #fff;box-shadow:0 1px 4px #0003}
+.time-row{display:flex;justify-content:space-between;color:var(--muted);font:11px ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:4px}
+.transport{display:grid;grid-template-columns:1fr 1fr 1.3fr 1fr 1fr;align-items:center;justify-items:center;margin:18px 0 18px}
+.transport button{border:0;background:transparent;display:grid;place-items:center;padding:8px}
+.transport svg{width:23px;height:23px}
+.transport .play{width:64px;height:64px;background:#050505;color:#fff;border-radius:50%;box-shadow:0 5px 12px #00000014}
+.transport .play svg{width:25px;height:25px}
+.transport .active{color:#111;position:relative}
+.transport .active:after{content:"";width:4px;height:4px;background:#111;border-radius:50%;position:absolute;bottom:0}
+.actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin:0 -2px 16px}
+.action{display:flex;align-items:center;flex-direction:column;gap:6px;border:0;background:transparent;padding:0 0 2px;min-width:0}
+.action .bubble{width:48px;height:48px;border:1px solid #e3e3e3;border-radius:50%;background:linear-gradient(145deg,#fff,#ececec);display:grid;place-items:center;position:relative;transition:transform .18s var(--ease),background .18s}
+.action svg{width:21px;height:21px}
+.action span:last-child{font-size:11px;color:#333}
+.action.selected .bubble{background:#111;color:white;border-color:#111}
+.action .count{position:absolute;right:-2px;top:-3px;background:#111;color:#fff;border-radius:50%;font-size:9px;padding:3px 5px;border:2px solid var(--bg)}
+.action:active .bubble{transform:scale(.94)}
+.panel{margin:0 -8px;border:1px solid #fff;background:rgba(255,255,255,.94);border-radius:24px 24px 0 0;box-shadow:0 -7px 28px #0000000a;overflow:hidden;scroll-margin-top:10px}
+.panel-grabber{width:42px;height:4px;border-radius:9px;background:#a9a9ad;margin:9px auto 12px}
+.panel-head{padding:0 18px 13px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.panel-title{font-size:20px;font-weight:750;letter-spacing:-.045em}
+.listeners{font-size:12px;color:var(--muted);margin-left:8px;font-weight:450;letter-spacing:0}
+.green-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#65bb62;margin-right:5px}
+.panel-chevron{border:0;background:transparent;padding:7px;display:grid;place-items:center}
+.panel-chevron svg{width:18px;height:18px}
+.tabs{margin:0 12px 14px;padding:4px;background:#ededed;border-radius:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:3px}
+.tab{border:0;background:transparent;border-radius:11px;padding:10px 5px;font-size:12px;color:#606060;display:flex;align-items:center;justify-content:center;gap:6px}
+.tab svg{width:15px;height:15px}
+.tab[aria-selected="true"]{background:#111;color:#fff;box-shadow:0 2px 4px #00000012}
+.view{padding:0 14px 15px}
+.messages{display:flex;flex-direction:column;gap:13px;padding:1px 2px 12px}
+.message{display:grid;grid-template-columns:34px minmax(0,1fr);gap:9px;align-items:start}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#d5d5d5;color:#222;font-size:11px;font-weight:700;overflow:hidden}
+.avatar.a1{background:radial-gradient(circle at 50% 30%,#bbb 0 17%,#555 18% 35%,#242424 36% 100%);color:#fff}
+.avatar.a2{background:radial-gradient(circle at 50% 28%,#eee 0 15%,#777 16% 32%,#333 33% 100%);color:#fff}
+.avatar.a3{background:radial-gradient(circle at 50% 28%,#aaa 0 16%,#444 17% 33%,#171717 34% 100%);color:#fff}
+.msg-meta{font-size:11px;margin:1px 0 4px;color:var(--muted)}
+.msg-meta strong{font-size:12px;color:#222;margin-right:7px}
+.bubble-msg{display:inline-block;max-width:100%;padding:9px 11px;background:#eee;border-radius:4px 13px 13px 13px;font-size:13px;line-height:1.4;overflow-wrap:anywhere}
+.message.mine{grid-template-columns:minmax(0,1fr) 34px}
+.message.mine .avatar{grid-column:2;grid-row:1}
+.message.mine .msg-body{grid-column:1;grid-row:1;text-align:right}
+.message.mine .bubble-msg{background:#111;color:#fff;text-align:left;border-radius:13px 4px 13px 13px}
+.composer{display:flex;align-items:center;gap:8px;padding-top:9px;border-top:1px solid #ededed;position:sticky;bottom:0;background:rgba(255,255,255,.96)}
+.composer input{min-width:0;flex:1;border:1px solid #e9e9e9;background:#f0f0f0;border-radius:24px;padding:13px 15px;font-size:13px;outline:none}
+.composer input:focus{border-color:#bcbcbc}
+.send{flex:0 0 42px;width:42px;height:42px;border:0;border-radius:50%;background:#111;color:#fff;display:grid;place-items:center}
+.send svg{width:18px;height:18px}
+.info-card{background:#f7f7f7;border:1px solid #e9e9e9;border-radius:15px;padding:14px;margin-bottom:12px}
+.info-label{font-size:11px;color:var(--muted);margin-bottom:8px}
+.room-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.room-code{font:700 21px ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.19em}
+.icon-btn{width:36px;height:36px;border:1px solid #e2e2e2;background:#fff;border-radius:11px;display:grid;place-items:center}
+.icon-btn svg{width:17px;height:17px}
+.info-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.soft-btn,.dark-btn{min-height:42px;border-radius:13px;padding:9px 10px;display:flex;align-items:center;justify-content:center;gap:7px;font-size:12px;font-weight:650;border:1px solid #e5e5e5;background:#f0f0f0}
+.dark-btn{background:#111;color:#fff;border-color:#111}
+.soft-btn svg,.dark-btn svg{width:16px;height:16px}
+.danger{color:#333;background:#fff}
+.listener-list{display:flex;flex-direction:column;gap:11px}
+.listener-row{display:flex;align-items:center;gap:10px}
+.listener-details{flex:1;min-width:0}
+.listener-name{font-size:13px;font-weight:650}
+.listener-state{font-size:11px;color:var(--muted);margin-top:3px}
+.host-pill{font-size:10px;border:1px solid #ddd;border-radius:7px;padding:4px 6px;color:#555}
+.queue-list{display:flex;flex-direction:column}
+.queue-row{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #eee}
+.queue-row:last-child{border-bottom:0}
+.cover-mini{width:42px;height:42px;border-radius:9px;background:#161616;overflow:hidden}
+.cover-mini svg{width:100%;height:100%}
+.queue-name{font-size:12px;font-weight:700;line-height:1.3}
+.queue-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.duration{font:10px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:calc(24px + var(--safe-bottom));transform:translate(-50%,20px);background:#111;color:#fff;padding:11px 15px;border-radius:13px;font-size:12px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:.25s;z-index:20;white-space:nowrap}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.hidden{display:none!important}
+.footer-space{height:calc(8px + var(--safe-bottom))}
+@media(min-width:600px){
+  body{padding:22px 0}
+  .app{border-radius:28px;box-shadow:0 12px 50px #00000014;min-height:calc(100dvh - 44px)}
+  .panel{border-radius:24px;margin-bottom:0}
+}
+@media(max-width:360px){
+  .content{padding-inline:13px}
+  .track-title{font-size:20px}
+  .quality{font-size:9px;padding:6px}
+  .action .bubble{width:43px;height:43px}
+  .panel-title{font-size:18px}
+  .room-code{font-size:18px}
+}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="statusbar"><span id="clock">9:41</span><span class="status-icons" aria-label="Signal, Wi-Fi, battery"><svg width="15" height="13" viewBox="0 0 15 13" fill="currentColor"><rect x="0" y="8" width="2.5" height="5" rx="1"/><rect x="4" y="5" width="2.5" height="8" rx="1"/><rect x="8" y="2" width="2.5" height="11" rx="1"/><rect x="12" y="0" width="2.5" height="13" rx="1"/></svg><svg width="16" height="13" viewBox="0 0 16 13" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M1 4.5Q8 -1 15 4.5M3.7 7.2Q8 3.5 12.3 7.2M6.4 10Q8 8.5 9.6 10"/><circle cx="8" cy="11.5" r=".7" fill="currentColor"/></svg><span>100% ▰</span></span></div>
+  <header class="topbar">
+    <button class="round-icon" id="collapseBtn" aria-label="Scroll to top"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="m6 14 6-6 6 6"/></svg></button>
+    <div class="eyebrow"><span class="live-dot"></span>NOW PLAYING</div>
+    <button class="round-icon" id="moreBtn" aria-label="More options"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
+  </header>
+  <main class="content">
+    <div class="artwork" aria-label="Nocturne album artwork">
+      <svg viewBox="0 0 600 600" preserveAspectRatio="xMidYMid slice" role="img" aria-label="A dark planet above a misty mountain valley">
+        <defs>
+          <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#090909"/><stop offset=".55" stop-color="#333"/><stop offset="1" stop-color="#a5a5a5"/></linearGradient>
+          <radialGradient id="halo"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".35" stop-color="#ddd" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+          <linearGradient id="ground" x2="0" y2="1"><stop stop-color="#777"/><stop offset="1" stop-color="#080808"/></linearGradient>
+          <clipPath id="clip"><rect width="600" height="600" rx="18"/></clipPath>
+        </defs>
+        <g clip-path="url(#clip)">
+          <rect width="600" height="600" fill="url(#sky)"/><circle cx="300" cy="245" r="190" fill="url(#halo)"/>
+          <circle cx="300" cy="240" r="145" fill="#080808" stroke="#aaa" stroke-opacity=".7" stroke-width="2"/>
+          <path d="M0 320 42 278 79 320 130 292 171 350 220 326 267 375 300 358 337 374 382 324 418 350 463 296 504 330 550 276 600 320V460H0Z" fill="#151515"/>
+          <path d="M0 355 48 316 93 362 143 326 190 390 235 359 300 411 355 360 400 390 458 329 507 365 557 315 600 347V470H0Z" fill="#292929"/>
+          <path d="M0 398 61 348 115 404 167 375 216 428 266 397 300 430 345 400 396 430 444 380 490 412 548 355 600 398V600H0Z" fill="url(#ground)"/>
+          <path d="M0 447Q100 426 180 448T330 443T600 439V600H0Z" fill="#101010"/>
+          <path d="M0 470 600 470M0 505 600 505M0 548 600 548" stroke="#aaa" stroke-opacity=".2"/>
+          <path d="M300 0V600" stroke="#f3f3f3" stroke-opacity=".75" stroke-width="1.4"/>
+          <path d="M0 455Q160 445 300 458T600 450" fill="none" stroke="#ddd" stroke-opacity=".65" stroke-width="2"/>
+          <g fill="#f3f3f3" font-family="monospace" letter-spacing="4">
+            <text x="27" y="43" font-size="18">NOCTURNE</text><text x="27" y="65" font-size="10">TRANCE SESSIONS</text><text x="27" y="83" font-size="10">VOL. IV</text>
+            <text x="573" y="43" font-size="10" text-anchor="end">SOLARIS</text><text x="573" y="61" font-size="10" text-anchor="end">KAELEN</text><text x="573" y="79" font-size="10" text-anchor="end">AURA SOUND</text>
+            <text x="27" y="545" font-size="10">A JOURNEY</text><text x="27" y="562" font-size="10">BEYOND</text><text x="27" y="579" font-size="10">REALITY</text>
+          </g>
+          <g transform="translate(300 433)"><circle cx="0" cy="-8" r="3.2" fill="#080808"/><path d="M-4 -4L4 -4 5 11 2 11 1 26 -2 26 -3 11 -5 11Z" fill="#080808"/><path d="M0 24 0 56" stroke="#ddd" stroke-opacity=".45"/></g>
+        </g>
+      </svg>
+    </div>
+    <section class="track-head">
+      <div><h1 class="track-title">Nocturne Trance Sessions Vol. IV</h1><div class="artist">Solaris &amp; Kaelen feat. Aura Sound</div></div>
+      <div class="quality">FLAC&nbsp; 24/192</div>
+    </section>
+    <section class="progress-wrap" aria-label="Track progress">
+      <label class="seek"><input id="seek" aria-label="Seek track" type="range" min="0" max="501" value="136"></label>
+      <div class="time-row"><span id="elapsed">2:16</span><span id="remaining">−6:05</span></div>
+    </section>
+    <section class="transport" aria-label="Playback controls">
+      <button id="shuffleBtn" aria-label="Toggle shuffle" title="Shuffle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg></button>
+      <button id="prevBtn" aria-label="Previous track"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4h2v16H5zM20 5v14L9 12z"/></svg></button>
+      <button class="play" id="playBtn" aria-label="Pause"><svg id="playIcon" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="5" height="18" rx="2"/><rect x="14" y="3" width="5" height="18" rx="2"/></svg></button>
+      <button id="nextBtn" aria-label="Next track"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17 4h2v16h-2zM4 5v14l11-7z"/></svg></button>
+      <button id="repeatBtn" aria-label="Toggle repeat" title="Repeat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg></button>
+    </section>
+    <nav class="actions" aria-label="Track actions">
+      <button class="action" id="likeBtn"><span class="bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/></svg></span><span>Like</span></button>
+      <button class="action" data-view="lyrics"><span class="bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16M4 10h12M4 15h16M4 20h7"/></svg></span><span>Lyrics</span></button>
+      <button class="action" data-view="queue"><span class="bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 6 2 2 3-3M10 6h11M3 13l2 2 3-3M10 13h11M3 20l2 2 3-3M10 20h11"/></svg><b class="count">5</b></span><span>Queue</span></button>
+      <button class="action" data-view="chat"><span class="bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 4a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg></span><span>Chat</span></button>
+      <button class="action" data-view="info"><span class="bubble"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 4a4 4 0 0 1 0 8M18 14a6 6 0 0 1 4 5v2"/></svg></span><span>Jam</span></button>
+    </nav>
+    <section class="panel" id="panel" aria-label="Queue, chat, and Jam details">
+      <div class="panel-grabber" aria-hidden="true"></div>
+      <div class="panel-head">
+        <div><span class="panel-title" id="panelTitle">Jam</span><span class="listeners" id="panelSubtitle"><span class="green-dot"></span>8 listening together</span></div>
+        <button class="panel-chevron" id="panelToggle" aria-label="Collapse panel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 15 6-6 6 6"/></svg></button>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Jam sections">
+        <button class="tab" role="tab" data-tab="chat" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 4a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg>Chat</button>
+        <button class="tab" role="tab" data-tab="info" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg>Session Info</button>
+        <button class="tab" role="tab" data-tab="listeners" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21v-2a7 7 0 0 1 14 0v2M16 4a4 4 0 0 1 0 8M18 14a6 6 0 0 1 4 5v2"/></svg>Listeners</button>
+      </div>
+      <div class="view" id="chatView">
+        <div class="messages" id="messages" aria-live="polite">
+          <div class="message"><div class="avatar a1">A</div><div class="msg-body"><div class="msg-meta"><strong>Arjun</strong>2 min ago</div><div class="bubble-msg">This drop is insane! 🔥</div></div></div>
+          <div class="message"><div class="avatar a2">K</div><div class="msg-body"><div class="msg-meta"><strong>Keerthi</strong>1 min ago</div><div class="bubble-msg">Love this track, gives me goosebumps ♡</div></div></div>
+          <div class="message"><div class="avatar a3">R</div><div class="msg-body"><div class="msg-meta"><strong>Rohan</strong>just now</div><div class="bubble-msg">Solaris never disappoints! 🎧</div></div></div>
+          <div class="message"><div class="avatar">P</div><div class="msg-body"><div class="msg-meta"><strong>Priya</strong>just now</div><div class="bubble-msg">Wait for the second drop… ✨</div></div></div>
+        </div>
+        <form class="composer" id="chatForm"><input id="chatInput" autocomplete="off" maxlength="400" placeholder="Message the jam…" aria-label="Message the jam"><button class="send" aria-label="Send message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button></form>
+      </div>
+      <div class="view hidden" id="infoView">
+        <div class="info-card"><div class="info-label">ROOM CODE · INVITE FRIENDS</div><div class="room-row"><div class="room-code">7FQ3KR</div><button class="icon-btn" id="copyCode" aria-label="Copy room code"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button></div><div class="info-label" style="margin:9px 0 0">Share this code with friends to join your session.</div></div>
+        <div class="info-actions"><button class="soft-btn" id="copyLink"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 9 21.1l1.7-1.7"/></svg>Copy invite link</button><button class="dark-btn" id="shareBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7"/></svg>Share invite</button></div>
+        <div class="info-label">SESSION SETTINGS</div>
+        <div class="info-card"><div class="room-row"><div><div class="listener-name">Synchronized playback</div><div class="listener-state">Everyone hears the same moment</div></div><span class="host-pill">ON</span></div></div>
+        <button class="soft-btn danger" id="leaveBtn" style="width:100%;margin-bottom:4px">Leave Jam session</button>
+      </div>
+      <div class="view hidden" id="listenersView">
+        <div class="info-label" style="margin:0 0 12px">8 PEOPLE LISTENING · HOSTED BY YOU</div>
+        <div class="listener-list">
+          <div class="listener-row"><div class="avatar">Y</div><div class="listener-details"><div class="listener-name">You</div><div class="listener-state">Host · Listening now</div></div><span class="host-pill">HOST</span></div>
+          <div class="listener-row"><div class="avatar a1">A</div><div class="listener-details"><div class="listener-name">Arjun</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+          <div class="listener-row"><div class="avatar a2">K</div><div class="listener-details"><div class="listener-name">Keerthi</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+          <div class="listener-row"><div class="avatar a3">R</div><div class="listener-details"><div class="listener-name">Rohan</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+          <div class="listener-row"><div class="avatar">P</div><div class="listener-details"><div class="listener-name">Priya</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+          <div class="listener-row"><div class="avatar">M</div><div class="listener-details"><div class="listener-name">Mira</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+          <div class="listener-row"><div class="avatar">D</div><div class="listener-details"><div class="listener-name">Dev</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+          <div class="listener-row"><div class="avatar">S</div><div class="listener-details"><div class="listener-name">Sam</div><div class="listener-state">Listening now</div></div><span class="green-dot"></span></div>
+        </div>
+      </div>
+      <div class="view hidden" id="queueView">
+        <div class="queue-list">
+          <div class="queue-row"><div class="cover-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#111"/><circle cx="30" cy="24" r="16" fill="#777"/><circle cx="30" cy="24" r="11" fill="#151515"/><path d="M0 42 30 28 60 42V60H0" fill="#555"/></svg></div><div><div class="queue-name">Atmospheric Drift (Extended Master)</div><div class="queue-sub">Aura Sound · 2025 Master</div></div><span class="duration">07:18</span></div>
+          <div class="queue-row"><div class="cover-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#222"/><path d="M0 50 17 13 31 40 45 9 60 49V60H0" fill="#888"/><circle cx="31" cy="20" r="9" fill="#151515"/></svg></div><div><div class="queue-name">Monolith &amp; Resonances</div><div class="queue-sub">Mirage · Studio Edition</div></div><span class="duration">09:09</span></div>
+          <div class="queue-row"><div class="cover-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#171717"/><circle cx="30" cy="26" r="17" fill="#aaa"/><circle cx="30" cy="26" r="12" fill="#111"/><path d="M0 46 60 32V60H0" fill="#555"/></svg></div><div><div class="queue-name">Equinox Redux (Direct 1-Bit Take)</div><div class="queue-sub">Solaris</div></div><span class="duration">07:44</span></div>
+          <div class="queue-row"><div class="cover-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#333"/><path d="M0 60 16 12 31 34 45 18 60 60" fill="#aaa"/><circle cx="30" cy="24" r="8" fill="#111"/></svg></div><div><div class="queue-name">Weightless Architecture</div><div class="queue-sub">Kaelen</div></div><span class="duration">06:32</span></div>
+          <div class="queue-row"><div class="cover-mini"><svg viewBox="0 0 60 60"><rect width="60" height="60" fill="#090909"/><circle cx="30" cy="30" r="22" fill="none" stroke="#aaa" stroke-width="3"/><circle cx="30" cy="30" r="13" fill="#555"/></svg></div><div><div class="queue-name">Aether (Closing Sequence)</div><div class="queue-sub">Aura Sound</div></div><span class="duration">08:01</span></div>
+        </div>
+      </div>
+      <div class="view hidden" id="lyricsView"><div style="text-align:center;padding:20px 8px 32px"><div class="info-label">LYRICS</div><p style="font-size:21px;font-weight:700;letter-spacing:-.04em;line-height:1.5">Beyond the silence<br>we become the sound</p><p style="color:#999;line-height:1.8">Through the night<br>we drift without a name</p><p style="font-size:12px;color:#777">Demo lyrics · Replace with synced lyrics data</p></div></div>
+      <div class="footer-space"></div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(() => {
+  const $ = (s, root=document) => root.querySelector(s);
+  const $$ = (s, root=document) => [...root.querySelectorAll(s)];
+  const panel = $('#panel');
+  const toast = $('#toast');
+  let toastTimer;
+  let playing = true, liked = false, shuffle = false, repeat = 0, collapsed = false;
+  const total = 501;
+  const views = {chat:$('#chatView'), info:$('#infoView'), listeners:$('#listenersView'), queue:$('#queueView'), lyrics:$('#lyricsView')};
+  const titles = {chat:'Jam', info:'Jam', listeners:'Listeners', queue:'Up next', lyrics:'Lyrics'};
+  const subtitles = {chat:'<span class="green-dot"></span>8 listening together', info:'<span class="green-dot"></span>8 listening together', listeners:'<span class="green-dot"></span>8 listening together', queue:'5 tracks in queue', lyrics:'Synced to this track'};
+  function notify(message){
+    toast.textContent = message; toast.classList.add('show');
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>toast.classList.remove('show'),2100);
+  }
+  function selectView(name, scroll=true){
+    if(!views[name]) name='chat';
+    Object.entries(views).forEach(([key,el])=>el.classList.toggle('hidden',key!==name));
+    $$('.tab').forEach(btn=>btn.setAttribute('aria-selected',String(btn.dataset.tab===name)));
+    $$('.action[data-view]').forEach(btn=>btn.classList.toggle('selected',btn.dataset.view===name || (name==='listeners'&&btn.dataset.view==='info')));
+    $('#panelTitle').textContent=titles[name]||'Jam';
+    $('#panelSubtitle').innerHTML=subtitles[name]||'';
+    if(scroll) panel.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  $$('.tab').forEach(btn=>btn.addEventListener('click',()=>selectView(btn.dataset.tab,false)));
+  $$('.action[data-view]').forEach(btn=>btn.addEventListener('click',()=>selectView(btn.dataset.view)));
+  $('#collapseBtn').addEventListener('click',()=>window.scrollTo({top:0,behavior:'smooth'}));
+  $('#panelToggle').addEventListener('click',()=>{
+    collapsed=!collapsed;
+    if(collapsed){panel.classList.add('collapsed');panel.scrollIntoView({behavior:'smooth',block:'start'});notify('Panel minimized — choose Chat or Jam to reopen');}
+    else {selectView('chat',false);panel.scrollIntoView({behavior:'smooth',block:'start'});}
+  });
+  $('#playBtn').addEventListener('click',()=>{
+    playing=!playing;
+    $('#playBtn').setAttribute('aria-label',playing?'Pause':'Play');
+    $('#playIcon').innerHTML=playing?'<rect x="5" y="3" width="5" height="18" rx="2"/><rect x="14" y="3" width="5" height="18" rx="2"/>':'<path d="M6 3v18l15-9z"/>';
+    notify(playing?'Playback resumed':'Playback paused');
+  });
+  $('#prevBtn').addEventListener('click',()=>{ $('#seek').value=0; updateSeek(); notify('Previous track'); });
+  $('#nextBtn').addEventListener('click',()=>{ $('#seek').value=0; updateSeek(); notify('Next track'); });
+  $('#shuffleBtn').addEventListener('click',()=>{shuffle=!shuffle;$('#shuffleBtn').classList.toggle('active',shuffle);notify(shuffle?'Shuffle enabled':'Shuffle disabled');});
+  $('#repeatBtn').addEventListener('click',()=>{repeat=(repeat+1)%3;$('#repeatBtn').classList.toggle('active',repeat!==0);notify(['Repeat off','Repeat all','Repeat one'][repeat]);});
+  $('#likeBtn').addEventListener('click',()=>{
+    liked=!liked;$('#likeBtn').classList.toggle('selected',liked);
+    const svg=$('#likeBtn svg');svg.setAttribute('fill',liked?'currentColor':'none');notify(liked?'Added to Liked Songs':'Removed from Liked Songs');
+  });
+  function updateSeek(){
+    const v=Number($('#seek').value), pct=v/total*100;
+    $('#seek').style.background=`linear-gradient(to right,#111 0%,#111 ${pct}%,#d7d7d7 ${pct}%,#d7d7d7 100%)`;
+    const m=Math.floor(v/60), s=String(v%60).padStart(2,'0');
+    $('#elapsed').textContent=`${m}:${s}`;
+    const left=total-v;$('#remaining').textContent=`−${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`;
+  }
+  $('#seek').addEventListener('input',updateSeek);updateSeek();
+  function sendMessage(text){
+    const msg=text.trim();if(!msg)return;
+    const row=document.createElement('div');row.className='message mine';
+    const body=document.createElement('div');body.className='msg-body';
+    const meta=document.createElement('div');meta.className='msg-meta';
+    const strong=document.createElement('strong');strong.textContent='You';
+    meta.append(strong,document.createTextNode('just now'));
+    const bubble=document.createElement('div');bubble.className='bubble-msg';bubble.textContent=msg;
+    body.append(meta,bubble);
+    const avatar=document.createElement('div');avatar.className='avatar';avatar.textContent='Y';
+    row.append(body,avatar);$('#messages').append(row);$('#chatInput').value='';
+    row.scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  $('#chatForm').addEventListener('submit',e=>{e.preventDefault();sendMessage($('#chatInput').value);});
+  $('#copyCode').addEventListener('click',async()=>copyText('7FQ3KR','Room code copied'));
+  $('#copyLink').addEventListener('click',async()=>copyText('https://open-music.example/jam/7FQ3KR','Invite link copied'));
+  async function copyText(text, success){
+    try{await navigator.clipboard.writeText(text);notify(success);}
+    catch{const t=document.createElement('textarea');t.value=text;document.body.append(t);t.select();try{document.execCommand('copy');notify(success);}catch{notify(text);}t.remove();}
+  }
+  $('#shareBtn').addEventListener('click',async()=>{
+    const data={title:'Join my OPEN-MUSIC Jam',text:'Listen to Nocturne Trance Sessions Vol. IV with me.',url:'https://open-music.example/jam/7FQ3KR'};
+    if(navigator.share){try{await navigator.share(data);}catch(e){}}
+    else copyText(data.url,'Invite link copied');
+  });
+  $('#leaveBtn').addEventListener('click',()=>{
+    if(confirm('Leave this Jam session?')){notify('You left the Jam session');selectView('chat',false);$('#panelSubtitle').textContent='Session ended';}
+  });
+  $('#moreBtn').addEventListener('click',()=>notify('More playback options'));
+  // Clicking the handle toggles a compact panel header without hiding the whole page.
+  // Touch drag on the grabber provides a simple expand/collapse gesture.
+  let startY=null;
+  $('.panel-grabber').addEventListener('touchstart',e=>{startY=e.touches[0].clientY},{passive:true});
+  $('.panel-grabber').addEventListener('touchend',e=>{
+    if(startY===null)return;const delta=e.changedTouches[0].clientY-startY;startY=null;
+    if(delta < -35){panel.scrollIntoView({behavior:'smooth',block:'start'});}
+    else if(delta > 70){window.scrollTo({top:0,behavior:'smooth'});}
+  },{passive:true});
+  // Open Jam Chat by default and bring the sheet into view, while leaving the player fully scrollable.
+  selectView('chat',false);
+})();
+</script>
+</body>
+</html>

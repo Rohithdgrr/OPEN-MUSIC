@@ -1,0 +1,232 @@
+/* notepad-music.css — Ganesha. All classes/ids prefixed `npdm-`.
+   Tokens only (no new colors): light surface/ink/muted, dark via `html.dark`. */
+
+.npdm-menu {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 40;
+  min-width: 240px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #f3f3f5;
+  border: 1px solid #e2e2e4;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.npdm-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1a1c1d;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.npdm-row:hover,
+.npdm-row:focus-visible {
+  background: #e8e8ea;
+  outline: none;
+}
+
+.npdm-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  margin-bottom: 4px;
+  border: 1px solid #e2e2e4;
+  border-radius: 7px;
+  background: #fff;
+  color: #1a1c1d;
+  font-size: 13px;
+}
+
+.npdm-search-input:focus {
+  outline: none;
+  border-color: #71717a;
+}
+
+.npdm-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.npdm-search-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #1a1c1d;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.npdm-search-row:hover,
+.npdm-search-row.selected {
+  background: #e8e8ea;
+}
+
+/* ---- attachments rail (chips) ---- */
+
+.npdm-rail-pl {
+  font-size: 11px;
+  color: #71717a;
+  padding: 2px 4px;
+}
+
+.npdm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 4px 2px 0;
+  padding: 3px 9px;
+  border: 1px solid #e2e2e4;
+  border-radius: 999px;
+  background: #f9f9fb;
+  color: #1a1c1d;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.npdm-chip:hover,
+.npdm-chip:focus-visible {
+  background: #e8e8ea;
+  outline: none;
+}
+
+.npdm-chip-at {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 4px 4px 0;
+  padding: 1px 8px;
+  border: 1px solid #e2e2e4;
+  border-radius: 999px;
+  background: transparent;
+  color: #71717a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.npdm-chip-at:hover {
+  background: #e8e8ea;
+}
+
+/* ---- mood board (#79): a grid of album-art tiles ---- */
+
+.npdm-moodboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 6px;
+  margin: 6px 4px;
+  padding: 6px;
+  background: #f9f9fb;
+  border: 1px solid #e2e2e4;
+  border-radius: 10px;
+}
+
+.npdm-mood-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.npdm-mood-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 6px;
+  background: #e8e8ea;
+  display: block;
+}
+
+.npdm-mood-cap {
+  font-size: 10px;
+  color: #71717a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npdm-mood-empty {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: #71717a;
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* ---- dark parity (html.dark) ---- */
+
+html.dark .npdm-menu {
+  background: #141416;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+html.dark .npdm-row,
+html.dark .npdm-search-row {
+  color: #f4f4f5;
+}
+
+html.dark .npdm-row:hover,
+html.dark .npdm-row:focus-visible,
+html.dark .npdm-search-row:hover,
+html.dark .npdm-search-row.selected {
+  background: #1a1a1e;
+}
+
+html.dark .npdm-search-input {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+
+html.dark .npdm-search-input:focus {
+  border-color: #a1a1aa;
+}
+
+html.dark .npdm-rail-pl,
+html.dark .npdm-chip-at {
+  color: #a1a1aa;
+}
+
+html.dark .npdm-chip {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+
+html.dark .npdm-chip:hover,
+html.dark .npdm-chip:focus-visible,
+html.dark .npdm-chip-at:hover {
+  background: #1a1a1e;
+}
+
+html.dark .npdm-moodboard {
+  background: #101013;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .npdm-mood-img {
+  background: #1a1a1e;
+}
+
+html.dark .npdm-mood-cap,
+html.dark .npdm-mood-empty {
+  color: #a1a1aa;
+}

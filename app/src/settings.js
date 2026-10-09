@@ -957,6 +957,7 @@ export const SETTINGS_VIEWS = {
         ["Desktop widget", "Caps + W", "Ctrl + Alt + W"],
         ["Download this track", "Caps + D", "Ctrl + Alt + D"],
         ["Track credits", "Caps + I", "Ctrl + Alt + I"],
+        ["Notepad (open / close)", "Caps + P", "Ctrl + Alt + P"],
         ["Media play / pause", "Media key", "Media key"],
         ["Next track", "Media key", "Media key"],
         ["Previous track", "Media key", "Media key"],

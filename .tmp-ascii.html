@@ -1,0 +1,27 @@
+<!doctype html><html><body><pre id="out"></pre><script>
+const files = [
+ ["src/logo.png","/app/src/logo.png"],
+ ["src/mobile/logo.png","/app/src/mobile/logo.png"],
+ ["icons/icon.png","/app/src-tauri/icons/icon.png"],
+ ["icons/android/REON.png","/app/src-tauri/icons/android/REON Music Waveform Logo.png"],
+ ["gen/mdpi/ic_launcher.png","/app/src-tauri/gen/android/app/src/main/res/mipmap-mdpi/ic_launcher.png"]
+];
+const W=44;
+async function one(label,url){
+  return new Promise(res=>{
+    const im=new Image();
+    im.onload=()=>{
+      const c=document.createElement("canvas");c.width=W;c.height=Math.round(W*im.height/im.width);
+      const g=c.getContext("2d");g.drawImage(im,0,0,c.width,c.height);
+      const d=g.getImageData(0,0,c.width,c.height).data;
+      const chars=" .:-=+*#%@";
+      let out=label+" ("+im.width+"x"+im.height+")\n";
+      for(let y=0;y<c.height;y++){let row="";for(let x=0;x<c.width;x++){const i=(y*c.width+x)*4;const a=d[i+3]/255;const l=(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2])/255*a;row+=chars[Math.min(9,Math.floor((1-l)*10))];}out+=row+"\n";}
+      out+="\n";res(out);
+    };
+    im.onerror=()=>res(label+" FAILED\n");
+    im.src=url;
+  });
+}
+(async()=>{let all="";for(const [l,u] of files)all+=await one(l,u);document.getElementById("out").textContent=all;document.title="DONE";})();
+</script></body></html>

@@ -125,8 +125,8 @@ function switchTab(targetTab) {
     // (P25) — dropping it flashed them in Solo until the next repaint.
     const roomOnly = btn.classList.contains("hidden");
     const base = active
-      ? "tab-btn flex-1 bg-primary text-on-primary py-1.5 px-2 rounded-full font-label-md text-[11px] font-semibold flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap transition-all"
-      : "tab-btn flex-1 text-on-surface-variant hover:text-on-surface py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors";
+      ? "tab-btn flex-1 bg-on-surface text-surface py-1.5 px-2 rounded-full font-label-md text-[11px] font-semibold flex items-center justify-center gap-1 whitespace-nowrap transition-all"
+      : "tab-btn flex-1 text-on-surface-variant py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors";
     btn.className = roomOnly ? `${base} hidden` : base;
   });
 }
@@ -134,4 +134,70 @@ function switchTab(targetTab) {
 // these bind once per mount and never stack.
 document.querySelectorAll("#tabBar .tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+// Mockup action row: every button reuses an existing path, no new IPC.
+function scrollSheet() {
+  document.getElementById("np-sheet")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function sheetTab(tab) {
+  const btn = document.querySelector('#tabBar [data-tab="' + tab + '"]');
+  if (btn) btn.click();
+  scrollSheet();
+}
+document.getElementById("np-action-like")?.addEventListener("click", () => {
+  document.getElementById("favorite-btn")?.click();
+});
+document.getElementById("np-action-lyrics")?.addEventListener("click", () => sheetTab("lyrics"));
+document.getElementById("np-action-queue")?.addEventListener("click", () => sheetTab("queue"));
+document.getElementById("np-action-chat")?.addEventListener("click", () => {
+  // The Chat pill only exists in Social mode (jam.js paintJam unhides it),
+  // so in Solo the bare click hit a display:none element and the sheet
+  // bounced back to the queue — "chat UI is missing". Enter Social first
+  // (same path the Jam action uses), then open Chat for real, so the
+  // unread pill still clears via jam.js' wiring.
+  const chat = document.getElementById("chatTabBtn");
+  if (!chat || chat.classList.contains("hidden")) {
+    document.getElementById("modeSocialTab")?.click();
+  }
+  document.getElementById("chatTabBtn")?.click();
+  scrollSheet();
+});
+document.getElementById("np-action-jam")?.addEventListener("click", () => {
+  // In a room → Jam Data; in Solo → social chrome + the create/join CTA.
+  document.getElementById("modeSocialTab")?.click();
+  scrollSheet();
+});
+document.getElementById("np-sheet-collapse")?.addEventListener("click", () => {
+  document.getElementById("np-top")?.scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+// Jam sub-tabs (mockup segmented control): Session Info / Listeners toggle
+// panes inside the Jam view; Chat jumps to the real Chat tab.
+function paintJamSub(active) {
+  document.querySelectorAll("#jamSubBar [data-jam-sub]").forEach((b) => {
+    const on = b.dataset.jamSub === active;
+    b.className = on
+      ? "flex-1 py-1.5 rounded-full font-label-md text-[11px] font-semibold transition-all bg-on-surface text-surface"
+      : "flex-1 py-1.5 rounded-full font-label-md text-[11px] font-medium transition-all text-on-surface-variant";
+  });
+  const info = document.getElementById("jamInfoWrap");
+  const listeners = document.getElementById("jamListenersWrap");
+  if (info) {
+    info.classList.toggle("hidden", active !== "info");
+    info.classList.toggle("flex", active === "info");
+  }
+  if (listeners) {
+    listeners.classList.toggle("hidden", active !== "listeners");
+    listeners.classList.toggle("flex", active === "listeners");
+  }
+}
+document.querySelectorAll("#jamSubBar [data-jam-sub]").forEach((b) => {
+  b.addEventListener("click", () => {
+    if (b.dataset.jamSub === "chat") {
+      document.getElementById("chatTabBtn")?.click();
+      return;
+    }
+    paintJamSub(b.dataset.jamSub);
+  });
 });

@@ -1,0 +1,562 @@
+/* notepad.css — Phase 1 (Govinda) styling for app/src/notepad.js.
+ *
+ * Loaded by notepad.js build() with a per-launch stamp (?v=). styles.css,
+ * index.html and tailwind.css stay untouched (docs/notepad/README.md §1).
+ * Colour = the app's own token hexes only (README §2.4) — every custom
+ * property below is labelled with the styles.css utility it mirrors, and
+ * html.dark swaps the whole set exactly like the utility inversions do.
+ *
+ * z-stack: footer 40 < header 50 < notepad panel 60 < toasts 70, so a
+ * "Saved" toast stays visible over the open panel.
+ */
+
+.npd-panel {
+  /* light tokens */
+  --npd-surface: #f9f9fb; /* .bg-surface            */
+  --npd-low: #f3f3f5; /* .bg-surface-container-low  */
+  --npd-well: #eeeef0; /* .bg-surface-container      */
+  --npd-card: #ffffff; /* .bg-surface-container-lowest */
+  --npd-high: #e8e8ea; /* .bg-surface-container-high */
+  --npd-line: #e2e2e4; /* .bg-surface-container-highest */
+  --npd-ink: #1a1c1d; /* .text-on-surface        */
+  --npd-mut: #47464b; /* .text-on-surface-variant */
+  --npd-accent: #000000; /* .bg-primary/.text-primary */
+  --npd-scrim: rgba(0, 0, 0, 0.42);
+  --npd-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--npd-ink);
+}
+
+html.dark .npd-panel {
+  --npd-surface: #09090b;
+  --npd-low: #101013;
+  --npd-well: #141417;
+  --npd-card: #141416;
+  --npd-high: #1a1a1e;
+  --npd-line: #242429;
+  --npd-ink: #ffffff;
+  --npd-mut: #a1a1aa;
+  --npd-accent: #ffffff;
+  --npd-scrim: rgba(0, 0, 0, 0.62);
+  --npd-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+/* `[hidden]` must beat the display rules below (mirrors the app's
+   inversion style: display:flex everywhere, hidden = none !important). */
+.npd-panel[hidden],
+.npd-find[hidden],
+.npd-switch[hidden],
+.npd-pad[hidden],
+.npd-hint[hidden] {
+  display: none !important;
+}
+
+.npd-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--npd-scrim);
+  backdrop-filter: blur(3px);
+}
+
+.npd-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 94vw);
+  height: min(680px, 88vh);
+  background: var(--npd-card);
+  border: 1px solid var(--npd-line);
+  border-radius: 16px;
+  box-shadow: var(--npd-shadow);
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------- find bar */
+.npd-find {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--npd-low);
+  border-bottom: 1px solid var(--npd-line);
+}
+
+.npd-find-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font: 500 13px/1.4 inherit;
+  color: var(--npd-ink);
+  background: var(--npd-card);
+  border: 1px solid var(--npd-line);
+  border-radius: 8px;
+}
+
+.npd-find-input::placeholder,
+.npd-switch-input::placeholder {
+  color: var(--npd-mut);
+}
+
+.npd-find-input:focus-visible,
+.npd-switch-input:focus-visible {
+  outline: 2px solid var(--npd-accent);
+  outline-offset: 1px;
+}
+
+.npd-find-count {
+  font: 500 11px/1 "JetBrains Mono", monospace;
+  color: var(--npd-mut);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.npd-find-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--npd-mut);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.npd-find-btn:hover {
+  color: var(--npd-ink);
+  background: var(--npd-high);
+}
+
+.npd-find-btn:active {
+  background: var(--npd-line);
+}
+
+.npd-find-btn:focus-visible {
+  outline: 2px solid var(--npd-accent);
+  outline-offset: 1px;
+}
+
+/* --------------------------------------------------------------- tabs */
+.npd-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  min-height: 40px;
+  padding: 6px 8px 0;
+  background: var(--npd-low);
+  border-bottom: 1px solid var(--npd-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.npd-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+/* Zero tabs = the strip collapses entirely (same empty-mount pattern as
+   tabmeta/rail — no orphaned gray band in the empty state). */
+.npd-tabs:empty {
+  display: none;
+}
+
+.npd-tab {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  max-width: 200px;
+  min-width: 56px;
+  padding: 6px 12px;
+  font: 500 12px/1.3 inherit;
+  color: var(--npd-mut);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 9px 9px 0 0;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 120ms ease, color 120ms ease,
+    border-color 120ms ease;
+}
+
+.npd-tab:hover {
+  color: var(--npd-ink);
+  background: var(--npd-high);
+}
+
+/* Active tab = the card's own colour, so it visually merges with the
+   content area below (Windows-Notepad affordance). */
+.npd-tab.npd-active {
+  color: var(--npd-ink);
+  font-weight: 600;
+  background: var(--npd-card);
+  border-color: var(--npd-line);
+  margin-bottom: -1px; /* cover the strip's bottom border */
+  padding-bottom: 7px;
+}
+
+.npd-tab:focus-visible {
+  outline: 2px solid var(--npd-accent);
+  outline-offset: -2px;
+}
+
+.npd-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hover/focus-revealed close (Windows-Notepad affordance); always shown
+   on the active tab so the control is discoverable without hunting. The
+   keyboard path stays Ctrl+W (status legend). */
+.npd-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0 -4px 0 6px;
+  color: var(--npd-mut);
+  border-radius: 4px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms ease, background-color 120ms ease,
+    color 120ms ease;
+}
+
+.npd-tab:hover .npd-tab-close,
+.npd-tab.npd-active .npd-tab-close,
+.npd-tab:focus-within .npd-tab-close {
+  opacity: 1;
+}
+
+.npd-tab-close:hover {
+  color: var(--npd-ink);
+  background: var(--npd-high);
+}
+
+.npd-tab-close:active {
+  background: var(--npd-line);
+}
+
+.npd-rename {
+  min-width: 60px;
+  padding: 1px 5px;
+  font: 600 12px/1.3 inherit;
+  border-radius: 6px;
+}
+
+.npd-rename:focus-visible {
+  outline: 2px solid var(--npd-accent);
+  outline-offset: 1px;
+}
+
+/* Keyboard chips (empty-state hint + status legend). The 1px lip is a
+   key edge, not depth decoration. */
+.npd-kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  margin: 0 1px;
+  font: 500 10.5px/1.4 "JetBrains Mono", ui-monospace, monospace;
+  color: var(--npd-ink);
+  background: var(--npd-low);
+  border: 1px solid var(--npd-line);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--npd-line);
+}
+
+/* --------------------------------------------------------------- body */
+.npd-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Mounts collapse while empty so a phase that has not landed yet leaves
+   zero residue in the layout (README §2.1). `.npd-mount` is the shared
+   marker class (paired with data-npd-mount) — keep min-width:0 so flexed
+   mounts can shrink. */
+.npd-mount {
+  min-width: 0;
+}
+
+.npd-side {
+  flex: 0 0 auto;
+  width: 0;
+  overflow: hidden;
+}
+
+.npd-side:not(:empty) {
+  width: 210px;
+  padding: 10px;
+  overflow: auto;
+  border-right: 1px solid var(--npd-line);
+  background: var(--npd-surface);
+}
+
+.npd-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.npd-tabmeta:empty,
+.npd-rail:empty,
+.npd-status-extra:empty {
+  display: none;
+}
+
+.npd-tabmeta:not(:empty) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--npd-line);
+  background: var(--npd-surface);
+}
+
+.npd-pad {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding: 16px 20px;
+  font: 400 13.5px/1.65 "JetBrains Mono", ui-monospace, monospace;
+  color: var(--npd-ink);
+  background: var(--npd-card);
+  border: none;
+  outline: none;
+  resize: none;
+  tab-size: 4;
+}
+
+.npd-pad::placeholder {
+  color: var(--npd-mut);
+}
+
+.npd-hint {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font: 500 13px/1.6 inherit;
+  color: var(--npd-mut);
+  text-align: center;
+}
+
+.npd-hint p {
+  margin: 0;
+}
+
+.npd-rail:not(:empty) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--npd-line);
+  background: var(--npd-low);
+}
+
+.npd-status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 26px;
+  padding: 0 16px;
+  font: 500 11px/1 "JetBrains Mono", monospace;
+  color: var(--npd-mut);
+  background: var(--npd-low);
+  border-top: 1px solid var(--npd-line);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chord legend — teaches the whole keyboard surface at a glance.
+   Decorative echo of the hints, so aria-hidden in the markup. */
+.npd-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--npd-mut);
+}
+
+@media (max-width: 719px) {
+  .npd-legend {
+    display: none;
+  }
+}
+
+.npd-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.npd-status-extra:not(:empty) {
+  margin-left: auto;
+}
+
+.npd-aside {
+  display: none;
+}
+
+.npd-aside:not(:empty) {
+  display: block;
+  flex: 0 0 auto;
+  width: 210px;
+  padding: 10px;
+  overflow: auto;
+  border-left: 1px solid var(--npd-line);
+  background: var(--npd-surface);
+}
+
+/* ----------------------------------------------------------- switcher */
+.npd-switch {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100% - 48px));
+  background: var(--npd-card);
+  border: 1px solid var(--npd-line);
+  border-radius: 12px;
+  box-shadow: var(--npd-shadow);
+  overflow: hidden;
+}
+
+.npd-switch-input {
+  padding: 12px 14px;
+  font: 500 14px/1.4 inherit;
+  color: var(--npd-ink);
+  background: var(--npd-card);
+  border: none;
+  border-bottom: 1px solid var(--npd-line);
+  border-radius: 0;
+  box-shadow: none !important;
+}
+
+.npd-switch-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.npd-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  font: 500 13px/1.4 inherit;
+  color: var(--npd-ink);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.npd-row:not(.npd-row-hint):hover {
+  background: var(--npd-low);
+}
+
+.npd-row:not(.npd-row-hint):active {
+  background: var(--npd-high);
+}
+
+.npd-row.npd-sel,
+.npd-row.npd-sel:hover {
+  background: var(--npd-high);
+}
+
+.npd-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.npd-row-hint {
+  flex: 0 0 auto;
+  font: 500 11px/1.4 "JetBrains Mono", monospace;
+  color: var(--npd-mut);
+}
+
+.npd-row.npd-row-hint {
+  cursor: default;
+  color: var(--npd-mut);
+}
+
+/* ---------------------------------------------------- agent overlay ---
+   The layer itself never eats clicks (pointer-events:none); its children
+   — each phase's own popup container — opt back in. This is the rule the
+   README gives consumers: one prefixed child container each. */
+.npd-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.npd-overlay > * {
+  pointer-events: auto;
+}
+
+/* -------------------------------------------------------- scrollbars */
+.npd-side,
+.npd-aside,
+.npd-switch-list,
+.npd-pad {
+  scrollbar-width: thin;
+  scrollbar-color: var(--npd-line) transparent;
+}
+
+.npd-side::-webkit-scrollbar,
+.npd-aside::-webkit-scrollbar,
+.npd-switch-list::-webkit-scrollbar,
+.npd-pad::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.npd-side::-webkit-scrollbar-thumb,
+.npd-aside::-webkit-scrollbar-thumb,
+.npd-switch-list::-webkit-scrollbar-thumb,
+.npd-pad::-webkit-scrollbar-thumb {
+  background: var(--npd-line);
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------ browser surfaces ---
+   The parts we did not draw still carry the design (selection, caret):
+   themed here from the palette instead of wearing the browser default. */
+.npd-panel ::selection {
+  background: var(--npd-accent);
+  color: var(--npd-card);
+}
+
+.npd-pad {
+  caret-color: var(--npd-ink);
+}
+
+/* --------------------------------------------------- reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .npd-panel *,
+  .npd-panel *::before,
+  .npd-panel *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

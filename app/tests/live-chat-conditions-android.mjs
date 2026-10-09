@@ -244,6 +244,11 @@ async function main() {
     (await count("line back from node guest")) === 1, await count("line back from node guest"));
 
   // ---- unread badge (§5): parked on queue, a line arrives → pill + toast
+  // startRoom auto-lands on Jam Data (QR visible at create), so lines that
+  // arrived before this section were correctly counted while hidden — clear
+  // first so the pill below measures exactly the one probe line.
+  await click('document.getElementById("chatTabBtn")?.click()');
+  await sleep(400);
   await click('document.querySelector(\'[data-tab="queue"]\')?.click()');
   await sleep(300);
   guest.send({ t: "chat", text: "badge probe line" });
