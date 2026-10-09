@@ -31,7 +31,7 @@ url = "2"
 futures = "0.3"
 # JioSaavn encrypts `encrypted_media_url` with DES-ECB before base64.
 des = "0.8"
-base64 = "0.22"
+base64 = "0.23"
 # URL encoding for OAuth and catalog APIs
 urlencoding = "2"
 # Catalog trait async trait support
