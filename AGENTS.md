@@ -1375,3 +1375,7 @@ so the rename ships as a patch version, not a re-tag.
 | Release build | **BUILD_EXIT=0**: `OpenMusic_0.5.1_x64_en-US.msi` 6.77 MiB + `OpenMusic_0.5.1_x64-setup.exe` 4.88 MiB + both `.sig` — new productName proven in artifact names |
 | Push record | commit `3289d0c`, push `75bc7ec..3289d0c main -> main`, tag `v0.5.1` pushed — each a separate command per rule 8, ahead-range empty |
 | Published | **v0.5.1 live** (2026-10-11T12:53:48Z): `OpenMusic_0.5.1_x64_en-US.msi` 6.75 + `OpenMusic_0.5.1_x64-setup.exe` 4.83 + `.sig` + deb 6.7 + AppImage 81.87 + `latest.json`/`update.json` — new name on every artifact |
+## 2026-10-11g — Marketing site updated (root index.html is the Pages source, committed 7b1ec11, pushed, Pages green, live verified)
+
+Site was stale two ways: old TRANCE MUSIC brand AND a failed Pages build that blocked even committed updates. Fix: brand OpenMusic, platforms Windows/Linux/Android, macOS tab + asset map + v0.3.0 fallback removed (fallback now v0.5.1 names/sizes), Mac UAs fall to default tab, real TRANCE MUSIC vault paths kept, .nojekyll added (no Liquid in page) so deploys skip Jekyll. Download regexes were already productName-agnostic — live v0.5.1 assets resolve untouched. Inline script 
+ode --check clean. Live fetch confirms OpenMusic + no-macOS copy.
