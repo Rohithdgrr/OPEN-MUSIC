@@ -1151,7 +1151,7 @@ fn read_import_file(app: tauri::AppHandle) -> Result<String, String> {
     let picked = app
         .dialog()
         .file()
-        .add_filter("OPEN MUSIC backup", &["json"])
+        .add_filter("OpenMusic backup", &["json"])
         .blocking_pick_file();
     let path = picked
         .as_ref()
@@ -1460,7 +1460,7 @@ fn autostart_set(on: bool) -> Result<(), String> {
         let (file, body) = (
             PathBuf::from(&home).join(".config/autostart/trance-music.desktop"),
             format!(
-                "[Desktop Entry]\nType=Application\nName=OPEN MUSIC\nExec={}\n",
+                "[Desktop Entry]\nType=Application\nName=OpenMusic\nExec={}\n",
                 exe.display()
             ),
         );
@@ -1500,7 +1500,7 @@ fn build_tray(app: &mut tauri::App) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&play, &next, &prev, &show, &quit])?;
     TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("OPEN MUSIC")
+        .tooltip("OpenMusic")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -1774,7 +1774,7 @@ pub fn run() {
             update::update_rollback
         ])
         .run(tauri::generate_context!())
-        .expect("error while running OPEN MUSIC");
+        .expect("error while running OpenMusic");
 }
 
 #[cfg(test)]

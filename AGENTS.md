@@ -1359,3 +1359,18 @@ publishing.
 | Live re-verify (rebuilt APK, permission in via aapt) | emulator-host -> desktop-guest **538 ms**, desktop-host -> emulator-guest **528 ms**, chat both ways, rooms closed idle |
 | Docs | docs/release-v050.md (spec + run record), P43 |
 | Release build | `npm run tauri -- build --bundles msi,nsis` with local minisign key, **BUILD_EXIT=0**: `OPEN MUSIC_0.5.0_x64_en-US.msi` 6.77 MiB + `OPEN MUSIC_0.5.0_x64-setup.exe` 4.88 MiB + both `.sig` |
+
+## 2026-10-11f — v0.5.1 cut: visible rename to OpenMusic (display strings only, ids kept)
+
+User: "do now" on the v0.5.1 rename proposal. v0.5.0 is published (immutable),
+so the rename ships as a patch version, not a re-tag.
+
+| Item | Evidence |
+|---|---|
+| Spec first | `docs/release-v051.md` (scope: display-only list + explicit untouched-ids list) |
+| Rename | `OPEN MUSIC` -> `OpenMusic`: tauri.conf productName + 2 window titles, android/ios overlay titles, 3 HTML titles, header wordmark, miniplayer default, widget brand, About `APP.name` + terms + vault label + backup picker label (both shells), share badges/text, MediaSession default, welcome/diag lines, tray tooltip, Linux desktop-entry Name, backup filter label, OAuth success pages, updater notes default, smoke-test fallback path + comments, build.sh comments, README H1, CHANGELOG [0.5.1]. Version 0.5.0 -> 0.5.1 in conf/Cargo/package |
+| Kept (continuity) | identifier, `trance-music` binary/crate, keyring `TRANCE MUSIC`, autostart `NAME` (lib.rs:1423, registry value), vault paths + legacy migration, backup format id, `[OPEN MUSIC]` log prefixes, icon art, Android keyAlias/label injector (already OpenMusic), CI globs (extension-based) |
+| Gates | npm **404/404**, eslint clean, fmt 0, clippy 0, cargo **206/206** |
+| Found en route | Android launcher label was ALREADY OpenMusic (injector predates this); tests assert zero brand strings (safe to rename); smoke-test globs by extension (only fallback path needed the rename) |
+| Release build | **BUILD_EXIT=0**: `OpenMusic_0.5.1_x64_en-US.msi` 6.77 MiB + `OpenMusic_0.5.1_x64-setup.exe` 4.88 MiB + both `.sig` — new productName proven in artifact names |
+| Next | commit -> push -> tag v0.5.1 -> push tag -> CI publishes |

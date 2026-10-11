@@ -4,7 +4,7 @@
 
 <img src="app/src/logo.png" alt="OPEN MUSIC logo" width="112" />
 
-# OPEN MUSIC
+# OpenMusic
 
 **A bit-perfect streaming music player for Windows and Linux (plus an Android shell) — Tauri 2 shell, Rust core, zero-build vanilla-JS front end.**
 

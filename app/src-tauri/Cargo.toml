@@ -1,6 +1,6 @@
 [package]
 name = "trance-music"
-version = "0.5.0"
+version = "0.5.1"
 description = "OPEN MUSIC — open-source music streaming player"
 edition = "2021"
 rust-version = "1.77"

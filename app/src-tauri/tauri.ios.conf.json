@@ -4,7 +4,7 @@
                 "windows":  [
                                 {
                                     "label":  "main",
-                                    "title":  "OPEN MUSIC",
+                                    "title":  "OpenMusic",
                                     "url":  "mobile/index.html",
                                     "fullscreen":  true,
                                     "resizable":  false,

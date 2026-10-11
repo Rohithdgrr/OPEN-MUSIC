@@ -68,7 +68,7 @@ export async function setMediaSessionTrack(track) {
   const primary = art ? await brandedArtwork(art) : "logo.png";
   try {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: track.title || "OPEN MUSIC",
+      title: track.title || "OpenMusic",
       artist: track.artist || "",
       album: track.album || "",
       artwork: [

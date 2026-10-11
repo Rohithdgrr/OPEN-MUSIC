@@ -4,6 +4,11 @@ Notable changes to OPEN MUSIC. [Keep a Changelog](https://keepachangelog.com/en/
 
 Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Android** (APK). macOS and iOS are not released as of v0.5.0.
 
+## [0.5.1] — 2026-10-11
+
+### Changed
+- **Visible name is now OpenMusic** (was `OPEN MUSIC` on desktop; Android already showed `OpenMusic`): installer names, window titles, header wordmark, About/Legal copy, share badges, OAuth pages, tray tooltip, Linux desktop entry, updater release notes. Identifiers, binary name, vault/keyring data, backup format, and signing keys are untouched, so updates and saved data carry over.
+
 ## [0.5.0] — 2026-10-11
 
 ### Added

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "OPEN MUSIC",
-  "version": "0.5.0",
+  "productName": "OpenMusic",
+  "version": "0.5.1",
   "identifier": "com.openmusic.trancemusic",
   "build": {
     "frontendDist": "../src"
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "OPEN MUSIC",
+        "title": "OpenMusic",
         "width": 1180,
         "height": 800,
         "minWidth": 800,
@@ -22,7 +22,7 @@
       {
         "label": "widget",
         "url": "widget.html",
-        "title": "OPEN MUSIC - desktop widget",
+        "title": "OpenMusic - desktop widget",
         "width": 380,
         "height": 204,
         "resizable": false,
