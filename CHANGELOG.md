@@ -8,6 +8,7 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ### Changed
 - **Visible name is now OpenMusic** (was `OPEN MUSIC` on desktop; Android already showed `OpenMusic`): installer names, window titles, header wordmark, About/Legal copy, share badges, OAuth pages, tray tooltip, Linux desktop entry, updater release notes. Identifiers, binary name, vault/keyring data, backup format, and signing keys are untouched, so updates and saved data carry over.
+- **Marketing site updated**: root `index.html` (the GitHub Pages source) carries the OpenMusic brand, Windows/Linux/Android-only platform claims, and a v0.5.1 offline fallback; the unshipped macOS tab is removed and a `.nojekyll` bypasses the previously failing Jekyll build.
 
 ## [0.5.0] — 2026-10-11
 

@@ -28,6 +28,19 @@ keyring services (`TRANCE MUSIC`), autostart registry value, vault paths +
 legacy migration, backup format id, `[OPEN MUSIC]` log prefixes, icon art,
 Android `keyAlias`, CI globs (extension-based, productName-agnostic).
 
+## Website (root `index.html` → GitHub Pages)
+
+The marketing site served at `rohithdgrr.github.io/OPEN-MUSIC` is the
+**repo-root `index.html`**, not `docs/`. It was stale two ways: old brand,
+and the Pages build itself had failed, so even committed updates never
+deployed. This cut: brand → `OpenMusic`, platform claims → Windows / Linux
+/ Android, macOS tab + asset map + fallback (now v0.5.1 names/sizes)
+removed, `detect()` sends Mac UAs to the default tab, vault paths with
+`TRANCE MUSIC` kept (real on-disk dirs). Added root `.nojekyll` (page uses
+no Liquid) so deploys bypass the Jekyll build that failed last time.
+Download regexes were already productName-agnostic, so the live v0.5.1
+assets resolve with no further changes.
+
 ## Steps
 
 Version 0.5.0 → 0.5.1 in `tauri.conf.json` + `Cargo.toml` + `package.json`;
