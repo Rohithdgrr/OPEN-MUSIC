@@ -1373,4 +1373,5 @@ so the rename ships as a patch version, not a re-tag.
 | Gates | npm **404/404**, eslint clean, fmt 0, clippy 0, cargo **206/206** |
 | Found en route | Android launcher label was ALREADY OpenMusic (injector predates this); tests assert zero brand strings (safe to rename); smoke-test globs by extension (only fallback path needed the rename) |
 | Release build | **BUILD_EXIT=0**: `OpenMusic_0.5.1_x64_en-US.msi` 6.77 MiB + `OpenMusic_0.5.1_x64-setup.exe` 4.88 MiB + both `.sig` — new productName proven in artifact names |
-| Next | commit -> push -> tag v0.5.1 -> push tag -> CI publishes |
+| Push record | commit `3289d0c`, push `75bc7ec..3289d0c main -> main`, tag `v0.5.1` pushed — each a separate command per rule 8, ahead-range empty |
+| Published | **v0.5.1 live** (2026-10-11T12:53:48Z): `OpenMusic_0.5.1_x64_en-US.msi` 6.75 + `OpenMusic_0.5.1_x64-setup.exe` 4.83 + `.sig` + deb 6.7 + AppImage 81.87 + `latest.json`/`update.json` — new name on every artifact |
