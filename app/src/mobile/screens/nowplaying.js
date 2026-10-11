@@ -129,6 +129,12 @@ function switchTab(targetTab) {
       : "tab-btn flex-1 text-on-surface-variant py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors";
     btn.className = roomOnly ? `${base} hidden` : base;
   });
+  // P41: the chat view sits below the sheet header — selecting the tab must
+  // bring the chat UI itself into view, not leave it below the fold looking
+  // unloaded. `nearest` never yanks when it is already visible.
+  if (targetTab === "chat") {
+    document.getElementById("view-chat")?.scrollIntoView({ block: "nearest" });
+  }
 }
 // The router re-runs this script on every navigation against fresh DOM, so
 // these bind once per mount and never stack.

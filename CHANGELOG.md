@@ -14,6 +14,22 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ## [Unreleased]
 
+### Fixed · Android logo, home rows, room chat (2026-10-11)
+- **Launcher icon is the black TRANCE MUSIC mark** (`app/src-tauri/icons/android/`,
+  `docs/branding/trance-music-guide.md`): all densities + round + adaptive
+  foreground re-cut edge-to-edge on black (old white surround gone); the
+  `tauri android init` template had shipped stale default icons. Verified in
+  the emulator app drawer.
+- **Home mix rows show every track** (`mobile/binders.js`,
+  `docs/mobile/06-features.md`): shelves painted one mix card into a carousel
+  rail; now one card per shelf track through the existing play delegation.
+- **Chat tab actually opens chat (P41)** (`mobile/screens/nowplaying.html`,
+  `nowplaying.js`, `docs/mobile/09-problems-solutions.md`): a missing `</div>`
+  nested `#view-chat` (and `#view-lyrics`) inside hidden `#view-jam-data` —
+  the pill lit while the UI could never show. One close div + scroll the view
+  into sight on select + a sibling-depth gate in `jam-ui.test.mjs`. Verified
+  live: header, sent bubble, reactions, input all render.
+
 ### Changed · Mobile Now Playing clean art + miniplayer truncation (2026-10-10)
 - **Now Playing artwork is art-only** (`mobile/screens/nowplaying.html`,
   `docs/mobile/06-features.md`): the gradient scrim and both overlay pills

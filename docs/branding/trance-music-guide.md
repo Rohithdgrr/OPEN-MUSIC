@@ -236,3 +236,26 @@ a local file paints instantly with zero network.
 > HEAD): the `styles.css` rule, the `index.html` boot defaults and the
 > `widget.js` backdrop fallback are gone. The mobile half (rule, bytes,
 > ladder) stands; the gate is rescoped to mobile.
+
+### Android launcher icon (2026-10-11 pass, user-supplied black mark)
+
+Source of truth `app/src-tauri/icons/icon.png` (512x512 RGBA, black
+rounded-square, transparent corners) is already the new mark — but
+`tauri android init` generated the `mipmap-*` set from the Tauri default
+template (orange/cyan), so the installed icon is stale. Contract:
+- Regenerate every `mipmap-<density>` `ic_launcher.png` (cover-scale the
+  mark edge-to-edge, composite on black — never letterbox/pad).
+- Same for `ic_launcher_round.png` (circle-masked) and the adaptive
+  `ic_launcher_foreground.png` layers + `mipmap-anydpi-v26` XML on a black
+  background (transparent corners stay black, seamless).
+- Desktop bundles (`icon.ico`/`.icns`, Windows tile set) are out of scope —
+  this pass is Android-only.
+- The cut lives in the TRACKED source set `app/src-tauri/icons/android/`
+  (15 PNGs + `values/ic_launcher_background.xml` flipped `#FFFFFF` →
+  `#000000` — the old white surround is exactly what the request bans);
+  `gen/android/.../res` carries the working copy. WARNING 2026-10-11:
+  `tauri android init` appears to delete `icons/android/` from the worktree
+  (17 `D` entries after a routine init on a clean tree) — after any future
+  init, `git status` it back and re-apply this pass instead of re-deriving it.
+- Verify: read back a generated mipmap (must be the black mark, full-bleed)
+  + launcher screenshot on the emulator after reinstall.

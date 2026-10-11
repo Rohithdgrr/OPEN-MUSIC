@@ -64,6 +64,22 @@ test("the C-6 id contract exists exactly once on the mobile screen", () => {
   }
 });
 
+test("tab views are siblings — a missing </div> nests chat/lyrics inside jam-data (P41)", () => {
+  // 2026-10-11: view-chat (and view-lyrics) sat INSIDE hidden #view-jam-data,
+  // so the Chat tab lit up while its UI could never show. Same <div> depth at
+  // each view's id means they share a parent and switchTab can reveal them.
+  const depthAt = (idx) => {
+    const slice = html.slice(0, idx);
+    return (slice.match(/<div[\s>]/g) || []).length - (slice.match(/<\/div>/g) || []).length;
+  };
+  const d = {};
+  for (const id of ["view-queue", "view-chat", "view-jam-data", "view-lyrics"]) {
+    d[id] = depthAt(html.indexOf(`id="${id}"`));
+  }
+  assert.equal(d["view-chat"], d["view-jam-data"], `view-chat nests inside another view (P41): ${JSON.stringify(d)}`);
+  assert.equal(d["view-lyrics"], d["view-jam-data"], `view-lyrics nests inside another view (P41): ${JSON.stringify(d)}`);
+});
+
 test("the transport row keeps the ids binders.js paints", () => {
   for (const label of ["Previous", "Next", "Play / pause"]) {
     assert.ok(html.includes(`aria-label="${label}"`), `binders.js keys off aria-label="${label}"`);

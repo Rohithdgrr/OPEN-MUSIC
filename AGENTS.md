@@ -1270,3 +1270,41 @@ fails the moment a class loses its rule or vice versa.
 
 Status: ✅ verified in a real browser ✅ docs + CHANGELOG ⏳ **uncommitted, unpushed** (rule 1).
 Probe server + page lived in `%TEMP%\opencode\`, killed by command-line match, deleted.
+
+## 2026-10-11 — Debug APK under 50 MiB, installed + booted on emulator (verified live)
+
+User: build android debug apk below 50MiB, clean old apks off the emulator
+first, then show output. Prompt restated: single-ABI x86_64 debug APK,
+≤50 MiB budget, `adb uninstall com.openmusic.trancemusic` (package clean,
+not factory reset), fresh install + launch evidence.
+
+| Item | Evidence |
+|---|---|
+| Docs first | `docs/dev-loop-speed.md` BUILD D1 (plan written before the build, result filled after) |
+| Fresh checkout state | `gen/`, `target/`, `app/node_modules` all missing → `npm install` (CLI 2.12.0), `npm run css` exit 0, `tauri android init` (NDK 28.2), permissions/NSC/label re-applied by hand in PowerShell (fresh template already had INTERNET) |
+| First debug build OVER budget | `BUILD_EXIT=0`, 56,397,808 B = 53.8 MiB; zip breakdown: `lib/x86_64/libapp_lib.so` 49,072,928 B **STORED** raw (87% of APK). The `[profile.dev]` strip config worked (was ~88 MB) but not enough alone |
+| Fix, same class as release | `jniLibs.useLegacyPackaging = true` on the debug buildType (`gen/.../build.gradle.kts`, gitignored) — packaging only, no behavior |
+| Final artifact ✅ | `BUILD_EXIT=0`, **19,905,628 B = 18.98 MiB** (`.../apk/universal/debug/app-universal-debug.apk`); `.so` deflated 49.07 → 12.58 MB |
+| Emulator clean → install → boot ✅ | `adb uninstall com.openmusic.trancemusic` → Success, verified absent; `adb install` → Success; monkey launch → `MainActivity` top-resumed + focused (pid 4404), `versionName=0.4.0`, no FATAL; screenshot = fresh onboarding ("What moves you?") rendering, expected post-wipe |
+| Git identity on this box is `rohit@users.noreply.github.com`, not the rule-2 `Rohithdgrr <rohit93dgrr@gmail.com>` → **nothing committed, nothing pushed** (rule 1). Emulator left running with the debug build installed |
+
+## 2026-10-11b — Android logo + home carousels + chat tab fix (all three verified live)
+
+User: set the attached black logo as android logo+icon (zoom to outline, no
+empty background, professional); home rows (Daily/Monthly/On Repeat/
+Downloads/Recently Played…) show one song — show all in carousel; chat not
+working. Prompt restated on intake; two blocking answers elicited by question
+tool (logo paths → both already the new mark; chat symptom → tab visible but
+its UI never loads, "make it show like Jam").
+
+| Item | Evidence |
+|---|---|
+| Logo source | `src-tauri/icons/icon.png` 512 RGBA IS the new mark (seen + corners-alpha 0); `mobile/logo.png` already the mark crop. But `tauri android init` generated `mipmap-*` from template defaults (orange/cyan read back) + tracked `icons/android` used a WHITE adaptive background |
+| Logo fix | `mkicons.py` (%TEMP%, outside repo): cover-scale mark edge-to-edge on black for `ic_launcher`/`_round`/`_foreground` ×5 densities + `mipmap-anydpi-v26` XML; same set copied into TRACKED `icons/android/` + background `#FFFFFF`→`#000000`. Read-back PNGs + emulator app-drawer screenshot = black mark, full-bleed |
+| Init eats sources | `tauri android init` deleted all 17 tracked `icons/android/*` from the worktree (clean tree → 17 `D` after routine init). Restored via `git checkout` then re-cut. Doc warning in branding guide |
+| Rows root cause | `renderMadeForYou` (`binders.js:362`) registered full shelf via `setList` but painted ONE mix card into the `overflow-x-auto` rail. Fix: map all `shelf.tracks` through existing `homeTrackCardHTML` (same delegation). Live: 2–12 cards/shelf + Jump-Back-In 3-up screenshot |
+| Chat root cause (P41) | NOT wiring — CDP ancestor chain: `#view-chat:flex < #view-jam-data:none(hidden)`. `#view-jam-data` (html:213) never closed → chat (306) AND lyrics (331) nested inside it; file ended 1 unbalanced. Fix: one `</div>` (balance 0; OLD depths 4/4 vs 3, NEW all 3) + `switchTab("chat")` scrolls view into sight (`nearest`) + sibling-depth gate in `jam-ui.test.mjs` (16/16) |
+| Chat verified live | room-less Solo: CHAT pill → full UI (Room Chat header, sent "hello from verify" mine-bubble, reactions, input in viewport `inputInView:true`); send path paints. Server fan-out untouched (was already correct) |
+| Gates/build | `node --check` ×3, eslint clean, `npm test` **404/404**; debug APK **30.98 MiB** (`BUILD_EXIT=0`), `adb install -r` Success |
+| Traps | PS `//FI`/`//F` args + bare `echo` die in PS5 (use `Get-Process`, `Write-Host`); `echo` of exotic Unicode fails (write files, don't print); CDP `const` persists per page context — redeclare kills later evals, use fresh IIFE names; `git show > file` writes UTF-16 (use `Set-Content -Encoding UTF8`); probe's own mode-toggle click opened the Jam sheet and contaminated later measurements |
+| Status | ✅ all three live-verified ✅ docs (branding, 06-features, P41, CHANGELOG) + gate ⏳ **uncommitted, unpushed** (rule 1; identity still noreply) |

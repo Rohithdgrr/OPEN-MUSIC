@@ -466,7 +466,18 @@ shorthand also resets `background-color` to transparent, which is exactly the
 (`(0,2,3)` beats the themes' `(0,2,2)`, later in the file, `!important`) with
 a white glyph on top.
 
-### Logo / icon / splash
+### Home mix rows: full carousel, not one card (2026-10-11)
+
+`renderMadeForYou` (`mobile/binders.js`) registered the whole shelf via
+`setList` but painted a single mix card into the `overflow-x-auto` rail —
+every shelf (Daily/Monthly/On Repeat/Downloaded/Recently Played/…)
+showed one tile. Contract: paint one `homeTrackCardHTML` per shelf track
+(the existing `[data-list][data-idx]` delegation already plays through,
+so no new path), keep the shelf header (title + tag + why-line). Shelf
+`limit` stays 10 (recommend.js default 20) — "all songs" means the full
+shelf list, not a longer query.
+
+### Logo / icon / splash (earlier pass — superseded for Android, see branding guide 2026-10-11)
 
 No replacement asset shipped with the request (the only attachment is the
 miniplayer screenshot), so brand files are untouched this pass:

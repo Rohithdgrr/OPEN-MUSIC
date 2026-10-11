@@ -360,16 +360,14 @@ async function renderMadeForYou(m) {
       root.appendChild(sec);
     }
     setList(listName, shelf.tracks);
-    // One mix card per shelf (mockup "Your Mixes" rail): art from the top
-    // track, a real track count, tap plays the mix from the top.
-    const first = shelf.tracks[0] || {};
+    // One card per track (carousel rail): the mix header above already
+    // names the shelf, so every row shows all its songs, not one tile.
+    // Playback reuses the existing [data-list][data-idx] delegation.
     const box = sec.querySelector("[data-cards]");
     if (box) {
-      box.innerHTML = homeTrackCardHTML(
-        { ...first, title: shelf.title, artist: `${shelf.tracks.length} Tracks` },
-        0,
-        listName,
-      );
+      box.innerHTML = shelf.tracks
+        .map((t, i) => homeTrackCardHTML(t, i, listName))
+        .join("");
     }
   }
 

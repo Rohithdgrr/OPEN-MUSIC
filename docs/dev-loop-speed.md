@@ -168,6 +168,40 @@ jniLibs symlinks exist, including stale release `.so`s — see mobile
 | Windows Defender exclusions | 📝 manual | requires admin + user decision; not automatable from the repo |
 | `swatinem/rust-cache` in CI | ⏸ deferred | linux/macos workflows already hand-roll `actions/cache@v4`; conversion is a separate CI task |
 
+## BUILD D1 (2026-10-11) — x86_64 debug APK ≤ 50 MiB (planned, then measured)
+
+Plan (written before the build, docs-first): single-ABI
+`npm run tauri -- android build --target x86_64 --debug --apk --ci`
+(emulator ABI only — smallest possible debug artifact; universal would
+triple the native libs). Size gate: single-arch debug APK at
+`gen/android/app/build/outputs/apk/x86_64/debug/app-x86_64-debug.apk`
+must be < 52,428,800 B (50 MiB) — the `[profile.dev]` strip/DWARF-off
+config in `app/src-tauri/Cargo.toml` is what makes this possible (was
+~88 MB before). Second lever (same class as the release fix in
+APK-SIZE.md): `jniLibs.useLegacyPackaging = true` on the debug
+buildType in `gen/android/app/build.gradle.kts` so the 49 MB `.so`
+deflates instead of storing raw (~87% of the first-build APK). Emulator: `Pixel6_API36`, `adb uninstall
+com.openmusic.trancemusic` (package clean, not a factory reset), fresh
+`adb install`, launch via monkey, evidence = APK bytes + zip `.so`
+breakdown + `dumpsys` focused app + boot/mediaserver logcat lines.
+
+Result: ✅ PASS (2026-10-11, this session).
+- First build (strip only, `.so` STORED raw): 56,397,808 B = 53.8 MiB —
+  OVER budget; `lib/x86_64/libapp_lib.so` 49,072,928 B was 87% of the APK.
+- Final build (+ `useLegacyPackaging` on debug): **19,905,628 B = 18.98
+  MiB** at `gen/android/app/build/outputs/apk/universal/debug/
+  app-universal-debug.apk`; `.so` deflated 49.07 → 12.58 MB.
+- Install on `Pixel6_API36` after `adb uninstall
+  com.openmusic.trancemusic` (Success, verified absent): `adb install` →
+  **Success**; monkey launch → `MainActivity` top-resumed + focused (pid
+  4404), `versionName=0.4.0`, no FATAL in logcat; screenshot shows fresh
+  onboarding ("What moves you?") rendering — expected post-wipe.
+- Environment: `gen/` + `target/` + `node_modules/` were all missing, so
+  `npm install` (CLI 2.12.0) + `tauri android init` (NDK 28.2) ran first;
+  INTERNET already in the fresh template, added ACCESS_NETWORK_STATE +
+  CAMERA + loopback `network_security_config.xml` + `OpenMusic` label by
+  hand (PowerShell, no bash/CRLF round-trip).
+
 ## Related
 
 - Verification gates: `docs/architecture.md`, AGENTS.md (commands section).
