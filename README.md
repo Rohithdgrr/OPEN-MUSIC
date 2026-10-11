@@ -6,12 +6,12 @@
 
 # OPEN MUSIC
 
-**A bit-perfect streaming music player for Windows, Linux and macOS — Tauri 2 shell, Rust core, zero-build vanilla-JS front end.**
+**A bit-perfect streaming music player for Windows and Linux (plus an Android shell) — Tauri 2 shell, Rust core, zero-build vanilla-JS front end.**
 
 [![Release](https://img.shields.io/github/v/release/Rohithdgrr/OPEN-MUSIC?sort=semver)](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/Rohithdgrr/OPEN-MUSIC/ci.yml?branch=main)](https://github.com/Rohithdgrr/OPEN-MUSIC/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/Rohithdgrr/OPEN-MUSIC)](LICENSE)
-[![Desktop](https://img.shields.io/badge/desktop-Windows%20%7C%20Linux%20%7C%20macOS-2b2b2b)](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest)
+[![Desktop](https://img.shields.io/badge/desktop-Windows%20%7C%20Linux-2b2b2b)](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest)
 [![Best Practices from SLIM](https://img.shields.io/badge/Best%20Practices%20from-SLIM-blue)](https://nasa-ammos.github.io/slim/)
 
 [Releases](https://github.com/Rohithdgrr/OPEN-MUSIC/releases/latest) · [Changelog](CHANGELOG.md) · [Architecture](docs/architecture.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md) · [Issues](https://github.com/Rohithdgrr/OPEN-MUSIC/issues)
@@ -33,7 +33,7 @@ synced lyrics, Library, charts, album and artist pages, and the offline vault.*
 
 OPEN MUSIC is a desktop music player that streams from JioSaavn through a
 local relay, keeps an offline vault on disk, and ships as one signed,
-self-updating package for Windows, Linux and macOS.
+self-updating package for Windows and Linux (Android ships as an APK).
 
 The interesting part is not the chrome — it is what happens underneath:
 
@@ -78,9 +78,9 @@ The interesting part is not the chrome — it is what happens underneath:
 - **Self-updating** — `Settings → Updates` checks GitHub once a day, installs
   the signed package with a live progress bar, and can revert to any earlier
   release.
-- **Android & iOS** — a separate 13-screen mobile shell lives in
+- **Android** — a separate 13-screen mobile shell lives in
   `app/src/mobile`, sharing the same Rust core; lock-screen transport, hardware
-  back and safe-area insets are built in. iOS builds on macOS runners only.
+  back and safe-area insets are built in. macOS and iOS are not released (the code still compiles; no pipelines or installers ship).
 
 The full feature-by-feature platform matrix (what exists on desktop, what
 exists on mobile, and what is absent from each) is in
@@ -156,7 +156,6 @@ To **install a release** you only need the target OS:
 | --- | --- |
 | Windows | Windows 10/11 x64 with WebView2 (preinstalled on Windows 11) |
 | Linux | x86_64 with glibc 2.31+; AppImage needs FUSE |
-| macOS | macOS 13+ on Apple Silicon |
 
 To **build from source**:
 
@@ -164,7 +163,7 @@ To **build from source**:
 | --- | --- | --- |
 | Rust | 1.77+ | Verified on 1.98.1 |
 | Node.js | 18+ | Only used to drive the Tauri CLI |
-| Platform toolchain | — | MSVC build tools on Windows, `webkit2gtk` on Linux, Xcode CLT on macOS |
+| Platform toolchain | — | MSVC build tools on Windows, `webkit2gtk` on Linux |
 
 ### Setup
 
@@ -246,23 +245,12 @@ npm run test:smoke
 
 ### Cross-Platform CI
 
-The project uses GitHub Actions to build and test on Linux and macOS:
+The project uses GitHub Actions to build and test on Windows and Linux:
 
-- **Linux** (`.github/workflows/linux.yml`):
-  - Builds Debian packages and AppImages
-  - Runs Rust tests, Node.js tests, and smoke tests
-  - Verifies build artifacts are valid
+- **Windows** (`.github/workflows/ci.yml`): lint, frontend tests, `cargo fmt`/`clippy`/`test`
+- **Release** (`.github/workflows/release.yml`, tag-driven `v*`): builds MSI + NSIS installers on Windows and deb + AppImage on Linux, verifies updater-manifest URLs, and publishes the GitHub release with all assets.
 
-- **macOS** (`.github/workflows/macos.yml`):
-  - Builds .app bundles and DMGs
-  - Runs Rust tests, Node.js tests, and smoke tests
-  - Verifies app structure and binary
-
-Both workflows:
-- Cache cargo registry, index, and build artifacts for faster builds
-- Install platform-specific dependencies
-- Upload build artifacts as GitHub Actions artifacts (7-day retention)
-- Generate build summaries with artifact information
+macOS and iOS are not released; their workflows were removed in v0.5.0.
 
 **Running CI locally:**
 

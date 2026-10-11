@@ -82,6 +82,8 @@ build` when on WSL.
 
 | P42 | **Desktop guest cannot join an Android-hosted room** — pasted invite `trancemusic://join?host=10.0.2.16&port=8787&code=…` dies `Could not reach ws://10.0.2.16:8787/ws — timed out` (user report 2026-10-11, desktop screenshot) | **Single-address invite + single-shot dial (D6).** `lan_urls` mints the default-route interface first = the emulator's internal NAT IP, unreachable off-device by construction; the dialer tried only `urls[0]`, so one dead address failed the whole join | **FIXED 2026-10-11 (§3.1):** multi-host invite (`&host2…`, old readers ignore it), try-every-candidate dial (~2 s each, ~8 s budget), LAN-first ordering. Emulator↔PC still needs `adb forward`/`reverse` + the `127.0.0.1` candidate — verified live both directions (§10 rows 8–9) |
 
+| P43 | (proactive, no user report yet) Jam LAN traffic could be silently dropped on **real Android 17 (API 37) devices** — our `targetSdk = 37`, and API 37 introduces the `ACCESS_LOCAL_NETWORK` runtime permission for device-to-device traffic; the emulator runs API 36 so this was never exercised | Android 17 permission model: without `ACCESS_LOCAL_NETWORK`, the OS blocks the Jam room server's inbound sockets and the guest's outbound `ws://` dials regardless of what the app does | **FIXED 2026-10-11:** `<uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>` added to the manifest via `build.sh inject_android_permissions` (its own idempotent guarded block; also added to the early-return condition set) and injected into the live `gen/` manifest. No-op on older OSes; on API 37 it is required. Note `gen/` is gitignored — a fresh `tauri android init` needs the injector re-run |
+
 ## Pipelines / releases
 
 | # | Symptom | Cause | Fix |

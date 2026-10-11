@@ -1340,3 +1340,22 @@ User: android-mobile-as-host + desktop-as-guest "is not working" (screenshot:
 | Live B (desktop host → emulator guest, `adb reverse`) | invite `host=192.168.56.1…&host2=10.96.197.104&host3=127.0.0.1`; emulator joined in **524 ms**; presence + chat emulator→desktop delivered |
 | Cleanup | both rooms closed (`idle`/`idle`), tunnels removed; desktop app + emulator left running |
 | Status | ✅ spec + code + gates + both directions live ⏳ **committed locally, not pushed** (rule 1 — awaiting order) |
+
+
+## 2026-10-11e — v0.5.0 release cut: Windows + Linux + Android only, Apple pipelines dropped
+
+User: build .msi + nsis, ready code as v0.5.0 (windows/linux/android, no
+macos/ios), simple concise changelog, push + tag-driven CI publish; then a
+pasted external diagnosis of "Android host fails" to check-and-fix before
+publishing.
+
+| Item | Evidence |
+|---|---|
+| External diagnosis triaged | claims vs code: bind is `0.0.0.0` (room.rs:1086) not `127.0.0.1`; join socket is Rust-native (WebView NSC does not govern it); D6 already fixed the reported failure. Only actionable item: **ACCESS_LOCAL_NETWORK** (API 37 runtime permission; our targetSdk=37, emulator API 36 never exercised it) -> added via `build.sh inject_android_permissions` (own guarded block + early-return set) + live gen/ manifest, doc P43. Signaling-server rewrite declined (contradicts LAN-only no-server model, listen-together §7) |
+| Version bump | tauri.conf.json + Cargo.toml + package.json -> 0.5.0 (BOMs stripped after PS round-trip; Cargo.toml re-done byte-safe after mojibake) |
+| Changelog | rewritten concise (~130 lines, was 706): one section per release, important-only |
+| Pipelines | macos.yml + ios.yml **deleted**; release.yml drops macOS job + dmg/app patterns; ci.yml matrix windows+ubuntu, ios-validation job removed; README platform claims corrected |
+| Gates | npm 404/404, eslint clean, fmt 0, clippy 0, cargo 206/206 |
+| Live re-verify (rebuilt APK, permission in via aapt) | emulator-host -> desktop-guest **538 ms**, desktop-host -> emulator-guest **528 ms**, chat both ways, rooms closed idle |
+| Docs | docs/release-v050.md (spec + run record), P43 |
+| Release build | `npm run tauri -- build --bundles msi,nsis` with local minisign key, **BUILD_EXIT=0**: `OPEN MUSIC_0.5.0_x64_en-US.msi` 6.77 MiB + `OPEN MUSIC_0.5.0_x64-setup.exe` 4.88 MiB + both `.sig` |

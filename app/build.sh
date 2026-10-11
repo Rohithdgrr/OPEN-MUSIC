@@ -73,9 +73,13 @@ inject_android_permissions() {
   
   # Check if already injected. CAMERA arrived with the scan-to-join spike
   # (jam-upgrade.md §4.1) — a manifest that already has INTERNET must still
-  # gain CAMERA, so both are checked before the early return.
+  # gain CAMERA, so each is checked before the early return.
+  # ACCESS_LOCAL_NETWORK (Android 17 / API 37 targets) gates device-to-device
+  # LAN traffic — the Jam room server/guest sockets — so a host or guest on a
+  # real Android 17 device is dead without it (P43).
   if grep -q 'android.permission.INTERNET' "$manifest" \
-     && grep -q 'android.permission.CAMERA' "$manifest"; then
+     && grep -q 'android.permission.CAMERA' "$manifest" \
+     && grep -q 'android.permission.ACCESS_LOCAL_NETWORK' "$manifest"; then
     echo "✓ Android permissions already present"
     return 0
   fi
@@ -111,6 +115,13 @@ EOF
     # getUserMedia (jam-upgrade.md §4.1).
     sed -i '/<manifest/a\    <uses-permission android:name="android.permission.CAMERA"/>' "$manifest"
     echo "✓ Injected CAMERA permission"
+  fi
+  if ! grep -q 'android.permission.ACCESS_LOCAL_NETWORK' "$manifest"; then
+    # Android 17 (API 37) runtime permission for device-to-device LAN traffic;
+    # harmless no-op on older OSes, mandatory for Jam on real API 37 devices
+    # (docs/mobile/09-problems-solutions.md P43).
+    sed -i '/<manifest/a\    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>' "$manifest"
+    echo "✓ Injected ACCESS_LOCAL_NETWORK permission"
   fi
   inject_android_label
   return 0

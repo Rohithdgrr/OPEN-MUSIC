@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -34,11 +34,6 @@ jobs:
             patchelf \
             libssl-dev \
             build-essential
-
-      - name: Install macOS system dependencies
-        if: runner.os == 'macOS'
-        run: |
-          brew install openssl@3 || true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -84,41 +79,6 @@ jobs:
         run: cargo test
         env:
           OP_OFFLINE: "1"
-
-  ios-validation:
-    name: iOS Target Compilation Check (macOS)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain & iOS targets
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-          # The action's input is `target` (comma-separated). It accepts a
-          # misspelled `targets:` without failing and only warns, which left
-          # aarch64-apple-ios-sim uninstalled and broke `cargo check` below
-          # with E0463 (can't find crate for `std`).
-          target: aarch64-apple-ios-sim,x86_64-apple-ios
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: app
-        run: npm ci
-
-      - name: Build CSS stylesheet
-        working-directory: app
-        run: npm run css
-
-      - name: Check Rust Compilation for iOS Simulator
-        working-directory: app/src-tauri
-        run: cargo check --target aarch64-apple-ios-sim --lib
 
   security-audit:
     name: Security & Audit Checks

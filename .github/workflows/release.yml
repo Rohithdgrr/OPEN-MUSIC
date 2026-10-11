@@ -1,10 +1,10 @@
 name: Release
 
-# Tag-driven release: build the installers on Windows, Linux and macOS in
-# parallel, let `tauri build` sign the updater packages with the keypair in
-# secrets, then merge the three jobs' outputs into one latest.json (the
-# manifest every platform's updater reads) and attach everything to the tag's
-# GitHub release.
+# Tag-driven release: build the installers on Windows and Linux in parallel
+# (macOS/iOS are not released — see docs/release-v050.md), let `tauri build`
+# sign the updater packages with the keypair in secrets, then merge the two
+# jobs' outputs into one latest.json (the manifest every platform's updater
+# reads) and attach everything to the tag's GitHub release.
 #
 # Secrets to configure once (Settings → Secrets and variables → Actions):
 #   TAURI_SIGNING_PRIVATE_KEY          — contents of the private key file
@@ -36,9 +36,6 @@ jobs:
           - os: ubuntu-latest
             bundles: deb,appimage
             artifact: linux
-          - os: macos-latest
-            bundles: app,dmg
-            artifact: macos
     defaults:
       run:
         working-directory: app
@@ -106,7 +103,6 @@ jobs:
             app/src-tauri/target/release/bundle/**/*.exe
             app/src-tauri/target/release/bundle/**/*.deb
             app/src-tauri/target/release/bundle/**/*.AppImage
-            app/src-tauri/target/release/bundle/**/*.dmg
       - name: Publish updater artifacts
         # Optional by nature: .zip/.sig naming changed across Tauri versions
         # and the sigs only exist when the build was signed. Includes
@@ -122,8 +118,6 @@ jobs:
             app/src-tauri/target/release/bundle/**/*.exe.sig
             app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz
             app/src-tauri/target/release/bundle/**/*.AppImage.tar.gz.sig
-            app/src-tauri/target/release/bundle/**/*.app.tar.gz
-            app/src-tauri/target/release/bundle/**/*.app.tar.gz.sig
       - name: Verify manifest URLs resolve
         # Runs after every binary is live: GitHub rewrites asset names
         # (spaces -> dots) and a wrong name only surfaces as a 404 when the
