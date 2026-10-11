@@ -14,6 +14,15 @@ Work landing after the latest tag sits in `Unreleased`.
 
 ## [Unreleased]
 
+### Fixed · Jam joins survive dead addresses — both directions work (2026-10-11)
+- **Multi-host invite + try-every-candidate dial (D6)** (`app/src-tauri/src/room.rs`,
+  `docs/listen-together.md` §3.1/§10/§12, `09-problems-solutions.md` P42):
+  the invite now carries all host addresses (`&host2…`, old builds ignore
+  them), the guest tries each (~2 s apiece, ~8 s budget), LANs sort first.
+  A dead `urls[0]` (emulator NAT, VPN, dock NIC) no longer fails the join.
+  Verified live both ways over adb tunnels: emulator-host → desktop-guest in
+  518 ms, desktop-host → emulator-guest in 524 ms, presence + chat both ways.
+
 ### Fixed · Android logo, home rows, room chat (2026-10-11)
 - **Launcher icon is the black TRANCE MUSIC mark** (`app/src-tauri/icons/android/`,
   `docs/branding/trance-music-guide.md`): all densities + round + adaptive

@@ -159,12 +159,15 @@ fn invite_uri(host: &str, port: u16, code: &str) -> String {
 }
 
 /// Read a canonical invite **or** a legacy `ws://ip:port · CODE` line back
-/// into `(host, port, code)`. Rust is the authority for the join path — the
+/// into `(candidates, code)`. Rust is the authority for the join path — the
 /// JS parser only decides whether to show the inline "not an invite" message —
 /// so both shapes run through `parse_room_addr` and hit the same LAN gate.
+/// A canonical link carries fallbacks as `&host2=…&host3=…` (v1.1, D6): each
+/// is validated like the primary and skipped — never fatal — when bad, so one
+/// rotten extra cannot kill a good primary. Legacy lines yield one candidate.
 /// Error strings are shown to the user verbatim: one honest message for a
 /// malformed link, `parse_room_addr`'s own copy for a refused address.
-fn parse_invite(raw: &str) -> Result<(String, u16, String), String> {
+fn parse_invite(raw: &str) -> Result<(Vec<(String, u16)>, String), String> {
     const GENERIC: &str = "That doesn't look like an invite link.";
     let text = raw.trim();
     if text.is_empty() {
@@ -173,6 +176,7 @@ fn parse_invite(raw: &str) -> Result<(String, u16, String), String> {
 
     if let Some(query) = text.strip_prefix("trancemusic://join?") {
         let (mut host, mut port, mut code) = ("", "", "");
+        let mut extras: Vec<String> = Vec::new();
         for pair in query.split('&') {
             let Some((k, v)) = pair.split_once('=') else {
                 continue;
@@ -181,6 +185,12 @@ fn parse_invite(raw: &str) -> Result<(String, u16, String), String> {
                 "host" => host = v,
                 "port" => port = v,
                 "code" => code = v,
+                _ if k.starts_with("host")
+                    && k.len() > 4
+                    && k[4..].chars().all(|c| c.is_ascii_digit()) =>
+                {
+                    extras.push(v.to_string());
+                }
                 _ => {} // unknown params ignored — forward compatible
             }
         }
@@ -190,7 +200,23 @@ fn parse_invite(raw: &str) -> Result<(String, u16, String), String> {
         let port: u16 = port.parse().map_err(|_| GENERIC.to_string())?;
         let code = sanitize_code(code).ok_or_else(|| GENERIC.to_string())?;
         let (host, port) = parse_room_addr(&format!("{host}:{port}"))?;
-        return Ok((host, port, code));
+        let mut candidates = vec![(host, port)];
+        for extra in extras {
+            if candidates.len() > MAX_FALLBACK_HOSTS {
+                break;
+            }
+            if extra.trim().is_empty() {
+                continue;
+            }
+            // Same port (one room, one server), same LAN gate; a bad extra
+            // is skipped so it can never veto the primary.
+            if let Ok((h, _)) = parse_room_addr(&format!("{}:{port}", extra.trim())) {
+                if !candidates.iter().any(|(e, _)| e == &h) {
+                    candidates.push((h, port));
+                }
+            }
+        }
+        return Ok((candidates, code));
     }
 
     // Legacy: `ws://ip:port · CODE`, `ip:port CODE`, `ip CODE` — exactly what
@@ -203,7 +229,7 @@ fn parse_invite(raw: &str) -> Result<(String, u16, String), String> {
     let code = sanitize_code(parts[parts.len() - 1]).ok_or_else(|| GENERIC.to_string())?;
     let addr = parts[..parts.len() - 1].join("");
     let (host, port) = parse_room_addr(&addr)?;
-    Ok((host, port, code))
+    Ok((vec![(host, port)], code))
 }
 
 /// Uppercase, alnum-only, exactly 8 — the server's code shape, and the same
@@ -217,10 +243,18 @@ fn sanitize_code(raw: &str) -> Option<String> {
     (code.len() == 8).then_some(code)
 }
 
-/// The host's canonical invite, derived from its first advertised url —
-/// the exact address `inviteText` shows today. No usable address → empty
-/// string (an invite with no host is not joinable; the UI then falls back
-/// to the bare code display).
+/// Cap on `&host2…` fallbacks in one invite: enough for a multi-homed host,
+/// short enough the QR stays scannable.
+const MAX_FALLBACK_HOSTS: usize = 8;
+
+/// Per-address dial budget inside `guest_run` (D6): a dead first candidate
+/// costs ~2 s, not the whole join. The overall budget stays ~8 s.
+const DIAL_PER_ADDR_SECS: u64 = 2;
+
+/// The host's canonical invite, derived from its advertised urls — primary
+/// first, every further url as `&host2…` (v1.1, D6). No usable address →
+/// empty string (an invite with no host is not joinable; the UI then falls
+/// back to the bare code display).
 fn invite_from(urls: &[String], code: &str) -> String {
     let Some(first) = urls.first() else {
         return String::new();
@@ -228,20 +262,56 @@ fn invite_from(urls: &[String], code: &str) -> String {
     let Ok((host, port)) = parse_room_addr(first) else {
         return String::new();
     };
-    invite_uri(&host, port, code)
+    let mut out = invite_uri(&host, port, code);
+    let mut n = 2;
+    for extra in urls.iter().skip(1) {
+        if n > MAX_FALLBACK_HOSTS + 1 {
+            break;
+        }
+        // Host part only — one room, one port — through the same gate; a bad
+        // extra is skipped so it can never veto the primary.
+        if let Ok((h, _)) = parse_room_addr(extra) {
+            if h != host {
+                out.push_str(&format!("&host{n}={h}"));
+                n += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Sort key for advertised addresses (D6): real LANs first, then the ranges
+/// that are often wrong (emulator NAT and corp `10/8`, link-local), so the
+/// dialer usually wins on the first candidate. Ordering is a speed hint,
+/// never a filter — every candidate is still dialed.
+fn lan_rank(ip: &Ipv4Addr) -> u8 {
+    let o = octets(ip);
+    if o[0] == 192 && o[1] == 168 {
+        0
+    } else if o[0] == 172 && (16..=31).contains(&o[1]) {
+        1
+    } else if o[0] == 10 {
+        2
+    } else {
+        3
+    }
+}
+
+fn sort_lan_ips(mut ips: Vec<Ipv4Addr>) -> Vec<Ipv4Addr> {
+    ips.sort_by_key(lan_rank);
+    ips
 }
 
 /// Best-effort local IPv4s for the invite line. The UDP-connect trick finds
 /// the default-route interface without sending a packet; a hostname lookup
-/// covers a LAN with no default route. Loopback is always offered last so a
-/// same-machine test still works.
+/// covers a LAN with no default route. Sorted LAN-first (see `lan_rank`);
+/// loopback is always offered last so a same-machine test still works.
 fn lan_urls(port: u16) -> Vec<String> {
-    let mut ips: Vec<String> = Vec::new();
+    let mut ips: Vec<Ipv4Addr> = Vec::new();
     {
         let mut push = |ip: Ipv4Addr| {
-            let s = ip.to_string();
-            if !ip.is_loopback() && !ip.is_unspecified() && !ips.contains(&s) {
-                ips.push(s);
+            if !ip.is_loopback() && !ip.is_unspecified() && !ips.contains(&ip) {
+                ips.push(ip);
             }
         };
         if let Ok(u) = UdpSocket::bind(("0.0.0.0", 0)) {
@@ -267,7 +337,7 @@ fn lan_urls(port: u16) -> Vec<String> {
             }
         }
     }
-    let mut out: Vec<String> = ips
+    let mut out: Vec<String> = sort_lan_ips(ips)
         .into_iter()
         .map(|ip| format!("ws://{ip}:{port}"))
         .collect();
@@ -776,7 +846,7 @@ async fn revert_failed_guest(app: &AppHandle, own_tx: &mpsc::UnboundedSender<Str
 
 async fn guest_run(
     app: AppHandle,
-    url: String,
+    urls: Vec<String>,
     join_frame: String,
     mut rx: mpsc::UnboundedReceiver<String>,
     own_tx: mpsc::UnboundedSender<String>,
@@ -785,25 +855,38 @@ async fn guest_run(
     // revert runs *before* the `error` frame, so the state the next `room_join`
     // sees and the frame the UI reacts to always agree (D2).
     let out = Sink::App(app.clone());
-    let connected = tokio::time::timeout(Duration::from_secs(8), connect(&url)).await;
-    let mut ws = match connected {
-        Err(_) => {
+    // D6: try every advertised address in order — the first is whatever the
+    // host minted first (possibly an unroutable VPN/emulator-NAT interface),
+    // so one dead candidate must not fail the join. Short budget each; the
+    // last failure is reported verbatim, same shapes as the single-shot dial.
+    let mut last_err: Option<String> = None;
+    let mut ws = None;
+    let mut reached = String::new();
+    for url in &urls {
+        match tokio::time::timeout(Duration::from_secs(DIAL_PER_ADDR_SECS), connect(url)).await {
+            Ok(Ok(w)) => {
+                reached = url.clone();
+                ws = Some(w);
+                break;
+            }
+            Err(_) => {
+                last_err = Some(format!("Could not reach {url} — timed out."));
+            }
+            Ok(Err(e)) => {
+                last_err = Some(format!("Could not reach {url}: {e}"));
+            }
+        }
+    }
+    let mut ws = match ws {
+        Some(w) => w,
+        None => {
             revert_failed_guest(&app, &own_tx).await;
             out.send(&err_frame(
                 "connect_failed",
-                format!("Could not reach {url} — timed out."),
+                last_err.unwrap_or_else(|| "Could not reach the room.".to_string()),
             ));
             return;
         }
-        Ok(Err(e)) => {
-            revert_failed_guest(&app, &own_tx).await;
-            out.send(&err_frame(
-                "connect_failed",
-                format!("Could not reach {url}: {e}"),
-            ));
-            return;
-        }
-        Ok(Ok(ws)) => ws,
     };
 
     if ws
@@ -814,7 +897,7 @@ async fn guest_run(
         revert_failed_guest(&app, &own_tx).await;
         out.send(&err_frame(
             "connect_failed",
-            format!("Could not reach {url}."),
+            format!("Could not reach {reached}."),
         ));
         return;
     }
@@ -1043,20 +1126,26 @@ pub async fn room_open(
 
 /// Shared dial-and-spawn body for both join entries: guard first, then
 /// mutate — nothing after the guard can latch `Mode::Guest` on a failure
-/// (D2/P32). The task keeps its own sender so a failed dial can identify
+/// (D2/P32). Every candidate address rides one spawned task that tries them
+/// in order (D6); the task keeps its own sender so a failed dial can identify
 /// *its* mode before reverting it.
 fn begin_join(
     app: AppHandle,
     mode: &mut Mode,
-    host: &str,
-    port: u16,
+    candidates: &[(String, u16)],
     code: &str,
     name: Option<&str>,
 ) -> Result<(), String> {
     if !matches!(*mode, Mode::Idle) {
         return Err("Leave the current room before joining another.".into());
     }
-    let url = format!("ws://{host}:{port}/ws");
+    if candidates.is_empty() {
+        return Err("That doesn't look like an invite link.".into());
+    }
+    let urls: Vec<String> = candidates
+        .iter()
+        .map(|(host, port)| format!("ws://{host}:{port}/ws"))
+        .collect();
     let join_frame = json!({
         "t": "join",
         "v": 1,
@@ -1067,7 +1156,7 @@ fn begin_join(
     let (tx, rx) = mpsc::unbounded_channel();
     let own_tx = tx.clone();
     *mode = Mode::Guest { tx };
-    tokio::spawn(guest_run(app, url, join_frame, rx, own_tx));
+    tokio::spawn(guest_run(app, urls, join_frame, rx, own_tx));
     Ok(())
 }
 
@@ -1084,7 +1173,7 @@ pub async fn room_join(
 ) -> Result<(), String> {
     let (host, port) = parse_room_addr(&addr)?;
     let mut mode = state.inner.lock().await;
-    begin_join(app, &mut mode, &host, port, &code, name.as_deref())
+    begin_join(app, &mut mode, &[(host, port)], &code, name.as_deref())
 }
 
 /// Connect by the one pasted invite link — canonical `trancemusic://join?…`
@@ -1098,9 +1187,9 @@ pub async fn room_join_uri(
     uri: String,
     name: Option<String>,
 ) -> Result<(), String> {
-    let (host, port, code) = parse_invite(&uri)?;
+    let (candidates, code) = parse_invite(&uri)?;
     let mut mode = state.inner.lock().await;
-    begin_join(app, &mut mode, &host, port, &code, name.as_deref())
+    begin_join(app, &mut mode, &candidates, &code, name.as_deref())
 }
 
 /// Host: broadcast authoritative playback state. Guest/idle: refused —
@@ -1497,13 +1586,96 @@ mod tests {
         );
         assert_eq!(
             parse_invite(&uri).unwrap(),
-            ("192.168.1.5".into(), 8787, "ABCD2345".into())
+            (vec![("192.168.1.5".into(), 8787)], "ABCD2345".into())
         );
         // Unknown query params are ignored — the format stays forward-compatible.
         assert_eq!(
             parse_invite("trancemusic://join?x=1&host=10.0.0.2&port=9000&code=zzzz1234&y=2")
                 .unwrap(),
-            ("10.0.0.2".into(), 9000, "ZZZZ1234".into())
+            (vec![("10.0.0.2".into(), 9000)], "ZZZZ1234".into())
+        );
+    }
+
+    #[test]
+    fn parse_invite_collects_fallback_hosts() {
+        // D6: the primary is whatever the host minted first (possibly an
+        // emulator-NAT or VPN address); every host2..K is a fallback the
+        // dialer tries in order. Same port for all — one room, one server.
+        let (addrs, code) = parse_invite(
+            "trancemusic://join?host=10.0.2.16&port=8787&code=ABCD2345&host2=127.0.0.1&host3=192.168.1.5",
+        )
+        .unwrap();
+        assert_eq!(code, "ABCD2345");
+        assert_eq!(
+            addrs,
+            vec![
+                ("10.0.2.16".into(), 8787),
+                ("127.0.0.1".into(), 8787),
+                ("192.168.1.5".into(), 8787),
+            ]
+        );
+        // A bad extra never kills a good primary — skipped, not fatal — and
+        // the LAN gate applies to extras too (no public smuggling).
+        let (addrs, _) = parse_invite(
+            "trancemusic://join?host=192.168.1.5&port=8787&code=ABCD2345&host2=8.8.8.8&host3=&host4=192.168.1.6",
+        )
+        .unwrap();
+        assert_eq!(
+            addrs,
+            vec![("192.168.1.5".into(), 8787), ("192.168.1.6".into(), 8787),]
+        );
+    }
+
+    #[test]
+    fn fallback_hosts_are_capped() {
+        let mut uri = "trancemusic://join?host=192.168.1.5&port=8787&code=ABCD2345".to_string();
+        for i in 2..=20 {
+            uri.push_str(&format!("&host{i}=192.168.1.{i}"));
+        }
+        let (addrs, _) = parse_invite(&uri).unwrap();
+        assert_eq!(addrs.len(), 1 + MAX_FALLBACK_HOSTS);
+    }
+
+    #[test]
+    fn invite_from_appends_fallback_hosts() {
+        let urls = vec![
+            "ws://10.0.2.16:8787".to_string(),
+            "ws://192.168.1.5:8787".to_string(),
+            "ws://127.0.0.1:8787".to_string(),
+        ];
+        assert_eq!(
+            invite_from(&urls, "ABCD2345"),
+            "trancemusic://join?host=10.0.2.16&port=8787&code=ABCD2345&host2=192.168.1.5&host3=127.0.0.1"
+        );
+    }
+
+    #[test]
+    fn lan_ordering_prefers_real_lans() {
+        use std::net::Ipv4Addr;
+        let v = |a: &[[u8; 4]]| {
+            a.iter()
+                .map(|o| Ipv4Addr::new(o[0], o[1], o[2], o[3]))
+                .collect::<Vec<_>>()
+        };
+        // Input in worst order: loopback-ish, emulator NAT, link-local, corp
+        // 10.x, then the real LANs — output must lead with the real LANs.
+        let sorted = sort_lan_ips(v(&[
+            [10, 0, 2, 16],
+            [169, 254, 9, 9],
+            [10, 9, 9, 9],
+            [172, 20, 3, 4],
+            [192, 168, 1, 5],
+        ]));
+        let s = sorted.iter().map(|ip| ip.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            s,
+            vec![
+                "192.168.1.5",
+                "172.20.3.4",
+                "10.0.2.16",
+                "10.9.9.9",
+                "169.254.9.9"
+            ]
         );
     }
 
@@ -1512,16 +1684,19 @@ mod tests {
         // The composite every old link, QR and probe hands out.
         assert_eq!(
             parse_invite("ws://192.168.1.5:8787 · ABCD2345").unwrap(),
-            ("192.168.1.5".into(), 8787, "ABCD2345".into())
+            (vec![("192.168.1.5".into(), 8787)], "ABCD2345".into())
         );
         // Typed by hand: address + code, port optional, code case-insensitive.
         assert_eq!(
             parse_invite("192.168.1.5 abcd2345").unwrap(),
-            ("192.168.1.5".into(), DEFAULT_PORT, "ABCD2345".into())
+            (
+                vec![("192.168.1.5".into(), DEFAULT_PORT)],
+                "ABCD2345".into()
+            )
         );
         assert_eq!(
             parse_invite("10.0.0.2:9000,ABCD2345").unwrap(),
-            ("10.0.0.2".into(), 9000, "ABCD2345".into())
+            (vec![("10.0.0.2".into(), 9000)], "ABCD2345".into())
         );
         // The LAN gate applies to legacy links too — same rule as parse_room_addr.
         assert!(parse_invite("ws://8.8.8.8:8787 · ABCD2345").is_err());
@@ -1565,7 +1740,7 @@ mod tests {
         ];
         assert_eq!(
             invite_from(&urls, "ABCD2345"),
-            "trancemusic://join?host=10.96.197.104&port=8787&code=ABCD2345"
+            "trancemusic://join?host=10.96.197.104&port=8787&code=ABCD2345&host2=127.0.0.1"
         );
         // No usable address → no link (honest empty, never "undefined").
         assert_eq!(invite_from(&[], "ABCD2345"), "");

@@ -96,6 +96,34 @@ a deliberate Leave or host-close does not.
 **No approval queue in v1** — the code *is* the credential on a LAN you
 already trust (see §7). Approval/kick is milestone-2 scope if you want it.
 
+### 3.1 Invite link + multi-address dialing (v1.1, 2026-10-11)
+
+One address is a single point of failure: the default-route interface the
+host mints (a VPN, a dock NIC, the emulator's 10.0.2.16 NAT) is often not
+the one the guest can route — the desktop read exactly that invite in the
+2026-10-11 report (`host=10.0.2.16… timed out`, D6 below).
+
+- **Mint:** `invite_uri` appends every further `lan_urls` entry as
+  `&host2=…&host3=…` (each validated private/loopback like `host`; the QR,
+  Copy button and `invite` field all carry the full string). Old builds and
+  both JS `parseInvite`s ignore unknown params and join via `host` — links
+  stay cross-version readable.
+- **Dial:** `room_join_uri`/`room_join` parse *before* any mode mutation
+  (D2 rule kept) and `guest_run` tries every candidate in order with a short
+  per-address timeout; first success wins, the last error is reported
+  verbatim. Total budget unchanged (~8 s) — a dead first address now costs
+  ~2 s, not the whole join.
+- **Order:** `lan_urls` sorts real LANs first (`192.168/16`, `172.16/12`),
+  then `10/8` + link-local (emulator NAT and corp LANs both live here —
+  still tried, just later), loopback last. Order is a speed hint, never a
+  filter: every candidate is dialed.
+- **Emulator ↔ PC is still tunnels, not magic:** an emulator-NAT host
+  (10.0.2.16) is unreachable from the PC by construction — `adb forward
+  tcp:8787` + guest dials `127.0.0.1` (direction A); a PC host reached from
+  the emulator needs `adb reverse tcp:8787` + the device dials `127.0.0.1`
+  (direction B). The try-all dialer makes both work through the pasted
+  multi-host invite with zero manual address surgery (§10 rows 8–9).
+
 ## 4. Playback synchronization (the "listen simultaneously" part)
 
 Host-authoritative timeline, guest drift correction:
@@ -314,6 +342,8 @@ bye regression checks. Nothing here pushes (AGENTS rule 1).
 | 5 | `node app/tests/live-lan-join.mjs` | **real LAN** `ws://<pc-ip>:8787` — removes all adb tunnels first | every check PASS, `LAN-JOIN exit=0` — incl. guest `room_info → idle` + rejoin after host bye (D5) |
 | 6 | `node app/tests/live-reverse-pair.mjs` | adb-forward (Android host ↔ desktop guest) | `REVERSE-PAIR exit=0` (19 checks) — incl. D4 pause/resume broadcast and the desktop-side D5 revert + rejoin |
 | 7 | `node app/tests/live-scale.mjs` | desktop host + node guests (N=4/8/16) | fan-out chat+playback to all N; 17th `room_full`; drop+rejoin; host close then reopen accepts a join |
+| 8 | emulator hosts a room, `adb forward tcp:8787 tcp:8787`, desktop joins with the pasted multi-host invite | emulator-NAT first address (unreachable) + loopback-via-forward | join succeeds through the fallback candidate; first address fails fast (~2 s, not ~8 s) — D6/A direction. VERIFIED 2026-10-11: invite `host=10.0.2.16…&host2=127.0.0.1`, desktop guest joined in **518 ms**, presence both sides, chat desktop→emulator delivered |
+| 9 | desktop hosts a room, `adb reverse tcp:8787 tcp:8787`, emulator joins with the pasted multi-host invite | PC-LAN address (unreachable from emulator NAT) + loopback-via-reverse | join succeeds through the fallback candidate — D6/B direction. VERIFIED 2026-10-11: invite `host=192.168.56.1…&host2=10.96.197.104&host3=127.0.0.1`, emulator guest joined in **524 ms**, chat emulator→desktop delivered |
 
 Known traps (each cost real time during Tasks 6–7):
 - **CLI skew (P28):** `npx tauri …` from the repo root resolves the *global*
@@ -414,6 +444,19 @@ navigation; header comment records the source).
 > the server's own frame is forwarded (no synthetic second toast), and the
 > socket is closed so the host's drain completes. Affects desktop and mobile
 > guests alike — both run this one Rust path.
+
+> **Defect (D6, reported 2026-10-11 — fixed 2026-10-11, §3.1).** Desktop
+> guest could not join an Android-hosted room: the pasted invite read
+> `trancemusic://join?host=10.0.2.16&port=8787&code=…` and the join died
+> verbatim `Could not reach ws://10.0.2.16:8787/ws — timed out.`
+> Cause, two halves: (1) `lan_urls` mints the default-route interface first,
+> which on the emulator is its internal NAT address — unreachable from any
+> other machine by construction; (2) the dialer tried exactly one address,
+> so a dead `urls[0]` was a total failure. Same shape threatens the reverse
+> direction whenever the desktop's default route is a VPN/dock NIC. **Fix:**
+> multi-host invite (`&host2…`, old readers ignore it) + try-every-candidate
+> dial + LAN-first ordering; emulator↔PC pairs keep using `adb
+> forward`/`reverse` with the `127.0.0.1` candidate (§3.1, §10 rows 8–9).
 
 **Shared code:** one reducer for both surfaces — `app/src/room.js` (contract
 §6a) imported by desktop `social.js` and mobile

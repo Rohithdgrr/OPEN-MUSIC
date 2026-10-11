@@ -1308,3 +1308,35 @@ its UI never loads, "make it show like Jam").
 | Gates/build | `node --check` ×3, eslint clean, `npm test` **404/404**; debug APK **30.98 MiB** (`BUILD_EXIT=0`), `adb install -r` Success |
 | Traps | PS `//FI`/`//F` args + bare `echo` die in PS5 (use `Get-Process`, `Write-Host`); `echo` of exotic Unicode fails (write files, don't print); CDP `const` persists per page context — redeclare kills later evals, use fresh IIFE names; `git show > file` writes UTF-16 (use `Set-Content -Encoding UTF8`); probe's own mode-toggle click opened the Jam sheet and contaminated later measurements |
 | Status | ✅ all three live-verified ✅ docs (branding, 06-features, P41, CHANGELOG) + gate ⏳ **uncommitted, unpushed** (rule 1; identity still noreply) |
+
+## 2026-10-11c — Push record: commit `7b79cde` on `main` (pushed, in sync)
+
+User said "push code to github". Procedure per rule 8, each a separate
+command: `git fetch` + `git log origin/main..HEAD` (empty — in sync, no
+riders), fixed the repo-local identity first (`user.name` was already
+`Rohithdgrr`; `user.email` was the noreply address → set repo-local to
+`rohit93dgrr@gmail.com`), staged (26 modified, 0 untracked — the whole
+11b batch and nothing else), committed, amended once for a body typo
+(pre-push, safe), re-verified range (exactly `7b79cde`, author
+`Rohithdgrr <rohit93dgrr@gmail.com>`), then pushed:
+`12cdb12..7b79cde  main -> main`. Post-push ahead-range empty,
+`origin/main` = `7b79cde`, tree clean. (PowerShell `git push` exit-1 via
+stderr is spurious — the `main -> main` line + empty range are the proof.)
+
+## 2026-10-11d — Jam both-directions fix: multi-host invite + try-all dial (D6, verified live both ways)
+
+User: android-mobile-as-host + desktop-as-guest "is not working" (screenshot:
+`Could not reach ws://10.0.2.16:8787/ws — timed out` on a
+`host=10.0.2.16` invite); make vice-versa work too, both properly.
+
+| Item | Evidence |
+|---|---|
+| Diagnosis | `lan_urls` mints the default-route interface first = emulator NAT `10.0.2.16` (unreachable off-device by construction); the dialer tried exactly one address. Same shape threatens desktop hosts on VPN/dock NICs |
+| Spec first | `listen-together.md` §3.1 (v1.1 multi-host + dial rule + ordering + tunnel runbook), §12 D6, §10 gate rows 8–9, mobile P42 |
+| Implementation (`room.rs` only — both surfaces run this core, no JS needed) | `parse_invite` → `(candidates, code)` (`&host2…`, bad extras skipped, cap 8, LAN gate on all); `invite_from` appends fallbacks; `lan_urls` sorts 192.168 → 172.16 → 10.x → rest, loopback last; `begin_join`/`guest_run` try all at ~2 s each, last error verbatim, D2 ordering kept |
+| TDD | 4 new tests RED first (2 impl bugs caught by them: take-before-dedup cap, link-local rank), then GREEN; old invite tests re-shaped |
+| Gates | `cargo fmt` clean, `cargo clippy -D warnings` clean, `cargo test --lib` **206/206**, `npm test` **404/404** |
+| Live A (emulator host → desktop guest, `adb forward`) | invite `host=10.0.2.16…&host2=127.0.0.1`; desktop joined in **518 ms**; joined/history/presence + chat desktop→emulator delivered |
+| Live B (desktop host → emulator guest, `adb reverse`) | invite `host=192.168.56.1…&host2=10.96.197.104&host3=127.0.0.1`; emulator joined in **524 ms**; presence + chat emulator→desktop delivered |
+| Cleanup | both rooms closed (`idle`/`idle`), tunnels removed; desktop app + emulator left running |
+| Status | ✅ spec + code + gates + both directions live ⏳ **committed locally, not pushed** (rule 1 — awaiting order) |
