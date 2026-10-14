@@ -22,6 +22,11 @@ Description: |-
 AntiFeatures:
   - NonFreeNet
 
+# F-Droid signs with its own key: F-Droid installs can't update GitHub-APK
+# installs in place (uninstall first). versionCode must keep rising with
+# each release — after bumping `version`, confirm `tauri.properties`
+# advanced it (5001 for 0.5.1); set it explicitly if it didn't.
+
 RepoType: git
 Repo: https://github.com/Rohithdgrr/OPEN-MUSIC
 
@@ -30,15 +35,18 @@ Builds:
     versionCode: 5001
     commit: v0.5.1
     # NOTE: the gradle project (gen/android) is generated, not committed.
-    # The recipe below is UNPROVEN on the F-Droid buildserver — the Node.js
-    # + `tauri android init` chain is the expected friction point. If the
-    # packagers reject it, IzzyOnDroid (pulls our signed GitHub APK, no
-    # server build) is the fallback lane.
+    # Verified 2026-10-14: `tauri android init --ci` runs non-interactively,
+    # so the server can generate it. Node.js arrives via apt below; the Rust
+    # Android targets ride the project's rust-toolchain pin through rustup.
+    # Untested on F-Droid infra — their CI on the MR is the first real proof.
     subdir: app/src-tauri/gen/android
+    sudo:
+      - apt-get update
+      - apt-get install -y nodejs npm
+    prebuild:
+      - cd app && npm ci --no-audit --no-fund && npx tauri android init --ci
     gradle:
       - yes
-    prebuild:
-      - cd app && npm ci --no-audit --no-fund && npx tauri android init
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags
