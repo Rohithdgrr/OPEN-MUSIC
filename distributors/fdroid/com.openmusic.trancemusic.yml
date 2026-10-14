@@ -1,0 +1,46 @@
+# DRAFT — NOT YET SUBMITTED, EXPECT PACKAGER ITERATION (see docs/distribution.md §F-Droid)
+Categories:
+  - Multimedia
+License: MIT
+AuthorName: Rohithdgrr
+WebSite: https://rohithdgrr.github.io/OPEN-MUSIC/
+SourceCode: https://github.com/Rohithdgrr/OPEN-MUSIC
+IssueTracker: https://github.com/Rohithdgrr/OPEN-MUSIC/issues
+Changelog: https://github.com/Rohithdgrr/OPEN-MUSIC/blob/main/CHANGELOG.md
+
+AutoName: OpenMusic
+Summary: Bit-perfect streaming music player with offline vault
+Description: |-
+  OpenMusic streams music through a local on-device relay, keeps an
+  offline vault, shows synced lyrics and can play in sync with nearby
+  devices over LAN Jam rooms. No account needed; updates are signed.
+
+  Streams come from third-party catalog services, so a network connection
+  is needed for anything not saved to the vault.
+
+# Streams resolve against proprietary catalog APIs.
+AntiFeatures:
+  - NonFreeNet
+
+RepoType: git
+Repo: https://github.com/Rohithdgrr/OPEN-MUSIC
+
+Builds:
+  - versionName: 0.5.1
+    versionCode: 5001
+    commit: v0.5.1
+    # NOTE: the gradle project (gen/android) is generated, not committed.
+    # The recipe below is UNPROVEN on the F-Droid buildserver — the Node.js
+    # + `tauri android init` chain is the expected friction point. If the
+    # packagers reject it, IzzyOnDroid (pulls our signed GitHub APK, no
+    # server build) is the fallback lane.
+    subdir: app/src-tauri/gen/android
+    gradle:
+      - yes
+    prebuild:
+      - cd app && npm ci --no-audit --no-fund && npx tauri android init
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.5.1
+CurrentVersionCode: 5001

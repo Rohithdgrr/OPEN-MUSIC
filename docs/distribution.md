@@ -47,6 +47,24 @@ References: [manifest spec](https://learn.microsoft.com/en-us/windows/package-ma
 [submit guide](https://learn.microsoft.com/en-us/windows/package-manager/package/submit),
 [wingetcreate](https://github.com/microsoft/winget-create).
 
+## F-Droid (main repo) — high friction, draft prepared
+
+`distributors/fdroid/com.openmusic.trancemusic.yml` is a best-effort draft:
+MIT ✓, tags ✓, no GMS deps ✓, `NonFreeNet` declared (proprietary catalog
+APIs) — but two structural risks: (1) our gradle project is *generated*
+(`gen/` is gitignored), so the recipe must run `npm ci` + `tauri android
+init` on the buildserver, whose Node.js support is weak — no Tauri app is
+known to have cleared this yet; (2) F-Droid signs with its own key, so
+F-Droid installs can't update our GitHub APKs in place (uninstall first).
+
+Your steps (need a GitLab account — can't do these for you): file an RFP
+issue at `gitlab.com/fdroid/rfp`, then fork `fdroiddata`, add the metadata
+as `metadata/com.openmusic.trancemusic.yml`, open MR `New app: OpenMusic`,
+and answer the packagers (expect pushback on the init chain).
+
+Fast lane, same APK and cert, no server build: **IzzyOnDroid** pulls our
+signed GitHub releases directly — say the word and I'll prep that instead.
+
 ## Scoop (untested)
 
 `distributors/scoop/openmusic.json` installs the NSIS build with `/S`.
