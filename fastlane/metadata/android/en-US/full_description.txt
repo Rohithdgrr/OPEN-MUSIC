@@ -1,0 +1,11 @@
+OpenMusic is a free and open source music player focused on sound quality and offline control.
+
+Play full-quality streams through a local on-device relay, save songs to an offline vault with quota controls, follow synced lyrics, and keep playing in the background with the desktop widget.
+
+Host or join LAN Jam rooms to listen in sync with nearby devices: the host controls playback, guests follow automatically, with QR invite links and chat.
+
+No accounts, no Google services, no Firebase, no ads. Your library, vault and settings stay on your device.
+
+Network note: streams resolve against third-party catalog APIs (JioSaavn), so anything not saved to the vault needs a connection. Offline vault playback works without network.
+
+Source code, changelog and signed releases are published on GitHub. Updates ship as tagged releases with attached APKs.

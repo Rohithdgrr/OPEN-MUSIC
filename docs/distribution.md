@@ -8,7 +8,7 @@ Microsoft Store is **blocked** without an OV/EV code-signing certificate
 | GitHub Releases + site download center | free | direct installs, in-app updater | ✅ live (v0.5.1) |
 | winget | free | `winget install OpenMusic` discoverability | manifests in `distributors/winget/` (this doc §winget) |
 | Scoop bucket | free | dev-heavy audience, one-line installs | manifest in `distributors/scoop/` — **untested**, run the trial install first |
-| izzyOnDroid / F-Droid (Android) | free | FOSS store listings | not started |
+| izzyOnDroid / F-Droid (Android) | free | FOSS store listings | IzzyOnDroid request #727 open; Fastlane tree in-repo (§IzzyOnDroid); F-Droid recipe draft in `distributors/fdroid/` |
 
 SmartScreen impersonation warning stays on all of these until a trusted
 cert signs the binaries — expected, not a defect.
@@ -46,6 +46,22 @@ usually opens update PRs on its own once the package exists.
 References: [manifest spec](https://learn.microsoft.com/en-us/windows/package-manager/package/manifest),
 [submit guide](https://learn.microsoft.com/en-us/windows/package-manager/package/submit),
 [wingetcreate](https://github.com/microsoft/winget-create).
+
+## IzzyOnDroid (request #727 — open)
+
+Fastlane tree (minimum + strongly-recommended sets) lives at
+`fastlane/metadata/android/en-US/`: `title.txt`, `short_description.txt`
+(56/80), `full_description.txt`, `images/icon.png` (512px), 3 cropped
+`phoneScreenshots` (1080x2160, ratio 2.0 — raw captures are 1080x2400 and
+trip the validator), `changelogs/<versionCode>.txt` (ASCII, <500 B).
+
+Per release: add `changelogs/<newVersionCode>.txt` **before** tagging —
+IzzyOnDroid pulls Fastlane from the same tag as the APK. Screenshots are
+re-cropped from `docs/screenshots/mobile/` the same way.
+
+Known gap on the filed issue: "What did the tools help with" is empty and
+the manual-tests accountability box is unchecked — the owner must fill both
+in the browser (see issue #727).
 
 ## F-Droid (main repo) — high friction, draft prepared
 
