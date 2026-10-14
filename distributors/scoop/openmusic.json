@@ -1,0 +1,26 @@
+{
+    "version": "0.5.1",
+    "description": "Bit-perfect streaming music player with offline vault and synced lyrics.",
+    "homepage": "https://github.com/Rohithdgrr/OPEN-MUSIC",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Rohithdgrr/OPEN-MUSIC/releases/download/v0.5.1/OpenMusic_0.5.1_x64-setup.exe",
+            "hash": "DBB78E6E5A196D4BAE9F64634ABB48B13DD1C578F43901ACCACDB5107D835C04"
+        }
+    },
+    "installer": {
+        "script": "& \"$dir\\OpenMusic_0.5.1_x64-setup.exe\" /S"
+    },
+    "uninstaller": {
+        "script": "& \"$($env:ProgramFiles)\\OpenMusic\\uninstall.exe\" /S"
+    },
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Rohithdgrr/OPEN-MUSIC/releases/download/v$version/OpenMusic_$version_x64-setup.exe"
+            }
+        }
+    }
+}

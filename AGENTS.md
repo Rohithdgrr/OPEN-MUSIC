@@ -1385,3 +1385,6 @@ Fresh Pixel6_API36 boot + debug APK reinstall, real path search -> suggestion ta
 ## 2026-10-14b — Screenshot galleries: README + site (SimpMusic-grid style)
 
 Drove real UIs: desktop CDP captures (home/search/Gaali-Vaaluga nowplaying, 1536x794) + emulator adb captures (mobile light: home/search/np/settings/jam/chat). Kept every existing README shot (paths fixed after user's move to desktop/), added fresh v0.5.1 rows; site gained MOBILE SHELL portrait subsection (lightbox-compatible). Found via screenshots: hardcoded v0.3.0 About badge (settings.html + APP.version x2) -> 0.5.1. Dark mobile set deleted per user (light only).
+## 2026-10-14c — winget + Scoop manifests (Store blocked: no OV/EV cert)
+
+MS Store EXE/MSI route fails on self-signing (no workaround). Prepared free channels instead: winget 3-file manifest set (hashes from hosted v0.5.1 assets: MSI EDBA84..CF71, EXE DBB78E..C04) + untested Scoop NSIS manifest; JSON/YAML parse-checked (winget CLI absent on this box, PR bot validates). Record: docs/distribution.md. Fork+PR left to user (no GitHub auth here).
