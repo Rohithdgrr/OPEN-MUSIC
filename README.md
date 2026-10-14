@@ -2,7 +2,6 @@
 
 <div align="center">
 
-<img src="app/src/logo.png" alt="OPEN MUSIC logo" width="112" />
 
 # OpenMusic
 
