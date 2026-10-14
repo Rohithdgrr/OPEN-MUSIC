@@ -5,7 +5,7 @@
 // settings.js would drag the desktop shell into the mobile bundle.
 import { esc } from "../html.js";
 
-export const APP = { name: "OpenMusic", version: "0.3.0", id: "com.openmusic.trancemusic" };
+export const APP = { name: "OpenMusic", version: "0.5.1", id: "com.openmusic.trancemusic" };
 
 export const PLATFORM = /android/i.test(navigator.userAgent) ? "Android" : /iphone|ipad|ipod/i.test(navigator.userAgent) ? "iOS" : "Mobile";
 

@@ -41,6 +41,19 @@ no Liquid) so deploys bypass the Jekyll build that failed last time.
 Download regexes were already productName-agnostic, so the live v0.5.1
 assets resolve with no further changes.
 
+## Screenshot galleries (README + site)
+
+- New captures live under `docs/screenshots/desktop/` (3 fresh) and
+  `docs/screenshots/mobile/` (light theme); the pre-rebrand set moved from
+  `docs/screenshots/` root to `desktop/` untouched.
+- README `## Screenshots` keeps every existing shot (paths fixed) and adds
+  fresh v0.5.1 desktop + light-theme mobile rows, SimpMusic-grid style.
+- Site gallery gains a MOBILE SHELL subsection (portrait figures, own CSS,
+  lightbox picks them up via the shared `.gallery figure` selector).
+- Drive-by fix found by a screenshot: mobile About badge was hardcoded
+  `v0.3.0` in `screens/settings.html` (plus stale `APP.version` in
+  `settings.js`/`legal.js`) → `0.5.1`.
+
 ## Steps
 
 Version 0.5.0 → 0.5.1 in `tauri.conf.json` + `Cargo.toml` + `package.json`;

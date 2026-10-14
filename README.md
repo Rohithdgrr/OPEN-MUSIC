@@ -27,7 +27,7 @@
 *A 60-second tour of the v0.3.0 Windows build — Home, search, live playback with
 synced lyrics, Library, charts, album and artist pages, and the offline vault.*
 
-![OPEN MUSIC home screen](docs/screenshots/01-home.png)
+![OpenMusic home screen](docs/screenshots/desktop/d-home.png)
 
 ## What this is
 
@@ -108,41 +108,72 @@ exists on mobile, and what is absent from each) is in
 
 ## Screenshots
 
-All screenshots below are from the v0.3.0 Windows build, captured
-automatically from the running app.
+The library set below comes from earlier Windows builds; the fresh captures
+are v0.5.1 — desktop Windows build and the Android shell in light theme,
+taken from the running apps.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/02-search.png" alt="Search with instant suggestions"></td>
-<td width="50%"><img src="docs/screenshots/03-now-playing.png" alt="Now Playing with lyrics"></td>
+<td width="50%"><img src="docs/screenshots/desktop/02-search.png" alt="Search with instant suggestions"></td>
+<td width="50%"><img src="docs/screenshots/desktop/03-now-playing.png" alt="Now Playing with lyrics"></td>
 </tr>
 <tr>
 <td align="center"><em>Search — songs, albums, artists</em></td>
 <td align="center"><em>Now Playing — lyrics, bit-perfect badge</em></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/04-library.png" alt="Library with saved playlists and albums"></td>
-<td><img src="docs/screenshots/05-downloads.png" alt="Downloads and offline vault"></td>
+<td><img src="docs/screenshots/desktop/04-library.png" alt="Library with saved playlists and albums"></td>
+<td><img src="docs/screenshots/desktop/05-downloads.png" alt="Downloads and offline vault"></td>
 </tr>
 <tr>
 <td align="center"><em>Library — saved playlists, albums</em></td>
 <td align="center"><em>Downloads — offline vault on disk</em></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/06-charts.png" alt="Charts filtered in Playlists"></td>
-<td><img src="docs/screenshots/07-album.png" alt="Album detail with track list"></td>
+<td><img src="docs/screenshots/desktop/06-charts.png" alt="Charts filtered in Playlists"></td>
+<td><img src="docs/screenshots/desktop/07-album.png" alt="Album detail with track list"></td>
 </tr>
 <tr>
 <td align="center"><em>Charts — the platform's chart playlists</em></td>
 <td align="center"><em>Album — track list, download all</em></td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/08-artist.png" alt="Artist detail with catalogue"></td>
-<td><img src="docs/screenshots/09-widget.png" alt="Floating desktop widget" width="380"></td>
+<td><img src="docs/screenshots/desktop/08-artist.png" alt="Artist detail with catalogue"></td>
+<td><img src="docs/screenshots/desktop/09-widget.png" alt="Floating desktop widget" width="380"></td>
 </tr>
 <tr>
 <td align="center"><em>Artist — verified badge, catalogue</em></td>
 <td align="center"><em>Desktop widget — always on top</em></td>
+</tr>
+</table>
+
+### Fresh captures — desktop v0.5.1
+
+<table>
+<tr>
+<td><img src="docs/screenshots/desktop/d-home.png" alt="OpenMusic home with hero spotlight"></td>
+<td><img src="docs/screenshots/desktop/d-search.png" alt="Searching anirudh songs"></td>
+<td><img src="docs/screenshots/desktop/d-nowplaying.png" alt="Now Playing Gaali Vaaluga with live lyrics"></td>
+</tr>
+<tr>
+<td align="center"><em>Home — greeting, hero, charts</em></td>
+<td align="center"><em>Search — anirudh songs, 320 kbps cards</em></td>
+<td align="center"><em>Now Playing — Gaali Vaaluga, live Telugu lyrics</em></td>
+</tr>
+</table>
+
+### Fresh captures — Android shell, light theme
+
+<table>
+<tr>
+<td><img src="docs/screenshots/mobile/m-home-light.png" width="220" alt="Mobile home"></td>
+<td><img src="docs/screenshots/mobile/m-search-light.png" width="220" alt="Mobile search"></td>
+<td><img src="docs/screenshots/mobile/m-nowplaying-light.png" width="220" alt="Mobile Now Playing Gaali Vaaluga"></td>
+</tr>
+<tr>
+<td align="center"><em>Home — greeting, spotlight, charts</em></td>
+<td align="center"><em>Search — top result, 40 songs</em></td>
+<td align="center"><em>Now Playing — Gaali Vaaluga, queue, Jam row</em></td>
 </tr>
 </table>
 

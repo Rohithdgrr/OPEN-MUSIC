@@ -37,7 +37,7 @@ import { importCsvToPlaylist, readCsvFile } from "./importer.js";
 // ---------------------------------------------------------------- settings -
 // One native <dialog>, three entries and nothing else. The body swaps between
 // the menu and a single section, so a nested dialog is never needed.
-export const APP = { name: "OpenMusic", version: "0.3.0", id: "com.openmusic.trancemusic" };
+export const APP = { name: "OpenMusic", version: "0.5.1", id: "com.openmusic.trancemusic" };
 
 /// What to call this machine wherever the copy used to hard-code "Windows".
 export const PLATFORM = /windows/i.test(navigator.userAgent)

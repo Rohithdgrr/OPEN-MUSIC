@@ -1379,3 +1379,9 @@ so the rename ships as a patch version, not a re-tag.
 
 Site was stale two ways: old TRANCE MUSIC brand AND a failed Pages build that blocked even committed updates. Fix: brand OpenMusic, platforms Windows/Linux/Android, macOS tab + asset map + v0.3.0 fallback removed (fallback now v0.5.1 names/sizes), Mac UAs fall to default tab, real TRANCE MUSIC vault paths kept, .nojekyll added (no Liquid in page) so deploys skip Jekyll. Download regexes were already productName-agnostic — live v0.5.1 assets resolve untouched. Inline script 
 ode --check clean. Live fetch confirms OpenMusic + no-macOS copy.
+## 2026-10-14 — Sound verified audible on emulator (meter, not playhead)
+
+Fresh Pixel6_API36 boot + debug APK reinstall, real path search -> suggestion tap -> playList ('Gehra Hua'): playing rs:4, ct 88.45 -> 90.45, vol 1, unmuted, crossOrigin anonymous. Output metered via captureStream + analyser (ctx running): peak 121/127, RMS 36.08 = SOUND_OK. Probe outside repo (%TEMP%/opencode/verify-sound.mjs); no repo changes.
+## 2026-10-14b — Screenshot galleries: README + site (SimpMusic-grid style)
+
+Drove real UIs: desktop CDP captures (home/search/Gaali-Vaaluga nowplaying, 1536x794) + emulator adb captures (mobile light: home/search/np/settings/jam/chat). Kept every existing README shot (paths fixed after user's move to desktop/), added fresh v0.5.1 rows; site gained MOBILE SHELL portrait subsection (lightbox-compatible). Found via screenshots: hardcoded v0.3.0 About badge (settings.html + APP.version x2) -> 0.5.1. Dark mobile set deleted per user (light only).
