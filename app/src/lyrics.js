@@ -8,14 +8,9 @@ import { downloadTrack } from "./vault.js";
 import { lyricsCacheGet, lyricsCachePut } from "./store_db.js";
 
 const LYRICS_KEY_PREFIX = "lyr:id:";
-const AI_LYRICS_KEY_PREFIX = "lyr:ai:";
 
 function lyricsKey(track) {
   return LYRICS_KEY_PREFIX + (track.id || "");
-}
-
-function aiLyricsKey(track) {
-  return AI_LYRICS_KEY_PREFIX + (track.id || "") + ":" + (track.title || "").slice(0, 40);
 }
 
 export let lyricLines = $$(".lyric-line");
@@ -263,40 +258,6 @@ export async function loadLyrics(track) {
   }
 }
 
-/// AI-generated lyrics via Gemini. Falls back to placeholder on any error.
-export async function generateAiLyrics(track) {
-  const token = ++lyricToken;
-  const box = $("#lyrics-scroll-box");
-  if (box) {
-    box.replaceChildren();
-    const bar = document.createElement("div");
-    bar.className = "lyric-skeleton h-4 rounded-md animate-pulse bg-surface-container-high";
-    bar.style.width = "60%";
-    box.appendChild(bar);
-  }
-  try {
-    const data = await invoke("generate_ai_lyrics", {
-      title: track.title || "",
-      artist: track.artist || "",
-      album: track.album || "",
-      duration: track.duration_secs || 0,
-    });
-    if (token !== lyricToken) return;
-    if (data && data.lines && data.lines.length) {
-      renderLyrics({ source: "ai", lines: data.lines, title: data.title || track.title });
-      diag("lyrics", true, "ai");
-      // Cache AI lyrics so they're free next time.
-      lyricsCachePut(aiLyricsKey(track), data).catch(() => {});
-    } else {
-      setLyricsPlaceholder();
-    }
-  } catch (e) {
-    if (token !== lyricToken) return;
-    diag("lyrics", false, "ai: " + String(e).slice(0, 80));
-    setLyricsPlaceholder();
-  }
-}
-
 export function prefetchLyrics(track) {
   if (!track || !track.id) return;
   invoke("get_lyrics", {
@@ -404,11 +365,6 @@ $("#lyric-offset-plus")?.addEventListener("click", () => setLyricOffset(lyricOff
 $("#lyric-offset-reset")?.addEventListener("click", () => setLyricOffset(0));
 $("#toggle-translation-btn")?.addEventListener("click", () => {
   for (const sub of $$(".lyric-subtext")) sub.classList.toggle("hidden");
-});
-$("#btn-ai-lyrics")?.addEventListener("click", () => {
-  const t = queue[queueIndex]?.track;
-  if (!t) return;
-  generateAiLyrics(t);
 });
 $("#btn-fullscreen-lyrics")?.addEventListener("click", () => {
   const card = $("#lyrics-card");

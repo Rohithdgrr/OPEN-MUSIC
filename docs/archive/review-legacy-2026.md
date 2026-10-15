@@ -1,3 +1,12 @@
+> **ARCHIVED 2026-10-15 — history only, do not act on it.**
+> This review (written 2026-10-03) predates the modularized frontend, the
+> moka caches, atomic downloads, CI and the strict CSP. Its headline
+> findings are now false: caches are LRU+TTL bounded (`proxy.rs`),
+> `vault_file` streams ranges (`seek` + `take` + `Body::from_stream`),
+> downloads write `.part` + resume, `main.js` is 204 lines, CI + Dependabot
+> run on every push, and there is no `panic = "abort"`. Live status lives in
+> `AGENTS.md`; work is tracked there, not here.
+
 I now have a complete picture of the entire codebase — all 5 Rust modules (lib.rs, proxy.rs, official.rs, jiosaavn.rs, lyrics.rs), the full frontend (main.js ~3,900 lines, widget.js, widget.html), and the architecture. Let me compile the comprehensive review.
 
 ---

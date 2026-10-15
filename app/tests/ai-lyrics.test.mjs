@@ -56,6 +56,53 @@ test("bad keys and transport failures explain themselves", async () => {
   await assert.rejects(ai.fetchAiLyrics({ ...TRACK, id: "t5" }, { fetchFn: down }), /connection/);
 });
 
+test("a fully retired chain (404 everywhere) says to update the app, and the default chain starts live", async () => {
+  const gone = async () => ({ ok: false, status: 404, json: async () => ({ error: { message: "models/gemini-2.5-flash is not found" } }) });
+  await assert.rejects(ai.fetchAiLyrics({ ...TRACK, id: "t6" }, { fetchFn: gone }), /update the app/);
+  let seen = "";
+  await ai.fetchAiLyrics(
+    { ...TRACK, id: "t7" },
+    { fetchFn: async (url, opts) => (seen = url, okFetch("la la")(...[url, opts])) },
+  );
+  assert.match(seen, /models\/gemini-flash-latest:generateContent/);
+});
+
+test("an overloaded (503) or quota-limited (429) model falls through to the next id", async () => {
+  for (const status of [503, 429]) {
+    const seen = [];
+    let n = 0;
+    const flaky = async (url, opts) => {
+      seen.push(url);
+      n += 1;
+      if (n === 1) {
+        return { ok: false, status, json: async () => ({ error: { message: status === 503 ? "high demand" : "quota exceeded" } }) };
+      }
+      return okFetch("rescued line")(url, opts);
+    };
+    const got = await ai.fetchAiLyrics({ ...TRACK, id: `adv-${status}` }, { fetchFn: flaky });
+    assert.equal(got.text, "rescued line");
+    assert.equal(seen.length, 2, `status ${status} should fall through exactly once`);
+    assert.match(seen[0], /models\/gemini-flash-latest:generateContent/);
+    assert.match(seen[1], /models\/gemini-2\.5-flash:generateContent/);
+  }
+});
+
+test("every model down surfaces the provider message", async () => {
+  const down = async () => ({ ok: false, status: 503, json: async () => ({ error: { message: "high demand from provider" } }) });
+  await assert.rejects(ai.fetchAiLyrics({ ...TRACK, id: "t10" }, { fetchFn: down }), /high demand from provider/);
+});
+
+test("a pinned model is the only id tried", async () => {
+  const seen = [];
+  const gone = async (url) => (seen.push(url), { ok: false, status: 404, json: async () => ({ error: { message: "not found" } }) });
+  await assert.rejects(
+    ai.fetchAiLyrics({ ...TRACK, id: "t11" }, { fetchFn: gone, model: "gemini-2.0-flash" }),
+    /update the app/,
+  );
+  assert.equal(seen.length, 1);
+  assert.match(seen[0], /models\/gemini-2\.0-flash:generateContent/);
+});
+
 test("cache never grows without bound", async () => {
   for (let i = 0; i < 120; i += 1) {
     await ai.fetchAiLyrics({ ...TRACK, id: `cap-${i}` }, { fetchFn: okFetch(`song ${i}`) });

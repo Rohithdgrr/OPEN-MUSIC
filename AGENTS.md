@@ -70,16 +70,21 @@ desktop Leave button no longer returned to Solo).
   (`app/src`). Frontend has no bundler — JS/CSS are served as-is.
 - **Toolchain on this machine:** Rust 1.98.1 stable MSVC, Node v24.11.0,
   npm 11.6.1. No `gh` CLI, no `GITHUB_TOKEN`/`GH_TOKEN`, no `sccache`.
+  `cargo-audit 0.22.2` installed 2026-10-15 (`~/.cargo/bin`; advisory DB in
+  `~/.cargo/advisory-db`) — run it before claiming a lock is clean.
 - **Commands:**
-  - Tests: `npm test` (82 pass), `cd app/src-tauri; cargo test` (152 pass)
+  - Tests: `npm test` (413 pass), `cd app/src-tauri; cargo test` (206 pass;
+    `OP_OFFLINE=1 cargo test --lib` for a fast deterministic run)
   - Lint: `npm run lint` (eslint, clean)
   - Format: `cargo fmt --check` (clean)
   - Clippy: `cargo clippy --all-targets -- -D warnings` (clean)
   - Build dev: `npm run tauri dev` from repo root (root script delegates
     via `npm --prefix app`)
   - First build ~5 min (488 crates); incremental much faster
-- **CI workflows:** `ci.yml` (tests only), `linux.yml`, `macos.yml`,
-  `release.yml` (tag-driven), `ios.yml`.
+- **CI workflows:** `ci.yml` (windows+ubuntu matrix tests + **blocking**
+  `cargo audit` + rust-cache), `linux.yml`, `release.yml` (tag-driven).
+  `macos.yml`/`ios.yml` were deleted 2026-10-11 (scope = Windows / Linux /
+  Android).
 - **Repo:** `https://github.com/Rohithdgrr/OPEN-MUSIC`, public. Pages site:
   `https://rohithdgrr.github.io/OPEN-MUSIC/`
 
@@ -1388,3 +1393,77 @@ Drove real UIs: desktop CDP captures (home/search/Gaali-Vaaluga nowplaying, 1536
 ## 2026-10-14c — winget + Scoop manifests (Store blocked: no OV/EV cert)
 
 MS Store EXE/MSI route fails on self-signing (no workaround). Prepared free channels instead: winget 3-file manifest set (hashes from hosted v0.5.1 assets: MSI EDBA84..CF71, EXE DBB78E..C04) + untested Scoop NSIS manifest; JSON/YAML parse-checked (winget CLI absent on this box, PR bot validates). Record: docs/distribution.md. Fork+PR left to user (no GitHub auth here).
+
+## 2026-10-15 - Media surfaces live + mined browsers (uncommitted)
+
+| Item | Evidence |
+|---|---|
+| Android notification/lockscreen/widget WORKS | Fresh 31.1 MiB debug APK on emulator-5554: TMNative object live, notif 4201/MediaStyle/vis=PUBLIC + 3 actions, session PLAYING with real metadata, media-key pause + dispatch-play verified on the audio element, TmWidget provider registered, update broadcast crash-free. First build failed on addAction(PendingIntent, String) (no such overload) -> Notification.Action helper. Spec + run record: docs/android-media-widget.md; overlay app/src-tauri/android-overlay/, injector in app/build.sh |
+| Artists/Albums/Playlists/Charts browsers | Chips navigate to #/artists\|albums\|playlists\|charts (router + MOUNT); artists by mined weight + Liked/Downloaded/Following tabs, albums split Most-time vs Most-played, playlists Yours/Featured/Downloaded, charts editorial rank. Live: 110 artist + 106 album tiles with evidence, 9 chart rows, 34 featured playlists. recommend.js engine + recommend.test.mjs |
+| Latent fix: feat. split minted ". Guest" artists | shared leadArtists() (\bfeat\b\.? - trailing \b after optional dot can never match, backtracked and dropped the dot) |
+| Gemini model | gemini-2.0-flash shut down 2026-06-01 -> default gemini-2.5-flash + 404 branch; Lyrics Full View repaired (rounded-3xl missing from closest), tab-switch exits stage, NOW PLAYING eyebrow removed |
+| Gates | npm test 407/407, eslint clean |
+| NOT mine, do not stage | app/src/styles.css, docs/home-widget-enhancements.md (parallel session widget work) |
+
+Nothing committed or pushed (rule 1). Emulator left running with the build installed and playing.
+
+## 2026-10-15b - Home browse tiles (mobile UI/UX upgrade, uncommitted)
+
+User: improve the ui/ux of artist / playlists / charts in the homescreen chips, professionally.
+
+| Item | Evidence |
+|---|---|
+| Baseline bug measured BEFORE touching anything | The selected chip was invisible in light mode: theme CSS keys the invert on .bg-primary but the JS toggled bg-on-surface, so html:not(.dark) .home-cat-chip:not(.bg-primary) repainted the active pill white too. CDP on the old build: All = linear-gradient(rgb(255,255,255)...), color rgb(71,70,75) - identical to idle chips |
+| Redesign | The four destination chips became a labeled 2x2 browse grid (Artists/Albums/Playlists/Charts): invert icon squircle (.browse-tile-icon: obsidian in light, white in dark), label, live mined count, chevron; [data-nav] delegation (same path as See-all). All/Genres/Heavy Rotation stay chips = the shelf lens, now toggling .bg-primary so the selected pill reads selected |
+| Live counts, never fabricated | paintBrowseCount + BROWSE_NOUNS (pluralisation): artists/albums from the mount's own taste profile, playlists = deduped featured set, charts = feed chart list; honest fallback lines until a number exists |
+| Verified on device | Fresh 31.1 MiB debug APK on emulator-5554, CDP: grid 4/4 with counts 113 artists / 110 albums / 30 playlists / 9 charts; every icon glyph 20px wide (no missing-ligature fallback); all four tiles navigate (#/artists 113 rows, #/albums 110, #/charts 9, #/playlists Featured 32 - feed drift between two real fetches); Genres lens -> only the genres shelf visible, All restores 16/16; dark measured: icon white + black glyph, tile dark gradient, chip white + black |
+| Gates | npm test 410/410 (incl. new app/tests/home-browse.test.mjs, 3 tests), eslint clean, npm run css rebuilt (classes verified present in the compiled css) |
+| Docs first | docs/mobile/06-features.md 'Home browse tiles + filter chips (2026-10-15b)', CHANGELOG.md Unreleased |
+| NOT mine, do not stage | app/src/styles.css, docs/home-widget-enhancements.md (parallel widget work), plus newer parallel dirt: ci.yml, ROOM.MD, package-lock.json, src/index.html, lyrics.js, settings.js, review.md rename |
+| Screenshot for the eye | C:\Users\rohit\AppData\Local\Temp\opencode\home-browse.png (emulator capture, light home) |
+
+Nothing committed or pushed (rule 1). Emulator left running with the new build installed.
+
+## 2026-10-15c — Hardening pass ("implement now" on the 3-tier plan): audit gate ON, rustls advisories fixed, Gemini chain live, dead desktop button removed
+
+Executed Tier 1 + most of Tier 2 from the delivered plan. Docs updated with
+each change; **committed locally, not pushed** (rule 1). Parallel-session WIP
+(binders.js, router.js, recommend.js, screens, tailwind.css, build.sh,
+CHANGELOG.md, android-overlay/, mobile/index.html) deliberately NOT staged.
+
+| Item | Evidence |
+|---|---|
+| **S1 audit gate ON** | `ci.yml`: dropped `--ignore RUSTSEC-2020-0071 \|\| true` (the ignore no longer matched any locked crate — `time` is 0.3.55 — and `\|\| true` made the gate unable to fail). Now plain blocking `cargo audit`; warnings stay non-fatal (register: `docs/security-posture.md`). Record: `docs/cross-platform-ci.md` §2026-10-15 |
+| **First run caught real CVEs** | 4 advisories published 2026-10-14 against `rustls 0.23.45` (RUSTSEC-2026-0346…0349, via reqwest → tauri-plugin-updater). Fixed `cargo update -p rustls` → 0.23.46; re-audit **0 vulnerabilities**, 4 allowed warnings; `cargo build` exit 0; `OP_OFFLINE=1 cargo test --lib` 206/206 |
+| **S2 Gemini chain** | `mobile/ai-lyrics.js`: `AI_MODELS = [gemini-flash-latest, gemini-2.5-flash, gemini-flash-lite-latest]`; 404/429/503 falls through, 400/403 stops; `{model}` pin kept for tests. **Live with the user's key**: `gemini-flash-latest` 503 → `gemini-2.5-flash` **404** (key is "new") → `gemini-flash-lite-latest` **200**, 1011 chars of real lyrics. The old single-model code failed twice over on this exact key (probe: `%TEMP%\opencode\gemini-chain-probe.mjs`, key via transient env only) |
+| **S3 dead desktop button removed** | `#btn-ai-lyrics` invoked an unregistered `generate_ai_lyrics` and had no key UI / CSP origin; AI lyrics are mobile-only per `feature-list.md:125`. Removed: button (`index.html`), `generateAiLyrics` + `AI_LYRICS_KEY_PREFIX`/`aiLyricsKey` (`lyrics.js`), unused `GEMINI_KEY` export (`settings.js`) |
+| **P1 rust cache** | `swatinem/rust-cache@v2`, `workspaces: app/src-tauri -> target` on the ci matrix job (~488 crates compile cold) |
+| M1 review.md archived | → `docs/archive/review-legacy-2026.md` + banner naming the false claims; referenced by nothing |
+| M2 AGENTS.md facts fixed | test counts 82/152 → 413/206, CI workflow list corrected (`macos.yml`/`ios.yml` deleted 2026-10-11), cargo-audit noted |
+| M3 ROOM.MD frozen | banner: stale board, `AGENTS.md` is the live channel |
+| M5 lockfile drift | `app/package-lock.json` root version 0.4.0 → 0.5.1 (both fields; parse verified) |
+| S5 security register | new `docs/security-posture.md`: verified controls (file:line), accepted risks, the 4 allowed audit warnings with rationale, evidence limits |
+| S4 capabilities audit | already least-privilege — default = `core:default`; widget adds exactly 5 window perms, no shell/fs/http. Recorded in the security doc, no code change |
+
+**Gates:** `npm test` **413/413**, eslint clean (touched files), `node --check` ×3,
+`cargo build` exit 0, `OP_OFFLINE=1 cargo test --lib` **206/206**, `cargo audit`
+0 vulns. No Rust source changed (only `Cargo.lock`).
+
+**Left alone on purpose:** `app/src/survey.js` (untracked; deleting is
+unrecoverable and a prior session explicitly preserved it — still imported by
+nothing, user decides), P2 (boot lazy-imports — measure first; local protocol
+makes boot parse cost trivial), P3 (link.exe incremental number — needs a
+quiet window), M6 (docs index — YAGNI until the docs count grows), desktop AI
+lyrics implementation (needs key UI + CSP origin — offered, not built).
+
+**Staged files:** `.github/workflows/ci.yml`, `AGENTS.md`, `ROOM.MD`,
+`app/package-lock.json`, `app/src/index.html`, `app/src/lyrics.js`,
+`app/src/settings.js`, `app/src/mobile/ai-lyrics.js` (also carries the 15a
+session's superseded 2.5-flash/404 hunks — the chain subsumes them),
+`app/tests/ai-lyrics.test.mjs`, `app/src-tauri/Cargo.lock` (rustls; also
+carries an incidental `cssparser-macros` syn-edge flip 3.0.6 → 2.0.119 — the
+crate allows `>=2,<4`, both stay locked, `cargo check --locked` passes),
+`app/src/styles.css` + `docs/home-widget-enhancements.md` (this session's
+earlier widget-curve work — the 15b "do not stage" note refers to these, they
+are mine), `docs/archive/review-legacy-2026.md` (rename), docs:
+`cross-platform-ci.md`, `security-posture.md`, this entry.

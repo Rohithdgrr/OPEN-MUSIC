@@ -35,6 +35,13 @@ jobs:
             libssl-dev \
             build-essential
 
+      # ~488 crates compile on a cold runner; keep cargo's registry + target
+      # dir warm across runs, keyed by Cargo.lock. (~10 min saved per run.)
+      - name: Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -89,4 +96,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cargo-audit
-      - run: cargo audit --ignore RUSTSEC-2020-0071 || true
+      # Blocking since 2026-10-15: a vulnerability in the lock fails the run.
+      # Warnings (unmaintained / unsound / yanked upstreams) are listed but do
+      # not fail -- the current four are tracked in docs/security-posture.md.
+      # The old `--ignore RUSTSEC-2020-0071 || true` was removed: the advisory
+      # no longer matches any locked crate, and `|| true` made the gate unable
+      # to fail (same class as the pipefail lesson in docs/cross-platform-ci.md).
+      # Proof it works: on its first local run the gate caught four fresh
+      # rustls advisories (RUSTSEC-2026-0346..0349) -- fixed by locking
+      # rustls 0.23.46.
+      - name: cargo audit (blocking)
+        run: cargo audit

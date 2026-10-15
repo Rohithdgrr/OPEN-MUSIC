@@ -206,7 +206,6 @@ export const GAPLESS_KEY = "tm-gapless";
 export const REMEMBER_POS_KEY = "tm-remember-pos";
 export const PLAY_SPEED_KEY = "tm-play-speed";
 export const XFADE_KEY = "tm-xfade";
-export const GEMINI_KEY = "tm-gemini-key";
 export const prefStreamQuality = () => prefStr(STREAM_QUALITY_KEY, "320kbps");
 export const gaplessPref = () => prefStr(GAPLESS_KEY, "0") === "1";
 export const rememberPosPref = () => prefStr(REMEMBER_POS_KEY, "1") !== "0";

@@ -1,6 +1,29 @@
 # Cross-Platform Build & Test Documentation
 
-This document describes the CI/CD pipeline for building and testing TRANCE MUSIC on Linux and macOS.
+This document describes the CI/CD pipeline for building and testing OpenMusic on Linux, Windows and Android. The macOS sections below are **historical** (the Apple workflows were removed on 2026-10-11 when the platform scope became Windows + Linux + Android).
+
+## 2026-10-15 — Supply-chain gate made blocking + rust cache
+
+Current state of `.github/workflows/ci.yml` (the only workflow that runs on
+every push; `linux.yml` / `release.yml` build on demand):
+
+1. **`cargo audit` is blocking.** It used to be
+   `cargo audit --ignore RUSTSEC-2020-0071 || true`; the `|| true` made the
+   gate structurally unable to fail (same defect class as the `pipefail`
+   lesson below it), and the ignore no longer matched any locked crate
+   (`time` is 0.3.55; RUSTSEC-2020-0071 covers `time` < 0.2.23). Both were
+   removed. Vulnerabilities fail the run; the four **warnings** it prints
+   (unmaintained `proc-macro-error`, unsound `glib` and `lru`, yanked
+   `yoke-derive`) do not, and carry rationale in `docs/security-posture.md`.
+2. **First local run earned the gate** — it caught four advisories published
+   the previous day: RUSTSEC-2026-0346…0349 against `rustls 0.23.45`
+   (`reqwest` → `tauri-plugin-updater`). Fixed with `cargo update -p rustls`
+   → 0.23.46; re-audit 0 vulnerabilities; `cargo test --lib` 206/206;
+   `cargo build` exit 0.
+3. **Rust build cache** — `swatinem/rust-cache@v2` with
+   `workspaces: app/src-tauri -> target` on the matrix job: a cold runner
+   compiles ~488 crates before running a single test.
+
 
 ## Overview
 

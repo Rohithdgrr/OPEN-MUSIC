@@ -257,3 +257,17 @@ localStorage.setItem('widget-bounds', JSON.stringify({
 - Mini-player drag-to-reorder queue
 - Gesture controls (swipe to skip)
 - Notification integration
+
+## Curved card geometry (reference screenshot, 2026-10-15)
+
+Desktop widget matches the reference mini-player card: one uniformly rounded
+rectangle on the transparent `widget` window (`tauri.conf.json`:
+`transparent: true`, `decorations: false`, 380x204).
+
+- Outer `.tm-widget`: `border-radius: 26px` (≈13% of window height — the
+  reference proportion), 5px transparent gutter so the curve reads against
+  the desktop, `overflow: hidden`, hairline `rgba(255,255,255,0.15)` border.
+- `.tm-widget__art` / `__scrim` / `__mini::after`: `border-radius: inherit`
+  so blurred art never squares off a corner.
+- Inner pills stay capsule (`9999px`: format chip, seek/fill, round
+  transport buttons); cover stays `12px`. Only the outer card changed.

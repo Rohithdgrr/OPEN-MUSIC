@@ -10,7 +10,15 @@
 // when the cascade returns nothing.
 export const GEMINI_KEY = "tm-gemini-key";
 export const AI_LYRICS_KEY = "tm-ai-lyrics";
-const AI_MODEL = "gemini-2.0-flash";
+// Model ids rot: gemini-2.0-flash was shut down 2026-06-01, and by
+// 2026-10-15 gemini-2.5-flash already 404s for newly created keys ("no
+// longer available to new users"). So the call walks an ordered chain —
+// Google's rolling `-latest` aliases first (they track the current stable
+// model), then the pinned ids older keys still answer on. A retired (404),
+// overloaded (503) or per-model quota limit (429) falls through to the next
+// id; a bad key (400/403) stops immediately. Callers may still pass
+// { model } to pin one id (that is what the tests do).
+const AI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"];
 const CACHE_CAP = 100;
 
 export function getGeminiKey() {
@@ -96,33 +104,48 @@ export async function fetchAiLyrics(track, { fetchFn, model } = {}) {
     if (hit) return { text: hit, cached: true };
   }
   const run = fetchFn || fetch;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || AI_MODEL}:generateContent?key=${encodeURIComponent(key)}`;
-  let res;
-  try {
-    res = await run(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: promptFor(track) }] }] }),
-    });
-  } catch {
-    throw new Error("Couldn't reach Gemini — check your connection");
-  }
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {}
-  if (!res || !res.ok) {
-    const msg = data?.error?.message || `HTTP ${res ? res.status : "?"}`;
-    if (res && (res.status === 400 || res.status === 403)) {
+  const models = model ? [model] : AI_MODELS;
+  let lastMsg = "";
+  let retiredOnly = true;
+  for (const m of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${encodeURIComponent(key)}`;
+    let res;
+    try {
+      res = await run(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: promptFor(track) }] }] }),
+      });
+    } catch {
+      throw new Error("Couldn't reach Gemini — check your connection");
+    }
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {}
+    if (res && res.ok) {
+      const text = extractText(data);
+      if (!text) throw new Error("Gemini returned empty lyrics");
+      if (/^unknown\.?$/i.test(text)) throw new Error("Gemini doesn't know this song either");
+      if (id) writeAiCache(id, text);
+      return { text, cached: false };
+    }
+    const status = res ? res.status : 0;
+    if (status === 400 || status === 403) {
       throw new Error("Gemini rejected the key — check it in Settings");
     }
-    throw new Error(`Gemini error: ${String(msg).slice(0, 120)}`);
+    // Retired model, overload, or per-model quota: the next id may answer.
+    if (status === 404 || status === 429 || status === 503) {
+      lastMsg = data?.error?.message || `HTTP ${status}`;
+      if (status !== 404) retiredOnly = false;
+      continue;
+    }
+    throw new Error(`Gemini error: ${String(data?.error?.message || `HTTP ${status}`).slice(0, 120)}`);
   }
-  const text = extractText(data);
-  if (!text) throw new Error("Gemini returned empty lyrics");
-  if (/^unknown\.?$/i.test(text)) throw new Error("Gemini doesn't know this song either");
-  if (id) writeAiCache(id, text);
-  return { text, cached: false };
+  if (retiredOnly) {
+    throw new Error("Gemini has no available model — update the app to restore AI lyrics");
+  }
+  throw new Error(`Gemini error: ${String(lastMsg).slice(0, 120)}`);
 }
 
 export function aiCopyright() {

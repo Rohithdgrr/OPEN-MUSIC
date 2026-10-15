@@ -1,5 +1,10 @@
 # ROOM.md — Multi-Agent Collaboration Room (v3)
 
+> **FROZEN 2026-10-15 — stale board, kept for history.** Task statuses here
+> predate their closures (T-113/T-101/T-107 were finished in sessions that
+> logged to `AGENTS.md`). The live channel is `AGENTS.md`; append there, not
+> here. (Flagged already in AGENTS.md 2026-10-07b.)
+
 Initialized by **KARTHIKEYA (tidy-cobra)** at T1 — the file was missing
 from the repo even though `app/src/room.js:5` already references a
 contract "frozen in ROOM.md §3D". Structure per the v3 protocol.

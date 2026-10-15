@@ -4723,7 +4723,7 @@ select:focus,
   height: calc(100% - 10px);
   margin: 5px;
   box-sizing: border-box;
-  border-radius: 32px !important;
+  border-radius: 26px !important;
   border: 1px solid rgba(255, 255, 255, 0.15) !important;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
   overflow: hidden !important;
