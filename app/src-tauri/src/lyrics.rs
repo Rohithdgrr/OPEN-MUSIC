@@ -36,6 +36,12 @@ pub struct Lyrics {
     /// `(seconds, line)` parsed out of an LRC body, ascending.
     pub synced: Vec<(f64, String)>,
     pub copyright: Option<String>,
+    /// True when this answer was served from an aged disk copy because the
+    /// providers failed (offline-after-first-fetch, `proxy::cached_lyrics`).
+    /// Never persisted: only fresh provider answers reach the disk tier,
+    /// and `#[serde(default)]` reads pre-flag files back.
+    #[serde(default)]
+    pub stale: bool,
 }
 
 impl Lyrics {
@@ -116,6 +122,7 @@ pub async fn fetch(
             plain: Some(plain),
             synced: Vec::new(),
             copyright,
+            stale: false,
         });
     }
 
@@ -150,6 +157,7 @@ fn from_hit(h: &Hit) -> Lyrics {
             .or_else(|| Some(joined(&h.synced)).filter(|s| !s.is_empty())),
         synced: h.synced.clone(),
         copyright: None,
+        stale: false,
     }
 }
 
@@ -188,6 +196,7 @@ async fn better_lyrics(
         plain: Some(joined(&synced)),
         synced,
         copyright: None,
+        stale: false,
     }))
 }
 
@@ -520,6 +529,7 @@ mod tests {
             plain: None,
             synced: Vec::new(),
             copyright: None,
+            stale: false,
         };
         assert!(!l.has_content());
     }

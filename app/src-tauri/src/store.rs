@@ -69,8 +69,11 @@ CREATE INDEX IF NOT EXISTS idx_songs_fav ON songs(is_fav, last_played DESC);
 CREATE INDEX IF NOT EXISTS idx_songs_plays ON songs(play_count DESC);
 ";
 
-/// Search rows older than this are stale (matches L1 metadata TTL, 6h).
-pub const SEARCH_TTL_SECS: i64 = 6 * 60 * 60;
+/// Search rows older than this are deleted on read. Deliberately long (was
+/// 6 h): every reader — mobile `runSearch`, desktop `doSearch` — paints a hit
+/// and then revalidates over the network when online, so this TTL only
+/// decides how far *offline* coverage reaches (docs/cache-architecture.md).
+pub const SEARCH_TTL_SECS: i64 = 7 * 24 * 60 * 60;
 /// Hard cap: newest 200 queries survive, older evicted on write.
 const SEARCH_CAP: i64 = 200;
 /// Lyrics barely change: 30-day TTL, 1000 newest rows.

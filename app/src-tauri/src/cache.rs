@@ -1,7 +1,7 @@
 //! Disk tiers of the cache stack (L3 album art, L4 lyrics).
 //!
 //! Content-hash keys, atomic writes, a byte budget with LRU eviction and a
-//! 7-day freshness window for lyrics — see the cache system design. The RAM
+//! 30-day unread window for lyrics — see docs/cache-architecture.md. The RAM
 //! hot layers (L1 metadata, L2 stream URLs, L3/L4 memory) live as `moka`
 //! caches on `proxy::AppState`; the offline vault is deliberately NOT part
 //! of this tree (user files under Downloads, own ledger, own quota).
@@ -24,8 +24,13 @@ pub const DEFAULT_BUDGET: u64 = 500 * 1024 * 1024;
 pub const MIN_BUDGET: u64 = 100 * 1024 * 1024;
 pub const MAX_BUDGET: u64 = 5 * 1024 * 1024 * 1024;
 
-/// L4: a lyrics file unread for this long is stale (design TTL, 7 days).
-pub const LYRICS_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// L4: a lyrics file unread for this long is evictable, and anything aged
+/// past it revalidates on next use (design TTL: 30 days — lyrics are
+/// immutable text, so the window bounds *cleanup*, not usefulness; a read
+/// bumps mtime, so songs in rotation never re-fetch). When the providers
+/// fail, an aged file is served stale instead of erroring
+/// (`proxy::cached_lyrics`).
+pub const LYRICS_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 /// Refuse to cache anything larger: a runaway upstream must not fill the
 /// disk. Checked by both the writer and the `/art` handler.
@@ -46,6 +51,22 @@ pub struct CacheStats {
     pub budget_bytes: u64,
     /// False when the cache dir is not writable: memory-only mode.
     pub disk_enabled: bool,
+    /// Since-launch policy counters (filled by the command layer).
+    pub counters: CacheCounters,
+}
+
+/// Since-launch cache-policy counters — the numbers that prove "no double
+/// loading": `fetches` stays flat on repeat views and equals 1 for a burst
+/// of identical requests (single-flight), `stale_served` counts offline
+/// saves. Incremented inside the fetch wrappers only, so cache hits and
+/// coalesced waiters never move them.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct CacheCounters {
+    pub fetches: u64,
+    pub upstream_errors: u64,
+    pub stale_served: u64,
+    pub disk_hits: u64,
 }
 
 pub struct DiskCache {
@@ -145,6 +166,13 @@ impl DiskCache {
         Some(bytes)
     }
 
+    /// Read without bumping recency — the stale-serve path. Serving aged
+    /// bytes must not promote them to fresh, or the next online open would
+    /// never revalidate.
+    pub async fn peek(&self, path: &Path) -> Option<Vec<u8>> {
+        tokio::fs::read(path).await.ok()
+    }
+
     /// L4 disk hit: `None` when the file is older than `ttl` (unread for
     /// that long = stale); otherwise read + touch like `read_touch`.
     pub async fn read_fresh(&self, path: &Path, ttl: Duration) -> Option<Vec<u8>> {
@@ -177,6 +205,7 @@ impl DiskCache {
             vault_bytes,
             budget_bytes: self.budget(),
             disk_enabled: self.enabled,
+            counters: CacheCounters::default(),
         };
         for (path, bytes, _) in self.walk() {
             if path.parent() == Some(&self.art_dir) {
@@ -427,10 +456,10 @@ mod tests {
             .append(true)
             .open(&l)
             .unwrap()
-            .set_modified(SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60));
+            .set_modified(SystemTime::now() - LYRICS_TTL - Duration::from_secs(3600));
         c.budget.store(MIN_BUDGET, Ordering::Relaxed);
         c.enforce_budget();
-        assert!(!l.exists(), "lyrics unread for >7d swept");
+        assert!(!l.exists(), "lyrics unread past LYRICS_TTL swept");
         cleanup(&d);
     }
 

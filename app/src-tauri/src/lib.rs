@@ -234,10 +234,17 @@ fn vault_used(state: &AppState) -> u64 {
     state.vault().entries.iter().map(|e| e.bytes).sum()
 }
 
+/// `cache_stats` payload: disk usage + since-launch policy counters.
+fn disk_stats(state: &AppState) -> cache::CacheStats {
+    let mut stats = state.disk.stats(vault_used(state));
+    stats.counters = state.meters.snapshot();
+    stats
+}
+
 /// Settings / Storage: usage for every tier plus the active budget.
 #[tauri::command]
 async fn cache_stats(state: State<'_, Arc<AppState>>) -> Result<cache::CacheStats, String> {
-    Ok(state.disk.stats(vault_used(&state)))
+    Ok(disk_stats(&state))
 }
 
 /// Settings / Storage: cache size knob (design range 100 MB … 5 GB).
@@ -252,7 +259,7 @@ async fn cache_set_budget(
         .clamp(cache::MIN_BUDGET, cache::MAX_BUDGET);
     state.disk.set_budget(bytes);
     state.disk.enforce_budget();
-    Ok(state.disk.stats(vault_used(&state)))
+    Ok(disk_stats(&state))
 }
 
 /// Clear-cache button: drops L1/L2/L4-RAM and the L3/L4 disk trees. The
@@ -270,7 +277,8 @@ async fn cache_clear(state: State<'_, Arc<AppState>>) -> Result<cache::CacheStat
     state.overview_cache.invalidate_all();
     state.art_memory.invalidate_all();
     state.disk.clear();
-    Ok(state.disk.stats(vault_used(&state)))
+    state.meters.reset();
+    Ok(disk_stats(&state))
 }
 
 /// App store: song metadata cache + KV + search cache (`store.db`).

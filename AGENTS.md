@@ -1467,3 +1467,66 @@ crate allows `>=2,<4`, both stay locked, `cargo check --locked` passes),
 earlier widget-curve work — the 15b "do not stage" note refers to these, they
 are mine), `docs/archive/review-legacy-2026.md` (rename), docs:
 `cross-platform-ci.md`, `security-posture.md`, this entry.
+
+## 2026-10-15d — Browse tiles reverted to the old chip strip (mobile, verified live)
+
+User: "make this chips to old design" (screenshot of the tile grid). Same-day
+revert of the 15b trial; the design decision is: the flat strip is the look.
+
+| Item | Evidence |
+|---|---|
+| Markup | `screens/home.html` back to the original 7-chip strip (All/Charts/Playlists/Albums/Artists/Genres/Heavy Rotation), old order + classes, overflow-x scroll container untouched |
+| Wiring | `binders.js`: navigate branches restored (`if (cat === "artists") return go("artists")` etc.); `paintBrowseCount`/`BROWSE_NOUNS` removed; Top Artists block back to the one-expression form |
+| CSS | `.browse-tile-icon` light+dark blocks removed from `mobile/index.html`; `npm run css` rebuilt |
+| Kept | The selected-state fix survives: the handler toggles `.bg-primary` (the class the theme CSS inverts) — that was the measured white-on-white bug, not part of the design |
+| Gate | `app/tests/home-browse.test.mjs` rewritten: 7 chips in old order, navigate branch per browse chip, `.bg-primary` on the active pill, zero tile-grid leftovers (markup/handler/shell CSS) |
+| Docs | `docs/mobile/06-features.md` section rewritten as "Home chips: restored strip + working selected state (2026-10-15b)" with the trial history; CHANGELOG line replaced (tiles line → chip fix line) |
+| Verified on device | Fresh 31.1 MiB debug APK (`BUILD_EXIT=0`, 21:46), installed on emulator-5554, CDP probe: 7 chips in old order, 0 grid leftovers; light active All = `linear-gradient(24,24,27 → 0,0,0)` + white text; Genres lens → only the genres shelf visible, All restores 16/16; Artists chip → `#/artists`; dark active = `linear-gradient(255,255,255 → 237,237,237)` + black text |
+| Gates | `npm test` 413/413, eslint clean, tailwind rebuilt |
+| Screenshot | `C:\Users\rohit\AppData\Local\Temp\opencode\chips-old-design.png` |
+
+Nothing committed or pushed (rule 1). My files (`screens/home.html`,
+`binders.js`, `mobile/index.html`, `tailwind.css`, `tests/home-browse.test.mjs`,
+`docs/mobile/06-features.md`, `CHANGELOG.md`) are also the ones the 15c session
+listed as parallel WIP it did not stage — cooperative, no overlap.
+
+## 2026-10-15e — Cache 2.0 "load once" slice 1 (local commit, not pushed)
+
+User: "start implement now" on the approved Cache 2.0 plan. Spec of record
+written first: **`docs/cache-architecture.md`** — five load-once rules, tier
+inventory (L0 JS mem → L1 moka RAM → L2 disk/SQLite → L3 network), policy,
+acceptance criteria, roadmap C2–C9.
+
+| # | Change | Evidence |
+|---|---|---|
+| S1 | **Single-flight `memo()`**: `moka::try_get_with` — 10 concurrent cold asks run the fetch once; errors still never stored | `proxy.rs`; `memo_coalesces_concurrent_same_key` (asserts `meters.fetches == 1`) |
+| S2 | **Lyrics stale-if-error**: RAM → disk (freshness 7 d → 30 d) → providers; provider failure **or empty answer** serves an aged disk copy flagged `stale: true`; `DiskCache::peek` (no mtime touch) so a failed refresh never promotes it; served stale copies are RAM-cached (immutable text — no 15–25 s repeat stall) | `proxy.rs` `lyrics_through`/`serve_stale`, `cache.rs`, `lyrics.rs` (`stale` field, `#[serde(default)]`); 3 new tests |
+| S3 | **Counters**: `fetches` / `upstream_errors` / `stale_served` / `disk_hits` since launch in `cache_stats().counters`; the wrapped future is built on every call but dropped unpolled on hit/coalesce, so counters only move when a fetch actually runs; `cache_clear` resets | `proxy.rs` (`CacheMeters`), `cache.rs` (`CacheCounters`), `lib.rs` |
+| S4 | **Desktop search cache-first**: `search.js` paints `store.db` pages for any previously-run query instantly and offline (keys `d:`; mobile uses `sm:`), network supersedes when it lands; offline copy says "showing saved results"; full-shape rows stored | `search.js` + `netMode` import |
+| S5 | **Search TTL 6 h → 7 d** — delete window only; both surfaces paint the hit and revalidate online, so it only widens offline reach | `store.rs` |
+
+**Gates:** `OP_OFFLINE=1 cargo test --lib` **210/210** (206 → +4: coalescing,
+aged-served, fresh-skips-providers, empty-never-erases; `memo_fetches_once`
+extended) · `cargo fmt --check` 0 · `cargo clippy --all-targets -- -D warnings`
+0 · `npm test` **413/413** · `eslint` clean · `node --check` clean.
+In-flight fix: the 8-d aged sweep test in `cache.rs` asserted the old 7-d
+lyrics window — now ages `LYRICS_TTL + 1 h`. **Not done:** live repeat-search
+counter probe (real deltas) — deferred to the C9 offline harness.
+
+**Traps:** `try_get_with` init futures must carry their side effects *inside*
+(counting before the call would over-count hits/joins); a TTL change can
+silently invalidate relative-age tests (cache.rs + store.rs both use relative
+arithmetic now); a server restart killed one long background `cargo test`
+mid-flight — rerun it and read the summary line, don't trust a truncated log.
+
+**Files:** `app/src-tauri/src/{proxy,cache,lib,lyrics,store}.rs`,
+`app/src/search.js`, `docs/cache-architecture.md` (new), this entry.
+CHANGELOG.md left to the parallel session (dirty). Not staged: parallel
+session's browse-screens WIP (`screens/{albums,artists,charts,playlists}.html`,
+`router.js`, `recommend.js`, `binders.js`, `tailwind.css`, …). This commit
+also carries the parallel session's `2026-10-15d` entry (append-only memory,
+no WIP in it). **Local commit only — not pushed (rule 1).**
+
+Next slices (doc §6): C2 entity-cache wiring, C3 circuit breaker, C5 SWR
+screens, C6 desktop prefetch, C9 offline harness.
+

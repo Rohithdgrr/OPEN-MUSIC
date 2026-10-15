@@ -2,6 +2,7 @@
 // Split from main.js (Phase 4 M1).
 import { art } from "./art.js";
 import { clearError, diag, esc, invoke, showError, showView, toast } from "./core.js";
+import { netMode } from "./net.js";
 import { $, $$, errorEl } from "./dom.js";
 import { fuzzyScore, querySim } from "./fuzzy.js";
 import { didYouMean, matchesFilters, parseQuery, rankTracks } from "./query.js";
@@ -803,6 +804,18 @@ export async function doSearch(opts = {}) {
     if (snap) {
       lastResults = snap.tracks;
       refreshResults();
+    } else {
+      // store.db page cache (7-day window): any query this device ran
+      // before repaints instantly — and the rows stay when the network
+      // fails (the catch below never clears them).
+      try {
+        const { searchCacheGet } = await import("./store_db.js");
+        const hit = await searchCacheGet(`d:${upstream.toLowerCase()}`);
+        if (seq === searchSeq && hit && Array.isArray(hit.tracks) && hit.tracks.length) {
+          lastResults = hit.tracks;
+          refreshResults();
+        }
+      } catch {} // best-effort: the fetch below is the answer of record
     }
   }
   let payload;
@@ -818,12 +831,20 @@ export async function doSearch(opts = {}) {
     // The error box shows one short line only: raw backend detail (full
     // URLs, per-mirror errors) lives in the diagnostics log above, never
     // in front of the user.
-    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+    const offline =
+      netMode() === "offline" || (typeof navigator !== "undefined" && navigator.onLine === false);
+    // Rows painted from the SQLite page cache stay on screen; the message
+    // says so instead of reading like an empty failure.
+    const saved = !append && lastResults.length > 0;
     const short = append
       ? `Could not load more results for "${q}".`
-      : offline
-        ? "You're offline — check your connection, then retry."
-        : "Search is down right now — retry in a bit.";
+      : saved
+        ? offline
+          ? "You're offline — showing saved results."
+          : "Search is down right now — showing saved results, retry in a bit."
+        : offline
+          ? "You're offline — check your connection, then retry."
+          : "Search is down right now — retry in a bit.";
     resultsSub.textContent = append ? short : "Search failed.";
     showErrorRetry(short, () => doSearch({ append, query: q }));
     return;
@@ -862,10 +883,14 @@ export async function doSearch(opts = {}) {
     );
     refreshResults();
     saveSearchSnapshot(q, lastResults);
-    // SQLite song cache: search pages feed offline lists + instant repaints.
+    // SQLite caches: songs feed offline lists; the page row lets this query
+    // repaint instantly (and offline) next time. Both are best-effort.
     try {
       const page = lastResults.slice(0, 50);
-      import("./store_db.js").then((m) => m.cacheSongs(page).catch(() => {}));
+      import("./store_db.js").then((m) => {
+        m.cacheSongs(page).catch(() => {});
+        m.searchCachePut(`d:${upstream.toLowerCase()}`, { tracks: page }).catch(() => {});
+      });
     } catch {}
     return;
   }

@@ -9,6 +9,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -91,22 +92,69 @@ fn ttl_cache<V: Clone + Send + Sync + 'static>(
     session_builder(cap).time_to_live(ttl).build()
 }
 
+/// Since-launch cache-policy counters. Snapshot via `cache_stats`; the
+/// increments live inside the fetch wrappers, so cache hits and coalesced
+/// waiters never move them — a rising `fetches` is real upstream work.
+#[derive(Default)]
+pub struct CacheMeters {
+    fetches: AtomicU64,
+    upstream_errors: AtomicU64,
+    stale_served: AtomicU64,
+    disk_hits: AtomicU64,
+}
+
+impl CacheMeters {
+    pub fn snapshot(&self) -> crate::cache::CacheCounters {
+        crate::cache::CacheCounters {
+            fetches: self.fetches.load(Ordering::Relaxed),
+            upstream_errors: self.upstream_errors.load(Ordering::Relaxed),
+            stale_served: self.stale_served.load(Ordering::Relaxed),
+            disk_hits: self.disk_hits.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Clear-cache zeroes the scoreboard so the numbers shown next are the
+    /// new cache's, not the old one's.
+    pub fn reset(&self) {
+        for c in [
+            &self.fetches,
+            &self.upstream_errors,
+            &self.stale_served,
+            &self.disk_hits,
+        ] {
+            c.store(0, Ordering::Relaxed);
+        }
+    }
+}
+
 /// Read through a cache: check, fetch on miss, insert. `key` must carry
 /// every input the answer depends on (see `official::prefs_key`).
 ///
-/// Errors are never stored — a provider that was merely down must not be
+/// Single-flight (load-once rule 3): `moka::try_get_with` runs the fetch at
+/// most once per key even when several callers ask concurrently — waiters
+/// await the one in-flight computation instead of starting another. Errors
+/// are never stored — a provider that was merely down must not be
 /// remembered as an answer (design: "Never cache error responses").
 async fn memo<V: Clone + Send + Sync + 'static>(
+    meters: &CacheMeters,
     cache: &moka::future::Cache<String, V>,
     key: String,
     fetch: impl std::future::Future<Output = Result<V, String>>,
 ) -> Result<V, String> {
-    if let Some(hit) = cache.get(&key).await {
-        return Ok(hit);
-    }
-    let val = fetch.await?;
-    cache.insert(key, val.clone()).await;
-    Ok(val)
+    // The wrapper only runs when the fetch actually runs: a cache hit or a
+    // coalesced join drops this future unpolled, so the counters stay true.
+    let counted = async {
+        meters.fetches.fetch_add(1, Ordering::Relaxed);
+        let result = fetch.await;
+        if result.is_err() {
+            meters.upstream_errors.fetch_add(1, Ordering::Relaxed);
+        }
+        result
+    };
+    cache
+        .try_get_with(key, counted)
+        .await
+        .map_err(|e| e.as_ref().clone())
 }
 
 /// One file in the offline vault, as recorded in `<vault>/index.json`.
@@ -190,6 +238,8 @@ pub struct AppState {
     pub art_memory: moka::future::Cache<String, Arc<Vec<u8>>>,
     /// L3/L4 disk tiers: content-hash keys, atomic writes, byte budget.
     pub disk: crate::cache::DiskCache,
+    /// Since-launch fetch/stale counters (`cache_stats().counters`).
+    pub meters: CacheMeters,
     /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
     /// transaction per mutation. `Err` means the vault is disabled — a
     /// read-only directory surfaces the error on every mutation and lists
@@ -260,6 +310,7 @@ impl AppState {
                 })
                 .build(),
             disk: crate::cache::DiskCache::new(cache_dir),
+            meters: CacheMeters::default(),
             db,
             store,
             cancel: Mutex::new(HashSet::new()),
@@ -273,12 +324,13 @@ impl AppState {
 
     /// Resolve a song id to its full detail, memoised (L1, 6h).
     pub async fn cached_song(&self, id: &str) -> Result<Song, String> {
-        if let Some(song) = self.resolved.get(id).await {
-            return Ok(song);
-        }
-        let song = fetch_song(&self.client, id).await?;
-        self.resolved.insert(id.to_string(), song.clone()).await;
-        Ok(song)
+        memo(
+            &self.meters,
+            &self.resolved,
+            id.to_string(),
+            fetch_song(&self.client, id),
+        )
+        .await
     }
 
     /// Resolve a song id to a direct CDN url (320 kbps preference).
@@ -291,12 +343,13 @@ impl AppState {
 
     /// Qualify a CDN url (3 probes), memoised for the url's lifetime (L2).
     pub async fn cached_qualify(&self, url: &str) -> Result<Probe, String> {
-        if let Some(probe) = self.qualified.get(url).await {
-            return Ok(probe);
-        }
-        let probe = qualify_url(&self.client, url).await?;
-        self.qualified.insert(url.to_string(), probe).await;
-        Ok(probe)
+        memo(
+            &self.meters,
+            &self.qualified,
+            url.to_string(),
+            qualify_url(&self.client, url),
+        )
+        .await
     }
 
     /// Search the catalog, memoised per query+limit+page+prefs to avoid hammering upstream.
@@ -311,16 +364,25 @@ impl AppState {
             query.to_lowercase(),
             crate::official::prefs_key()
         );
-        if let Some(hit) = self.search_cache.get(&key).await {
-            return Ok(hit);
-        }
-        let result = search_songs(&self.client, query, limit, page).await?;
-        self.search_cache.insert(key, result.clone()).await;
-        Ok(result)
+        memo(
+            &self.meters,
+            &self.search_cache,
+            key,
+            search_songs(&self.client, query, limit, page),
+        )
+        .await
     }
 
-    /// Best available lyrics for a song, memoised per song id (L4: RAM
-    /// first, then the 7-day disk tier, then the providers).
+    /// Best available lyrics for a song, memoised per song id.
+    ///
+    /// Tier order: RAM → disk (30-day freshness; see `cache::LYRICS_TTL`) →
+    /// providers.
+    ///
+    /// Offline-after-first-fetch (load-once rule 4): when every provider
+    /// fails but an aged copy exists on disk, the copy is served with
+    /// `stale: true` instead of an error — and its mtime is deliberately
+    /// left alone (`peek`), so the next online open still revalidates. A
+    /// no-content provider answer never outranks a stored copy with content.
     ///
     /// Only answers with content are stored: a provider that was merely down
     /// must not be remembered as "this song has no lyrics".
@@ -332,15 +394,32 @@ impl AppState {
         album: &str,
         duration: u32,
     ) -> Result<crate::lyrics::Lyrics, String> {
+        self.lyrics_through(
+            id,
+            crate::lyrics::fetch(&self.client, id, title, artist, album, duration),
+        )
+        .await
+    }
+
+    /// `cached_lyrics` with the provider future injected, so tests can drive
+    /// the offline / empty-answer branches without a network.
+    async fn lyrics_through(
+        &self,
+        id: &str,
+        fetch: impl std::future::Future<Output = Result<crate::lyrics::Lyrics, String>>,
+    ) -> Result<crate::lyrics::Lyrics, String> {
+        use crate::lyrics::Lyrics;
         if let Some(hit) = self.lyrics_cache.get(id).await {
             return Ok(hit);
         }
-        // L4 disk: content is immutable once fetched, so a fresh file is a
-        // complete answer — no provider round trip.
         let path = self.disk.lyrics_path(id);
+        // Aged copy kept for the stale-serve fallback. `peek`, not
+        // `read_touch`: a failed refresh must not promote it to fresh.
+        let mut aged: Option<Lyrics> = None;
         if self.disk.enabled() {
             if let Some(bytes) = self.disk.read_fresh(&path, crate::cache::LYRICS_TTL).await {
-                if let Ok(lyrics) = serde_json::from_slice::<crate::lyrics::Lyrics>(&bytes) {
+                if let Ok(lyrics) = serde_json::from_slice::<Lyrics>(&bytes) {
+                    self.meters.disk_hits.fetch_add(1, Ordering::Relaxed);
                     self.lyrics_cache
                         .insert(id.to_string(), lyrics.clone())
                         .await;
@@ -349,20 +428,58 @@ impl AppState {
                 // Corrupt file: drop it, fall through to the providers.
                 let _ = tokio::fs::remove_file(&path).await;
             }
+            if let Some(bytes) = self.disk.peek(&path).await {
+                aged = serde_json::from_slice::<Lyrics>(&bytes).ok();
+            }
         }
-        let lyrics = crate::lyrics::fetch(&self.client, id, title, artist, album, duration).await?;
-        if lyrics.has_content() {
-            self.lyrics_cache
-                .insert(id.to_string(), lyrics.clone())
-                .await;
-            if self.disk.enabled() {
-                let bytes = serde_json::to_vec(&lyrics).unwrap_or_default();
-                if let Err(e) = self.disk.write_atomic(&path, &bytes).await {
-                    // ENOSPC / read-only: playback is unaffected, skip the write.
-                    eprintln!("[cache] lyrics write skipped: {e}");
+        self.meters.fetches.fetch_add(1, Ordering::Relaxed);
+        match fetch.await {
+            Ok(lyrics) if lyrics.has_content() => {
+                self.lyrics_cache
+                    .insert(id.to_string(), lyrics.clone())
+                    .await;
+                if self.disk.enabled() {
+                    let bytes = serde_json::to_vec(&lyrics).unwrap_or_default();
+                    if let Err(e) = self.disk.write_atomic(&path, &bytes).await {
+                        // ENOSPC / read-only: playback is unaffected, skip the write.
+                        eprintln!("[cache] lyrics write skipped: {e}");
+                    }
+                }
+                Ok(lyrics)
+            }
+            Ok(empty) => match aged {
+                // Provider flake: an empty answer must not beat content.
+                Some(saved) => {
+                    self.meters.stale_served.fetch_add(1, Ordering::Relaxed);
+                    self.serve_stale(id, saved).await
+                }
+                None => Ok(empty),
+            },
+            Err(e) => {
+                self.meters.upstream_errors.fetch_add(1, Ordering::Relaxed);
+                match aged {
+                    Some(saved) => {
+                        self.meters.stale_served.fetch_add(1, Ordering::Relaxed);
+                        self.serve_stale(id, saved).await
+                    }
+                    None => Err(e),
                 }
             }
         }
+    }
+
+    /// Return an aged copy flagged `stale: true`, and RAM-cache it so the
+    /// rest of the session is instant. Lyrics are immutable text, so a
+    /// stale copy is content-correct; the flag is how a UI can mark it.
+    async fn serve_stale(
+        &self,
+        id: &str,
+        mut lyrics: crate::lyrics::Lyrics,
+    ) -> Result<crate::lyrics::Lyrics, String> {
+        lyrics.stale = true;
+        self.lyrics_cache
+            .insert(id.to_string(), lyrics.clone())
+            .await;
         Ok(lyrics)
     }
 
@@ -379,7 +496,7 @@ impl AppState {
             query.to_lowercase(),
             crate::official::prefs_key()
         );
-        memo(&self.entity_cache, key, async {
+        memo(&self.meters, &self.entity_cache, key, async {
             crate::official::search_entities(&self.client, kind, query, limit, page).await
         })
         .await
@@ -391,7 +508,7 @@ impl AppState {
         query: &str,
     ) -> Result<crate::official::Suggestions, String> {
         let key = format!("{}:{}", query.to_lowercase(), crate::official::prefs_key());
-        memo(&self.suggest_cache, key, async {
+        memo(&self.meters, &self.suggest_cache, key, async {
             crate::official::suggestions(&self.client, query).await
         })
         .await
@@ -400,7 +517,7 @@ impl AppState {
     /// Every track of a playlist or album, memoised per id/token.
     pub async fn cached_playlist(&self, id: &str) -> Result<Vec<crate::jiosaavn::Track>, String> {
         let key = format!("playlist:{id}:{}", crate::official::prefs_key());
-        memo(&self.tracks_cache, key, async {
+        memo(&self.meters, &self.tracks_cache, key, async {
             crate::official::playlist_tracks(&self.client, id).await
         })
         .await
@@ -408,7 +525,7 @@ impl AppState {
 
     pub async fn cached_album(&self, token: &str) -> Result<Vec<crate::jiosaavn::Track>, String> {
         let key = format!("album:{token}:{}", crate::official::prefs_key());
-        memo(&self.tracks_cache, key, async {
+        memo(&self.meters, &self.tracks_cache, key, async {
             crate::official::album_tracks(&self.client, token).await
         })
         .await
@@ -421,7 +538,7 @@ impl AppState {
         page: u32,
     ) -> Result<crate::official::ArtistSongPage, String> {
         let key = format!("artist:{token}:{page}:{}", crate::official::prefs_key());
-        memo(&self.artist_pages, key, async {
+        memo(&self.meters, &self.artist_pages, key, async {
             crate::official::artist_tracks(&self.client, token, page).await
         })
         .await
@@ -433,7 +550,7 @@ impl AppState {
         token: &str,
     ) -> Result<crate::official::ArtistOverview, String> {
         let key = format!("overview:{token}:{}", crate::official::prefs_key());
-        memo(&self.overview_cache, key, async {
+        memo(&self.meters, &self.overview_cache, key, async {
             crate::official::artist_overview(&self.client, token).await
         })
         .await
@@ -1697,14 +1814,20 @@ mod tests {
             calls.fetch_add(1, Ordering::SeqCst);
             Ok::<_, String>(calls.load(Ordering::SeqCst).to_string())
         };
-        memo(&cache, "a".into(), fetch()).await.unwrap();
-        memo(&cache, "a".into(), fetch()).await.unwrap();
-        memo(&cache, "b".into(), fetch()).await.unwrap();
+        let meters = CacheMeters::default();
+        memo(&meters, &cache, "a".into(), fetch()).await.unwrap();
+        memo(&meters, &cache, "a".into(), fetch()).await.unwrap();
+        memo(&meters, &cache, "b".into(), fetch()).await.unwrap();
         cache.run_pending_tasks().await;
         assert_eq!(calls.load(Ordering::SeqCst), 2); // second "a" was a cache hit
         assert_eq!(cache.entry_count(), 2);
+        assert_eq!(
+            meters.snapshot().fetches,
+            2,
+            "counters count fetch runs, not cache hits"
+        );
 
-        let down = memo(&cache, "bad".into(), async {
+        let down = memo(&meters, &cache, "bad".into(), async {
             Err::<String, _>("down".into())
         })
         .await;
@@ -1712,6 +1835,156 @@ mod tests {
         assert!(
             cache.get("bad").await.is_none(),
             "provider errors are never cached"
+        );
+        assert_eq!(
+            meters.snapshot().upstream_errors,
+            1,
+            "a failed fetch is counted as an upstream error"
+        );
+    }
+
+    /// Load-once rule 3: ten concurrent asks for one cold key run the fetch
+    /// exactly once; every caller gets the same answer.
+    #[tokio::test]
+    async fn memo_coalesces_concurrent_same_key() {
+        let cache: moka::future::Cache<String, String> = ttl_cache(8, Duration::from_secs(60));
+        let meters = Arc::new(CacheMeters::default());
+        let mut tasks = Vec::new();
+        for _ in 0..10 {
+            let cache = cache.clone();
+            let meters = meters.clone();
+            tasks.push(tokio::spawn(async move {
+                memo(&meters, &cache, "k".into(), async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    Ok::<_, String>("answer".into())
+                })
+                .await
+            }));
+        }
+        for t in tasks {
+            assert_eq!(t.await.unwrap().unwrap(), "answer");
+        }
+        cache.run_pending_tasks().await;
+        assert_eq!(
+            meters.snapshot().fetches,
+            1,
+            "one upstream run for ten concurrent cold asks"
+        );
+    }
+
+    /// Backdate a file's mtime — the only way to make a disk tier look aged.
+    fn age_file(path: &std::path::Path, age: Duration) {
+        let when = std::time::SystemTime::now() - age;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(when)
+            .unwrap();
+    }
+
+    /// Offline-after-first-fetch: an aged disk copy is served (with
+    /// `stale: true`) when every provider fails, and the aged file is left
+    /// untouched so the next online open still revalidates.
+    #[tokio::test]
+    async fn lyrics_serves_aged_disk_copy_when_providers_fail() {
+        let (_base, state) = boot().await;
+        let id = "test-stale-lyrics";
+        let path = state.disk.lyrics_path(id);
+        let stored = crate::lyrics::Lyrics {
+            source: "lrclib".into(),
+            plain: Some("la la la".into()),
+            synced: Vec::new(),
+            copyright: None,
+            stale: false,
+        };
+        state
+            .disk
+            .write_atomic(&path, &serde_json::to_vec(&stored).unwrap())
+            .await
+            .unwrap();
+        age_file(&path, crate::cache::LYRICS_TTL + Duration::from_secs(3600));
+
+        let served = state
+            .lyrics_through(id, async { Err("all providers down".into()) })
+            .await
+            .unwrap();
+        assert_eq!(served.plain.as_deref(), Some("la la la"));
+        assert!(served.stale, "stale-served copies carry the flag");
+        assert_eq!(state.meters.snapshot().stale_served, 1);
+
+        // The failure must not have promoted the aged file to fresh.
+        let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let age = std::time::SystemTime::now().duration_since(mtime).unwrap();
+        assert!(
+            age > crate::cache::LYRICS_TTL,
+            "stale-serve must leave the file aged (no mtime touch)"
+        );
+
+        // Same session: the served copy is a RAM hit now — no second fetch.
+        let again = state
+            .lyrics_through(id, async { panic!("RAM hit must not reach the providers") })
+            .await
+            .unwrap();
+        assert!(again.stale);
+    }
+
+    /// A fresh disk copy is a complete answer: providers are never contacted.
+    #[tokio::test]
+    async fn lyrics_fresh_disk_copy_skips_providers() {
+        let (_base, state) = boot().await;
+        let id = "test-fresh-lyrics";
+        let path = state.disk.lyrics_path(id);
+        let stored = crate::lyrics::Lyrics {
+            source: "jiosaavn".into(),
+            plain: Some("fresh words".into()),
+            synced: Vec::new(),
+            copyright: None,
+            stale: false,
+        };
+        state
+            .disk
+            .write_atomic(&path, &serde_json::to_vec(&stored).unwrap())
+            .await
+            .unwrap();
+        let got = state
+            .lyrics_through(id, async { panic!("fresh disk must answer") })
+            .await
+            .unwrap();
+        assert_eq!(got.plain.as_deref(), Some("fresh words"));
+        assert!(!got.stale);
+        assert_eq!(state.meters.snapshot().disk_hits, 1);
+        assert_eq!(state.meters.snapshot().fetches, 0);
+    }
+
+    /// Provider flake: an empty answer must not outrank stored content, and
+    /// the stored file stays byte-identical.
+    #[tokio::test]
+    async fn empty_answer_never_erases_stale_content() {
+        let (_base, state) = boot().await;
+        let id = "test-empty-vs-stale";
+        let path = state.disk.lyrics_path(id);
+        let stored = crate::lyrics::Lyrics {
+            source: "lrclib".into(),
+            plain: Some("kept".into()),
+            synced: Vec::new(),
+            copyright: None,
+            stale: false,
+        };
+        let bytes = serde_json::to_vec(&stored).unwrap();
+        state.disk.write_atomic(&path, &bytes).await.unwrap();
+        age_file(&path, crate::cache::LYRICS_TTL + Duration::from_secs(3600));
+
+        let got = state
+            .lyrics_through(id, async { Ok(crate::lyrics::Lyrics::default()) })
+            .await
+            .unwrap();
+        assert_eq!(got.plain.as_deref(), Some("kept"));
+        assert!(got.stale);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            bytes,
+            "the stored file must stay byte-identical"
         );
     }
 
