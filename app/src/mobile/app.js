@@ -1,6 +1,7 @@
 // app.js — boot + global click delegation + widget player paint for the mobile shell.
 import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, isVaulted, pushDiag, HISTORY_KEY, checkForUpdates, AUTOUPDATE_KEY, pushEvent, refreshVault, haptic, isOnboarded, setOnboarded, saveTaste, LANG_KEY } from "./shared.js";
 import { playList, playPlaylist, toggle, onPaint, playerState, prev, next, seek, repaint, enqueue, audio } from "./player.js";
+import { parseDeepUri } from "../sharelink.js";
 import { startNet, netMode } from "./net.js";
 import { PRESETS, arm as armSleep } from "../sleep.js";
 import { MOUNT, openLib, entityNav } from "./binders.js";
@@ -708,6 +709,50 @@ if (invoke) {
     toast,
     onMode: () => repaint(),
   });
+  // Share deep links (docs/share-deep-links.md §4): Android hands the
+  // `openmusic://t/<id>` intent to the deep-link plugin — cold through its
+  // stored urls, warm through its event. parseDeepUri also takes the https
+  // play.html form, so a pasted full link resolves identically.
+  let lastSharedId = "";
+  const playShared = async (uri) => {
+    const hit = parseDeepUri(uri);
+    if (!hit || hit.id === lastSharedId) return;
+    lastSharedId = hit.id;
+    try {
+      // playList resolves without throwing — it paints and drives the
+      // resolve internally, so celebrating immediately would lie (the
+      // bad-id live probe caught exactly that). Announce the intent, then
+      // verify the transport actually got a source before claiming success.
+      toast(`Opening «${hit.title || "shared track"}»`, 2000, "info");
+      await playList([{ id: hit.id, title: hit.title || "Shared track", artist: hit.artist || "" }], 0);
+      setTimeout(() => {
+        const a = audio;
+        const st = playerState();
+        if (st.track?.id === hit.id && !a.src) {
+          toast("Couldn't resolve the shared track", 4000, "error");
+        }
+      }, 5000);
+    } catch (err) {
+      console.error(err);
+      toast("Couldn't resolve the shared track", 4000, "error");
+    }
+  };
+  (async () => {
+    try {
+      const cold = await invoke("plugin:deep-link|get_current");
+      if (Array.isArray(cold) && cold.length) await playShared(String(cold[0]));
+    } catch { /* deep-link plugin not running */ }
+    try {
+      const launch = await invoke("sharelink_launch_url");
+      if (launch) await playShared(String(launch));
+    } catch { /* older backend without the command */ }
+    try {
+      await window.__TAURI__?.event?.listen?.("deep-link://new-url", (e) => {
+        const urls = e?.payload;
+        if (Array.isArray(urls) && urls.length) playShared(String(urls[0]));
+      });
+    } catch { /* event layer unavailable */ }
+  })();
 } else {
   console.warn("Tauri IPC unavailable — mobile backend disabled");
 }

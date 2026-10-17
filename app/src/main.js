@@ -10,13 +10,14 @@ import { autoSyncBoot } from "./gsync.js";
 // import { wireJelly } from "./jelly.js"; // jelly mode off
 import { renderFavs } from "./library.js";
 import { initMediaSession, setMediaSessionTrack } from "./media.js";
-import { setResume } from "./playback.js";
-import { queue, queueIndex, renderQueue, restoreQueue, setRestoredTrack } from "./queue.js";
+import { playQueueItem, setResume } from "./playback.js";
+import { enqueue, queue, queueIndex, renderQueue, restoreQueue, setRestoredTrack } from "./queue.js";
 import { startNet } from "./net.js";
 import { doSearch } from "./search.js";
 import { initSocial } from "./social.js";
 import { wireShortcuts } from "./shortcuts.js";
 import { applySysPrefs, applyWidget, paintGreeting } from "./settings.js";
+import { parseDeepUri } from "./sharelink.js";
 import { step, togglePlay } from "./transport.js";
 import { paintModes, paintVolume } from "./transport.js";
 import { npText, fmtTime, stampEntity } from "./util.js";
@@ -47,6 +48,51 @@ try {
   diag("proxy base", false, String(err));
 }
 diag("boot", true, "OpenMusic ready");
+
+// ------------------------------------------------- share deep links --------
+// docs/share-deep-links.md §4: on Windows/Linux the OS spawns a process with
+// `openmusic://t/<id>` in argv. Cold: the capture command (lib.rs stores it
+// before the builder). Warm: the single-instance callback emits
+// sharelink://open. The Android event is listened for too — each platform
+// only ever fires one of the two channels.
+
+let lastSharedId = "";
+async function playShared(uri) {
+  const hit = parseDeepUri(String(uri || ""));
+  if (!hit || hit.id === lastSharedId) return;
+  lastSharedId = hit.id;
+  try {
+    // Minimal track object — playback.js resolves the id itself (same as a
+    // search-row tap); a missing title just paints the honest placeholder.
+    await playQueueItem(enqueue({ id: hit.id, title: hit.title || "Shared track", artist: hit.artist || "" }));
+    toast(`Playing «${hit.title || "shared track"}»`, "success", 2500);
+  } catch (err) {
+    diag("share link", false, String(err).slice(0, 80));
+    toast("Couldn't resolve the shared track", "error", 3500);
+  }
+}
+(async () => {
+  try {
+    const launch = await invoke("sharelink_launch_url");
+    if (launch) await playShared(launch);
+  } catch { /* older backend without the command */ }
+  try {
+    const cold = await invoke("plugin:deep-link|get_current");
+    if (Array.isArray(cold) && cold.length) await playShared(String(cold[0]));
+  } catch { /* plugin storage empty */ }
+  try {
+    await window.__TAURI__?.event?.listen?.("sharelink://open", (e) => {
+      const urls = e?.payload;
+      if (Array.isArray(urls) && urls.length) playShared(String(urls[0]));
+    });
+  } catch { /* event layer unavailable */ }
+  try {
+    await window.__TAURI__?.event?.listen?.("deep-link://new-url", (e) => {
+      const urls = e?.payload;
+      if (Array.isArray(urls) && urls.length) playShared(String(urls[0]));
+    });
+  } catch { /* event layer unavailable */ }
+})();
 
 // Seed the catalog so every control has real data on first paint:
 // the box opens on the last query that was searched, not a blank slot.

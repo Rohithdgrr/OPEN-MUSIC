@@ -2988,6 +2988,9 @@ mod tests {
     }
 
     /// The capability file grants the minimum and nothing more (review 5.7).
+    /// The single extra grant is the deep-link feature's own command
+    /// (share deep links, docs/share-deep-links.md §5) — anything else means
+    /// a capability slipped in silently.
     #[test]
     fn capability_grants_only_core_default() {
         let raw = std::fs::read_to_string(
@@ -2997,8 +3000,8 @@ mod tests {
         let cap: serde_json::Value = serde_json::from_str(&raw).expect("valid capability json");
         assert_eq!(
             cap["permissions"],
-            serde_json::json!(["core:default"]),
-            "no extra permissions may appear silently"
+            serde_json::json!(["core:default", "deep-link:allow-get-current"]),
+            "the whitelist is exactly core + the deep-link read"
         );
         let windows = cap["windows"].as_array().expect("windows array");
         assert!(windows.iter().any(|w| w == "main"));

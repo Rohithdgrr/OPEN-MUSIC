@@ -2087,3 +2087,99 @@ User directives: (1) ship the "Dolby-Atmos feel" audio-quality tiers (T0 source-
 **Gates:** `npm test` **498/498** · eslint clean (touched) · `node --check` clean ×11 · `cargo build` exit 0 (13m22s incremental). Mobile surface: live pass pending — same shared dsp.js path, covered today by unit + `mobile-boot` graph execution; the doc's status table states that limit explicitly.
 
 **Commit(s):** audio-quality implementation + automation cut (15 files my-side incl. `dsp.js`, `loudness.js` new; docs/CHANGELOG/AGENTS memory) — local only, **not pushed (rule 1)**. Do-not-stage dirt: `app/src-tauri/src/{canvas,lib,spotify}.rs`, `docs/spotify-android-canvas.md` (2026-10-16 Spotify session). Deleted after reporting: the driver `audio-quality-live*.mjs/.out` + `peek-*.mjs` lives in `%TEMP%\opencode` (throwaway per precedent). Desktop app left running (CDP :9222).
+
+## 2026-10-17f — Now Playing Canvas works with no account: cookie-free Apple route live on Android 6/6 (uncommitted)
+
+User: study `maxrave-dev/SimpMusic` "for reference" → then ship the cookie-free
+animated-artwork route (R1, recommended path pre-approved). Spec of record:
+`docs/spotify-android-canvas.md` §13 (OAuth route proven dead — `clienttoken`
+400 / Pathfinder 403) + §14 (design; **§14.4 = this live record**). **Nothing
+committed, nothing pushed (rule 1)** — the tree also carries other sessions'
+WIP (`capabilities/default.json`, `binders.js`, `CHANGELOG.md`, the
+`lib.rs:1644` fmt diff) → hunk-split at commit time.
+
+| Item | Evidence |
+|---|---|
+| `canvas.rs` rewritten (tests 14/14) | Spotify probe internals (Pathfinder v1, ISRC hop, cookie token exchange) deleted; Apple route: bearer scraped from the public web player's JS bundle (memoised; one re-scrape on 401), album pick (artist agreement + artwork required) → song fallback resolved to its parent album, square-first cuts, smallest AVC ≥ 460 px, `EXT-X-MAP` fMP4 download |
+| Relay | `proxy.rs`: shared `serve_media_file` helper (vault + canvas), `/canvas?id=&token=` route off the budget-managed disk cache (`<cache>/canvas/<FNV-1a-16hex>.mp4`); `transcode::content_type` now maps `mp4`/`m4v` → `video/mp4` |
+| Cache policy | key `title\|artist\|album`, 6 h TTL; misses cached as `Ok(None)`, errors never cached (retried next paint) — all best-effort, a miss keeps the art |
+| Renderer | `mobile/canvas.js` same contract + `album` hint added to the invoke; settings copy "Animated artwork on the art card - best effort"; `sp_dc` UI + `set_canvas_cookie`/`canvas_configured` kept as the R2 hook |
+| Gates | canvas **14/14** · `cargo test --lib` 230/231 (the 1 fail = parallel `capability_grants_only_core_default`, their deep-link capability — not this change) · `npm test` **498/498** · eslint clean · fmt clean on my files · clippy green (16m28s full pass; final 3m16s exit-0 rerun on the tree incl. the transcode edit) |
+| **Live 6/6** | debug APK 32,961,309 B (`BUILD_EXIT=0`) on `Pixel6_API36`; driver **`app/tests/live-canvas.mjs`** (copied into the repo): M1 cold resolve 7.9–9.1 s → relay URL `…/canvas?id=a8f35d6e0ba75010&token=…` (44 ms RAM-hit after); M2 200 + `video/mp4` + `content-length: 1917354` + single-range → **206** + real `<video>` plays (t 10.09→11.69, 486×486, dur 30 s); M3 fake track → `null`; M4 E2E: toggle → search → **trusted touch tap** → `#/nowplaying` → `#np-canvas` plays (486×486, t 0→10.18, title "After Hours"); screenshot `%TEMP%\opencode\canvas-e2e.png` |
+
+**Probe traps (cheap to re-derive, expensive to rediscover):**
+- `accept-ranges` IS set by the relay (`proxy.rs` `serve_media_file`) but is
+  **not CORS-safelisted** → an in-page `fetch` reads `null`; prove ranges by
+  the **206 status** of a single-range request (`Range: bytes=0-99` is a
+  safelisted request-header form). `content-type`/`content-length` ARE readable.
+- `Page.reload` on the Android WebView **kills the page-target websocket** →
+  reconnect after reload; give every CDP send a watchdog (a hung send = node
+  exits 13 "unsettled top-level await" with no summary — hit on run 1).
+- The source-first merge re-renders search rows ~1–2 s after first paint:
+  settle first (3 consecutive stable snapshots), tap, verify `#/nowplaying`,
+  retry otherwise (the 10-17b lesson hit again — run 2's tap was swallowed
+  by the merge re-render).
+- adb-server restarts kill `:9223` forwards silently — re-forward +
+  `/json` check before every probe run; the app pid can change between runs.
+- Another session `adb emu kill`ed the emulator mid-build (cold-boot ~40 s;
+  AVD data — onboarding, sign-in, `tm-canvas` pref — persists).
+
+**Left running:** emulator with the fresh debug APK (canvas toggle ON).
+
+## 2026-10-17g — Share deep links + vCard: full feature live on both surfaces (uncommitted)
+
+User plan approved (share track → canonical link that plays in-app on receivers with
+OpenMusic, download page otherwise; plus vCard share with artwork). Spec of record:
+**`docs/share-deep-links.md`** (§1–9 spec + **§10 live record** written as verified).
+**Nothing committed, nothing pushed (rule 1)** — mixed files need hunk-split
+(binders.js, lib.rs, mobile/app.js, CHANGELOG.md; do-not-stage dirt:
+`canvas/spotify.rs`, `docs/spotify-android-canvas.md`, `mobile/{audioplus,player,shared}.js`,
+`src/{playback,settings,dsp}.js`, `src/loudness.js`, `audio-quality` tests/docs — 10-18 session).
+
+| Piece | Where |
+|---|---|
+| Pure builders + parsers | new `app/src/sharelink.js`: canonical `https://rohithdgrr.github.io/OPEN-MUSIC/play.html?t=<id>&n=&a=`, scheme `openmusic://t/<id>`, vCard builder (escaping/folding/PHOTO-fold), smallArt; `parseDeepUri` accepts all three shapes **including scheme+query** (`?n=&a=` → title/artist hints) |
+| Tests | `app/tests/sharelink.test.mjs` **11/11** (4 scheme-query assertions added TDD-first when the anchor bug was caught) |
+| Landing page | `play.html` (repo root): real paint + 3.5 s visibility-gated fallback + platform detect + genuine v0.5.1 release hrefs + copy button; live-verified via playwright 5/5 |
+| Rust | `lib.rs`: `LAUNCH_URI` before-builder argv capture + `sharelink_launch_url` cmd + plugin init + single-instance `sharelink://open` emit; deep-link v2.6.2 dep; capability `deep-link:allow-get-current` (the ONE extra grant, whitelist updated in `proxy.rs` test) |
+| Desktop boot | `main.js` handler: cold `sharelink_launch_url` → warm event listener (both channels registered both surfaces); `transport.js` "Share Session" swap; `mobile/app.js` + `mobile/binders.js` |
+| NSIS | `windows-deeplink.nsh` registers the HKCU `openmusic` URL protocol class (MSI limitation documented) |
+| release.yml | android job (bash build.sh + run-ephemeral keystore) + `**/*.apk` published |
+
+**Three live-caught defects, fixed same day (doc §10.2):**
+1. `parseDeepUri` `$`-anchor rejected scheme+query → parse returned null; fixed + hints now read.
+2. **`plugins.deep-link.mobile` is load-bearing** — plugin `isDeepLink` gate (DeepLinkPlugin.kt)
+   stores/emits NOTHING without `mobile: [{scheme:["openmusic"], host:"t"}]`; `desktop.schemes`
+   alone = forever-empty `get_current`. Confirmed by config flip alone reviving capture.
+3. Mobile success toast lied on unresolvable ids (`playList` never throws) → honest contract:
+   immediate `Opening «title»` + +5 s transport check → refusal toast. Probe split clean afterwards:
+   warm 4/4 (`Opening «…»` in DOM), bad-id 2/2 (`Couldn't resolve the shared track`, nothing started).
+
+**Desktop proof:** cold argv → ring `resolve <id> → 320kbps → aac.saavncdn.com → unrestricted` →
+`play <id> → /stream?id=<id>` (boot +2 s); warm second launch → forwards + exits (`PROCS=1`) →
+audio switches to the shared id. `sharelink_launch_url` + plugin `get_current` both hold the full
+argv URI. Mobile cold: id → handler → relay stream (transport advancing; **two full-pass runs**;
+one run's resolve was slow (upstream warming) → poll in drivers, don't single-read).
+
+**Lessons / traps (cheap to re-derive, expensive to rediscover):**
+- **Probe titles must never be invented**: `6DN9AmgT` = "Admi Jo Kahta Hai", `1aPY9cT-` = "Believer"
+  (`resolve_song` is the only truth). Every shared-play assertion keys on the stream's **id**, never
+  bar labels — the desktop bar/queue titles follow the player's own repaint paths (restore paints
+  lastPlays[0]; radio prefetch/smart-dl touch old queue tails) and say nothing about the handler.
+- **P29 stale-APK trap hit again**: one APK (mtime 19:25:11) was older than the .so it packaged —
+  gradle zipped previous bytes while cargo re-linked; delete APK+AB then rebuild (perf: APK mtime
+  vs `target/x86_64-linux-android/debug/libapp_lib.so`).
+- Host proc-macro units fail under the machine-local rust-lld experiment after fingerprint drift →
+  sidestep with `CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=link.exe` env for builds/tests
+  (do NOT edit `app/src-tauri/.cargo/config.toml`).
+- Desktop CDP instancing: Select the main page by exact URL `http://tauri.localhost/` (widget
+  window exists too); a parallel session kills stray `trance-music.exe` procs and restarts adb —
+  expect mid-run app deaths unrelated to your probes (redirect stderr; app relaunches clean).
+- Toasts expire ~2–4 s: catch them in a short poll right after the fire.
+
+**Gates:** `npm test` **499/499** · eslint clean · `node --check` clean · `cargo fmt --check` 0 ·
+`clippy --all-targets -D warnings` 0 · `cargo test --lib` **231/0** (`OP_OFFLINE=1`;
+capability-test whitelist carries the one documented grant).
+
+Status: ✅ feature live-verified both surfaces ✅ docs (§10 record) + CHANGELOG ⏳ local commit
+pending, **not pushed** (rule 1). Probes (throwaway) in `%TEMP%\opencode\` deleted after reporting.

@@ -46,6 +46,11 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 # are switched off; they would drag the whole `image` crate into the build.
 qrcode = { version = "0.14.1", default-features = false }
 tauri-plugin-opener = "2.5.5"
+# Share deep links (docs/share-deep-links.md): `openmusic://t/<id>` resolves
+# on every surface. It ships a mobile implementation, so it stays out of the
+# desktop-only block below; on Windows/Linux the plugin itself only provides
+# `get_current` — the argv capture in run() carries the actual hand-off.
+tauri-plugin-deep-link = "2"
 
 # Desktop-only plugins. None of them has a mobile implementation, and pulling
 # them into the iOS/Android targets fails the mobile build, so they live here

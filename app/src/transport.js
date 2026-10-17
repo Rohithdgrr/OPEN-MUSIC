@@ -8,6 +8,7 @@ import { createLocalPl, openPicker } from "./library.js";
 import { playQueueItem } from "./playback.js";
 import { current, pickNextIndex, queue, queueIndex, renderQueue, repeatMode, setQueueIndex, setQueueTab, setRepeatMode, setShuffleMode, shuffleMode } from "./queue.js";
 import { arm as armSleep } from "./sleep.js";
+import { playUrl } from "./sharelink.js";
 
 // --------------------------------------------------------------- transport -
 export async function togglePlay() {
@@ -246,8 +247,13 @@ $("#dac-menu-toggle")?.addEventListener("click", () => {
 export const shareBtn = document.querySelector('[title="Share Session"]');
 shareBtn?.addEventListener("click", async () => {
   const t = queue[queueIndex]?.track;
-  const url = t ? `${location.origin}${location.pathname}#track=${t.id}` : location.href;
-  const data = { title: "OPEN MUSIC", text: t ? `Listening to "${t.title}"` : "OPEN MUSIC", url };
+  // Canonical share link (docs/share-deep-links.md): supersedes the old
+  // `#track=` hash, which could only ever be understood by this same
+  // machine's app. Playback is driven by the id alone.
+  const url = t
+    ? playUrl({ id: t.id, title: t.title || "", artist: t.artist || "" }) || location.href
+    : location.href;
+  const data = { title: t?.title || "OpenMusic", text: t ? `Listening to "${t.title}"` : "OpenMusic", url };
   try {
     if (navigator.share) {
       await navigator.share(data);

@@ -77,10 +77,15 @@ inject_android_permissions() {
   # ACCESS_LOCAL_NETWORK (Android 17 / API 37 targets) gates device-to-device
   # LAN traffic — the Jam room server/guest sockets — so a host or guest on a
   # real Android 17 device is dead without it (P43).
+  # The predicate must list EVERY idempotent manifest injection below — the
+  # early return otherwise skips them (2026-10-17: the share deep-link filter
+  # was dead on warm manifests under the permissions-only predicate).
   if grep -q 'android.permission.INTERNET' "$manifest" \
      && grep -q 'android.permission.CAMERA' "$manifest" \
-     && grep -q 'android.permission.ACCESS_LOCAL_NETWORK' "$manifest"; then
-    echo "✓ Android permissions already present"
+     && grep -q 'android.permission.ACCESS_LOCAL_NETWORK' "$manifest" \
+     && grep -q 'android:screenOrientation="portrait"' "$manifest" \
+     && grep -q 'android:scheme="openmusic"' "$manifest"; then
+    echo "✓ Android manifest injections already present"
     return 0
   fi
 
@@ -129,6 +134,16 @@ EOF
     # own absence like the rest.
     sed -i 's|android:name=".MainActivity"|android:name=".MainActivity"\n            android:screenOrientation="portrait"|' "$manifest"
     echo "✓ Locked Android orientation to portrait"
+  fi
+  if ! grep -q 'android:scheme="openmusic"' "$manifest"; then
+    # Share deep links (docs/share-deep-links.md §4): the `openmusic://`
+    # scheme filter on MainActivity. tauri-plugin-deep-link receives the
+    # intent through its onNewIntent hook; Chrome's intent:// URLs from
+    # play.html land here without App-Links verification. ACTION_VIEW is
+    # mandatory — a filter without it matches no browser intent. Guarded +
+    # idempotent like every injection above — survives `tauri android init`.
+    sed -i 's|</activity>|    <intent-filter>\n        <action android:name="android.intent.action.VIEW" />\n        <category android:name="android.intent.category.DEFAULT" />\n        <category android:name="android.intent.category.BROWSABLE" />\n        <data android:scheme="openmusic" />\n    </intent-filter>\n</activity>|' "$manifest"
+    echo "✓ Injected openmusic:// deep-link intent filter"
   fi
   inject_android_label
   return 0

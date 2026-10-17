@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default capability for the main window",
   "windows": ["main", "widget"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "deep-link:allow-get-current"]
 }

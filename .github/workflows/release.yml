@@ -23,6 +23,54 @@ permissions:
   contents: write
 
 jobs:
+  android:
+    name: Build Android universal APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+      - name: Point NDK_HOME at the runner's NDK
+        run: echo "NDK_HOME=$(ls -d ${ANDROID_HOME}/ndk/* | head -1)" >> "$GITHUB_ENV"
+      - name: Install frontend deps
+        run: npm ci
+      - name: Rebuild the tailwind bundle
+        run: npm run css
+      - name: Generate the Android project (gen/ is gitignored)
+        run: npx tauri android init
+      - name: Restore tracked launcher icons and overlay bits (init deletes them)
+        run: git checkout -- .
+      - name: Inject manifest layers + build the universal APK
+        # build.sh android-universal = inject permissions/media/portrait/deep
+        # links + `tauri android build --target aarch64 armv7 x86_64 --apk --ci`.
+        # The keystore minted by init is run-ephemeral: the APK signature
+        # rotates until ANDROID_KEYSTORE_* secrets land (share-deep-links.md §7).
+        run: bash build.sh android-universal
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-android
+          path: |
+            app/src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
   build:
     name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
@@ -72,7 +120,7 @@ jobs:
 
   publish:
     name: Assemble manifests and publish
-    needs: build
+    needs: [build, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -103,6 +151,7 @@ jobs:
             app/src-tauri/target/release/bundle/**/*.exe
             app/src-tauri/target/release/bundle/**/*.deb
             app/src-tauri/target/release/bundle/**/*.AppImage
+            app/src-tauri/target/release/bundle/**/*.apk
       - name: Publish updater artifacts
         # Optional by nature: .zip/.sig naming changed across Tauri versions
         # and the sigs only exist when the build was signed. Includes

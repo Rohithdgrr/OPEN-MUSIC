@@ -50,11 +50,25 @@
     "windows": {
       "certificateThumbprint": "378383F5680237760FB1A7DDF6EE09EC31554758",
       "digestAlgorithm": "sha256",
-      "timestampUrl": "http://timestamp.digicert.com"
+      "timestampUrl": "http://timestamp.digicert.com",
+      "nsis": {
+        "installerHooks": "./windows-deeplink.nsh"
+      }
     },
     "createUpdaterArtifacts": true
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["openmusic"]
+      },
+      "mobile": [
+        {
+          "scheme": ["openmusic"],
+          "host": "t"
+        }
+      ]
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE1MzYwRTBGNzVFNjRDQjEKUldTeFRPWjFEdzQycFNNdkxJUmVPY3VoMGhZRUt5VDA1OXNnSk0rU1VESHRhTkoyUWhlUDJ3ZU4K",
       "endpoints": [

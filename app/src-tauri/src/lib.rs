@@ -1614,13 +1614,52 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()>
     Ok(())
 }
 
+/// The `openmusic://` URI this process was launched with, Windows/Linux cold
+/// or warm path capture (docs/share-deep-links.md §4). On Android/iOS the
+/// deep-link plugin stores its own current urls instead — the shared command
+/// is a harmless None there.
+static LAUNCH_URI: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+#[cfg(desktop)]
+#[tauri::command]
+fn sharelink_launch_url() -> Option<String> {
+    LAUNCH_URI.get().cloned()
+}
+
+// Mobile keeps the command identity so the same frontend boot flow can call
+// it on either surface; the plugin's get_current is the Android channel.
+#[cfg(not(desktop))]
+#[tauri::command]
+fn sharelink_launch_url() -> Option<String> {
+    None
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[allow(clippy::expect_used)]
 pub fn run() {
+    // Share deep links (docs/share-deep-links.md): on Windows/Linux the OS
+    // launches a NEW process with `openmusic://…` in argv — capture it here,
+    // before anything else, cold or warm. The command `sharelink_launch_url`
+    // hands it to the frontend at boot; warm launches additionally ride the
+    // single-instance callback below.
+    #[cfg(desktop)]
+    {
+        if let Some(uri) = std::env::args()
+            .skip(1)
+            .find(|a| a.starts_with("openmusic://"))
+        {
+            let _ = LAUNCH_URI.set(uri.trim().to_string());
+        }
+    }
     // Opener: fires an ACTION_VIEW Intent on Android and `open`/`ShellExecute`
     // on desktop. Used by spotify_signin's browser hop on mobile (the old
     // xdg-open shell only exists on desktop) and by open_external everywhere.
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        // Deep links: on Android the plugin's onNewIntent hook receives the
+        // `openmusic://` intent; Windows/Linux only need the plugin for
+        // `get_current` — the argv hand-off above already covers those.
+        .plugin(tauri_plugin_deep_link::init());
     // First plugin: a second launch focuses the running instance. Both this
     // and the shortcut plugin are desktop-only — their Rust API does not
     // exist on mobile (Android gets single-task semantics from the OS and
@@ -1632,7 +1671,15 @@ pub fn run() {
     let builder = if std::env::var("TM_MULTI_INSTANCE").is_ok_and(|v| v == "1") {
         builder
     } else {
-        builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // Warm deep-link hand-off: the OS spawned this process with
+            // `openmusic://…` in argv; the argv once-capture above runs in
+            // THIS process's closure via the new instance, so forward it to
+            // the living frontend directly (docs/share-deep-links.md §4).
+            if let Some(uri) = args.iter().find(|a| a.starts_with("openmusic://")) {
+                use tauri::Emitter;
+                let _ = app.emit("sharelink://open", vec![uri.trim().to_string()]);
+            }
             show_main(app);
         }))
     };
@@ -1736,6 +1783,7 @@ pub fn run() {
             room::room_close,
             room::room_info,
             search_songs,
+            sharelink_launch_url,
             search_entities,
             search_suggestions,
             recommend_songs,
