@@ -5,14 +5,12 @@
 //! (catalog) and `proxy.rs` (media relay) territory.
 
 mod cache;
-// mod catalog; // Temporarily disabled - type mismatches need resolution
 // Spotify Canvas (undocumented endpoint) — its own module so the ToS-exposed
 // query surface stays in one file. docs/spotify-android-canvas.md §3B.
 mod canvas;
 mod db;
 mod gdrive;
 mod jiosaavn;
-// mod jiosaavn_catalog; // Temporarily disabled
 mod lyrics;
 mod official;
 mod proxy;
@@ -21,7 +19,6 @@ mod room;
 mod sha256;
 mod spotify;
 mod store;
-// mod audius; // Temporarily disabled
 
 // Re-export Spotify commands
 pub use spotify::{spotify_import_top, spotify_is_signedin, spotify_signin, spotify_signout};
@@ -185,10 +182,10 @@ async fn resolve_song(
     }
 
     let song = state.cached_song(&id).await?;
-    let chosen =
-        best_quality(&song.qualities, &prefer).ok_or_else(|| "no stream qualities".to_string())?;
-
-    let probe = state.cached_qualify(&chosen.url).await?;
+    // Ladder walk (docs/architecture.md §5.5): best playable tier at or
+    // below the request — a dead 320 kbps file drops to 160 instead of
+    // skipping the track.
+    let (chosen, probe) = state.playable_quality(&song.qualities, &prefer).await?;
 
     let host = url::Url::parse(&chosen.url)
         .ok()
@@ -196,8 +193,9 @@ async fn resolve_song(
         .unwrap_or_default();
 
     // Id-keyed so the relay can purge + re-resolve when the CDN retires the
-    // link (design L2); computed before the DTO moves `id`.
-    let proxy_url = proxy_url_for(state.port, &id, &state.session_token);
+    // link (design L2); `q` makes the relay serve the tier the badge names.
+    // Computed before the DTO moves `id`.
+    let proxy_url = proxy_url_for(state.port, &id, &state.session_token, Some(&prefer));
     Ok(PlayableAudio {
         id,
         title: song.track.title,
@@ -366,6 +364,33 @@ fn store_play(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Resu
         .store()
         .map_err(|e| e.clone())?
         .record_play(&track)
+}
+
+/// Append one play event to the taste log (docs/recommendations.md §8).
+/// Best-effort: a store failure only costs similarity signal, never playback.
+#[tauri::command]
+fn store_play_event(
+    event: serde_json::Value,
+    state: State<'_, Arc<AppState>>,
+) -> Result<u64, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .record_event(&event)
+}
+
+/// The newest `limit` play events, oldest-first (chronological order).
+#[tauri::command]
+fn store_events(
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::PlayEventRow>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .events(limit.unwrap_or(400) as i64)
 }
 
 /// Mirror the favorite flag into the store (for offline fav lists).
@@ -549,9 +574,8 @@ async fn prefetch_next(ids: Vec<String>, state: State<'_, Arc<AppState>>) -> Res
                     return;
                 }
                 if let Ok(song) = st.cached_song(&id).await {
-                    if let Some(q) = best_quality(&song.qualities, "320kbps") {
-                        let _ = st.cached_qualify(&q.url).await;
-                    }
+                    // Warm every tier memo the walk may touch (§5.5).
+                    let _ = st.playable_quality(&song.qualities, "320kbps").await;
                 }
             }
         });
@@ -782,16 +806,18 @@ async fn promote_song(id: String, state: State<'_, Arc<AppState>>) -> Result<boo
     // playable vault file while its bytes are being replaced.
     let previous = entry.path.clone();
     match save_to_vault(&state, &id, PREMIUM_KBPS, None).await {
-        Ok(_) => {
-            if !previous.is_empty() {
+        Ok(out) => {
+            // A same-stem rewrite can land the new premium file exactly on the
+            // old path; never delete what was just recorded.
+            if !previous.is_empty() && !previous.eq_ignore_ascii_case(&out.path) {
                 let _ = std::fs::remove_file(previous);
             }
             Ok(true)
         }
         Err(e) => {
             eprintln!("[OPEN MUSIC] promote {id} failed: {e}");
-            // Put the old row back so the vault keeps playing what it had.
-            let _ = state.record(entry);
+            // The vault row is restored inside `save_to_vault`'s own failure
+            // guard, so the vault keeps playing what it had.
             Err(e)
         }
     }
@@ -836,8 +862,36 @@ async fn save_to_vault(
     let chosen =
         best_quality(&song.qualities, &prefer).ok_or_else(|| "no stream qualities".to_string())?;
 
-    // Stop the old copy resolving while its file is being rewritten.
+    // Stop the old copy resolving while its file is being rewritten — but keep
+    // the row in hand: if the rewrite fails (network error, Stop, encode, hash
+    // or record failure) the previous file is still on disk, and without its
+    // row the vault would silently lose the entry.
+    let previous = state.vault().entries.into_iter().find(|e| e.id == id);
     state.forget(id)?;
+
+    // Puts that row back on any early return below; `done()` disarms it on the
+    // two success paths (a new row recorded, or the dedupe row kept).
+    struct RestoreOnFailure<'a> {
+        state: &'a AppState,
+        previous: Option<DownloadEntry>,
+    }
+    impl RestoreOnFailure<'_> {
+        fn done(&mut self) {
+            self.previous = None;
+        }
+    }
+    impl Drop for RestoreOnFailure<'_> {
+        fn drop(&mut self) {
+            if let Some(prev) = self.previous.take() {
+                // Only when its file survived: a late failure (encode, hash)
+                // can have replaced the source rendition already.
+                if std::path::Path::new(&prev.path).exists() {
+                    let _ = self.state.record(prev);
+                }
+            }
+        }
+    }
+    let mut restore = RestoreOnFailure { state, previous };
 
     std::fs::create_dir_all(&state.vault)
         .map_err(|e| format!("create {}: {e}", state.vault.display()))?;
@@ -911,6 +965,9 @@ async fn save_to_vault(
             let _ = channel.send(msg);
         }
         eprintln!("[OPEN MUSIC] {id} dedupes to vault entry {}", dup.id);
+        // The dedupe row is kept instead; restoring the forgotten row here
+        // could point it at bytes the dedupe just deleted.
+        restore.done();
         return Ok(DownloadOutcome {
             path: dup.path,
             sha256: sha,
@@ -946,6 +1003,7 @@ async fn save_to_vault(
     }
 
     eprintln!("[OPEN MUSIC] saved {written} bytes to {}", path.display());
+    restore.done();
     Ok(DownloadOutcome {
         path: path.display().to_string(),
         sha256: sha,
@@ -1389,24 +1447,11 @@ fn open_external(url: String) -> Result<(), String> {
     if cfg!(mobile) {
         return Err("opening links outside the app is not supported on Android yet".to_string());
     }
-    #[cfg(windows)]
-    let mut cmd = {
-        let mut c = std::process::Command::new("cmd");
-        c.args(["/C", "start", "", &url]);
-        c
-    };
-    #[cfg(not(windows))]
-    let mut cmd = {
-        let mut c = std::process::Command::new(if cfg!(target_os = "macos") {
-            "open"
-        } else {
-            "xdg-open"
-        });
-        c.arg(&url);
-        c
-    };
-    hide_console(&mut cmd).output().map_err(|e| e.to_string())?;
-    Ok(())
+    // tauri-plugin-opener hands the URL to the OS shell APIs (ShellExecuteW /
+    // open / xdg-open) as a single argument — unlike the old
+    // `cmd /C start "" {url}`, no shell re-parses `&`, `^` or `%VAR%` as
+    // command syntax.
+    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
 /// Open at startup: the HKCU Run key is Windows' own autostart list - no
@@ -1760,6 +1805,8 @@ pub fn run() {
             store_favs,
             store_most_played,
             store_play,
+            store_play_event,
+            store_events,
             store_fav,
             store_kv_get,
             store_kv_put,

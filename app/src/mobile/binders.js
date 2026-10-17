@@ -1,7 +1,7 @@
 // binders.js — paints real backend data into each static design screen.
 import { esc } from "../html.js";
 import { querySim } from "../fuzzy.js";
-import { didYouMean } from "../query.js";
+import { didYouMean, sourcePlan, sourceRows } from "../query.js";
 import {
   invoke,
   load,
@@ -85,12 +85,15 @@ import { renderLyrics, resetLyrics, syncLyrics, setLyricOffset, setLyricTrack, l
 import { getGeminiKey, setGeminiKey, hasGeminiKey, fetchAiLyrics, aiCopyright } from "./ai-lyrics.js";
 import { importCsvToPlaylist, readCsvFile } from "../importer.js";
 import { netMode } from "./net.js";
-import { licensesHTML, aboutHTML, termsHTML } from "./legal.js";
+import { licensesHTML, aboutHTML, termsHTML, APP } from "./legal.js";
 import { trackMenu, openSheet, detailsSheet } from "./menus.js";
 // The taste engine (pure + unit-tested in tests/recommend.test.mjs). Home's
 // Made-for-you shelves are a windowed projection of one profile built here.
-import { buildProfile, explain, shelfPlan, trackLangs } from "./recommend.js";
+import { buildProfile, explain, shelfPlan, trackLangs, artistInsights, filterArtists, artistEvidence, albumInsights, filterAlbums, albumEvidence } from "./recommend.js";
+import { similarShelf } from "../taste.js";
 import { groupLangAlbums, variantsFor } from "../albumgroup.js";
+import { matchTrackToCatalog } from "../spotmatch.js";
+import { canvasEnabled, canvasCellularAllowed, setCanvasEnabled, setCanvasCellular, stopCanvas, paintCanvasForTrack } from "./canvas.js";
 
 const main = () => document.querySelector("#screen main");
 
@@ -103,11 +106,11 @@ import { nextSort, SORT_LABEL } from "./rank.js";
 import {
   createLru,
   highlight,
+  moodOf,
   parseSearch,
   pickTop,
   queryTokens,
   rankForQuery,
-  tasteContext,
   understoodLabels,
   uniqueById,
 } from "./searchkit.js";
@@ -294,10 +297,11 @@ function wireRowFilter(input, container, rowSel) {
 // local logs — plays, likes, vault, saved playlists, country + language picks
 // — and hands back an ordered shelf plan. Runs *before* the feed guard in
 // mountHome: it needs no network, so an offline cold boot still gets them.
-async function renderMadeForYou(m) {
-  const root = m.querySelector("section")?.parentElement;
-  if (!root) return;
-
+/// One taste profile for every mined surface (Made-for-you shelves, Artists /
+/// Albums browsers): plays log + likes + vault + saved library + SQLite
+/// ledger. Async (vault + ledger need IPC); offline it degrades to the
+/// localStorage signals.
+async function buildTasteProfile() {
   // Vault rows are the "intent to own" signal, and they are what the
   // Downloaded shelf shows. Best effort: a preview with no IPC just loses it.
   let downloads = [];
@@ -327,7 +331,7 @@ async function renderMadeForYou(m) {
     console.warn("made-for-you: no store ledger", e);
   }
 
-  const profile = buildProfile({
+  return buildProfile({
     plays: load(PLAYS_KEY, []),
     favs: [...load(FAVS_KEY, []), ...ledger.filter((r) => r && r.is_fav)],
     downloads,
@@ -335,14 +339,27 @@ async function renderMadeForYou(m) {
     extra: ledger,
     country: load(COUNTRY_KEY, ""),
   });
+}
+
+async function renderMadeForYou(m) {
+  const root = m.querySelector("section")?.parentElement;
+  if (!root) return;
+
+  const profile = await buildTasteProfile();
   // An explicit language pick outranks what the log merely leans towards.
   const picked = prefLangs()[0] || "";
   const plan = shelfPlan(profile, { limit: 10, language: picked });
 
   // Reconcile against the DOM: a remount must not stack sections, and a
-  // profile that shrank must not leave a shelf with nothing behind it.
+  // profile that shrank must not leave a shelf with nothing behind it. The
+  // similarity shelf is built below from the play-event log, not the plan —
+  // it reconciles itself and is exempt here.
   for (const stale of [...root.querySelectorAll("[data-shelf]")]) {
-    if (stale.dataset.shelf.startsWith("tm-shelf-mfy-") && !plan.some((s) => `tm-shelf-mfy-${s.id}` === stale.dataset.shelf)) {
+    if (
+      stale.dataset.shelf.startsWith("tm-shelf-mfy-") &&
+      stale.dataset.shelf !== "tm-shelf-mfy-similar" &&
+      !plan.some((s) => `tm-shelf-mfy-${s.id}` === stale.dataset.shelf)
+    ) {
       stale.remove();
     }
   }
@@ -370,6 +387,38 @@ async function renderMadeForYou(m) {
         .join("");
     }
   }
+
+  // "Because you played X" — co-listening shelf over the play-event log
+  // (taste.js, docs/recommendations.md §8). Renders only when the log has a
+  // recent anchor with enough neighbours; an invented rail is worse than
+  // none. Metadata comes from the log's own rows: station plays are usually
+  // never cached, so the store would have nothing to resolve.
+  try {
+    const db = await import("../store_db.js");
+    const events = await db.getPlayEvents(400);
+    const similar = similarShelf(events, { now: Date.now(), n: 12, minNeighbors: 6 });
+    const key = "tm-shelf-mfy-similar";
+    const stale = root.querySelector(`[data-shelf="${key}"]`);
+    if (!similar || similar.tracks.length < 6) {
+      stale?.remove();
+    } else {
+      let sec = stale;
+      if (!sec) {
+        sec = document.createElement("section");
+        sec.dataset.shelf = key;
+        sec.className = "flex flex-col space-y-space-sm";
+        const daily = root.querySelector('[data-shelf="tm-shelf-mfy-daily"]');
+        if (daily) daily.after(sec);
+        else root.appendChild(sec);
+      }
+      sec.innerHTML = `<div class="flex flex-col space-y-0.5"><div class="flex items-center justify-between"><h2 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Because you played ${esc(similar.anchor.title)}</h2><span class="font-label-mono text-[9.5px] uppercase tracking-widest text-secondary">FOR YOU</span></div>${similar.anchor.artist ? `<p class="font-body-sm text-[11.5px] text-secondary truncate">${esc(similar.anchor.artist)}</p>` : ""}</div><div class="flex gap-3 overflow-x-auto no-scrollbar py-1" data-cards></div>`;
+      setList(key, similar.tracks);
+      const box = sec.querySelector("[data-cards]");
+      if (box) {
+        box.innerHTML = similar.tracks.map((t, i) => homeTrackCardHTML(t, i, key)).join("");
+      }
+    }
+  } catch {}
 
   paintFavs();
 }
@@ -586,20 +635,34 @@ async function mountHome() {
     }
   }
 
-  const artists = feed.artists || [];
+  // Your artists first: the mined top 10 (history + likes + downloads +
+  // follows) with a See-all into the browser; the generic feed rail is the
+  // fresh-install fallback.
   const artS = sectionFor("Top Artists");
   if (artS) {
     const c = afterHead(artS, "Top Artists");
-    if (c) {
-      setList("artists", artists);
-      c.innerHTML = artists
-        .slice(0, 10)
-        .map((a, i) => homeArtistHTML(a, i, entityNav("artist", a)))
-        .join("");
+    let mined = [];
+    try {
+      mined = artistInsights(await buildTasteProfile(), { follows: loadFollows() }).slice(0, 10);
+    } catch (e) {
+      console.warn("top artists: no profile", e);
     }
-    // No "all artists" screen exists on mobile — hide the button rather than
-    // leave a dead one in the corner.
-    [...artS.querySelectorAll("button")].find((b) => /SEE ALL/i.test(b.textContent))?.remove();
+    if (c) {
+      if (mined.length) {
+        c.innerHTML = mined.map((a) => minedArtistTile(a, true)).join("");
+      } else {
+        const artists = feed.artists || [];
+        setList("artists", artists);
+        c.innerHTML = artists
+          .slice(0, 10)
+          .map((a, i) => homeArtistHTML(a, i, entityNav("artist", a)))
+          .join("");
+      }
+    }
+    const head = artS.querySelector("div.flex.items-center.justify-between");
+    if (head && !head.querySelector('[data-nav="artists"]')) {
+      head.insertAdjacentHTML("beforeend", `<button data-nav="artists" class="font-label-sm text-[11px] text-secondary hover:text-on-surface font-semibold tracking-wider">SEE ALL</button>`);
+    }
   }
 
   // Wire Genre Cards to search
@@ -610,18 +673,29 @@ async function mountHome() {
     });
   });
 
-  // Wire Category Filter Chips
+  // Wire Category Filter Chips. Two verbs on one strip (old design kept
+  // after the tile-grid trial): Charts/Playlists/Albums/Artists open their
+  // mined browsers; All/Genres/Heavy Rotation filter the shelves in place.
   const chipContainer = m.querySelector("#home-category-chips");
   if (chipContainer) {
     const chips = chipContainer.querySelectorAll(".home-cat-chip");
+    const CHIP_IDLE = "home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all";
+    const CHIP_ON = "home-cat-chip px-4 py-2 bg-primary text-on-primary rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all";
     chips.forEach((chip) => {
       chip.addEventListener("click", () => {
         const cat = chip.dataset.homeCat || "all";
-        // Update active chip pill appearance
+        // Browse chips open their mined browser; the rest filter shelves.
+        if (cat === "artists") return go("artists");
+        if (cat === "albums") return go("albums");
+        if (cat === "playlists") return go("playlists");
+        if (cat === "charts") return go("charts");
+        // The selected pill must read selected: the theme CSS keys the
+        // invert on .bg-primary (bg-on-surface left it white-on-white in
+        // light mode — measured, 2026-10-15).
         chips.forEach((c) => {
-          c.className = "home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95";
+          c.className = CHIP_IDLE;
         });
-        chip.className = "home-cat-chip px-4 py-2 bg-on-surface text-surface rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all";
+        chip.className = CHIP_ON;
 
         // Map category to shelf visibility
         const allShelves = m.querySelectorAll("section[data-shelf]");
@@ -629,14 +703,6 @@ async function mountHome() {
           const key = s.dataset.shelf;
           if (cat === "all") {
             s.classList.remove("hidden");
-          } else if (cat === "charts") {
-            s.classList.toggle("hidden", key !== "charts");
-          } else if (cat === "playlists") {
-            s.classList.toggle("hidden", key !== "curated" && key !== "tm-shelf-daily");
-          } else if (cat === "albums") {
-            s.classList.toggle("hidden", key !== "spotlight" && key !== "tm-shelf-albums");
-          } else if (cat === "artists") {
-            s.classList.toggle("hidden", key !== "artists");
           } else if (cat === "genres") {
             s.classList.toggle("hidden", key !== "genres");
           } else if (cat === "jump") {
@@ -1286,7 +1352,6 @@ async function mountSearch(query) {
   };
 
   // ------------------------------------------------------------ data loading
-  const tasteOpts = () => tasteContext(load(PLAYS_KEY, []), load(FAVS_KEY, []), load(COUNTRY_KEY, "") || "");
 
   /// One page for the active chip: entity cards for the album/artist/playlist
   /// chips, songs otherwise. Returns null when a newer search superseded it.
@@ -1302,7 +1367,12 @@ async function mountSearch(query) {
   };
 
   const shapePage = (raw) =>
-    isEntityCat(curCat) ? uniqueById(raw) : rankForQuery(uniqueById(raw), parsed, curSort, tasteOpts());
+    isEntityCat(curCat)
+      ? uniqueById(raw)
+      : rankForQuery(uniqueById(raw), parsed, curSort, {
+          region: load(COUNTRY_KEY, "") || "",
+          moodOf,
+        });
 
   /// The mixed shelves behind the All chip: one small page per entity kind,
   /// fetched together and cached under the query (not the chip) so switching
@@ -1337,6 +1407,30 @@ async function mountSearch(query) {
     SEARCH_MEM.set(ekey, found);
     diskPut(ekey, found);
     render();
+  };
+
+  /// §8.11 — after page 1 paints, ask the catalog for the anchor's own source
+  /// (its movie for film hits, its artist otherwise) and weave those rows into
+  /// the stored page. Best-effort; any failure leaves the fetched page as is.
+  const mergeSource = async (mine, key, raw) => {
+    try {
+      if (!invoke || netMode() === "offline") return;
+      const plan = sourcePlan(results[0]);
+      if (!plan || !plan.query) return;
+      const r = await invoke("search_songs", { query: plan.query, limit: 20, page: 1 });
+      if (mine !== seq || key !== cacheKeyNow()) return;
+      const known = new Set(results.map((t) => t && t.id));
+      const extra = sourceRows((r && r.tracks) || [], plan, known);
+      if (!extra.length) return;
+      results = shapePage(raw.concat(extra));
+      const payload = { results, page, pageFull };
+      SEARCH_MEM.set(key, payload);
+      diskPut(key, payload);
+      saveSnap(key, payload);
+      cacheSongs(extra);
+      pushDiag("search_source", true, `+${extra.length} ${plan.kind} · ${plan.query}`);
+      render();
+    } catch {}
   };
 
   /// Live typing pays for song rows only; the shelf fan-out waits until the
@@ -1421,6 +1515,10 @@ async function mountSearch(query) {
       render();
       if (full && curCat === "all") loadShelves(mine);
       else if (!full && curCat === "all") scheduleUpgrade();
+      // §8.11: a committed search also folds in the anchor's own source rows.
+      if (full && !isEntityCat(curCat) && curCat !== "hires" && curSort === "relevance") {
+        mergeSource(mine, key, got.got);
+      }
       if (!results.length && !isEntityCat(curCat) && curCat !== "hires") offerTypoFix(curQ);
     } catch (e) {
       if (mine !== seq) return;
@@ -1703,6 +1801,222 @@ let libMenu = null;
 let dlFilter = "all";
 let dlSort = "recent";
 let dlQuery = "";
+
+/// Mined collection browsers (Artists / Albums / Playlists / Charts): the
+/// home chips open these instead of only filtering shelves. Tiles reuse the
+/// global delegations — [data-nav] for token/id rows, [data-entity-name] for
+/// name-resolved artists/albums — so no new navigation paths exist.
+function minedArtistTile(a, rail) {
+  const ev = artistEvidence(a);
+  const wrap = rail ? "w-[76px] flex-shrink-0 flex flex-col items-center" : "w-full flex flex-col items-center";
+  const body = `<div class="w-full aspect-square rounded-full overflow-hidden bg-surface-container-highest ring-1 ring-black/5 shadow-sm"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
+    <div class="font-label-md text-[11px] font-semibold text-on-surface truncate mt-2 max-w-full text-center">${esc(a.name)}</div>`;
+  // data-entity-name resolves via textContent: the wrapper must hold ONLY the
+  // name + art (empty alt), never the evidence line.
+  const nav = a.token
+    ? `<div data-nav="${esc(entityNav("artist", { token: a.token, title: a.name, image: a.image }))}" class="${wrap} cursor-pointer active:scale-95 transition-all">${body}${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full text-center">${esc(ev)}</div>` : ""}</div>`
+    : `<div class="${wrap} cursor-pointer active:scale-95 transition-all"><div data-entity-name data-entity-kind="artist" class="w-full flex flex-col items-center">${body}</div>${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full text-center">${esc(ev)}</div>` : ""}</div>`;
+  return nav;
+}
+
+function minedAlbumTile(a) {
+  const ev = albumEvidence(a);
+  return `<div class="w-full flex flex-col cursor-pointer active:scale-[0.98] transition-all"><div data-entity-name data-entity-kind="album" class="w-full flex flex-col"><div class="w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-black/5 shadow-sm"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
+    <div class="font-label-md text-[12px] font-semibold text-on-surface truncate mt-2 max-w-full">${esc(a.title)}</div>
+    <div class="font-body-sm text-[10px] text-secondary truncate max-w-full">${esc(a.artist)}</div></div>
+    ${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full mt-0.5">${esc(ev)}</div>` : ""}</div>`;
+}
+
+function playlistRow(p) {
+  const bubble = p.playId
+    ? `<button data-pl-play="${esc(p.playId)}" aria-label="Play" class="w-10 h-10 rounded-full bg-on-surface text-surface flex items-center justify-center shrink-0 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings:'FILL' 1;">play_arrow</span></button>`
+    : "";
+  return `<div data-nav="${esc(p.nav)}" class="flex items-center gap-3 p-2 rounded-2xl bg-surface-container-lowest border border-surface-container-high/50 shadow-sm cursor-pointer active:scale-[0.99] transition-all">
+    <div class="w-14 h-14 rounded-xl overflow-hidden bg-surface-container-highest shrink-0"><img alt="" class="w-full h-full object-cover" ${art(p.image)}></div>
+    <div class="flex flex-col min-w-0 flex-1">
+      <div class="font-body-md text-[14px] font-semibold text-on-surface truncate">${esc(p.title)}</div>
+      <div class="font-body-sm text-[11px] text-secondary truncate">${esc(p.sub)}</div>
+    </div>${bubble}</div>`;
+}
+
+function paintTabPills(scope, attr, key, active) {
+  scope.querySelectorAll(`[${attr}]`).forEach((x) => {
+    const on = (x.dataset[key] || "") === active;
+    x.className = `px-3.5 py-1 rounded-full font-label-sm text-label-sm whitespace-nowrap transition-all ${on ? "bg-primary text-on-primary shadow-sm" : "bg-surface-container-low border border-surface-container-high/60 text-secondary active:scale-95"}`;
+  });
+}
+
+async function mountArtists() {
+  const m = main();
+  if (!m) return;
+  wireBack(m);
+  const grid = m.querySelector("[data-artists-grid]");
+  const empty = m.querySelector("[data-artists-empty]");
+  const count = m.querySelector("[data-artists-count]");
+  let tab = "all";
+  let list = [];
+  try {
+    list = artistInsights(await buildTasteProfile(), { follows: loadFollows() });
+  } catch (e) {
+    console.error(e);
+  }
+  const paint = () => {
+    const rows = filterArtists(list, tab);
+    if (count) count.textContent = `${list.length}`;
+    if (!rows.length) {
+      if (grid) grid.innerHTML = "";
+      empty?.classList.remove("hidden");
+      return;
+    }
+    empty?.classList.add("hidden");
+    if (grid) grid.innerHTML = rows.map((a) => minedArtistTile(a, false)).join("");
+  };
+  m.querySelectorAll("[data-artists-tab]").forEach((b) => {
+    b.addEventListener("click", () => {
+      tab = b.dataset.artistsTab || "all";
+      paintTabPills(m, "data-artists-tab", "artistsTab", tab);
+      paint();
+    });
+  });
+  paint();
+}
+
+async function mountAlbums() {
+  const m = main();
+  if (!m) return;
+  wireBack(m);
+  const grid = m.querySelector("[data-albums-grid]");
+  const empty = m.querySelector("[data-albums-empty]");
+  const count = m.querySelector("[data-albums-count]");
+  let tab = "all";
+  let list = [];
+  try {
+    list = albumInsights(await buildTasteProfile());
+  } catch (e) {
+    console.error(e);
+  }
+  const paint = () => {
+    const rows = filterAlbums(list, tab);
+    if (count) count.textContent = `${list.length}`;
+    if (!rows.length) {
+      if (grid) grid.innerHTML = "";
+      empty?.classList.remove("hidden");
+      return;
+    }
+    empty?.classList.add("hidden");
+    if (grid) grid.innerHTML = rows.map(minedAlbumTile).join("");
+  };
+  m.querySelectorAll("[data-albums-tab]").forEach((b) => {
+    b.addEventListener("click", () => {
+      tab = b.dataset.albumsTab || "all";
+      paintTabPills(m, "data-albums-tab", "albumsTab", tab);
+      paint();
+    });
+  });
+  paint();
+}
+
+async function mountPlaylists() {
+  const m = main();
+  if (!m) return;
+  wireBack(m);
+  const box = m.querySelector("[data-playlists-list]");
+  const empty = m.querySelector("[data-playlists-empty]");
+  const count = m.querySelector("[data-playlists-count]");
+  let tab = "yours";
+  const lib = load(LIBRARY_KEY, []).filter((e) => e && (e.kind || (e.token ? "album" : "playlist")) === "playlist");
+  const yours = lib.map((e) => {
+    const n = e.local ? (e.tracks || []).length : Number(e.count) || (e.tracks || []).length;
+    const off = !!e.downloaded || (e.id ? playlistOffline(e.id) : false);
+    return {
+      nav: entityNav("playlist", e),
+      image: e.image || "",
+      title: e.title || "Playlist",
+      sub: `${n} song${n === 1 ? "" : "s"}${off ? " · downloaded" : ""}${e.local ? " · yours" : ""}`,
+      downloaded: off,
+      local: !!e.local,
+      ts: Number(e.ts) || 0,
+    };
+  });
+  let featured = [];
+  if (invoke && netMode() !== "offline") {
+    try {
+      const feed = await invoke("home_feed");
+      const seen = new Set();
+      featured = [...(feed.playlists || []), ...(feed.charts || [])]
+        .filter((p) => p && p.id && !seen.has(p.id) && seen.add(p.id))
+        .map((p) => ({
+          nav: entityNav("playlist", p),
+          playId: p.id,
+          image: p.image || "",
+          title: p.title || "",
+          sub: p.subtitle || (p.count ? `${p.count} tracks` : "Playlist"),
+          downloaded: false,
+        }));
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  const paint = () => {
+    let rows = tab === "featured" ? featured : yours;
+    if (tab === "downloaded") rows = yours.filter((p) => p.downloaded);
+    if (tab === "yours") rows = [...yours].sort((a, b) => (b.local - a.local) || b.ts - a.ts);
+    if (count) count.textContent = `${rows.length}`;
+    if (!rows.length) {
+      if (box) box.innerHTML = "";
+      empty?.classList.remove("hidden");
+      return;
+    }
+    empty?.classList.add("hidden");
+    if (box) box.innerHTML = rows.map(playlistRow).join("");
+  };
+  m.querySelectorAll("[data-playlists-tab]").forEach((b) => {
+    b.addEventListener("click", () => {
+      tab = b.dataset.playlistsTab || "yours";
+      paintTabPills(m, "data-playlists-tab", "playlistsTab", tab);
+      paint();
+    });
+  });
+  paint();
+}
+
+async function mountCharts() {
+  const m = main();
+  if (!m) return;
+  wireBack(m);
+  const box = m.querySelector("[data-charts-list]");
+  const empty = m.querySelector("[data-charts-empty]");
+  const count = m.querySelector("[data-charts-count]");
+  let charts = [];
+  if (invoke && netMode() !== "offline") {
+    try {
+      charts = ((await invoke("home_feed")).charts || []).filter((p) => p && p.id);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  if (count) count.textContent = `${charts.length}`;
+  if (!charts.length) {
+    if (box) box.innerHTML = "";
+    empty?.classList.remove("hidden");
+    return;
+  }
+  empty?.classList.add("hidden");
+  if (box) {
+    box.innerHTML = charts
+      .map(
+        (p, i) => `<div data-nav="${esc(entityNav("playlist", p))}" class="flex items-center gap-3 p-2 rounded-2xl bg-surface-container-lowest border border-surface-container-high/50 shadow-sm cursor-pointer active:scale-[0.99] transition-all">
+      <span class="font-label-mono text-[15px] font-bold text-secondary w-8 text-center shrink-0">${i + 1}</span>
+      <div class="w-14 h-14 rounded-xl overflow-hidden bg-surface-container-highest shrink-0"><img alt="" class="w-full h-full object-cover" ${art(p.image)}></div>
+      <div class="flex flex-col min-w-0 flex-1">
+        <div class="font-body-md text-[14px] font-semibold text-on-surface truncate">${esc(p.title || "")}</div>
+        <div class="font-body-sm text-[11px] text-secondary truncate">${esc(p.subtitle || (p.count ? `${p.count} tracks` : ""))}</div>
+      </div>
+      <button data-pl-play="${esc(p.id)}" aria-label="Play" class="w-10 h-10 rounded-full bg-on-surface text-surface flex items-center justify-center shrink-0 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings:'FILL' 1;">play_arrow</span></button></div>`,
+      )
+      .join("");
+  }
+}
 
 /// Items shown in the Library list: the two pins' contents, saved entities and
 /// recently played songs, so the shelf is real instead of design mock rows.
@@ -2190,9 +2504,9 @@ async function mountDownload() {
           <span class="material-symbols-outlined text-[15px]">verified_user</span><span>Verify</span>
         </button>
       </div>
-      <div class="relative w-full flex items-center bg-surface-container-lowest border border-surface-container-high/80 rounded-2xl px-3.5 py-1 shadow-sm">
+      <div class="relative w-full flex items-center bg-surface-container-low border-0 rounded-2xl pl-3.5 pr-1.5 py-1.5 shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow">
         <span class="material-symbols-outlined text-secondary text-[19px] mr-2">search</span>
-        <input data-dl-search class="w-full h-9 bg-transparent text-on-surface font-body-md text-body-md placeholder-secondary focus:outline-none" placeholder="Search downloads…" value="${esc(dlQuery)}" type="text" />
+        <input data-dl-search aria-label="Search downloads" class="bay-input w-full h-9 bg-transparent border-0 outline-none ring-0 shadow-none text-on-surface font-body-md text-body-md placeholder-secondary focus:outline-none" placeholder="Search downloads…" value="${esc(dlQuery)}" type="text" />
       </div>`;
       tools.querySelector("[data-dl-wifi]")?.addEventListener("click", () => {
         const next = !wifiOnly();
@@ -3185,6 +3499,10 @@ function paintNowplaying(st) {
     // Always paint — see the widget: an artless track must fall back to the
     // brand mark instead of keeping the last cover (06-features batch).
     if (artImg) paintArt(artImg, t.image || "");
+    // Spotify Canvas (docs/spotify-android-canvas.md §3B): a no-op unless the
+    // screen, the toggle and a configured cookie all line up — the art above
+    // is the fallback by construction.
+    paintCanvasForTrack(t);
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
     // The action-row Like icon mirrors the same state (paintFavs covers every
@@ -3426,13 +3744,15 @@ function mountNowplaying() {
       if (t) downloadTrack(t, fresh);
     });
   }
-  // Lyrics "Full View": promote the preview card to the fixed stage (CSS in
+  // Lyrics "Full View": promote the sheet card to the fixed stage (CSS in
   // index.html) and re-pin the active line to the new geometry right away.
+  // The card has been rounded-3xl since the 2026-10-10 mockup redesign —
+  // without it in the selector closest() missed and the button did nothing.
   const fullBtn = m.querySelector("[data-lyrics-full]");
   if (fullBtn && !fullBtn.dataset.fullWired) {
     fullBtn.dataset.fullWired = "1";
     fullBtn.addEventListener("click", () => {
-      const card = fullBtn.closest("div.rounded-2xl, div.rounded-xl");
+      const card = fullBtn.closest("div.rounded-3xl, div.rounded-2xl, div.rounded-xl");
       if (!card) return;
       const on = card.classList.toggle("tm-lyrics-full");
       fullBtn.textContent = on ? "Close" : "Full View";
@@ -3721,6 +4041,22 @@ function mountAnalytics() {
   const m = main();
   if (!m) return;
   wireBack(m);
+
+  // The fragment's inline onclick calls setPeriod, but the generated
+  // analytics.js keeps its copy inside an IIFE (never reachable from the
+  // fragment) — publish the shim so the pills resolve instead of throwing.
+  // The shelves below are last-7-days regardless of period, so this only
+  // swaps the selected pill.
+  window.setPeriod = (btn) => {
+    const row = m.querySelector("#period-selector");
+    if (!row) return;
+    row.querySelectorAll("button").forEach((b) => {
+      const on = b === btn;
+      b.className = on
+        ? "px-3 py-1 rounded-full bg-primary text-on-primary font-label-sm text-[12px] font-semibold transition-all shadow-xs"
+        : "px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all";
+    });
+  };
 
   const plays = load(PLAYS_KEY, []);
   const totalSec = plays.reduce((s, t) => s + (Number(t.duration_secs) || 0) * (Number(t.count) || 1), 0);
@@ -4124,14 +4460,13 @@ function paintSettings(m) {
   if (au) paintSwitch(au, String(load(AUTOUPDATE_KEY, "1")) === "1");
 }
 
-/// tauri.conf.json "version" — the design export shipped a mock v2.4.0.
-const APP_VERSION = "0.4.0";
-
+/// The About copy is single-sourced in legal.js (`APP.version`); the design
+/// export shipped a mock version and the footer still carries one.
 function paintVersion(m) {
   const head = m.querySelector("header span");
-  if (head && /^v\d/i.test(head.textContent.trim())) head.textContent = `v${APP_VERSION}`;
+  if (head && /^v\d/i.test(head.textContent.trim())) head.textContent = `v${APP.version}`;
   const foot = [...m.querySelectorAll("p")].find((p) => /VERSION\s+\d/i.test(p.textContent));
-  if (foot) foot.textContent = `VERSION ${APP_VERSION}`;
+  if (foot) foot.textContent = `VERSION ${APP.version}`;
 }
 
 /// The three legal rows were href="#" anchors the router swallows, so they
@@ -4256,6 +4591,31 @@ function ensureMobilePrefs(m) {
           "Import playlist CSV",
           "Spotify Exportify export",
           `<button type="button" id="m-csv-import" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button><input type="file" id="m-csv-file" accept=".csv,text/csv" class="hidden">`,
+        ),
+    ) +
+    sec(
+      "tm-m-spotify",
+      "Spotify",
+      "ACCOUNT",
+      row(
+        "music_note",
+        "Spotify account",
+        `<span id="m-spotify-status">Checking…</span>`,
+        `<button type="button" id="m-spotify-signin" class="hidden shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Sign in</button><button type="button" id="m-spotify-signout" class="hidden shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Sign out</button>`,
+      ) +
+        row(
+          "playlist_play",
+          "Import top tracks",
+          "Match your top 20 to the catalog",
+          `<button type="button" id="m-spotify-top" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button>`,
+        ) +
+        row("smart_display", "Now Playing Canvas", "Unofficial Spotify feature — best effort", sw("m-canvas")) +
+        row("signal_cellular_alt", "Canvas on mobile data", "Off = Wi-Fi only", sw("m-canvas-cell")) +
+        row(
+          "key",
+          "Canvas session cookie",
+          `Browser sp_dc — <span id="m-spdc-status">checking…</span>`,
+          `<input type="password" id="m-spdc" autocomplete="off" spellcheck="false" placeholder="sp_dc" class="w-24 shrink-0 rounded-xl border border-surface-container-high bg-surface-container-low px-3 py-1.5 font-body-sm text-body-sm text-on-surface focus:outline-none" /><button type="button" id="m-spdc-save" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Save</button>`,
         ),
     );
   const wrap = m.querySelector("div.space-y-6") || m.firstElementChild || m;
@@ -4409,6 +4769,122 @@ function ensureMobilePrefs(m) {
       toast(`Import failed: ${String(err).slice(0, 120)}`, 5000, "error");
     }
   });
+  // ------------------------------------------- Spotify (new 2026-10-15)
+  // §3C of docs/spotify-android-canvas.md: account, top-tracks import and the
+  // Canvas controls, over the already-registered commands. Status copy mirrors
+  // the desktop panel (settings.js fillSpotifyStatus).
+  const spotifyStatus = async () => {
+    const st = q("m-spotify-status");
+    const si = q("m-spotify-signin");
+    const so = q("m-spotify-signout");
+    try {
+      const signedIn = await invoke("spotify_is_signedin");
+      if (st) st.textContent = signedIn ? "Signed in" : "Not signed in";
+      si?.classList.toggle("hidden", signedIn);
+      so?.classList.toggle("hidden", !signedIn);
+    } catch {
+      if (st) st.textContent = "Spotify not configured";
+      si?.classList.add("hidden");
+      so?.classList.add("hidden");
+    }
+  };
+  if (invoke) spotifyStatus();
+  q("m-spotify-signin")?.addEventListener("click", async () => {
+    if (!invoke) return toast("Backend unavailable", 4000, "error");
+    const st = q("m-spotify-status");
+    if (st) st.textContent = "Waiting for the browser…";
+    try {
+      await invoke("spotify_signin");
+      toast("Signed in to Spotify", 4000, "success");
+    } catch (err) {
+      toast(String(err).slice(0, 140), 6000, "error");
+    }
+    spotifyStatus();
+  });
+  q("m-spotify-signout")?.addEventListener("click", async () => {
+    if (!invoke) return toast("Backend unavailable", 4000, "error");
+    try {
+      await invoke("spotify_signout");
+      toast("Signed out from Spotify", 3500, "success");
+    } catch (err) {
+      toast(String(err).slice(0, 140), 5000, "error");
+    }
+    spotifyStatus();
+  });
+  q("m-spotify-top")?.addEventListener("click", async () => {
+    if (!invoke) return toast("Backend unavailable", 4000, "error");
+    try {
+      const signedIn = await invoke("spotify_is_signedin");
+      if (!signedIn) return toast("Sign in to Spotify first", 4000, "error");
+      toast("Importing top tracks — matching…", 4000, "info");
+      const tracks = await invoke("spotify_import_top", { timeRange: "medium_term", limit: 20 });
+      if (!tracks || !tracks.length) return toast("No top tracks found", 4000, "info");
+      const matched = [];
+      for (const t of tracks) {
+        const { track } = await matchTrackToCatalog(t, invoke);
+        if (track) matched.push(track);
+      }
+      if (!matched.length) return toast("Nothing matched the catalog", 5000, "error");
+      const saved = load(LIBRARY_KEY, []);
+      // Same record shape as the CSV import path (Library lists it as local).
+      saved.unshift({
+        id: `spotify-top-${Date.now()}`,
+        title: "Spotify Top Tracks",
+        tracks: matched.map((m) => ({ id: m.id, title: m.title || m.name, artist: m.artist, album: m.album, image: m.image, duration: m.duration || m.duration_ms })),
+        local: true,
+        kind: "playlist",
+        subtitle: `${matched.length} songs`,
+        image: "",
+        ts: Date.now(),
+      });
+      save(LIBRARY_KEY, saved);
+      toast(`Imported ${matched.length} of ${tracks.length} top tracks${tracks.length - matched.length ? ` — ${tracks.length - matched.length} not found` : ""}`, 6000, "success");
+      pushEvent("library", "Imported Spotify Top Tracks", `${matched.length} of ${tracks.length} tracks matched.`);
+    } catch (err) {
+      toast(String(err).slice(0, 160), 6000, "error");
+    }
+  });
+  const paintSpdc = async () => {
+    const st = q("m-spdc-status");
+    if (!st) return;
+    if (!invoke) {
+      st.textContent = "unavailable";
+      return;
+    }
+    try {
+      st.textContent = (await invoke("canvas_configured")) ? "configured" : "not configured";
+    } catch {
+      st.textContent = "unavailable";
+    }
+  };
+  if (invoke) paintSpdc();
+  q("m-spdc-save")?.addEventListener("click", async () => {
+    if (!invoke) return toast("Backend unavailable", 4000, "error");
+    const input = q("m-spdc");
+    const val = input ? input.value.trim() : "";
+    try {
+      await invoke("set_canvas_cookie", { cookie: val });
+      if (input) input.value = "";
+      toast(val ? "Canvas cookie saved" : "Canvas cookie cleared", 3500, "success");
+    } catch (err) {
+      toast(String(err).slice(0, 140), 5000, "error");
+    }
+    paintSpdc();
+  });
+  const flipCanvas = (id, get, set, msg) => {
+    q(id)?.addEventListener("click", () => {
+      const on = !get();
+      set(on);
+      paintMobilePrefs(m);
+      // Apply now, not at the next track change: stopCanvas clears the
+      // per-track guard and the repaint refetches (Rust-side cached).
+      stopCanvas();
+      paintCanvasForTrack(playerState().track || null);
+      toast(msg(on), 3000, "success");
+    });
+  };
+  flipCanvas("m-canvas", canvasEnabled, setCanvasEnabled, (on) => (on ? "Canvas on — video over the artwork" : "Canvas off"));
+  flipCanvas("m-canvas-cell", canvasCellularAllowed, setCanvasCellular, (on) => (on ? "Canvas allowed on mobile data" : "Canvas Wi-Fi only"));
   if (invoke) invoke("cache_stats").then((s) => paintCache(s)).catch(() => {});
   applyMobileTheme();
 }
@@ -4456,7 +4932,7 @@ function paintMobilePrefs(m) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
   }
-  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-normalize", normalizeOn()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()]]) {
+  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-normalize", normalizeOn()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()], ["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, !!on);
   }
@@ -4654,6 +5130,10 @@ onPaint(paintNowplaying);
 export const MOUNT = {
   home: mountHome,
   search: mountSearch,
+  artists: mountArtists,
+  albums: mountAlbums,
+  playlists: mountPlaylists,
+  charts: mountCharts,
   "main-library": mountLibrary,
   "liked-songs": mountLiked,
   download: mountDownload,

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { fuzzyScore, querySim } from "../src/fuzzy.js";
-import { didYouMean, matchesFilters, normalize, parseQuery, rankTracks, relevance } from "../src/query.js";
+import { albumKey, cleanTitle, didYouMean, leadArtists, matchesFilters, normalize, parseQuery, rankTracks, relevance, SOURCE_EXTRA_MAX, sourceMatch, sourceOrder, sourcePlan, sourceRows } from "../src/query.js";
 
 test("normalize folds case, accents, ampersands and punctuation", () => {
   assert.equal(normalize("  ARIJIT   SINGH  "), "arijit singh");
@@ -105,13 +105,41 @@ test("relevance: @artist, #album and an exact phrase all score", () => {
   assert.ok(relevance(on, exact, score) > relevance(off, exact, score));
 });
 
-test("relevance: taste and region nudges, without overriding the text", () => {
+test("relevance: provenance doesn't hide an exact title from the original", () => {
+  // Identical text score: only the bonuses may decide. Live finding — the
+  // catalog files the original under a compilation while a cover carries the
+  // bare title, so without cleaning the "(From …)" clause the cover won.
+  const q = parseQuery("tum hi ho");
+  const score = () => 0.5;
+  const original = {
+    id: "o",
+    title: 'Tum Hi Ho (From "Aashiqui 2")',
+    artist: "Arijit Singh, Mithoon",
+    album: "Best Of Arijit Singh - Collection Of Romantic Songs",
+    language: "hindi",
+    plays: 374140216,
+  };
+  const cover = {
+    id: "c",
+    title: "Tum Hi Ho",
+    artist: "Gurbani Bhatia",
+    album: "Heartstrings",
+    language: "hindi",
+    plays: 315697,
+  };
+  assert.ok(
+    relevance(original, q, score) > relevance(cover, q, score),
+    "the 374M original outranks the 315k cover",
+  );
+});
+
+test("relevance: region still nudges, personal taste no longer does", () => {
   const q = parseQuery("trance");
   const score = (t) => fuzzyScore(q.text, t.title, t.artist, t.album);
   const base = { id: "1", title: "Solaris", artist: "Kaelen" };
   const loved = { ...base, id: "2" };
   const lovedScore = relevance(loved, q, score, { played: new Set(["2"]), liked: new Set(["2"]) });
-  assert.ok(lovedScore > relevance(base, q, score), "played/liked lifts a row");
+  assert.equal(lovedScore, relevance(base, q, score), "played/liked must not lift a row (§8.9)");
   const inRegion = relevance({ ...base, id: "3", language: "hindi" }, q, score, { region: "IN" });
   const outRegion = relevance({ ...base, id: "4", language: "arabic" }, q, score, { region: "IN" });
   assert.ok(inRegion > outRegion, "the listener's region lifts its own languages");
@@ -144,4 +172,141 @@ test("didYouMean offers near misses above the similarity gate", () => {
   assert.ok(!out.some((c) => /Bohemian/.test(c.title)), "unrelated suggestions are dropped");
   assert.deepEqual(didYouMean("", ["x"], querySim), [], "no query, no suggestions");
   assert.deepEqual(didYouMean("abc", null, querySim), [], "no candidates, no crash");
+});
+
+// ---------------------------------------------------- source-first (§8.11) -
+
+test("albumKey folds one movie's naming variants to a single key", () => {
+  assert.equal(albumKey('Gaali Vaaluga - Official Remix (From "Agnyaathavaasi")'), "agnyaathavaasi");
+  assert.equal(albumKey("Agnyaathavaasi"), "agnyaathavaasi");
+  assert.equal(albumKey("Agnyaathavaasi (Original Motion Picture Soundtrack)"), "agnyaathavaasi");
+  assert.equal(albumKey("Believer"), "believer");
+  assert.equal(albumKey(""), "");
+  assert.equal(albumKey(null), "");
+});
+
+test("leadArtists splits credits; over-splitting only widens a match", () => {
+  assert.deepEqual(leadArtists({ artist: "Anirudh Ravichander" }), ["anirudh ravichander"]);
+  assert.deepEqual(leadArtists({ artist: "Imagine Dragons, Kaskade" }), ["imagine dragons", "kaskade"]);
+  assert.deepEqual(leadArtists({ artist: "Nakash Aziz & Arjun Chandy feat. X" }), [
+    "nakash aziz",
+    "arjun chandy",
+    "x",
+  ]);
+  assert.deepEqual(leadArtists({}), []);
+});
+
+test('cleanTitle strips the (From "…") provenance but keeps real suffixes', () => {
+  assert.equal(cleanTitle('Tum Hi Ho (From "Aashiqui 2")'), "Tum Hi Ho");
+  assert.equal(
+    cleanTitle('Gaali Vaaluga - Official Remix (From "Agnyaathavaasi")'),
+    "Gaali Vaaluga - Official Remix",
+  );
+  assert.equal(cleanTitle("Kesariya"), "Kesariya");
+  assert.equal(cleanTitle(""), "");
+  assert.equal(cleanTitle(null), "");
+});
+
+test("sourcePlan: film rows lead with the movie, others with the artist", () => {
+  const film = {
+    title: "Gaali Vaaluga",
+    artist: "Anirudh Ravichander",
+    album: "Agnyaathavaasi",
+    language: "telugu",
+  };
+  const pf = sourcePlan(film);
+  assert.equal(pf.kind, "album");
+  assert.equal(pf.key, "agnyaathavaasi");
+  assert.equal(pf.query, "Agnyaathavaasi");
+
+  const eng = {
+    title: "Believer",
+    artist: "Imagine Dragons, Kaskade",
+    album: "Believer (Kaskade Remix)",
+    language: "english",
+  };
+  const pe = sourcePlan(eng);
+  assert.equal(pe.kind, "artist");
+  assert.equal(pe.query, "Imagine Dragons");
+  assert.ok(pe.keys.includes("imagine dragons"));
+
+  const quiet = { title: "x", artist: "A", album: "Al", language: "" };
+  assert.equal(sourcePlan(quiet).kind, "artist", "no language reads as singer-driven");
+  assert.equal(sourcePlan({ title: "x", artist: "", album: "", language: "" }), null);
+  assert.equal(sourcePlan(null), null);
+});
+
+test("sourcePlan: a compilation album doesn't hide the film named in the title", () => {
+  const comp = {
+    title: 'Tum Hi Ho (From "Aashiqui 2")',
+    artist: "Arijit Singh, Mithoon",
+    album: "Best Of Arijit Singh - Collection Of Romantic Songs",
+    language: "hindi",
+  };
+  const p = sourcePlan(comp);
+  assert.equal(p.kind, "album");
+  assert.equal(p.key, "aashiqui 2");
+  assert.equal(p.query, "Aashiqui 2");
+});
+
+test("sourceMatch: film songs lifted onto other compilations still belong", () => {
+  const plan = { kind: "album", key: "aashiqui 2", query: "Aashiqui 2" };
+  assert.ok(
+    sourceMatch({ title: 'Sunn Raha Hai (From "Aashiqui 2")', album: "Emraan Hashmi Hits", artist: "X" }, plan),
+    "the title's own provenance is enough",
+  );
+  assert.ok(
+    sourceMatch({ title: "Tum Hi Ho", album: "Aashiqui 2", artist: "Arijit Singh" }, plan),
+    "a bare album name still matches",
+  );
+  assert.ok(
+    !sourceMatch({ title: "Tum Hi Ho", album: "Heartstrings", artist: "Gurbani Bhatia" }, plan),
+    "a cover's own compilation does not",
+  );
+});
+
+test("sourceOrder: the anchor's source leads, the rest keeps its rank order", () => {
+  const t = (id, album, artist, language) => ({ id, title: id, album, artist, language });
+  const ranked = [
+    t("anchor", "Agnyaathavaasi", "Anirudh Ravichander", "telugu"),
+    t("other", "Some Other", "Someone", "telugu"),
+    t("mate", "Agnyaathavaasi", "Anirudh Ravichander", "telugu"),
+    t("remix", 'Gaali Vaaluga - Official Remix (From "Agnyaathavaasi")', "Anirudh Ravichander", "telugu"),
+    t("tail", "Zzz", "Zed", "telugu"),
+  ];
+  assert.deepEqual(sourceOrder(ranked).map((x) => x.id), ["anchor", "mate", "remix", "other", "tail"]);
+
+  const eng = [
+    t("anchor", "Believer", "Imagine Dragons", "english"),
+    t("cover", "You Made Me A Believer", "The Cameron Collective", "english"),
+    t("official", "Evolve", "Imagine Dragons", "english"),
+  ];
+  assert.deepEqual(sourceOrder(eng).map((x) => x.id), ["anchor", "official", "cover"]);
+
+  assert.deepEqual(sourceOrder([t("solo", "Single", "A", "english")]).map((x) => x.id), ["solo"]);
+  assert.deepEqual(sourceOrder([]), []);
+  const noname = [t("a", "", "", ""), t("b", "", "", "")];
+  assert.deepEqual(sourceOrder(noname).map((x) => x.id), ["a", "b"], "nothing to name → untouched");
+});
+
+test("sourceRows: keeps only the source's own rows, dedupes, caps", () => {
+  const plan = { kind: "album", key: "agnyaathavaasi", query: "Agnyaathavaasi" };
+  const fetched = [
+    { id: "1", title: "Baitikochi Chuste", album: "Agnyaathavaasi", artist: "Anirudh Ravichander" },
+    { id: "1", title: "Baitikochi Chuste", album: "Agnyaathavaasi", artist: "Anirudh Ravichander" },
+    { id: "2", title: "Kannada One", album: "Agnyathavasi", artist: "X" },
+    { id: "3", title: "Swagatham Krishna", album: "Agnyaathavaasi", artist: "Niranjana Ramanan" },
+  ];
+  const out = sourceRows(fetched, plan, new Set(["3"]));
+  assert.deepEqual(out.map((x) => x.id), ["1"], "dupe, alien album and already-shown rows all drop");
+
+  const artistPlan = { kind: "artist", keys: ["imagine dragons"], query: "Imagine Dragons" };
+  const covers = [
+    { id: "c1", title: "Believer", album: "You Made Me A Believer", artist: "The Cameron Collective" },
+    { id: "o1", title: "Thunder", album: "Evolve", artist: "Imagine Dragons" },
+  ];
+  assert.deepEqual(sourceRows(covers, artistPlan, new Set()).map((x) => x.id), ["o1"]);
+
+  const many = Array.from({ length: 30 }, (_, i) => ({ id: `m${i}`, album: "Agnyaathavaasi", artist: "A" }));
+  assert.equal(sourceRows(many, plan, new Set()).length, SOURCE_EXTRA_MAX);
 });

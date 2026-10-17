@@ -9,6 +9,7 @@ import * as sharedHelpers from "./shared.js";
 import { netMode } from "./net.js";
 import { ensureReco } from "./radio.js";
 import { localRole } from "../room.js";
+import { classifyPlay } from "../taste.js";
 
 // Every transport element loads media from the relay (`http://127.0.0.1:port`) —
 // a different origin from the page (`http://tauri.localhost`). Before the EQ
@@ -47,6 +48,9 @@ let qi = -1;
 let shuffle = false;
 let repeat = 0;
 let badge = "IDLE";
+// Origin host of the current stream ("" until a resolve lands; "vault" when
+// the copy is on disk) — painted as the Now Playing source proof (§5.5).
+let srcHost = "";
 let seq = 0;
 
 const painters = [];
@@ -153,6 +157,7 @@ export function playerState() {
     dur: audio && Number.isFinite(audio.duration) ? audio.duration : 0,
     buf,
     badge,
+    host: srcHost,
     shuffle,
     repeat,
     qi,
@@ -274,20 +279,26 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") savePos(true);
 });
 
+// One shared list for both transport elements: `finishXfade` promotes the
+// standby to `audio`, and from that moment its listeners are what keep
+// paint()/savePos() alive — the old 4-event standby list left the transport
+// glyphs stale and pause-position saves lost after a crossfade handoff.
+const AUDIO_EVENTS = [
+  "play",
+  "pause",
+  "timeupdate",
+  "loadedmetadata",
+  "durationchange",
+  "progress",
+  "seeked",
+  "playing",
+  "waiting",
+  "ended",
+  "error",
+];
+
 if (audio) {
-  for (const ev of [
-    "play",
-    "pause",
-    "timeupdate",
-    "loadedmetadata",
-    "durationchange",
-    "progress",
-    "seeked",
-    "playing",
-    "waiting",
-    "ended",
-    "error",
-  ]) {
+  for (const ev of AUDIO_EVENTS) {
     audio.addEventListener(ev, onAudioEvent);
   }
   // Re-apply EQ on play (once): resumes a suspended AudioContext after the
@@ -312,7 +323,7 @@ function ensureStandby() {
       const v = Number(localStorage.getItem("tm-play-speed") || "1");
       standby.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
     } catch {}
-    for (const ev of ["timeupdate", "ended", "error", "canplay"]) {
+    for (const ev of [...AUDIO_EVENTS, "canplay"]) {
       standby.addEventListener(ev, onAudioEvent);
     }
     try {
@@ -744,6 +755,7 @@ async function start() {
       // stops instead of re-resolving the same id forever.
       return step(1, true);
     }
+    flushPlay(false); // finalize the previous play with the old playhead
     audio.src = info.proxy_url;
     try {
       applyEq();
@@ -773,6 +785,8 @@ async function start() {
       audio.volume = baseVol();
     } catch {}
     badge = String(info.chosen_quality || info.range_status || "OK").toUpperCase();
+    srcHost = String(info.host || "");
+    beginPlay(track);
     pushPlay(track);
     await audio.play();
     prefetchNext();
@@ -787,11 +801,14 @@ async function start() {
         try {
           const base = window.__tmBase;
           if (base) {
+            flushPlay(false); // resolve died — the old play ends at the switch
+            beginPlay(track);
             audio.src = relayUrl(base, `/file?id=${encodeURIComponent(track.id)}`);
             try {
               applyEq();
             } catch {}
             badge = "VAULT";
+            srcHost = "vault";
             await audio.play();
             paint();
             return;
@@ -1021,6 +1038,7 @@ function finishXfade() {
   }
   const old = audio;
   const sb = x.el;
+  flushPlay(false); // the outgoing element's playhead is final — record it
   try {
     if (sb.paused) sb.play().catch(() => {});
   } catch {}
@@ -1048,6 +1066,7 @@ function finishXfade() {
   try {
     applyEq();
   } catch {}
+  beginPlay(queue[qi]);
   try {
     pushPlay(queue[qi]);
   } catch {}
@@ -1097,6 +1116,44 @@ export function toggle() {
   }
 }
 
+// ------------------------------------------------------------- play events -
+// The taste log behind docs/recommendations.md §8: one row per finished or
+// abandoned play, written on transitions only (manual pick, natural end,
+// xfade handover) — a paused song stays one play. Best-effort: without the
+// store the write silently no-ops.
+let activePlay = null; // { track, startedAt }
+
+function beginPlay(track) {
+  activePlay = track && track.id ? { track, startedAt: Date.now() } : null;
+}
+
+function flushPlay(naturalEnd = false) {
+  const a = activePlay;
+  activePlay = null;
+  if (!a) return;
+  const el = audio;
+  const ctime = el && Number.isFinite(el.currentTime) ? Math.max(0, el.currentTime) : 0;
+  const durationSecs =
+    el && Number.isFinite(el.duration) && el.duration > 0
+      ? el.duration
+      : Number(a.track.duration_secs) || 0;
+  const event = {
+    id: a.track.id,
+    ts: a.startedAt,
+    ended_at: Date.now(),
+    ms_played: Math.round(ctime * 1000),
+    duration_secs: Math.round(durationSecs),
+    outcome: classifyPlay({ msPlayed: ctime * 1000, durationSecs, naturalEnd }),
+    source: "queue",
+    title: a.track.title || "",
+    artist: a.track.artist || "",
+    image: a.track.image || "",
+  };
+  import("../store_db.js")
+    .then((m) => m.playEvent(event))
+    .catch(() => {});
+}
+
 function ended() {
   // A fade in flight owns the ending: cut over now instead of resolving.
   if (xfading) return finishXfade();
@@ -1111,10 +1168,13 @@ function ended() {
     localStorage.removeItem("tm-pos");
   } catch {}
   if (repeat === 2) {
+    flushPlay(true);
+    beginPlay(queue[qi]);
     audio.currentTime = 0;
     audio.play().catch(() => {});
     return;
   }
+  flushPlay(true);
   step(1, true);
 }
 

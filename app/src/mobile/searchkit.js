@@ -8,7 +8,7 @@
 
 import { fuzzyScore } from "../fuzzy.js";
 import { esc } from "../html.js";
-import { MOODS, matchesFilters, parseQuery, rankTracks as relevanceOrder } from "../query.js";
+import { MOODS, matchesFilters, parseQuery, rankTracks as relevanceOrder, sourceOrder } from "../query.js";
 import { rankTracks as sortRows } from "./rank.js";
 
 // ------------------------------------------------------------------- cache -
@@ -137,36 +137,22 @@ export function textScoreFor(parsed) {
   return (t) => fuzzyScore(text, t.title, t.artist, t.album);
 }
 
-/// Taste signals for the relevance boost, built once per search rather than
-/// once per row: what was played, what was hearted, and how often each artist
-/// shows up. Mirrors the desktop's tasteContext.
-export function tasteContext(plays, favs, region = "") {
-  const played = new Set();
-  const artistPlays = new Map();
-  for (const p of plays || []) {
-    if (!p || !p.id) continue;
-    played.add(String(p.id));
-    if (p.artist) artistPlays.set(p.artist, (artistPlays.get(p.artist) || 0) + 1);
-  }
-  const liked = new Set();
-  for (const f of favs || []) if (f && f.id) liked.add(String(f.id));
-  return { played, liked, artistPlays, region, moodOf };
-}
-
 /// Order one page for the search screen.
 ///
 /// A named sort (quality / popular / length / A–Z) delegates to rank.js, which
 /// is unit-tested. `relevance` uses the desktop's query-aware relevance —
-/// text score plus the filters the query asked for, the listener's region and
-/// their taste — and falls back to the unfiltered page when the query's own
-/// filters reject every row (better to show something than nothing).
+/// text score plus the filters the query asked for and the listener's region
+/// setting, never their taste (docs/recommendations.md §8.9) — and falls back
+/// to the unfiltered page when the query's own filters reject every row
+/// (better to show something than nothing).
 export function rankForQuery(list, parsed, sort = "relevance", opts = {}) {
   const tracks = Array.isArray(list) ? list : [];
   if (!tracks.length) return tracks;
   if (sort && sort !== "relevance") return sortRows(parsed && parsed.raw, tracks, sort);
   const scoped = parsed ? tracks.filter((t) => matchesFilters(t, parsed)) : tracks;
   const pool = scoped.length ? scoped : tracks;
-  return relevanceOrder(pool, parsed, textScoreFor(parsed), opts);
+  // §8.11: after ranking, the anchor's own source (movie or artist) leads.
+  return sourceOrder(relevanceOrder(pool, parsed, textScoreFor(parsed), opts));
 }
 
 // --------------------------------------------------------- top result picker -

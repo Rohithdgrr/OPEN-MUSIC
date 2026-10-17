@@ -123,6 +123,13 @@ EOF
     sed -i '/<manifest/a\    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK"/>' "$manifest"
     echo "✓ Injected ACCESS_LOCAL_NETWORK permission"
   fi
+  if ! grep -q 'android:screenOrientation="portrait"' "$manifest"; then
+    # Portrait-only (2026-10-15, docs/android-universal-release.md): pin
+    # MainActivity so rotation never recreates the WebView; guarded on its
+    # own absence like the rest.
+    sed -i 's|android:name=".MainActivity"|android:name=".MainActivity"\n            android:screenOrientation="portrait"|' "$manifest"
+    echo "✓ Locked Android orientation to portrait"
+  fi
   inject_android_label
   return 0
 }
@@ -144,10 +151,61 @@ inject_android_label() {
   echo "✓ Android label set to OpenMusic"
 }
 
+# Native media layer (notification + lockscreen + homescreen widget).
+# Tracked sources live in src-tauri/android-overlay; gen/ is wiped by
+# `tauri android init`, so every build copies them in and patches the
+# manifest + MainActivity idempotently (docs/android-media-widget.md).
+# Same per-build pattern as inject_android_permissions above.
+inject_android_mediahub() {
+  local overlay="src-tauri/android-overlay"
+  local main="src-tauri/gen/android/app/src/main"
+  if [[ ! -d "$overlay/kotlin" ]]; then
+    echo "android-overlay missing - nothing to inject"
+    return 1
+  fi
+  if [[ ! -f "$main/AndroidManifest.xml" ]]; then
+    echo "AndroidManifest.xml not found - run 'tauri android init' first"
+    return 1
+  fi
+
+  local pkg="java/com/openmusic/trancemusic"
+  mkdir -p "$main/$pkg" "$main/res/xml" "$main/res/layout" "$main/res/values"
+  cp "$overlay/kotlin/"*.kt "$main/$pkg/"
+  cp "$overlay/res/xml/"*.xml "$main/res/xml/"
+  cp "$overlay/res/layout/"*.xml "$main/res/layout/"
+  cp "$overlay/res/values/"*.xml "$main/res/values/"
+  echo "✓ MediaHub sources + widget resources copied"
+
+  # Permissions, each guarded on its own absence.
+  local manifest="$main/AndroidManifest.xml"
+  if ! grep -q 'android.permission.FOREGROUND_SERVICE"' "$manifest"; then
+    sed -i '/<manifest/a\    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>' "$manifest"
+    echo "✓ Injected FOREGROUND_SERVICE permission"
+  fi
+  if ! grep -q 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK' "$manifest"; then
+    sed -i '/<manifest/a\    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>' "$manifest"
+    echo "✓ Injected FOREGROUND_SERVICE_MEDIA_PLAYBACK permission"
+  fi
+  if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$manifest"; then
+    sed -i '/<manifest/a\    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>' "$manifest"
+    echo "✓ Injected POST_NOTIFICATIONS permission"
+  fi
+
+  # MediaService + widget receiver before </application>, once (TM-MEDIA marker).
+  if ! grep -q 'TM-MEDIA' "$manifest"; then
+    sed -i 's|^    </application>|        <!-- TM-MEDIA: media notification + widget -->\n        <service android:name=".MediaService" android:exported="false" android:foregroundServiceType="mediaPlayback" />\n        <receiver android:name=".TmWidget" android:exported="false">\n            <intent-filter>\n                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />\n            </intent-filter>\n            <meta-data android:name="android.appwidget.provider" android:resource="@xml/tm_widget_info" />\n        </receiver>\n    </application>|' "$manifest"
+    echo "✓ Injected MediaService + widget receiver"
+  else
+    echo "✓ MediaService + widget receiver already present"
+  fi
+  return 0
+}
+
 cmd_android() {
   # Release only, split per ABI: one APK per architecture instead of a fat
   # APK carrying every target's .so.
   inject_android_permissions || die "Failed to inject Android permissions"
+  inject_android_mediahub || die "Failed to inject Android media layer"
   local args=(android build --target aarch64 x86_64 --split-per-abi --apk --ci)
   tauri_android "${args[@]}"
 }
@@ -157,6 +215,7 @@ cmd_android_universal() {
   # x86_64 — installs on every real phone (ARM) and the x86_64 emulator,
   # no per-architecture choice at download time.
   inject_android_permissions || die "Failed to inject Android permissions"
+  inject_android_mediahub || die "Failed to inject Android media layer"
   local args=(android build --target aarch64 armv7 x86_64 --apk --ci)
   tauri_android "${args[@]}"
 }

@@ -23,8 +23,8 @@ use axum::routing::get;
 use axum::Router;
 
 use crate::jiosaavn::{
-    best_quality, check_id, fetch_song, qualify_url, search_songs, validate_media_url, Probe,
-    SearchPage, Song,
+    check_id, fetch_song, parse_tier, qualify_url, ranked_tiers, search_songs, validate_media_url,
+    Probe, QualityUrl, RangeStatus, SearchPage, Song,
 };
 
 /// Response headers relayed from upstream. Everything else is dropped
@@ -333,12 +333,46 @@ impl AppState {
         .await
     }
 
-    /// Resolve a song id to a direct CDN url (320 kbps preference).
-    pub async fn cached_url(&self, id: &str) -> Result<String, String> {
+    /// Best playable rendition: walk `ranked_tiers` from `prefer` downward.
+    ///
+    /// First `Unrestricted` tier wins; else the highest `RestrictedFirstMb`
+    /// (the PREVIEW tag stays honest); else the top `Dead` candidate — the
+    /// player's skip-on-dead path is unchanged. A transport-level probe error
+    /// aborts the walk, so a dead network costs one timeout, not five.
+    pub async fn playable_quality(
+        &self,
+        qualities: &[QualityUrl],
+        prefer: &str,
+    ) -> Result<(QualityUrl, Probe), String> {
+        let tiers = ranked_tiers(qualities, prefer);
+        if tiers.is_empty() {
+            return Err("no stream qualities".to_string());
+        }
+        let mut capped: Option<(QualityUrl, Probe)> = None;
+        let mut dead: Option<(QualityUrl, Probe)> = None;
+        for q in tiers {
+            match self.cached_qualify(&q.url).await {
+                Ok(p) if p.range_status == RangeStatus::Unrestricted => return Ok((q, p)),
+                Ok(p) if p.range_status == RangeStatus::RestrictedFirstMb => {
+                    capped = capped.or(Some((q, p)));
+                }
+                Ok(p) => dead = dead.or(Some((q, p))),
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(capped
+            .or(dead)
+            .expect("tiers is non-empty, so a candidate was recorded"))
+    }
+
+    /// Resolve a song id to a direct CDN url at the requested tier (never
+    /// above `prefer`, walked down the ladder when the top tier is dead).
+    /// The returned url is re-checked against the media-host allow-list —
+    /// the P2 belt for the relay's by-id branch.
+    pub async fn cached_url(&self, id: &str, prefer: &str) -> Result<String, String> {
         let song = self.cached_song(id).await?;
-        best_quality(&song.qualities, "320kbps")
-            .map(|q| q.url)
-            .ok_or_else(|| "no stream qualities".to_string())
+        let (q, _) = self.playable_quality(&song.qualities, prefer).await?;
+        validate_media_url(&q.url)
     }
 
     /// Qualify a CDN url (3 probes), memoised for the url's lifetime (L2).
@@ -1428,7 +1462,14 @@ async fn resolve_target(
     }
     if let Some(id) = params.get("id") {
         check_id(id).map_err(bad_request)?;
-        return state.cached_url(id).await.map_err(|e| {
+        // `q=` carries the resolve's requested tier (see `proxy_url_for`);
+        // a missing or malformed value means the 320 default.
+        let prefer = params
+            .get("q")
+            .map(String::as_str)
+            .filter(|q| parse_tier(q).is_some())
+            .unwrap_or("320kbps");
+        return state.cached_url(id, prefer).await.map_err(|e| {
             (StatusCode::BAD_GATEWAY, format!("resolve failed: {e}")).into_response()
         });
     }
@@ -1447,9 +1488,23 @@ async fn open_upstream(
     if let Some(range) = headers.get("range").and_then(|v| v.to_str().ok()) {
         req = req.header(reqwest::header::RANGE, range);
     }
-    req.send()
+    let resp = req
+        .send()
         .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")))
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")))?;
+    // Same rule as `/art`, but ONLY for redirect hops: a public CDN host must
+    // not be able to bounce the relay into the LAN. A direct fetch is left
+    // alone — the resolution chain already chose that URL.
+    let redirected = url::Url::parse(target).is_ok_and(|w| &w != resp.url());
+    if redirected {
+        if let Err(e) = art_origin_ok(resp.url().as_str()) {
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                format!("stream redirect refused: {e}"),
+            ));
+        }
+    }
+    Ok(resp)
 }
 
 /// The design's L2 rule: 403/410 means the resolved stream url is gone
@@ -1701,6 +1756,17 @@ async fn art(
             .unwrap_or(StatusCode::BAD_GATEWAY)
             .into_response();
     }
+    // Redirect hops are NOT covered by the initial `art_origin_ok` (it ran on
+    // the request URL): re-validate what was actually fetched before serving
+    // bytes — a public host must not be able to bounce the relay into the
+    // LAN (blind SSRF plus local-response exfiltration).
+    if let Err(e) = art_origin_ok(resp.url().as_str()) {
+        return (
+            StatusCode::BAD_GATEWAY,
+            format!("art redirect refused: {e}"),
+        )
+            .into_response();
+    }
     let ct = resp
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -1708,22 +1774,29 @@ async fn art(
         .unwrap_or("")
         .to_ascii_lowercase();
     // Read before the type gate: some edges wrongly label covers
-    // `application/octet-stream`, so the bytes are the authority.
-    let bytes = match resp.bytes().await {
-        Ok(b) => b,
-        Err(e) => return (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
-    };
+    // `application/octet-stream`, so the bytes are the authority. Bounded
+    // while streaming — a redirect or a hostile mirror must not be able to
+    // buffer gigabytes into RAM only for a size check to reject them after.
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = futures::StreamExt::next(&mut stream).await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => return (StatusCode::BAD_GATEWAY, e.to_string()).into_response(),
+        };
+        if bytes.len() as u64 + chunk.len() as u64 > crate::cache::MAX_ART_BYTES {
+            return (
+                StatusCode::BAD_GATEWAY,
+                format!("art larger than {} bytes", crate::cache::MAX_ART_BYTES),
+            )
+                .into_response();
+        }
+        bytes.extend_from_slice(&chunk);
+    }
     if !art_answer_is_image(&ct, &bytes) {
         return (
             StatusCode::BAD_GATEWAY,
             format!("upstream sent {ct} instead of art"),
-        )
-            .into_response();
-    }
-    if bytes.len() as u64 > crate::cache::MAX_ART_BYTES {
-        return (
-            StatusCode::BAD_GATEWAY,
-            format!("art too large: {} bytes", bytes.len()),
         )
             .into_response();
     }
@@ -1733,20 +1806,23 @@ async fn art(
             eprintln!("[cache] art write skipped: {e}");
         }
     }
-    let arc = Arc::new(bytes.to_vec());
+    let arc = Arc::new(bytes);
     state.art_memory.insert(key, arc.clone()).await;
     image_response(&arc, Some(&ct))
 }
 
 /// Playable stream url for a song id: id-keyed so the relay can purge and
 /// re-resolve it when the CDN retires the old link (design L2 / 403 rule).
+/// `quality` is the resolve's requested tier — carried as `q=` so the relay
+/// serves the tier the badge names (docs/architecture.md §5.5).
 /// Includes the session token for authentication.
-pub fn proxy_url_for(port: u16, id: &str, token: &str) -> String {
-    let encoded = url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("id", id)
-        .append_pair("token", token)
-        .finish();
-    format!("http://127.0.0.1:{port}/stream?{encoded}")
+pub fn proxy_url_for(port: u16, id: &str, token: &str, quality: Option<&str>) -> String {
+    let mut encoded = url::form_urlencoded::Serializer::new(String::new());
+    encoded.append_pair("id", id).append_pair("token", token);
+    if let Some(q) = quality {
+        encoded.append_pair("q", q);
+    }
+    format!("http://127.0.0.1:{port}/stream?{}", encoded.finish())
 }
 
 #[cfg(test)]
@@ -2242,7 +2318,7 @@ mod tests {
         assert_eq!(&window[4..8], b"ftyp", "starts like a media file");
 
         // 4. download the rendition the proxy just served
-        let target = state.cached_url(&id).await.expect("resolve url");
+        let target = state.cached_url(&id, "320kbps").await.expect("resolve url");
         let dest =
             std::env::temp_dir().join(format!("trance-full-flow-{}.mp4", std::process::id()));
         let _ = std::fs::remove_file(&dest);
@@ -2257,6 +2333,45 @@ mod tests {
         assert_eq!(&file[..window.len()], &window[..], "same bytes, same order");
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// Ladder: a dead top tier must not kill the track — the walk drops to
+    /// the next playable rendition, and the request tier is never exceeded
+    /// (docs/architecture.md §5.5).
+    #[tokio::test]
+    async fn ladder_falls_past_a_dead_top_tier_and_never_exceeds_the_request() {
+        if std::env::var("OP_OFFLINE").is_ok() {
+            return;
+        }
+        let (_base, state) = boot().await;
+        let id = live_song_id().await;
+        let song = state.cached_song(&id).await.expect("resolve");
+
+        // A syntactically valid url under the official CDN host whose object
+        // does not exist: the head probe fails its 206/ftyp checks → Dead.
+        let dead_url = "https://aac.saavncdn.com/0000000000000000000000000000000000/320.mp4";
+        let mut qualities = vec![QualityUrl {
+            quality: "320kbps".into(),
+            url: dead_url.into(),
+        }];
+        qualities.extend(song.qualities.iter().cloned());
+
+        let (chosen, probe) = state
+            .playable_quality(&qualities, "320kbps")
+            .await
+            .expect("walk finds a playable tier past the dead 320");
+        assert_ne!(chosen.url, dead_url, "dead tier is skipped");
+        assert_eq!(probe.range_status, RangeStatus::Unrestricted);
+
+        let (capped, _) = state
+            .playable_quality(&qualities, "96kbps")
+            .await
+            .expect("capped walk still resolves");
+        assert!(
+            parse_tier(&capped.quality).unwrap() <= 96,
+            "never above the request: {}",
+            capped.quality
+        );
     }
 
     /// A saved song plays back through the relay byte-for-byte, with the
@@ -2573,12 +2688,14 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 400, "missing ?u=");
     }
 
-    /// L2 self-heal: a 403 from the CDN drops the stale resolution and the
-    /// stale probe for the id, while the terminal status still reaches the
-    /// player (the re-resolve fails for this bogus id — a recoverable url
-    /// must never turn into a hard error).
+    /// P2 (docs/architecture.md §5.5): the relay's by-id branch only ever
+    /// fetches official-CDN urls. A poisoned resolution is refused before any
+    /// request leaves the process — the mock proves the silence. (The L2
+    /// 403 self-heal — invalidate both caches + one re-resolve — is only
+    /// reachable with a real CDN 403; a controllable upstream can no longer
+    /// be injected by id by design, which is the point of this test.)
     #[tokio::test]
-    async fn stream_purges_stale_resolution_on_403() {
+    async fn stream_by_id_refuses_a_non_cdn_resolution() {
         use crate::jiosaavn::{QualityUrl, RangeStatus, Track};
         let (base, state) = boot().await;
         let mock = wiremock::MockServer::start().await;
@@ -2587,7 +2704,7 @@ mod tests {
             .mount(&mock)
             .await;
         let id = "zzzzzzzz"; // valid shape, not a real song: re-resolve fails
-        let stale = format!("{}/expired.mp3", mock.uri());
+        let poisoned = format!("{}/expired.mp3", mock.uri());
         let song = Song {
             track: Track {
                 id: id.into(),
@@ -2610,14 +2727,14 @@ mod tests {
             },
             qualities: vec![QualityUrl {
                 quality: "320kbps".into(),
-                url: stale.clone(),
+                url: poisoned.clone(),
             }],
         };
         state.resolved.insert(id.into(), song).await;
         state
             .qualified
             .insert(
-                stale.clone(),
+                poisoned.clone(),
                 Probe {
                     range_status: RangeStatus::Unrestricted,
                     content_length: None,
@@ -2628,14 +2745,11 @@ mod tests {
         let resp = reqwest::get(format!("{base}/stream?id={id}"))
             .await
             .unwrap();
-        assert_eq!(resp.status().as_u16(), 403, "terminal status relayed");
+        assert_eq!(resp.status().as_u16(), 502, "refused, not fetched");
+        let hits = mock.received_requests().await.unwrap_or_default();
         assert!(
-            state.resolved.get(id).await.is_none(),
-            "stale resolution purged"
-        );
-        assert!(
-            state.qualified.get(&stale).await.is_none(),
-            "stale probe purged"
+            hits.is_empty(),
+            "the relay must never fetch a non-CDN url: {hits:?}"
         );
     }
 

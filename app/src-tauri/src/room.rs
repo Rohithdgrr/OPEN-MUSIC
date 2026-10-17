@@ -37,6 +37,12 @@ use tokio_tungstenite::tungstenite::Message as ClientMessage;
 pub const DEFAULT_PORT: u16 = 8787;
 /// Maximum remote members in one room (the host is not counted against this).
 const MAX_GUESTS: usize = 16;
+
+/// Largest single WebSocket frame the room accepts. Real frames are chat
+/// lines and playback ticks (hundreds of bytes); the cap stops an
+/// unauthenticated socket from making axum buffer its 64 MiB default before
+/// the JSON parse gets a chance to reject it.
+const MAX_WIRE_BYTES: usize = 64 * 1024;
 /// Room code: 32 symbols with `0/O/1/I` removed so it survives being read
 /// aloud or typed across two desks.
 const CODE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -44,6 +50,12 @@ const CODE_ALPHABET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 const CHAT_MAX: usize = 5;
 const CHAT_WINDOW_MS: u64 = 10_000;
 const CHAT_MAX_CHARS: usize = 500;
+
+/// Minimum spacing between two presence broadcasts caused by the same guest's
+/// `report`. Chat has its own stamp budget; reports fan out to every member
+/// too, so they get one. Real clients already self-throttle to ~1/s
+/// (`room.js::shouldReportDrift`) — this only thins a hot loop.
+const REPORT_MIN_MS: u64 = 500;
 const HISTORY_CAP: usize = 50;
 /// Queue sync (§4.7): at most this many up-next tracks per snapshot, with
 /// short string fields — a hostile host must not bloat frames to 16 guests.
@@ -417,7 +429,9 @@ struct RoomCore {
     playback: Option<Value>,      // last host playback frame, replayed on join
     queue: Option<Value>,         // last host queue snapshot, replayed on join
     chat_stamps: HashMap<String, VecDeque<u64>>,
+    report_stamps: HashMap<String, u64>, // guest id → last accepted report (ms)
     next_id: u64,
+    closed: bool, // room ended: no further joins (the server keeps draining)
 }
 
 impl RoomCore {
@@ -436,7 +450,9 @@ impl RoomCore {
             playback: None,
             queue: None,
             chat_stamps: HashMap::new(),
+            report_stamps: HashMap::new(),
             next_id: 0,
+            closed: false,
         }
     }
 
@@ -483,6 +499,15 @@ impl RoomCore {
     /// expect it). Built here, not through `chat()`: server-origin only,
     /// no rate stamps, no sender (docs/chat-test-plan.md §F).
     fn join(&mut self, code_in: &str, name: &str, sink: Sink) -> Result<String, (String, String)> {
+        if self.closed {
+            // The room heard its bye already; without this the socket level
+            // kept handing out seats into a room no UI would ever show (the
+            // host core is dropped with the mode).
+            return Err((
+                "closed".into(),
+                "This room has ended — ask the host to open a new one.".into(),
+            ));
+        }
         if !self.code.eq_ignore_ascii_case(code_in.trim()) {
             return Err((
                 "bad_code".into(),
@@ -635,6 +660,17 @@ impl RoomCore {
     }
 
     fn report(&mut self, id: &str, drift_ms: i64) {
+        // Every report rebuilds and broadcasts presence to all members, and
+        // unlike chat its frequency was never budgeted server-side; one
+        // accepted report per guest per REPORT_MIN_MS is plenty for the host
+        // tile (real clients report ~1/s).
+        let now = now_ms();
+        if let Some(&last) = self.report_stamps.get(id) {
+            if now.saturating_sub(last) < REPORT_MIN_MS {
+                return;
+            }
+        }
+        self.report_stamps.insert(id.to_string(), now);
         if let Some(m) = self.members.iter_mut().find(|m| m.id == id) {
             // Clamped so a hostile client cannot paint absurd numbers into
             // the host's sync tile.
@@ -657,6 +693,7 @@ impl RoomCore {
             .map(|m| m.name.clone());
         self.members.retain(|m| m.id != id);
         self.chat_stamps.remove(id);
+        self.report_stamps.remove(id);
         if let Some(name) = left {
             self.system_line(format!("{name} left"));
         }
@@ -669,13 +706,23 @@ impl RoomCore {
         self.broadcast(&bye);
         self.sinks.clear();
         self.members.truncate(1);
+        // A guest that dialed just before the bye may still deliver its
+        // `join` while the socket drains; a closed room refuses it instead
+        // of seating it in a room no host exists for anymore.
+        self.closed = true;
     }
 }
 
 type SharedCore = Arc<Mutex<RoomCore>>;
 
 fn lock(core: &SharedCore) -> Option<std::sync::MutexGuard<'_, RoomCore>> {
-    core.lock().ok()
+    // A panicking connection task must not brick the whole room: the data is
+    // still coherent enough for presence/chat, and `.ok()` here would
+    // silently drop every later frame with no error anywhere.
+    Some(
+        core.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+    )
 }
 
 // ------------------------------------------------------------------ server --
@@ -684,7 +731,10 @@ async fn ws_handler(
     upgrade: WebSocketUpgrade,
     State(core): State<SharedCore>,
 ) -> impl IntoResponse {
-    upgrade.on_upgrade(move |socket| serve_conn(socket, core))
+    upgrade
+        .max_message_size(MAX_WIRE_BYTES)
+        .max_frame_size(MAX_WIRE_BYTES)
+        .on_upgrade(move |socket| serve_conn(socket, core))
 }
 
 /// One guest connection: require `join` within 5 s, then relay `chat` /
@@ -1095,16 +1145,36 @@ pub async fn room_open(
     let core: SharedCore = Arc::new(Mutex::new(RoomCore::new(
         &code,
         name.as_deref().unwrap_or("Host"),
-        Sink::App(app),
+        Sink::App(app.clone()),
     )));
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let serve_core = core.clone();
+    let serve_app = app;
+    let serve_code = code.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = serve(listener, serve_core, async {
+        if let Err(e) = serve(listener, serve_core, async {
             let _ = shutdown_rx.await;
         })
-        .await;
+        .await
+        {
+            // The listener died while the UI still believed a room was open
+            // (accept error): settle the state first, then tell the window —
+            // the D2/D5 ordering rule.
+            eprintln!("[OPEN MUSIC] room server stopped: {e}");
+            if let Some(state) = serve_app.try_state::<RoomState>() {
+                let mut mode = state.inner.lock().await;
+                // Code equality: a room reopened in the meantime owns the
+                // mode now and must not be clobbered.
+                if matches!(&*mode, Mode::Host { code: c, .. } if *c == serve_code) {
+                    *mode = Mode::Idle;
+                }
+            }
+            Sink::App(serve_app).send(&json!({
+                "t": "bye",
+                "reason": "The room server stopped. Open a new room."
+            }));
+        }
     });
 
     *mode = Mode::Host {
@@ -1342,6 +1412,41 @@ pub async fn room_info(state: TauriState<'_, RoomState>) -> Result<RoomInfo, Str
 mod tests {
     use super::*;
     use tokio_tungstenite::WebSocketStream;
+
+    #[test]
+    fn closed_room_refuses_later_joins() {
+        let (host_tx, _host_rx) = mpsc::unbounded_channel();
+        let mut core = RoomCore::new("HOST01", "Host", Sink::Chan(host_tx));
+        core.close("The host closed the room.");
+        let (guest_tx, _guest_rx) = mpsc::unbounded_channel();
+        let err = core
+            .join("HOST01", "Late", Sink::Chan(guest_tx))
+            .unwrap_err();
+        assert_eq!(err.0, "closed");
+        assert_eq!(
+            err.1,
+            "This room has ended — ask the host to open a new one."
+        );
+    }
+
+    #[test]
+    fn report_broadcasts_presence_but_a_hot_loop_is_thinned() {
+        let (host_tx, mut host_rx) = mpsc::unbounded_channel();
+        let mut core = RoomCore::new("HOST01", "Host", Sink::Chan(host_tx));
+        let (guest_tx, _guest_rx) = mpsc::unbounded_channel();
+        let id = core.join("HOST01", "Guest", Sink::Chan(guest_tx)).unwrap();
+        core.report(&id, 10); // accepted: the first report for this id
+        core.report(&id, 20); // same instant → inside REPORT_MIN_MS, thinned
+        let mut presences = 0;
+        while let Ok(s) = host_rx.try_recv() {
+            if let Ok(v) = serde_json::from_str::<Value>(&s) {
+                if v.get("t").and_then(Value::as_str) == Some("presence") {
+                    presences += 1;
+                }
+            }
+        }
+        assert_eq!(presences, 2, "join presence + exactly one report presence");
+    }
 
     type Client = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -2194,6 +2299,18 @@ mod tests {
         let bye = recv_t(&mut a, "bye").await;
         assert_eq!(bye["reason"], "The host closed the room.");
         let _ = host_recv_t(&mut h.host_rx, "bye").await;
+
+        // The test name is the contract: after the bye the socket level used
+        // to keep handing out seats into a room whose core was about to be
+        // dropped with the mode. A fresh dial must be refused, verbatim.
+        let mut b = dial(h.port).await;
+        send(&mut b, &join_frame("BYE001", "Late")).await;
+        let err = recv_t(&mut b, "error").await;
+        assert_eq!(err["code"], "closed");
+        assert_eq!(
+            err["message"],
+            "This room has ended — ask the host to open a new one."
+        );
     }
 
     #[tokio::test]

@@ -89,13 +89,13 @@ export function aboutHTML() {
           <p class="font-label-mono text-[11px] text-on-surface-variant mt-0.5">v${esc(APP.version)} &middot; ${esc(APP.id)} &middot; ${esc(PLATFORM)}</p>
         </div>
       </div>
-      <p class="text-[13px] leading-relaxed text-on-surface-variant">A music player that streams from JioSaavn through a local range relay, keeps an offline vault on your device, and never lets the webview talk to a third-party CDN directly.</p>
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">A music player that streams through a local range relay, keeps an offline vault on your device, and never lets the webview talk to a third-party CDN directly.</p>
       <dl class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70">
         ${kv("Shell", "Tauri 2, Rust 1.77+")}
         ${kv("Front end", "Vanilla ES modules, no build step, Tailwind")}
-        ${kv("Catalog", "JioSaavn first-party, 5 community mirrors as fallback")}
+        ${kv("Catalog", "Streaming catalog with community-mirror failover")}
         ${kv("Playback", "Local axum relay on 127.0.0.1, Range forwarded verbatim")}
-        ${kv("Lyrics", "LRCLIB, Better Lyrics, then JioSaavn, LRCLIB search")}
+        ${kv("Lyrics", "LRCLIB, Better Lyrics, then catalog search")}
         ${kv("Vault", "App data folder · OpenMusic")}
         ${kv("Licence", "MIT")}
       </dl>
@@ -111,7 +111,7 @@ export function termsHTML() {
         ${clause(1, "Personal, non-commercial use", "You may use OpenMusic for your own personal, non-commercial listening. Reselling access, redistributing the application, or operating a public service built on it requires written permission.")}
         ${clause(2, "No content is bundled", "OpenMusic ships no audio. It is a player: tracks, artwork and lyrics are fetched at request time from third-party services. Rights to that content stay with their owners, and those services' own terms also apply to you.")}
         ${clause(3, "Your downloads are yours", "Anything you save lands in this app's own data folder on your device and is your responsibility to keep, back up and delete. OpenMusic is not liable for lost or damaged files.")}
-        ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by JioSaavn, LRCLIB, or any mirror listed in the source.`)}
+        ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by any third-party catalog, lyrics service, or mirror listed in the source.`)}
         ${clause(5, "Limitation of liability", "To the fullest extent permitted by law, the authors and contributors are not liable for any indirect, incidental or consequential damages arising from use of the software, including lost data, lost profits, or unavailable services.")}
         ${clause(6, "Copyright complaints", "Copyright holders may ask for stored media to be removed. Contact the maintainers through the repository and the relevant item will be deleted from the vault promptly.")}
         ${clause(7, "Changes", "These terms may change as the project matures. The date above and the copy in the repository are authoritative; material changes will be noted in the changelog.")}

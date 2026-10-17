@@ -31,15 +31,17 @@
   <span class="font-label-mono text-[10px] text-secondary tracking-[0.2em] uppercase font-semibold">Vault audiophile feed</span>
   <h1 class="font-headline-xl text-[30px] sm:text-[34px] leading-[1.05] tracking-tight text-on-surface font-bold mt-1">Good evening</h1>
   <p class="font-body-sm text-body-sm text-secondary mt-1">Lossless bitstream discovery</p>
-  <!-- Category Filters -->
+  <!-- Category Filters: All/Genres/Heavy Rotation filter the shelves in
+       place; Charts/Playlists/Albums/Artists open their mined browsers
+       (binders.js wires both verbs onto the one strip). -->
   <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pt-3 -mx-gutter px-gutter" id="home-category-chips">
-    <button data-home-cat="all" class="home-cat-chip px-4 py-2 bg-on-surface text-surface rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all">All</button>
-    <button data-home-cat="charts" class="home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95">Charts</button>
-    <button data-home-cat="playlists" class="home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95">Playlists</button>
-    <button data-home-cat="albums" class="home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95">Albums</button>
-    <button data-home-cat="artists" class="home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95">Artists</button>
-    <button data-home-cat="genres" class="home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95">Genres</button>
-    <button data-home-cat="jump" class="home-cat-chip px-4 py-2 bg-surface-container-high/70 text-on-surface rounded-full font-label-sm text-[12px] whitespace-nowrap transition-all font-medium active:scale-95">Heavy Rotation</button>
+    <button data-home-cat="all" class="home-cat-chip px-4 py-2 bg-primary text-on-primary rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all">All</button>
+    <button data-home-cat="charts" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Charts</button>
+    <button data-home-cat="playlists" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Playlists</button>
+    <button data-home-cat="albums" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Albums</button>
+    <button data-home-cat="artists" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Artists</button>
+    <button data-home-cat="genres" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Genres</button>
+    <button data-home-cat="jump" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Heavy Rotation</button>
   </div>
 </section>
 <!-- 1. Featured Spotlight Hero -->

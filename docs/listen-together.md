@@ -858,3 +858,23 @@ resume afterwards self-heals via the drift mismatch.
 * Reading the wrong DOM id costs a wrong conclusion: `#room-join-note` is
   write-once (`setRoomNote`), `#jam-sidecar-note` is the live one
   (`paintRoom`).
+
+## 14 Hardening pass (2026-10-15 audit)
+
+Not observed defects — the audit's Rust batch of cheap, high-value
+protections, all under `cargo test --lib` **213/213** (fmt + clippy clean):
+
+| Item | What changed | Evidence |
+|---|---|---|
+| Closed rooms refuse joins | `close()` sets `closed`; `join()` checks it first and answers the verbatim `closed` error. The socket level used to keep seating guests into a room whose host core was about to be dropped with the mode | `closed_room_refuses_later_joins`; `close_says_why_and_stops_accepting` now actually tests the "stops accepting" half of its name |
+| Poisoned lock no longer bricks the room | `lock()` recovers with `PoisonError::into_inner`; the old `.ok()` silently dropped every later frame after one panicking task | `lock()` is one helper; all callers unchanged |
+| Wire frames capped at 64 KiB | `ws_handler` sets `max_message_size`/`max_frame_size` — room frames are chat lines and playback ticks (hundreds of bytes); axum's 64 MiB default was buffered on an unauthenticated socket | config, covered by compile + review |
+| `report` gets a stamp budget | `REPORT_MIN_MS = 500` per guest: chat had stamps, reports (each a presence fan-out to every member) had none. Real clients already self-throttle to ~1/s (`room.js::shouldReportDrift`), so only hot loops change | `report_broadcasts_presence_but_a_hot_loop_is_thinned` |
+| A dead serve loop reverses itself | If the accept loop errors while the UI believes a room is open, the mode goes `Idle` **first**, then a `bye` ("The room server stopped…") reaches the window — the D2/D5 ordering rule; code equality keeps a fast reopen from being clobbered | code review; existing D2/D5 tests unchanged |
+
+**Deferred on purpose (documented, not forgotten):** bounded outbound mpsc +
+per-guest backpressure, a connection semaphore beyond `MAX_GUESTS`, and a
+join-handshake timeout for a peer that accepts the socket and never answers.
+All three are LAN-trust hardening with real refactor cost, and the last was
+never reproduced live (Leave already recovers it). Revisit before any
+non-LAN use (see `docs/jam-upgrade.md` F).

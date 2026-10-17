@@ -1530,3 +1530,446 @@ no WIP in it). **Local commit only — not pushed (rule 1).**
 Next slices (doc §6): C2 entity-cache wiring, C3 circuit breaker, C5 SWR
 screens, C6 desktop prefetch, C9 offline harness.
 
+## 2026-10-15f — Mobile Now Playing artwork: frameless + glass coating (uncommitted)
+
+User: "remove the black boarder in nowplaying screen thumbnail and blend the
+corners somewhat. add a thin shining coating to make it better visible. in
+android mobile only". Scope: mobile shell only (`screens/nowplaying.html` +
+`mobile/index.html`); desktop `.np-art-card` (`styles.css`) untouched.
+
+The "black border" had **two** sources, both removed:
+
+1. **Card-level**: markup `border border-outline-variant/30` + a light-theme
+   restatement (`rgba(0,0,0,.08)`) + a drawn 1 px ring
+   (`0 0 0 1px rgba(0,0,0,.12)`); dark had its own `rgba(255,255,255,.1)`
+   ring. Now: no border classes, no border-color/ring in either theme — a
+   soft diffuse shadow only (`0 24px 48px -20px` light / `-18px` dark), so
+   the rounded corners blend into the page instead of sitting in a frame.
+2. **The hidden one, caught by the pixel probe**: shared rule 7 "Image and
+   Artwork Depth" (`html:not(.dark) .aspect-square img`) put its own 1 px
+   `rgba(0,0,0,.06)` border on the img — over the card's near-black backing
+   (`#1b1b1e`) it composited to a dark ring (edge pixel luma 59 vs art 158)
+   that **survived the card-level cleanup**. Fixed with `:not(#np-art)`;
+   shelf/queue tiles keep their border.
+
+Sheen: `#np-art-card::after` — diagonal `rgba(255,255,255,.2) → 0` sweep by
+38 % + `inset 0 1px 0 rgba(255,255,255,.22)` specular top line;
+`pointer-events: none`; both themes (so dark artwork catches the light too).
+
+**Evidence (headless Chrome @412 px — no emulator attached):** computed card
+AND img border `0px` in both themes; pixel scan of the shot: left/right/bottom
+strip minima luma 155–158 = art (no dark edge), corner-box min 156 = art
+(pre-fix: 59–85), sheen top-left +18 luma over bottom-left art, specular top
+line 180 vs art 160. Screenshots: `%TEMP%\opencode\np5-light.png` /
+`np5-dark.png`. Gates: `npm test` 413/413 · eslint clean · `npm run css`
+no-op (bundle byte-identical). Docs: `docs/mobile/06-features.md` section
+"Now Playing artwork: frameless + glass coating".
+
+**Probe traps:** the first run measured and shot while the JS-injected
+onboarding overlay (`#tm-onboard`, background same as the page → an
+all-background "empty" strip in the shot) was up — a hash-only `page.goto`
+does NOT re-boot the app, so setting `tm-onboarded` afterwards never took
+effect; `page.reload()` fixes it. Without Tauri IPC the shell still renders
+and measures fine ("mobile backend disabled" is the only console noise).
+
+**Not staged**: both touched mobile files are parallel-session dirty (browse
+screens WIP), and their edits sit within diff-context distance of mine
+(section line above the card; bay-input block just above rule 7), so
+hunk-splitting cannot separate them cleanly. Nothing committed, nothing
+pushed (rule 1).
+
+## 2026-10-15g — Android portrait lock (uncommitted)
+
+User: "lock android mobile application in portrait mode only". Restated:
+pin `MainActivity` with `android:screenOrientation="portrait"` so rotation
+never recreates the WebView.
+
+- **Docs first:** `docs/android-universal-release.md` new "Portrait lock"
+  section (build-config home; the untracked media-widget doc is another
+  session's WIP and was not touched).
+- **Fix:** one guarded block in `build.sh inject_android_permissions`
+  (same grep-guard + sed pattern as the permission lines; separate hunk from
+  the parallel session's mediahub diff) — runs on every `android` /
+  `android-universal` build, surviving `tauri android init` wipes. Same
+  attribute applied directly to the live gitignored `gen/` manifest.
+- **Evidence:** `[xml]` parse OK, `activity.screenOrientation = portrait`,
+  exactly 1 occurrence (guard short-circuits on re-run); `npm test`
+  413/413, eslint untouched (no JS/Rust changed).
+- **Not built:** no APK rebuild this round (needs a quiet ~10 min window +
+  your go-ahead); the injector guarantees the next build ships it.
+- Nothing committed, nothing pushed (rule 1).
+
+## 2026-10-15h — Audit pass executed: 35 findings → mobile P0 + Rust hardening + dead-code deletions (uncommitted)
+
+"Start implement now" on the delivered repo-wide audit (35 findings). Three
+batches landed; batch 4 (dedup) not started — optional. Nothing committed
+(rule 1); `binders.js` / `router.js` / `mobile/app.js` / `CHANGELOG.md` also
+carry parallel-session WIP — hunk-split needed at commit time (07i precedent).
+
+**Batch 1 — mobile P0 (P44–P53, `docs/mobile/09-problems-solutions.md`).**
+14 edits across `mobile/{shared,player,homeplus,menus,binders,router,net,collab}.js`:
+toast argument order (P44), standby `<audio>` gets the shell's event list (P45),
+empty shelf result no longer cached as a hit (P46), Android "Edit
+description/cover" routed through the bottom-sheet input (P47), hardcoded
+version constant deleted — `paintVersion` uses `APP.version` (P48),
+`window.setPeriod` shim published for the generated screen (P49), router `r.ok`
++ catch toast (P50), network-probe single-flight + queued re-run (P51),
+`progress.cleanup()` in the download `finally` (P52), share-code `.catch` +
+toast (P53).
+
+**Batch 2 — Rust data-loss + hardening (docs: `listen-together.md` §14,
+`security-posture.md` +4 rows).** Vault rewrite failure restores the saved entry
+via a drop guard and a same-stem promote no longer deletes the row it just
+recorded; `open_external` → `tauri_plugin_opener` (no `cmd /C start` shell
+parsing); `/art` re-runs the SSRF guard on the URL actually fetched + streams
+with a cap (was: buffer whole body then check); `/stream` re-validates redirect
+hops **only** (the unconditional version broke the loopback 403-purge test);
+room: closed flag answers `closed` verbatim, poison-safe lock, 64 KiB ws frames,
+500 ms report budget, serve-Err reverts mode before the bye; retry jitter is
+real `getrandom` ±25 %; `DURATION_TOLERANCE_SECS` single source.
+
+**Batch 3 — dead code removed (~1.8k lines).** Four tracked files:
+`app/src/survey.js` (765 L, zero importers; the 15c "untracked, user decides"
+note was stale — it IS tracked, recoverable with `git checkout HEAD --`), and
+the never-compiled `catalog.rs`/`jiosaavn_catalog.rs`/`audius.rs` trio
+(1,005 L) + their 3 commented `mod` lines. Dead exports: mobile
+`isFav`/`isActiveDownload`/`storageBreakdown`, desktop `prefLang`/`lyricsSizePx`;
+the mobile widget handler lost its three never-matching branches
+(`data-w-prev/-repeat/-shuffle`). **Kept on purpose** (investigated, not
+accidental): the Bluetooth trio + `sysvol.rs` — explicitly "parked on request"
+with documented restore paths. The audit's "14 tracked `_*.mjs` probes" claim
+was wrong — they are untracked; left in place. `proxy.rs` pause/resume `.part`
+double-removal re-reviewed: both branches necessary (416-drop vs 200-restart),
+kept.
+
+**Also fixed, found by verification:** `tests/smoke-test.mjs` on win32 spawned
+the `.msi` installer (`spawn EFTYPE` — a gate that could never go green when a
+bundle exists); it now launches the raw `target/release/trance-music.exe` the
+same build produces, installer path kept only as fallback.
+
+**Docs:** `CHANGELOG.md` Unreleased carries three audit sections — `Fixed
+(audit pass — desktop + Rust)`, `Fixed (audit pass — mobile)`, `Removed (audit
+pass — dead code)`; the stale `docs/mobile/09` live-check line now points here.
+
+| Gate | Result |
+|---|---|
+| `npm test` | **428/428** (413 at batch 1; parallel sessions added the rest) |
+| eslint (touched files) | clean — whole-tree lint has 1 error in parallel WIP `mobile/canvas.js` (not mine) |
+| `cargo fmt --check` · `clippy --all-targets -D warnings` | 0 · 0 |
+| `OP_OFFLINE=1 cargo test --lib` | **213/213** (210 + 3 new tests) |
+| `npm run test:smoke` (win32) | **5/5** after the MSI fix |
+| Live emulator probe (fresh debug APK 31.2 MiB, pid 3900) | **7/7**: shell boots (1242 nodes) after reload, zero uncaught exceptions on boot + home navigation, `#period-selector` Month-tap selects with no `ReferenceError`, settings footer `VERSION 0.5.1` — P48/P49 proven live, deletions proven graph-safe |
+
+Probe = `%TEMP%\opencode\mobile-live-probe.mjs` (CDP :9223 via adb forward,
+`Page.reload` + Runtime.exceptionThrown watch); throwaway, outside the repo.
+
+**Trap worth remembering:** while deleting `storageBreakdown` I invented a
+replacement line (`export function togglePlaylistOffline(id) {`) that existed
+nowhere — a hallucinated edit; `node --check` caught the broken syntax at once.
+Rule: never hand-write "the rest" of a replacement — re-read the exact bytes;
+when deleting a block, replace it with nothing.
+
+**Not done / open:** batch 4 (dedup) unstarted; live two-device Jam not re-run
+(this batch's Jam changes are Rust-side, covered by the new room tests).
+
+**Postscript:** the emulator exited after the probe (graceful shutdown +
+`Saving snapshot 'default_boot'`; the wrapper shell reported exit 1; `adb
+devices` empty). Install state on the AVD persists — cold-boot again to resume.
+
+## 2026-10-16 — Spotify end-to-end on both surfaces: state-typing root cause, real matcher, Canvas + mobile UI (live-verified)
+
+User's asks: desktop — *"songs are not importing / the spotify data is not
+importing working properly"*; Android — *"sign-in + import data + build canvas"*.
+Spec of record: `docs/spotify-android-canvas.md` (§9 statuses, §10 matcher
+contract, §11 state defect, **§12 full verification record + driver paths**).
+**Nothing committed, nothing pushed (rule 1)** — the tree carries other
+sessions' WIP (`binders.js`, `CHANGELOG.md`, …); hunk-split at commit time per
+the 07i precedent.
+
+**Two independent root causes, both real:**
+
+| # | Bug | Evidence |
+|---|---|---|
+| 1 | **Sign-in could not work in any committed build.** All seven Spotify/Canvas commands took `State<'_, AppState>` while the builder manages `Arc<AppState>` (since the initial commit) — Tauri resolves command state by exact type, so every call died with *"state not managed for field `app`"* before any network/store/keyring access. The shipped **v0.5.1 tag** carries the bare form (`git show v0.5.1:…/spotify.rs` + `canvas.rs`) | CDP probe on the live debug build gave the exact error; after the fix: `spotify_is_signedin` → true (the keyring token — from a dev-side sign-in outside committed history — refreshes fine), `canvas_configured` → false, `cache_stats` OK. Fix: all seven → `Arc<AppState>`; new static gate in `tests/mobile-spotify.test.mjs` walks `src-tauri/src` and rejects the bare form anywhere |
+| 2 | **Imports matched garbage or missed.** Both importers queried JioSaavn **by ISRC first**; the catalog has no ISRC index → valid ISRCs returned unrelated tracks and the old code accepted the top hit unconditionally. New `app/src/spotmatch.js`: query `name + first artist`, fetch 8 candidates, score 0.5\*title + 0.3\*artist + 0.2\*duration; accept iff ≥0.6 and titleSim ≥0.55 with a tribute-cover guard | Old-vs-new live probe: the Believer ISRC query returned "Mat Aazma Re"; the matcher returns the exact track. 12 tests `spotmatch.test.mjs` + 3 `importer.test.mjs` |
+
+**Live verification (drivers in `%TEMP%\opencode\`; §12 has the table):**
+- Desktop CSV import, real UI path, 5-row Exportify fixture → **IMPORT_OK 3/3** (Believer, Tum Hi Ho, Kesariya), the 2 impossible rows honestly missed, zero garbage.
+- Android emulator, fresh APK 32,735,713 B → **11/11**: section renders; status resolves ("Not signed in" — state fix live); `sp_dc` save/clear round-trip; canvas + cellular toggles; `fetch_canvas` no-cookie rejection + fake-cookie real upstream attempt (clean 400 in 1.0 s; the first-ever call once exceeded 120 s — cold DNS/TLS; the module is fire-and-forget so the art stays); sign-in hop — logcat carries the full `accounts.spotify.com/authorize` URL (client id, loopback redirect, 3 scopes, PKCE S256), Chrome takes the intent.
+- Android CSV import via the hidden file input (fixture pushed to `/data/local/tmp`) → **MOBILE_CSV_IMPORT_OK 3/3**.
+- Top-tracks import runs end-to-end but **Spotify answers 403** — *"…the user may not be registered."* = Development-mode allowlist; the signed-in account must be added under the dashboard's Users Management. User action; not a code defect.
+
+**Gates:** `npm test` **435/435** · `OP_OFFLINE=1 cargo test --lib` **213/213** · `cargo fmt --check` clean · `cargo clippy --all-targets -D warnings` clean · eslint clean (touched files) · desktop debug `cargo build` + `tauri android build --debug` both `EXIT=0`.
+
+**Traps:** PowerShell `$pid` is read-only — the assignment failed silently and left the shell's own PID in `adb forward`, pointing at a nonexistent socket; replacing the desktop exe needs the running instance killed first and the single-instance forward kept in mind (a second launch forwards to the first and exits); the released app hides to tray — a graceful `taskkill /PID` is intercepted, `/F` is required; a synthetic click fired right at panel-switch time no-ops (re-click after mount); Android WebView file inputs DO accept `DOM.setFileInputFiles` with a `/data/local/tmp` path (the mobile CSV E2E depends on it).
+
+**Files:** `app/src/spotmatch.js`\*, `app/tests/spotmatch.test.mjs`\*, `app/tests/importer.test.mjs`, `app/src/importer.js`, `app/src/settings.js`, `app/src/mobile/canvas.js`\*, `app/src/mobile/binders.js`, `app/src/mobile/shared.js`, `app/src/mobile/screens/nowplaying.html`, `app/src-tauri/tauri.android.conf.json` (CSP `canvaz.scdn.co`), `app/tests/mobile-spotify.test.mjs`\*, `app/src-tauri/src/spotify.rs`, `app/src-tauri/src/canvas.rs`, `docs/spotify-android-canvas.md`, `docs/feature-list.md` (rows 158/178), `CHANGELOG.md` (\* = new). Left running: desktop debug app (CDP `:9222` — the fixed build; its panel shows **Signed in**) and the emulator with the new APK installed.
+
+## 2026-10-16b — Search resilience: "Search is down right now" can no longer persist (desktop, live-verified 19/19)
+
+User: find why the error persisted and fix it so it won't. Root cause: a
+transient upstream/local window (unreproducible afterwards — and the trigger is
+**unrecoverable by design**: the `#diag` panel was removed in the 2026-10-09
+desktop revert, so the raw error was dropped) amplified by four design gaps:
+`official::call` was single-shot while mirrors retried; 4 of 5 fallback mirrors
+are dead; the frontend showed the card after ONE attempt with no auto-recovery;
+diagnostics had no sink. Spec of record: `docs/search-resilience.md`.
+
+| Fix | Where |
+|---|---|
+| F1 bounded auto-retry ladder 1.5/4/15/45 s (resets per search & manual Retry; " Retrying…" copy; a valid empty answer is never retried) | `app/src/search.js` + `app/src/searchretry.js`\* (pure policy, 5 unit tests) |
+| F2 `online` event re-runs the failed query when the card's own Retry action is up (no timers while offline) | `app/src/search.js` |
+| F3 Retry button single-flight (disabled before the re-run) | `app/src/search.js` |
+| F4 `official::call` gets one calm retry — transport error / 5xx / short 429 → jittered backoff (reuses `jiosaavn::{backoff_ms, retry_after_delay}`, now `pub(crate)`); 4xx and business answers stay final; `retryable()` unit-tested | `app/src-tauri/src/official.rs` |
+| F5 mirror list honest again: the sweep left only `saavn.sumit.co` (contract-verified: `data.results` + `downloadUrl`); 3×404 + 1 connect-refused hosts removed | `app/src-tauri/src/jiosaavn.rs` |
+| F6 diag ring survives the missing panel: last 40 lines incl. raw errors via `__tmDiag()` | `app/src/core.js` |
+
+**Live 19/19** (CDP `:9222`, real UI, driver `%TEMP%\opencode\search-retry-verify.mjs`;
+full record in doc §6). A — first call fails: card shows instantly with
+"Retrying…", heals in **1 503 ms**, zero clicks. B — the reported scenario
+(3 failures): card persists at 6.5 s and heals **by itself** after the third
+ladder step (~20.5 s; 47 rows at the 24 s check), 0 unhandled rejections.
+C — gibberish empty answer: "No tracks found", no retry scheduled, exactly
+1 upstream call. D — `online` with the card up: re-runs after **606 ms** (ahead
+of the 1.5 s ladder); D dispatched the event directly (handler-level proof — a
+real Wi-Fi toggle would cut the user's connection). E — regression: normal
+search 79 rows, "Load more" → 108. F — ring kept the raw errors.
+
+**Trap (cost one probe iteration — record):** `window.__TAURI_INTERNALS__` and
+every property on it are **non-writable, non-configurable** — `internals.invoke
+= wrapper` fails SILENTLY (assignment in sloppy mode), and `__TAURI__.core.invoke`
+was captured by module load. Desktop invokes are `fetch()` calls to
+`http://ipc.localhost/<cmd>` (request headers `Tauri-Callback`/`Tauri-Error`,
+response header `Tauri-Response: ok|error`; responses settle through
+`runCallback(id, data)` evaled by Rust — the `chrome.webview.postMessage` branch
+is only the blocked-custom-protocol fallback). Wrap **`window.fetch`** and
+answer selected `search_songs` calls with `Tauri-Response: error` + text body —
+the app rejects exactly like a real upstream failure.
+
+**Gates:** npm **440/440** (+5 new) · eslint clean (touched) · `cargo fmt`
+clean · `clippy --all-targets -D warnings` clean · `OP_OFFLINE=1 cargo test
+--lib` **214/214** · debug `cargo build` exit 0, app relaunched with CDP and
+left running. Backend F4 has unit coverage + the E1 live regression (real
+search through the primary source); a Rust-side fault was NOT simulated —
+stated limitation. Mobile search keeps its single-shot path — next slice
+(doc §7).
+
+**Files:** `app/src/searchretry.js`\*, `app/tests/search-resilience.test.mjs`\*,
+`docs/search-resilience.md`\*, `app/src/search.js`\*, `app/src/core.js`,
+`app/src-tauri/src/official.rs`, `app/src-tauri/src/jiosaavn.rs` (my 3 small
+hunks; the file also carries a parallel session's backoff-jitter WIP),
+`docs/feature-list.md` (my 2 rows + a parallel Spotify row),
+`CHANGELOG.md` (my section + parallel entries), this entry (\* = never touched
+before). **Nothing committed, nothing pushed (rule 1)** — the mixed files need
+the 07i hunk-split when a commit is called for.
+
+## 2026-10-16e — Recommendation upgrade P0–P4: play-event log + shared taste engine + "Because you played X" (live-verified both surfaces, uncommitted)
+
+User: "complete now" on the first slice (phases P0–P4) of the recommendation
+system upgrade. Spec of record written first: `docs/recommendations.md` **§8**;
+as-built record + evidence in **§8.6**. **Nothing committed, nothing pushed
+(rule 1)** — `lib.rs`, `mobile/player.js`, `mobile/binders.js`, `CHANGELOG.md`
+also carry parallel-session WIP → hunk-split at commit time (07i precedent).
+
+| Piece | Where |
+|---|---|
+| **Play-event log** | `store.rs`: `play_events` + `idx_play_events_ts`, `PLAY_EVENTS_CAP=3000` prune-on-write, `events()` clamp 1..2000 oldest-first, unknown outcome → `partial`, survives `cache_clear`; 2 unit tests. `lib.rs`: `store_play_event` / `store_events` (limit default 400). `store_db.js`: `playEvent` / `getPlayEvents`. |
+| **`taste.js` (new, pure, zero imports)** | classifyPlay · leadArtists · cleanEvents · sessionize · buildCoOccurrence · neighborScores · negativeWeights · buildSignals · scoreCandidate · mmrRerank · rerankBatch · similarShelf · replayHitRate — 12 unit tests. |
+| **Unified radio** | both `radio.js`: store events + local logs → one signal set; `scoreReco` = `rerankBatch` then a `{allowHeard:true, eps:0}` fallback (never an empty batch); desktop keeps the export name. |
+| **Recorders** | desktop `playback.js` (beginPlay/flushPlay around queue/item transitions, `ended`, xfade handover; source `radio`/`queue`); mobile `player.js` (same in `start()`/`ended()`/`finishXfade`, dynamic `../store_db.js` import — no static mobile→store_db edge); never flushed on pause/pagehide. |
+| **Similar shelf** | `mobile/binders.js`: `[data-shelf="tm-shelf-mfy-similar"]`, `minNeighbors 6`, reconciler removes it below the floor; metadata from the log's own rows. |
+
+**Live evidence (probes in `%TEMP%\opencode\`, outside the repo):**
+- Desktop `taste-live-desktop.mjs` (CDP :9222, real `cargo build` binary):
+  **16/16** — real search + trusted clicks; skip event `ms=4214 dur=268
+  source=queue` with real title; natural end → complete `ms=192749 dur=193`;
+  chain auto-advanced to a third track; oldest-first reads; `store_stats.events`
+  4→7; 0 unhandled rejections.
+- Mobile `taste-live-mobile.mjs` (CDP :9223, fresh debug APK, Pixel6_API36):
+  **22/22** — same skip/complete pair on-device (`ms=5175 dur=357`; complete
+  `ms=246387 dur=246`); shelf E2E: 7 injected co-listening rows → home remount →
+  "Because you played Probe Taste 7", 9 cards (6 injected + 3 real Kesariya
+  neighbours); 0 uncaught exceptions (full log: `taste-live-mobile.out.txt`).
+- The endless-radio **trigger** was not re-driven live (no "Start radio" UI;
+  burning a queue through skips would pollute the real play log) — scoring is
+  unit-covered, and the desktop log held `source:"radio"` rows from the app's
+  own refills (radio-sourced items flow through the recorder correctly).
+  Stated limitation.
+
+**Lessons / traps:**
+- **`replayHitRate` needed the radio's own heard-window.** Ranking all
+  candidates let a symmetric co-occurrence graph beat the truth with the
+  *backward* edge (0.15). Dropping the just-played tail first (`heardWindow` 4)
+  → **0.98**, shuffled ≤0.18. The metric now mirrors what the radio can serve.
+- **A row below the fold looks like a dead click**: the first desktop run's
+  click hit nothing — `elementFromPoint` returned null at y≈995 in a ~794px
+  viewport. `scrollIntoView({block:"center"})` before coordinate clicks;
+  `#bar-next` worked because the bar is fixed.
+- **`ms_played` = playhead at transition** (recorded in §8.6): a seek-to-end
+  reads as a full dwell; early-skip/full-play/natural-end classify correctly.
+- **PowerShell truncated the probe output mid-line** (last checks + final count
+  invisible) → re-run with `cmd /c "… > file 2>&1"`, read the file; exit 0 is
+  the secondary signal.
+- `tauri android build --debug` + `adb install -r` keeps app data (onboarded
+  state survived); re-forward `tcp:9223 localabstract:webview_devtools_remote_<pid>`
+  after any adb server restart.
+
+**Gates:** `npm test` **452/452** (+12 taste tests) · eslint clean (touched) ·
+`node --check` ×7 · `cargo fmt --check` clean · `clippy --all-targets
+-D warnings` clean (caught one `unnecessary_cast` at `store.rs:1071`) ·
+`OP_OFFLINE=1 cargo test --lib` **216/216**.
+
+**Files:** `app/src/taste.js`*, `app/tests/taste.test.mjs`*, `store.rs`,
+`lib.rs` (parallel-modified, small hunks), `app/src/radio.js`,
+`app/src/mobile/radio.js`, `app/src/playback.js`, `app/src/mobile/player.js`
+(parallel-modified), `app/src/mobile/binders.js` (parallel-modified),
+`app/src/store_db.js`, `app/src/tailwind.css` (rebuild), `docs/recommendations.md`
+(§8 + §8.6), `CHANGELOG.md` (my section + parallel entries), this entry
+(* = new).
+
+**State left running:** desktop debug app (CDP :9222, pid 20748); emulator
+`Pixel6_API36` with the fresh debug APK installed. Next slices: C-style
+deferred items in §8.5 (P5 shelf-tap logging, P6 Spotify pseudo-plays,
+P7 desktop parity).
+
+## 2026-10-17 — JioSaavn-first radio + search: live-verified on both surfaces; streaming rerun green (uncommitted)
+
+User directives: "PREFER THE JIOSAVAAN RECOMENDATIONS" → "DON'T USE OUR LOCAL
+TASTE RECOMMENDATION ENGINE" → "FOR SEARCH ALSO USE JIOSAVAAN
+RECOMMENDATIONS". Spec of record: `docs/recommendations.md` **§8.8** (radio)
++ **§8.9** (search); the live-verification record is **§8.10** (new).
+
+**What the code does now.** Radio = queue hygiene only: `scoreReco` deleted
+from both `radio.js`; `taste.pickBatch` is the eligibility gate (dedupe,
+queued, last-15-heard with `allowHeard` retry, hard-skip <3 h) and batches
+queue **in upstream order**. Search = the taste block removed from
+`query.js::relevance` (played +0.15 / liked +0.2 / artistPlays gone);
+`rankTracks` is stable so ties keep JioSaavn's API order; region + mood +
+autocomplete + recent-search history deliberately KEPT. `tasteContext`
+deleted in both shells.
+
+| Probe (all live, real UIs) | Result |
+|---|---|
+| Desktop radio order (`radio-order-desktop.mjs`, CDP :9222, `window.fetch` wrap of the IPC) | **13/13** — flight 1 queued `[43k5J4YX, O4aXuS_L, sIK0DHYF]` from the JioSaavn batch `[H0IRhlNT, …, 43k5J4YX, u2flpAk4, fUMvktiR, O4aXuS_L, …]` — leading ids gate-filtered, order kept; flight 2 same shape; §8.9 live: warm=cold=0.5, region in 0.58 > out 0.5; 0 unhandled rejections |
+| Android radio order (`radio-order-mobile.mjs`, CDP :9223, call-breakpoint capture) | **11/11** — flight 1 queued **exactly the consumed batch in order** (`[Hvma-gqd, wJB6BG9f, …, fy8dN2I_]`, zero drops); flight 2 same; both flights one station; tails continue one listing; §8.9 live identical; 0 unhandled |
+| Desktop streaming rerun (`stream-official-live-desktop.mjs`) | **20/20** — the 2026-10-16f chain re-proven: UI click → relay `q=320kbps` serving the resolve's exact bytes, tile `320kbps · aac.saavncdn.com`, 96kbps smaller + relay serves its bytes, pref flip drives tile + url to `96kbps` |
+| Android streaming rerun (`stream-official-live-mobile.mjs`) | **17/17** — same chain on-device incl. `#np-qchip` / `#np-src`; pref flip drives a fresh non-vaulted row's chip + `q=96kbps`; 0 uncaught |
+
+**BIG ONE — how to capture Android IPC responses (future probes need this).**
+The Android WebView does **not** transport invoke over `window.fetch` (a fetch
+wrap sees 0 calls; CDP `Network` sees no bodies). Requests go through
+`__TAURI_INTERNALS__.ipc` (JNI postMessage); responses arrive by an eval of
+`window.__TAURI_INTERNALS__.runCallback(id, data)`. `ipc`, `postMessage`,
+`runCallback`, `transformCallback` **and the `__TAURI_INTERNALS__` object
+itself** are all non-writable / non-configurable — fetch wrap, Proxy swap and
+defineProperty traps are all dead ends. The channel that works:
+`Debugger.enable` + `Debugger.setBreakpointOnFunctionCall` on the
+`runCallback` **function object** — every response pauses the page, read
+`data` via `Debugger.evaluateOnCallFrame` (inside the paused frame `data` is
+the response argument), then `Debugger.resume`. Filter in-page and return a
+tiny JSON to keep pauses cheap; remove the breakpoint + `Debugger.disable`
+at the end. Full recipe: `docs/recommendations.md` §8.10.
+
+**Traps of the day (cheap to re-derive, expensive to rediscover):**
+- **Desktop :9222 now exposes TWO page targets** — the widget window
+  (`http://tauri.localhost/widget.html`, listed FIRST) and the main app
+  (`http://tauri.localhost/`). `targets.find(t => t.type === "page")` picked
+  the widget and every subsequent assertion read a page with no app DOM.
+  Select by exact URL.
+- **The desktop search type filter is live module state** (`setActiveFilter`;
+  "View all" from Home → `browseCards` can leave it on albums/artists). A
+  probe then searches and finds ZERO `[data-track-id]` rows while `#results`
+  happily paints album cards — the tell is `#results-sub` ("Showing 10 albums
+  and movies for …"). Probes must force
+  `import("/search.js").setActiveFilter("tracks")` before searching, and put
+  `#results-sub` in the failure detail.
+- **Re-clicking the currently playing row is a no-op** — a probe click that
+  lands on the already-playing track never restarts it (a ct<30 assertion can
+  never hold). Pick a row whose `data-track-id` differs from the playing id.
+- `window.__tmDiag()` returns an **array**, not a string — `.split` throws.
+- Two desktop search runs painted 0 rows (transient upstream window) and the
+  probe crashed without a guard; a retry-shove + abort guard now handle it.
+- Node 24's global `WebSocket` is enough for CDP everywhere (verified again).
+
+**Gates:** `npm test` **454/454** · `npm run lint` clean · `node --check` on
+all touched files clean · desktop `cargo build` exit 0 (7m17s cold) · Android
+`tauri android build --debug` exit 0 (fresh APK installed on the emulator).
+
+**Docs:** `docs/recommendations.md` §8.8 + §8.9 (spec, written before the
+code) + §8.10 (live record); `docs/architecture.md` §5.5 (streaming live
+verification paragraph, closes the mobile half of 2026-10-16f);
+`CHANGELOG.md` Unreleased "JioSaavn-first recommendations"; `feature-list.md`
+radio row.
+
+**Status:** ✅ radio + search code-complete and live-verified on both
+surfaces ✅ streaming verified both surfaces ⏳ **nothing committed, nothing
+pushed** (rule 1). The tree also carries other sessions' WIP (`lib.rs`,
+`mobile/player.js`, `mobile/binders.js`, `CHANGELOG.md`, `feature-list.md`,
+the 10-15h dead-code deletions, canvas/albums/artists screens) → hunk-split
+at commit time (07i precedent). Left running: desktop debug app (CDP :9222)
+and the emulator with the fresh APK.
+
+## 2026-10-17b — Source-first search blocks + no upstream name in the UI (both surfaces 12/12 live, uncommitted)
+
+User directives: *"show majorly from movie songs"* (search results lead with
+the matched song's own source) and *"don't show out jiosaavn sources anywhere
+in the ui of desktop and mobile"*. Spec of record: `docs/recommendations.md`
+§8.11 + the **§8.11a** live record; branding contract: `docs/branding/trance-music-guide.md`
+"Upstream attribution — never in the UI"; `docs/architecture.md` §5.5 and
+`docs/feature-list.md` updated with each change; `CHANGELOG.md` Unreleased.
+**Nothing committed, nothing pushed (rule 1)** — `binders.js`, `CHANGELOG.md`,
+`feature-list.md` etc. also carry parallel-session WIP → hunk-split at commit
+time (07i precedent).
+
+| Piece | Where |
+|---|---|
+| `cleanTitle`, `sourceAlbumName` (title-first provenance), `sourcePlan`/`sourceMatch`/`sourceOrder`/`sourceRows`; the exact-title bonus in `relevance` now compares the title with its `(From "…")` clause removed | `app/src/query.js` |
+| Desktop: `currentView()` ranks through `sourceOrder`; `maybeMergeSource` fetches the source's own name after the first paint, folds extras in, recaches | `app/src/search.js` |
+| Mobile: `rankForQuery` wraps `sourceOrder`; `mergeSource` + `shapePage(raw.concat(extra))` regroup the merged page; eligible only on committed (`full`) relevance searches, never entity chips / `hires` / named sorts / offline | `app/src/mobile/searchkit.js`, `app/src/mobile/binders.js` |
+| Branding scrub: mobile `#np-src` span deleted; desktop `#np-format` + mobile `#np-qchip` show the tier only (`320kbps` / `vault`); Spotify note, About copy, catalog/lyrics key–value rows, Terms clause 4 reworded ("streaming catalog", "catalog search") | `player.js`, `settings.js`, `mobile/legal.js`, `mobile/screens/nowplaying.html` |
+| Tests | `app/tests/query.test.mjs` +4 (cleanTitle, provenance-aware relevance, title-first plan, compilation-proof match) · `mobile-searchkit.test.mjs` §8.9 contracts intact |
+
+**Live finding → refinement (caught by the desktop probe, then fixed the same
+day):** `"tum hi ho"` anchored on a 315 k-play cover (`'Tum Hi Ho'`, album
+`Heartstrings`) because the exact-title bonus matched its bare title, then
+expanded that compilation — a wall of unrelated `Heartstrings` tracks. The
+original (`'Tum Hi Ho (From "Aashiqui 2")'`, 374 M plays) hides its film in
+the **title**; its album is a compilation ("Best Of Arijit Singh…"). Fix:
+clean the from-clause before the exact-title test and read provenance
+title-first. Re-simulated against the live page before rebuilding (node +
+`query.js` over the real 85-row page): anchor the original, plan
+`{kind:"album", key:"aashiqui 2"}`, 12 fetched Aashiqui 2 additions.
+
+**Live verification (both surfaces 12/12):**
+- Desktop `sourcefirst-desktop.mjs` (CDP :9222, real `cargo build`):
+  gaali vaaluga → 8/10 head rows Agnyaathavaasi (raw page: 2 rows);
+  believer → 10/10 Imagine Dragons, first cover #16; tum hi ho → anchor the
+  original, 6/10 head rows Aashiqui 2; scans clean on search / About / Terms /
+  Now Playing; `#np-format="320kbps"`.
+- Mobile `sourcefirst-mobile.mjs` (CDP :9223, fresh debug APK 32,778,761 B,
+  `ticks` real playback): gaali vaaluga → 6/8 film rows; believer → 10/10
+  Imagine Dragons, first cover #17; tum hi ho settled head carries the
+  soundtrack extras (Chahun, Sunn Raha Hai ×2, Meri Aashiqui…); scans clean;
+  `#np-src` → null; `#np-qchip="320kbps"`.
+- **Probe trap (cost one iteration):** the mobile merge lands ~1–2 s after the
+  first paint, so a wait that accepts the first full row list reads the
+  pre-merge rank — the first tum hi ho read showed covers up top and nearly
+  earned a false "mobile merge broken" verdict. Gate on the settled page.
+
+**Gates:** `npm test` **463/463** (459 + 4 new) · `npm run lint` clean ·
+`node --check` clean on all touched JS · desktop `cargo build` exit 0 (19.57 s
+incremental after the refinement) · `tauri android build --debug --target
+x86_64` `BUILD_EXIT=0`. Focused earlier in the batch: query+mobile-searchkit
+35/35, desktop 12/12, mobile 12/12 after each change.
+
+**Files:** `app/src/query.js`, `app/src/search.js`, `app/src/mobile/searchkit.js`,
+`app/src/mobile/binders.js`, `app/src/player.js`, `app/src/settings.js`,
+`app/src/mobile/legal.js`, `app/src/mobile/screens/nowplaying.html`,
+`app/tests/query.test.mjs`, `docs/recommendations.md` (§8.11 + §8.11a),
+`docs/branding/trance-music-guide.md`, `docs/architecture.md`, `docs/feature-list.md`,
+`CHANGELOG.md`, this entry. Probes (throwaway, `%TEMP%\opencode\`):
+`sourcefirst-desktop.mjs` + `.out.txt`, `sourcefirst-mobile.mjs` + `.out.txt`,
+`tumhiho-sim.mjs` (pre-rebuild simulation), `tumhiho-dump.mjs` (raw-page dump).
+Left running: desktop app (CDP :9222), emulator `Pixel6_API36` with the fresh
+APK installed.
+

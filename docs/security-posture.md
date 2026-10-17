@@ -20,6 +20,10 @@ the user's machine, (3) script injection into the webview.
 | Capabilities least-privilege — `core:default` for main+widget; the widget window additionally gets exactly 5 permissions (drag, always-on-top, ignore-cursor, close, events). No filesystem/shell/http grants | `capabilities/default.json`, `capabilities/widget.json` |
 | Updater artifacts minisign-signed; CI signs from `TAURI_SIGNING_PRIVATE_KEY`; pubkey in conf verified byte-identical to `~/.tauri/open-music.pem` (2026-10-07) | `tauri.conf.json`, `docs/windows-release.md` |
 | Dependency scanning — Dependabot weekly (npm, cargo, actions) + **blocking** `cargo audit` in `ci.yml` (made blocking 2026-10-15) | `.github/dependabot.yml`, `.github/workflows/ci.yml` |
+| `open_external` goes through `tauri-plugin-opener` (single-argument ShellExecuteW / open / xdg-open) — no shell re-parses `&`, `^` or `%VAR%` in the URL (the old Windows `cmd /C start "" {url}` did) | `lib.rs` `open_external`, plugin registered at `lib.rs` builder |
+| Relay redirect hops re-validated — `/art` refuses to serve bytes fetched (via redirect) from loopback/private/link-local hosts; `/stream` runs the same check on redirect hops only (a direct fetch is whatever the resolution chain chose, and the 403-purge path stays intact) | `proxy.rs` `art_origin_ok` + both fetch paths; regression test `stream_purges_stale_resolution_on_403` |
+| Art bodies capped **while streaming** (was: buffer everything, then check `MAX_ART_BYTES`) — a hostile mirror cannot balloon memory with a chunked body | `proxy.rs` `/art` fetch loop |
+| Room WebSocket frames capped at 64 KiB per message/frame — an unauthenticated LAN socket can no longer make axum buffer its 64 MiB default before the JSON parse rejects it | `room.rs` `MAX_WIRE_BYTES`, `ws_handler` |
 
 ## Accepted risks (decisions, not oversights)
 

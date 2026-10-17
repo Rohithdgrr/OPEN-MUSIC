@@ -11,7 +11,6 @@ import {
   pickTop,
   queryTokens,
   rankForQuery,
-  tasteContext,
   understoodLabels,
   uniqueById,
 } from "../src/mobile/searchkit.js";
@@ -140,14 +139,17 @@ test("named sorts delegate to the rank.js ordering", () => {
   assert.deepEqual(rankForQuery([], parsed, "relevance"), []);
 });
 
-test("taste boosts the tracks this listener already knows", () => {
+test("personal taste no longer boosts: the catalog order stays (§8.9)", () => {
   const parsed = parseSearch("midnight");
   const page = [track("Midnight A"), track("Midnight B", { id: "Midnight B" })];
   const cold = rankForQuery(page, parsed, "relevance", {});
   assert.equal(cold[0].id, "Midnight A", "catalog order without signals");
-  const opts = tasteContext([{ id: "Midnight B", artist: "x" }], [{ id: "Midnight B" }]);
-  const warm = rankForQuery(page, parsed, "relevance", opts);
-  assert.equal(warm[0].id, "Midnight B", "liked + played wins the tie");
+  const warm = rankForQuery(page, parsed, "relevance", {
+    played: new Set(["Midnight B"]),
+    liked: new Set(["Midnight B"]),
+    artistPlays: new Map([["x", 3]]),
+  });
+  assert.deepEqual(warm.map((t) => t.id), cold.map((t) => t.id), "personal opts must not reorder");
 });
 
 test("mood detection reads title and album only", () => {

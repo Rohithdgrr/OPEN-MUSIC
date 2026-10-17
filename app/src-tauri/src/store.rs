@@ -14,6 +14,9 @@
 //!   (queue backup, last position, onboarding flags). Big blobs stay out.
 //! * `search_cache` — persistent L1: query key -> SearchPage JSON, 6h TTL,
 //!   capped at 200 rows so offline restarts still show results.
+//! * `play_events` — append-only taste log: one row per finished/abandoned
+//!   play (outcome + dwell + denormalised metadata), newest 3000 kept. Feeds
+//!   the shared similarity engine (`taste.js`, docs/recommendations.md §8).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -67,6 +70,20 @@ CREATE INDEX IF NOT EXISTS idx_outbox_created ON outbox(created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_songs_last_played ON songs(last_played DESC);
 CREATE INDEX IF NOT EXISTS idx_songs_fav ON songs(is_fav, last_played DESC);
 CREATE INDEX IF NOT EXISTS idx_songs_plays ON songs(play_count DESC);
+CREATE TABLE IF NOT EXISTS play_events (
+    seq           INTEGER PRIMARY KEY AUTOINCREMENT,
+    id            TEXT NOT NULL,
+    ts            INTEGER NOT NULL DEFAULT 0,
+    ended_at      INTEGER NOT NULL DEFAULT 0,
+    ms_played     INTEGER NOT NULL DEFAULT 0,
+    duration_secs INTEGER NOT NULL DEFAULT 0,
+    outcome       TEXT NOT NULL DEFAULT 'partial',
+    source        TEXT NOT NULL DEFAULT '',
+    title         TEXT NOT NULL DEFAULT '',
+    artist        TEXT NOT NULL DEFAULT '',
+    image         TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_play_events_ts ON play_events(ts DESC);
 ";
 
 /// Search rows older than this are deleted on read. Deliberately long (was
@@ -91,6 +108,9 @@ const OUTBOX_OP_MAX: usize = 32;
 const OUTBOX_PAYLOAD_MAX: usize = 4 * 1024;
 /// Songs table safety valve: prune cold rows past this size.
 const SONGS_CAP: i64 = 5000;
+/// Play-event log cap: the newest 3000 rows survive; older pruned on write.
+/// The similarity miners only ever read the recent tail.
+const PLAY_EVENTS_CAP: i64 = 3000;
 /// KV value size guard: prefs, not playlists (those live in localStorage +
 /// backup files). 64 KB is generous for a queue snapshot.
 pub const KV_MAX_BYTES: usize = 64 * 1024;
@@ -111,6 +131,25 @@ pub struct SongRow {
     pub last_played: u64,
     pub is_fav: bool,
     pub updated_at: u64,
+}
+
+/// One finished (or abandoned) play. `ts`/`ended_at` are ms epoch — the
+/// session miner works in ms; counts elsewhere stay in seconds.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlayEventRow {
+    pub id: String,
+    pub ts: u64,
+    pub ended_at: u64,
+    pub ms_played: u64,
+    pub duration_secs: u64,
+    /// `complete` (ended naturally or ≥ 80 % heard) · `skip` (< 35 %) ·
+    /// `partial` in between / unknown duration.
+    pub outcome: String,
+    /// Where the play came from (`queue`, `radio`, …) — diagnostics only.
+    pub source: String,
+    pub title: String,
+    pub artist: String,
+    pub image: String,
 }
 
 pub struct AppStore {
@@ -245,6 +284,105 @@ impl AppStore {
         Ok(count.max(0) as u64)
     }
 
+    // ------------------------------------------------------- play events ---
+
+    /// Append one play event to the taste log. Best-effort analytics: values
+    /// are clamped/truncated instead of rejected (a malformed field must not
+    /// cost the whole signal), only a missing id is refused. Rows past
+    /// `PLAY_EVENTS_CAP` are pruned oldest-first here, so the caller never
+    /// needs a maintenance pass.
+    pub fn record_event(&self, event: &serde_json::Value) -> Result<u64, String> {
+        let id = str_field(event, "id");
+        if id.is_empty() || id.len() > 128 {
+            return Err("event id 1..128 chars".into());
+        }
+        let num = |k: &str| -> i64 { u64_field(event, k).max(0) };
+        let text =
+            |k: &str, cap: usize| -> String { str_field(event, k).chars().take(cap).collect() };
+        let now = now_secs() * 1000;
+        let ts = {
+            let t = num("ts");
+            if t > 0 {
+                t
+            } else {
+                now
+            }
+        };
+        let ended_at = {
+            let t = num("ended_at");
+            if t > 0 {
+                t
+            } else {
+                ts
+            }
+        };
+        let outcome = match str_field(event, "outcome").as_str() {
+            "complete" => "complete",
+            "skip" => "skip",
+            _ => "partial",
+        };
+        let conn = self.lock()?;
+        conn.prepare_cached(
+            "INSERT INTO play_events (id, ts, ended_at, ms_played, duration_secs, outcome, source, title, artist, image)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )
+        .and_then(|mut s| {
+            s.execute(params![
+                id,
+                ts,
+                ended_at,
+                num("ms_played"),
+                num("duration_secs"),
+                outcome,
+                text("source", 32),
+                text("title", 200),
+                text("artist", 200),
+                text("image", 300),
+            ])
+        })
+        .map_err(|e| format!("play event: {e}"))?;
+        let seq = conn.last_insert_rowid();
+        let _ = conn.execute(
+            "DELETE FROM play_events WHERE seq NOT IN (
+               SELECT seq FROM play_events ORDER BY seq DESC LIMIT ?1
+             )",
+            params![PLAY_EVENTS_CAP],
+        );
+        Ok(seq.max(0) as u64)
+    }
+
+    /// The newest `limit` events, oldest-first (chronological reading order).
+    pub fn events(&self, limit: i64) -> Result<Vec<PlayEventRow>, String> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, ts, ended_at, ms_played, duration_secs, outcome, source, title, artist, image
+                 FROM play_events ORDER BY seq DESC LIMIT ?1",
+            )
+            .map_err(|e| format!("events list: {e}"))?;
+        let rows = stmt
+            .query_map(params![limit.clamp(1, 2000)], |r| {
+                Ok(PlayEventRow {
+                    id: r.get(0)?,
+                    ts: r.get::<_, i64>(1).unwrap_or(0).max(0) as u64,
+                    ended_at: r.get::<_, i64>(2).unwrap_or(0).max(0) as u64,
+                    ms_played: r.get::<_, i64>(3).unwrap_or(0).max(0) as u64,
+                    duration_secs: r.get::<_, i64>(4).unwrap_or(0).max(0) as u64,
+                    outcome: r.get(5)?,
+                    source: r.get(6)?,
+                    title: r.get(7)?,
+                    artist: r.get(8)?,
+                    image: r.get(9)?,
+                })
+            })
+            .map_err(|e| format!("events list: {e}"))?;
+        let mut list = rows
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| format!("events list: {e}"))?;
+        list.reverse(); // newest-first query -> chronological for the miners
+        Ok(list)
+    }
+
     pub fn set_fav(&self, track: &serde_json::Value, fav: bool) -> Result<(), String> {
         self.put_song(track)?;
         let id = str_field(track, "id");
@@ -326,6 +464,9 @@ impl AppStore {
         let outbox: i64 = conn
             .query_row("SELECT count(*) FROM outbox", [], |r| r.get(0))
             .unwrap_or(0);
+        let events: i64 = conn
+            .query_row("SELECT count(*) FROM play_events", [], |r| r.get(0))
+            .unwrap_or(0);
         let size: i64 = std::fs::metadata(&self.path)
             .map(|m| m.len() as i64)
             .unwrap_or(0);
@@ -337,6 +478,7 @@ impl AppStore {
             lyrics,
             entities,
             outbox,
+            events,
             db_bytes: size,
         })
     }
@@ -441,8 +583,9 @@ impl AppStore {
     }
 
     /// Clear-cache button target: songs + search/lyrics/entity rows. KV
-    /// (queue backup, onboarding) and the outbox (pending user ops) survive —
-    /// both are tiny and explicitly user state, not fetched data.
+    /// (queue backup, onboarding), the outbox (pending user ops) and the
+    /// play-event log (listening behaviour — user state, not fetched data)
+    /// all survive.
     pub fn clear_cache(&self) -> Result<Cleared, String> {
         let conn = self.lock()?;
         let songs = conn
@@ -630,6 +773,8 @@ pub struct StoreStats {
     pub lyrics: i64,
     pub entities: i64,
     pub outbox: i64,
+    /// Rows in the taste log (play_events).
+    pub events: i64,
     pub db_bytes: i64,
 }
 
@@ -878,5 +1023,54 @@ mod tests {
         // Pending user ops survive a cache clear.
         assert_eq!(s.stats().unwrap().outbox, 1);
         assert!(s.outbox_list(10).unwrap().len() == 1);
+    }
+
+    #[test]
+    fn play_events_roundtrip_order_and_coercion() {
+        let (s, _g) = scratch();
+        let ev = |id: &str, ts: i64, outcome: &str| {
+            json!({
+                "id": id, "ts": ts, "ended_at": ts + 60_000, "ms_played": 5_000,
+                "duration_secs": 200, "outcome": outcome, "source": "queue",
+                "title": format!("T {id}"), "artist": "Artist A", "image": "http://x/y.jpg"
+            })
+        };
+        s.record_event(&ev("a1", 1000, "skip")).unwrap();
+        s.record_event(&ev("b2", 2000, "complete")).unwrap();
+        s.record_event(&ev("c3", 3000, "nonsense")).unwrap();
+        let rows = s.events(10).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].id, "a1"); // oldest first
+        assert_eq!(rows[0].outcome, "skip");
+        assert_eq!(rows[1].outcome, "complete");
+        assert_eq!(rows[2].outcome, "partial"); // unknown coerced, never rejected
+        assert_eq!(rows[2].title, "T c3");
+        assert_eq!(rows[2].ms_played, 5_000);
+        // The limit keeps the newest rows, still chronological.
+        let two = s.events(2).unwrap();
+        assert_eq!(two.len(), 2);
+        assert_eq!(two[0].id, "b2");
+        assert_eq!(two[1].id, "c3");
+        // A missing id is the one hard error.
+        assert!(s.record_event(&json!({"title": "no id"})).is_err());
+        // Stats knows the table, and a cache clear must not wipe behaviour.
+        assert_eq!(s.stats().unwrap().events, 3);
+        s.clear_cache().unwrap();
+        assert_eq!(s.stats().unwrap().events, 3);
+    }
+
+    #[test]
+    fn play_events_prune_to_cap() {
+        let (s, _g) = scratch();
+        for i in 0..(PLAY_EVENTS_CAP + 5) {
+            s.record_event(&json!({"id": format!("e{i}"), "ts": 1000 + i}))
+                .unwrap();
+        }
+        assert_eq!(s.stats().unwrap().events, PLAY_EVENTS_CAP);
+        // Reads clamp at 2000 — the miners only ever want the recent tail.
+        let rows = s.events(PLAY_EVENTS_CAP).unwrap();
+        assert_eq!(rows.len(), 2000);
+        assert!(rows.iter().all(|r| r.id != "e0")); // oldest pruned
+        assert_eq!(rows.last().unwrap().id, format!("e{}", PLAY_EVENTS_CAP + 4));
     }
 }

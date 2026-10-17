@@ -156,7 +156,7 @@ export function openSheet({ title, sub, image, items = [], rows = [] }) {
 /// Text-input variant of the sheet: native `prompt()` is broken in Android
 /// WebViews (no dialog, silent cancel), so playlist create/rename goes here.
 /// Calls `onSubmit(cleanName)` and closes; empty names never submit.
-function openInputSheet({ title, sub, image, placeholder, value, cta, onSubmit }) {
+function openInputSheet({ title, sub, image, placeholder, value, cta, onSubmit, allowEmpty = false }) {
   ensureSheet();
   titleEl.textContent = String(title || "");
   subEl.textContent = String(sub || "");
@@ -182,7 +182,7 @@ function openInputSheet({ title, sub, image, placeholder, value, cta, onSubmit }
   const saveBtn = listEl.querySelector("[data-tm-save]");
   const submit = () => {
     const clean = String(input?.value || "").trim();
-    if (!clean) {
+    if (!clean && !allowEmpty) {
       toast("Give it a name first", 3000, "error");
       input?.focus();
       return;
@@ -760,34 +760,48 @@ export async function libraryMenu(item) {
     items.push({
       icon: "description",
       label: "Edit description",
-      action: () => {
-        const next = window.prompt("Description", item.sub || "");
-        if (next === null) return;
-        if (updatePlaylistMeta(item.id, { desc: next })) {
-          toast("Description updated", 2500, "success");
-          try {
-            MOUNT["main-library"]?.();
-          } catch {}
-        } else {
-          toast("Playlist not found", 4000, "error");
-        }
-      },
+      action: () =>
+        openInputSheet({
+          title: "Edit description",
+          sub: item.title || "",
+          placeholder: "Description",
+          value: item.sub || "",
+          cta: "Save",
+          allowEmpty: true, // clearing the description is a valid edit
+          onSubmit: (next) => {
+            if (updatePlaylistMeta(item.id, { desc: next })) {
+              toast("Description updated", 2500, "success");
+              try {
+                MOUNT["main-library"]?.();
+              } catch {}
+            } else {
+              toast("Playlist not found", 4000, "error");
+            }
+          },
+        }),
     });
     items.push({
       icon: "add_photo_alternate",
       label: "Edit cover",
-      action: () => {
-        const next = window.prompt("Cover image URL", item.image || "");
-        if (next === null) return;
-        if (updatePlaylistMeta(item.id, { cover: next.trim() })) {
-          toast("Cover updated", 2500, "success");
-          try {
-            MOUNT["main-library"]?.();
-          } catch {}
-        } else {
-          toast("Playlist not found", 4000, "error");
-        }
-      },
+      action: () =>
+        openInputSheet({
+          title: "Edit cover",
+          sub: item.title || "",
+          placeholder: "Cover image URL",
+          value: item.image || "",
+          cta: "Save",
+          allowEmpty: true, // clearing the cover restores the default artwork
+          onSubmit: (next) => {
+            if (updatePlaylistMeta(item.id, { cover: next })) {
+              toast("Cover updated", 2500, "success");
+              try {
+                MOUNT["main-library"]?.();
+              } catch {}
+            } else {
+              toast("Playlist not found", 4000, "error");
+            }
+          },
+        }),
     });
     items.push({
       icon: "file_download",

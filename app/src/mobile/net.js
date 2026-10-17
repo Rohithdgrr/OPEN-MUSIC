@@ -52,6 +52,8 @@ let timer = 0;
 let invoke = null;
 let diag = () => {};
 let onMode = null;
+let probing = false; // single-flight guard: event handlers may call probe()
+let recheck = false; // set when an event lands while a probe is in flight
 
 function prefForce() {
   try {
@@ -115,28 +117,44 @@ function paint(next) {
 }
 
 async function probe() {
-  clearTimeout(timer);
-  const onLine = navigator.onLine !== false;
-  const rtt = navigator.connection?.rtt || 0;
-  const saveData = navigator.connection?.saveData === true;
-  let ok = true;
-  let ms = 0;
-  if (onLine) {
-    try {
-      ms = (await invoke("net_ping")) || 0;
-      fails = 0;
-      oks = Math.min(oks + 1, OKS_TO_ONLINE);
-    } catch {
-      ok = false;
-      fails += 1;
+  if (probing) {
+    // An online/offline/connection event landed while a probe was mid-flight:
+    // rerun once it settles instead of stacking a second chain whose timer id
+    // the module can no longer clear.
+    recheck = true;
+    return;
+  }
+  probing = true;
+  try {
+    clearTimeout(timer);
+    const onLine = navigator.onLine !== false;
+    const rtt = navigator.connection?.rtt || 0;
+    const saveData = navigator.connection?.saveData === true;
+    let ok = true;
+    let ms = 0;
+    if (onLine) {
+      try {
+        ms = (await invoke("net_ping")) || 0;
+        fails = 0;
+        oks = Math.min(oks + 1, OKS_TO_ONLINE);
+      } catch {
+        ok = false;
+        fails += 1;
+        oks = 0;
+      }
+    } else {
       oks = 0;
     }
-  } else {
-    oks = 0;
+    const next = classify({ onLine, ok, fails, oks, ms, rtt, saveData });
+    paint(next);
+    timer = setTimeout(probe, next === "online" || next === "slow" ? RETRY_OK_MS : RETRY_DOWN_MS);
+  } finally {
+    probing = false;
+    if (recheck) {
+      recheck = false;
+      probe();
+    }
   }
-  const next = classify({ onLine, ok, fails, oks, ms, rtt, saveData });
-  paint(next);
-  timer = setTimeout(probe, next === "online" || next === "slow" ? RETRY_OK_MS : RETRY_DOWN_MS);
 }
 
 export function startNet({ invoke: inv, diag: dg, onMode: om } = {}) {

@@ -89,7 +89,7 @@ Song     { track: Track, qualities: Vec<QualityUrl> }
 PlayableAudio {
   id, title, artist,
   direct_url,      // chosen CDN URL (diagnostics)
-  proxy_url,       // http://127.0.0.1:<port>/stream?u=<encoded>
+  proxy_url,       // http://127.0.0.1:<port>/stream?id=<id>&q=<tier>&token=…
   qualities, chosen_quality,
   content_length,  // from Content-Range total
   host,
@@ -259,6 +259,70 @@ resolve fails ─► diag(bad) ─► error banner ─► markQueue("failed") �
 audio error   ─► telemetry(error) ─► error banner ─► markQueue("failed") ─► advanceQueue()
 badge dead    ─► visible before play is even attempted
 ```
+
+### 5.5 Official-origin guarantee + bitrate ladder (2026-10-16f)
+
+**Contract: every audio byte the app plays comes from `https://*.saavncdn.com`
+(the official JioSaavn CDN).** Catalog *metadata* may fall back to the
+community mirror `saavn.sumit.co` when `www.jiosaavn.com/api.php` is
+unreachable — and that mirror's `downloadUrl` rows point at the same official
+CDN (verified live 2026-10-16, all five tiers), so the resolution source never
+changes the byte origin.
+
+Enforcement points, all through `jiosaavn::validate_media_url`:
+
+| Where | What it gates |
+|---|---|
+| `jiosaavn::qualify_url` | validates before the first probe — every ladder candidate |
+| `proxy::resolve_target` (`?u=`) | the direct-url branch |
+| `proxy::stream` redirect hops | every 30x `Location` before it is followed |
+| `proxy::AppState::cached_url` (`?id=`) | the ladder below only returns urls that passed `qualify_url`, plus one explicit re-check (belt-and-braces) |
+
+**The bitrate ladder.** `AppState::playable_quality(qualities, prefer)` walks
+`jiosaavn::ranked_tiers` — the song's renditions ordered from `prefer`
+downward, never above it — and returns the best playable candidate:
+
+1. first `Unrestricted` tier → chosen;
+2. else the highest `RestrictedFirstMb` tier → played with the existing
+   PREVIEW tag (unchanged honesty);
+3. else the top `Dead` candidate → the player's existing skip-on-dead path,
+   unchanged;
+4. a transport-level probe error aborts the walk — bounded at one timeout,
+   never five.
+
+`resolve_song` (badge + `chosen_quality` + `direct_url`) and the relay's
+by-id resolve (`cached_url`) share this one helper, so what the badge promises
+is what the relay streams. The relay honours the resolve's tier via the `q=`
+parameter `proxy_url_for` now carries (`/stream?id=…&q=96kbps`); a missing or
+malformed `q` means the 320 default. Net effect: a dead 320 kbps file plays at
+160 instead of skipping the track, and a data-saver preference finally
+streams the tier it names (previously the relay ignored it and always served
+its own 320 pick).
+
+**Visible proof (Now Playing).** Both shells render the resolved tier —
+desktop `#np-format` (`320kbps`), mobile `#np-qchip` under the artist,
+`local vault` when the copy is on disk. The origin host stays **out of the
+UI** (no provider/CDN names anywhere — branding guide, "Upstream
+attribution"); it remains in the event payload, and probes read the relay's
+responses for byte-level proof.
+
+**Live verification (2026-10-17).** The whole chain was re-driven on both real
+apps (probes in `%TEMP%\opencode\`):
+
+- **Desktop** (real `cargo build` binary, CDP :9222, `stream-official-live-desktop.mjs`):
+  **20/20** — a UI click plays through the relay at `q=320kbps` (official host,
+  relay bytes = the resolve's `content_length`), the tile reads
+  `320kbps · aac.saavncdn.com`, the 96 kbps resolve is a smaller rendition and
+  the relay serves its exact bytes (`q=96` honored, not the 320 pick), and
+  flipping the Settings pref rewrites the playing tile + relay url to
+  `96kbps`. 0 unhandled rejections.
+- **Android** (fresh debug APK, CDP :9223, `stream-official-live-mobile.mjs`):
+  **17/17** — the same chain on-device: trusted row tap passes autoplay, chip
+  reads `320kbps` + source `aac.saavncdn.com`, both renditions' relay bytes
+  match the resolves, and the pref flip drives chip + relay url on a fresh
+  non-vaulted track. 0 uncaught exceptions.
+
+This closes the mobile half of the 2026-10-16f upgrade's verification.
 
 ---
 

@@ -4,6 +4,66 @@ Notable changes to OPEN MUSIC. [Keep a Changelog](https://keepachangelog.com/en/
 
 Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Android** (APK). macOS and iOS are not released as of v0.5.0.
 
+## [Unreleased]
+
+### Added / Changed (source-first search + branding scrub — 2026-10-17)
+- **Search results now lead with the matched song's own source**: search a film song and its movie's tracks — fetched from the catalog and folded in after the anchor — come first; for singer-driven rows (English and other non-film catalogs) the anchor's artist's own tracks lead instead. Query-intrinsic grouping, no taste and no history; after the first paint, so the page never waits on it. The film is read from the title's own `(From "Movie")` tag first (compilations hide it in the album field) and that provenance no longer blinds the exact-title bonus — the 374M-play original leads instead of a bare-titled cover. Spec: `docs/recommendations.md` §8.11.
+- **No upstream provider or CDN name is shown anywhere in the UI**: About/Terms copy, the Spotify-import note and the Now Playing source line are scrubbed on both shells — desktop `#np-format` and the mobile tier chip show the tier only (`local vault` for on-disk copies); the stream's origin host stays internal. Contract: `docs/branding/trance-music-guide.md`, "Upstream attribution".
+
+### Changed (JioSaavn-first recommendations — 2026-10-16g/h)
+- **The endless radio prefers the JioSaavn recommendations**: a station batch queues in the order JioSaavn returned it — the local taste engine no longer re-ranks it (filters only: queued, last-15-heard, just-skipped; the last-resort fallback pools keep upstream order too). Supersedes the radio half of the 2026-10-16e reranking. Spec: `docs/recommendations.md` §8.8.
+- **Search keeps JioSaavn's own ranking**: the relevance pass no longer adds personal boosts (played / liked / artist-play counts) — rows come back in JioSaavn's order (stable ties), carrying only the query's own filters and the Settings region. Spec: `docs/recommendations.md` §8.9.
+
+### Added / Changed (official-stream upgrade — 2026-10-16f)
+- **A dead top rendition no longer skips the track**: playback now walks a bitrate ladder (320 → 160 → 96 → 48 → 12 kbps, never above the requested tier) and plays the best playable rendition — the first unrestricted tier, else the highest preview-capped one (the PREVIEW tag stays honest), else the old skip-on-dead behaviour. Both the resolve and the relay share the one walk, so the badge and the stream can never disagree. Spec: `docs/architecture.md` §5.5.
+- **Quality settings now genuinely drive the bytes**: the relay url carries the resolve's requested tier (`/stream?id=…&q=96kbps`), and the relay serves that rendition — previously the setting only affected the resolve probe/badge while the relay always served its own 320 pick. A missing or malformed `q` keeps the 320 default.
+- **Official-origin hardening**: the relay's by-id resolve re-validates the URL it returns against the CDN allow-list (plus the ladder validates every candidate before probing) — a poisoned resolution is refused before any request leaves the process.
+- **Visible tier proof on Now Playing**: desktop shows `320kbps` in the metadata tile; mobile shows a tier chip under the artist (`local vault` for on-disk copies). (Origin host removed later — see "source-first search + branding scrub".)
+- **Search, artist/album pages and radio prefer the original recording**: cover / tribute / instrumental / karaoke / lofi re-uploads of a song on the same page sink below the original (stable, never filtered — the row stays selectable; `remix`/`live`/`acoustic` are label releases and are not demoted). Spec: `docs/recommendations.md` §8.7.
+
+### Added / Changed (recommendation upgrade — 2026-10-16e)
+- **The endless radio now ranks with real taste signals instead of artist counts**: a bounded play-event log (`play_events`, 3000-row cap) records every finished or abandoned play — natural end → `complete`, early abandonment → `skip`, the rest → `partial` — and one shared, pure engine (`app/src/taste.js`) turns it into decayed artist/album/night-hour weights, skip demotion (a skip within 3 hours hard-drops the track from radio batches), item-item co-occurrence and MMR-diversified reranking. Both surfaces' radios rerank their station batches through it (`scoreReco` now delegates), with an ε-slot exploration pick.
+- **"Because you played X" shelf** (mobile Home): a co-listening rail over the same log — the most recent play with at least 6 co-occurring neighbours renders as cards using the log's own metadata; the shelf hides itself when the log is too thin.
+- **The taste engine is measurable**: `replayHitRate` (session k-NN replay metric) runs in the suite — 0.98 on a synthetic chain vs ≤0.18 shuffled, mirroring the radio's own "heard" window so the metric matches what the radio can serve.
+- Spec + as-built record with live evidence: `docs/recommendations.md` §8.
+
+### Fixed (search resilience — 2026-10-16)
+- **A transient search failure no longer sticks as "Search is down right now"**: a failed desktop search now re-runs itself on a bounded auto-retry ladder (1.5 s → 4 s → 15 s → 45 s) and instantly when connectivity returns — the card only stays when upstream really is down, and a valid empty answer ("No tracks found") is never auto-retried. Spec: `docs/search-resilience.md`.
+- **The primary catalog source got one calm retry** — a transport error, a 5xx or a short 429 earns a single jittered backoff before failing the search (4xx and business answers stay final). The fallback mirror list is honest again: four of five listed hosts were dead (404 / connection-refused); only the verified `saavn.sumit.co` remains.
+- **Desktop diagnostics survive without the panel**: the 40-line diag ring (raw errors included) is readable via `__tmDiag()` — it had been silently dropped since the panel's removal.
+
+### Fixed / Added (Spotify)
+- **The sign-in button (and every Spotify/Canvas command) failed before doing anything**: all seven command params took `State<'_, AppState>` while the builder manages `Arc<AppState>` — Tauri resolves state by exact type, so each call died with *"state not managed"*. Sign-in had never been reachable on desktop or Android; the panel could only ever paint its error branch. Fixed to the managed `Arc<AppState>` type, and a static gate now rejects the bare form anywhere in the crate.
+- **Imports matched the wrong songs**: both importers queried JioSaavn by **ISRC first**, but the catalog has no ISRC index — a valid ISRC returned dozens of unrelated tracks and the old code took the top hit, so imports silently filled with garbage or missed. Now both query `name + first artist`, fetch 8 candidates and score them (`app/src/spotmatch.js`: title/credit/duration blend with a tribute-cover guard); honest misses are counted in the toast. Probed live against the real catalog: the old query returned "Mat Aazma Re" for Believer, the new one returns the exact track.
+- **Android: Spotify sign-in, top-tracks import and Canvas** (Settings → Spotify): Sign in/out through the system browser (PKCE loopback — the same client id as desktop), "Import top tracks" builds a local playlist via the same matcher, and the Canvas controls (video on the Now Playing artwork, Wi-Fi-only by default) light up once your browser's `sp_dc` cookie is pasted — the album art is the guaranteed fallback, and Canvas is an unofficial Spotify surface, so any miss just leaves the art untouched.
+
+### Fixed (audit pass — desktop + Rust)
+- **A failed vault rewrite no longer loses the entry**: re-downloads forget the old row before writing; a failure (network, Stop, encode, hash) now restores it via a drop guard — only while the old file is still on disk — and promoting a favorite no longer deletes the file it just recorded on a same-stem rewrite.
+- **`open_external` can no longer be aimed at shell syntax**: the Windows `cmd /C start` spawn is replaced with `tauri-plugin-opener` (single-argument ShellExecuteW / xdg-open), so `&`, `^` and `%VAR%` in a URL stay data.
+- **Redirect hops are re-validated**: `/art` re-runs the SSRF guard on the URL actually fetched, and `/stream` does the same for redirect hops (direct fetches untouched) — a public host cannot bounce the relay into the LAN.
+- **Art downloads are bounded while streaming** (was: buffer the whole body, then check the cap) — a hostile mirror can no longer balloon memory with a chunked response.
+- **Jam room hardening**: closed rooms refuse later joins verbatim, a poisoned lock no longer bricks the room, WebSocket frames cap at 64 KiB, guest `report` frames get a 500 ms budget, and a dead serve loop reverts the host mode before saying so. Deferred items are listed in `docs/listen-together.md` §14.
+- **Retry jitter is real**: the mirror backoff arithmetic was deterministic (every retry woke on the same tick); it now spreads ±25 % via `getrandom`.
+- **Lyrics duration tolerance is a single named source** (`DURATION_TOLERANCE_SECS` = 3 s); the module doc no longer claims ~2 s.
+
+### Fixed (audit pass — mobile)
+- **Vault quota notice, crossfade handoff, New-releases cache**: the over-quota eviction toast never appeared (the kind landed in the `ms` argument slot); a crossfade/gapless handoff promoted the standby `<audio>` without the shell's event list (frozen transport glyphs, resume position no longer saved); an empty shelf response was cached as a hit for 24 h.
+- **Android edits, version badge, analytics pills, router fetch**: "Edit description/cover" used `window.prompt`, which is dead in the Android WebView — now the bottom-sheet input; the Settings footer printed a hardcoded `0.4.0`; the Analytics Week/Month/Year pills threw `ReferenceError` (the generated screen keeps `setPeriod` inside an IIFE — a `window.setPeriod` shim now publishes it); a failed screen fetch was silent (stale screen stayed, no toast).
+- **Probe single-flight, download channel leak, share-code failure**: online/offline events could start duplicate network-probe chains and strand a timer; cancelled or failed downloads leaked their progress channel; "Copy share code" could fail with no feedback. Table: `docs/mobile/09-problems-solutions.md` P44–P53.
+
+### Removed (audit pass — dead code)
+- **Four abandoned files** (~1.8k lines): `app/src/survey.js` (a survey flow no code imports) and the long-disabled `catalog.rs` / `jiosaavn_catalog.rs` / `audius.rs` trio (their `mod` lines had been commented out). All recoverable from git history.
+- **Dead exports and branches**: mobile `isFav` / `isActiveDownload` / `storageBreakdown`, desktop `prefLang` / `lyricsSizePx`, and the mobile widget click handler's branches for buttons that no longer exist (`data-w-prev` / `-repeat` / `-shuffle`).
+
+### Fixed (mobile Now Playing)
+- **Gemini API key works again**: the AI-lyrics default model `gemini-2.0-flash` was shut down by Google on 2026-06-01, so every call 404'd regardless of key — default is now the stable `gemini-2.5-flash`, and a retired model id reports "update the app" instead of a raw HTTP error.
+- **Lyrics Full View opens again**: the toggle searched `closest("div.rounded-2xl, div.rounded-xl")` but the sheet card has been `rounded-3xl` since the mockup redesign, so the button silently did nothing. Switching tabs exits the fullscreen stage (the Close button lives in the lyrics view).
+- **Word-by-word karaoke in full view**: the active line gets a thicker bar + pad at 28px over the existing per-word `--progress` wipe (both themes); plain/AI lyrics stay static lines (no timestamps to sync to).
+- **NOW PLAYING eyebrow removed** from the Now Playing screen.
+- **Home category chips** (mobile): the flat seven-chip strip keeps its original design, and the selected pill finally renders as selected — the old toggle keyed a class the theme CSS no longer styled (`bg-on-surface`), so the active chip rendered white-on-white in light mode; it now keys on `bg-primary`, the class the theme inverts (obsidian pill in light, white pill in dark).
+- **Mined collection browsers** (mobile): the home Artists/Albums/Playlists/Charts chips open full browsers — artists by listening weight with Liked/Downloaded/Following tabs, albums with separate Most-time vs Most-played orders, playlists split Yours/Featured/Downloaded, charts in untouched editorial rank. Home Top Artists rail shows your artists + See-all.
+- **`feat.` artists no longer fragment** into ". Guest" entries in the taste weights.
+
 ## [0.5.1] — 2026-10-11
 
 ### Changed

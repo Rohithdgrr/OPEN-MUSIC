@@ -190,7 +190,7 @@ export function buildProfile({ plays, favs, downloads, library, extra, country, 
     bump(decadeWeight, decadeOf(t), w);
     bump(albumWeight, t.album.toLowerCase(), w);
     // A "feat." credit should not outweigh the lead artist.
-    const leads = t.artist.split(/[,;&]|\bfeat\b|\bft\b|\bwith\b/i).map(str).filter(Boolean);
+    const leads = leadArtists(t.artist);
     leads.forEach((name, i) => bump(artistWeight, name, w * (i === 0 ? 1 : 0.35)));
   }
 
@@ -253,6 +253,178 @@ export function daypart(hour) {
   return "night";
 }
 
+// ---------------------------------------------------------- artist insights -
+// Per-artist projection of a taste profile for the Artists browser + home
+// rail: the same weights buildProfile mines (plays log-scaled + decayed,
+// likes +3, downloads +2.5, library +2), exploded into evidence the UI can
+// show ("12 plays", "3 liked · 5 downloaded", "Following"). Art resolves
+// from the artist's own most-played track image (real local rows); follows
+// match by title/id and contribute their token + art for direct navigation.
+// Artists the log never saw (follows with no local tracks) ride along with
+// weight 0 so Following is complete.
+// "feat." / "ft." carry their period — splitting on bare \bfeat\b leaves a
+// ". Guest" fragment in the weights. One shared splitter so the profile, the
+// affinity scorer and the artist browser all credit the same leads.
+const LEAD_SPLIT = /[,;&]|\bfeat\b\.?|\bft\b\.?|\bwith\b/i;
+
+export function leadArtists(name) {
+  return str(name).split(LEAD_SPLIT).map(str).filter(Boolean);
+}
+
+export function artistInsights(profile, { follows } = {}) {
+  const p = profile || {};
+  const tracks = Array.isArray(p.tracks) ? p.tracks : [];
+  const weights = p.artistWeight instanceof Map ? p.artistWeight : new Map();
+  const favs = p.favourites instanceof Set ? p.favourites : new Set();
+  const dls = p.downloaded instanceof Set ? p.downloaded : new Set();
+  const byName = new Map();
+  const card = (name) => {
+    let c = byName.get(name);
+    if (!c) {
+      c = { name, weight: 0, plays: 0, liked: 0, downloaded: 0, following: false, token: "", image: "", bestPlays: -1 };
+      byName.set(name, c);
+    }
+    return c;
+  };
+  for (const t of tracks) {
+    if (!t) continue;
+    const leads = leadArtists(t.artist);
+    if (!leads.length) continue;
+    const plays = Number(t.plays) || 0;
+    const liked = favs.has(t.id) ? 1 : 0;
+    const dl = dls.has(t.id) ? 1 : 0;
+    leads.forEach((name, i) => {
+      const c = card(name);
+      if (i === 0) {
+        c.plays += plays;
+        c.liked += liked;
+        c.downloaded += dl;
+        if (plays > c.bestPlays && str(t.image)) {
+          c.bestPlays = plays;
+          c.image = str(t.image);
+        }
+      }
+    });
+  }
+  for (const [name, w] of weights) {
+    if (!str(name)) continue;
+    card(str(name)).weight = Number(w) || 0;
+  }
+  for (const f of follows || []) {
+    if (!f) continue;
+    const key = str(f.title || f.name);
+    if (!key) continue;
+    const hit = [...byName.values()].find((c) => c.name.toLowerCase() === key.toLowerCase());
+    const c = hit || card(key);
+    c.following = true;
+    if (!c.token) c.token = str(f.token || f.id);
+    if (!c.image) c.image = str(f.image);
+  }
+  for (const c of byName.values()) delete c.bestPlays;
+  return [...byName.values()].sort(
+    (a, b) => b.weight - a.weight || b.plays - a.plays || a.name.localeCompare(b.name),
+  );
+}
+
+/// Browser tabs: all (weight order) + the three evidence slices. Liked and
+/// Downloaded need at least one local track; Following rides the follow list.
+export function filterArtists(list, tab = "all") {
+  const all = Array.isArray(list) ? list : [];
+  if (tab === "liked") return all.filter((a) => a.liked > 0);
+  if (tab === "downloaded") return all.filter((a) => a.downloaded > 0);
+  if (tab === "following") return all.filter((a) => a.following);
+  return all;
+}
+
+/// One honest evidence line per tile — empty when the card has no signal.
+export function artistEvidence(a) {
+  if (!a) return "";
+  const bits = [];
+  if (a.plays > 0) bits.push(`${a.plays} play${a.plays === 1 ? "" : "s"}`);
+  if (a.liked > 0) bits.push(`${a.liked} liked`);
+  if (a.downloaded > 0) bits.push(`${a.downloaded} downloaded`);
+  if (a.following) bits.push("Following");
+  return bits.join(" · ");
+}
+
+// ---------------------------------------------------------- album insights -
+// Same mined weights as artists, grouped by album: total plays, total
+// listening TIME (duration × plays — the "most time" axis), liked /
+// downloaded track counts, and the freshest spin. Art is the most-played
+// track's image. Keyed on title (+artist to keep same-name albums apart).
+export function albumInsights(profile) {
+  const p = profile || {};
+  const tracks = Array.isArray(p.tracks) ? p.tracks : [];
+  const weights = p.albumWeight instanceof Map ? p.albumWeight : new Map();
+  const favs = p.favourites instanceof Set ? p.favourites : new Set();
+  const dls = p.downloaded instanceof Set ? p.downloaded : new Set();
+  const byKey = new Map();
+  for (const t of tracks) {
+    const title = str(t && t.title);
+    const album = str(t && t.album);
+    if (!title || !album) continue;
+    const key = `${album.toLowerCase()} ⟷ ${str(t.artist).toLowerCase()}`;
+    let c = byKey.get(key);
+    if (!c) {
+      c = { key, title: album, artist: str(t.artist), weight: 0, plays: 0, timeSecs: 0, liked: 0, downloaded: 0, lastPlayed: 0, image: "", bestPlays: -1 };
+      byKey.set(key, c);
+    }
+    const plays = Number(t.plays) || 0;
+    c.plays += plays;
+    c.timeSecs += plays * (Number(t.duration_secs) || 0);
+    if (favs.has(t.id)) c.liked += 1;
+    if (dls.has(t.id)) c.downloaded += 1;
+    c.lastPlayed = Math.max(c.lastPlayed, Number(t.lastPlayed) || 0);
+    if (plays > c.bestPlays && str(t.image)) {
+      c.bestPlays = plays;
+      c.image = str(t.image);
+    }
+  }
+  for (const [name, w] of weights) {
+    if (!str(name)) continue;
+    for (const c of byKey.values()) {
+      if (c.title.toLowerCase() === str(name)) c.weight = Math.max(c.weight, Number(w) || 0);
+    }
+  }
+  for (const c of byKey.values()) delete c.bestPlays;
+  const byWeight = (a, b) => b.weight - a.weight || b.timeSecs - a.timeSecs || b.plays - a.plays || a.title.localeCompare(b.title);
+  return [...byKey.values()].sort(byWeight);
+}
+
+/// Album browser tabs. "time" and "played" re-sort by their own axis; the
+/// rest filter the weight order.
+export function filterAlbums(list, tab = "all") {
+  const all = Array.isArray(list) ? list : [];
+  if (tab === "time") return [...all].sort((a, b) => b.timeSecs - a.timeSecs || b.plays - a.plays || a.title.localeCompare(b.title));
+  if (tab === "played") return [...all].sort((a, b) => b.plays - a.plays || b.timeSecs - a.timeSecs || a.title.localeCompare(b.title));
+  if (tab === "liked") return all.filter((a) => a.liked > 0);
+  if (tab === "downloaded") return all.filter((a) => a.downloaded > 0);
+  return [...all].sort((a, b) => b.weight - a.weight || b.timeSecs - a.timeSecs || b.plays - a.plays || a.title.localeCompare(b.title));
+}
+
+export function fmtListenTime(secs) {
+  const s = Math.max(0, Math.round(Number(secs) || 0));
+  if (s < 3600) return `${Math.max(1, Math.round(s / 60))}m`;
+  const h = Math.floor(s / 3600);
+  if (h < 48) {
+    const m = Math.round((s % 3600) / 60);
+    return m ? `${h}h ${m}m` : `${h}h`;
+  }
+  const d = Math.floor(h / 24);
+  if (d < 730) return d * 24 === h ? `${d}d` : `${d}d ${h % 24}h`;
+  return `${Math.floor(d / 365)}y`;
+}
+
+export function albumEvidence(a) {
+  if (!a) return "";
+  const bits = [];
+  if (a.timeSecs > 0) bits.push(fmtListenTime(a.timeSecs));
+  if (a.plays > 0) bits.push(`${a.plays} play${a.plays === 1 ? "" : "s"}`);
+  if (a.liked > 0) bits.push(`${a.liked} liked`);
+  if (a.downloaded > 0) bits.push(`${a.downloaded} downloaded`);
+  return bits.join(" · ");
+}
+
 const DAYPART_COPY = {
   morning: { title: "Morning Mix", tag: "AM" },
   afternoon: { title: "Afternoon Mix", tag: "PM" },
@@ -276,7 +448,7 @@ export function countryLangs(country) {
 // ------------------------------------------------------------------- scoring -
 function affinity(profile, t) {
   let s = 0;
-  for (const name of t.artist.split(/[,;&]|\bfeat\b|\bft\b|\bwith\b/i).map(str).filter(Boolean)) {
+  for (const name of leadArtists(t.artist)) {
     s += profile.artistWeight.get(name) || 0;
   }
   for (const lang of trackLangs(t)) s += (profile.languageWeight.get(lang) || 0) * 0.6;

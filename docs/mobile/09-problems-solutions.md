@@ -91,3 +91,25 @@ build` when on WSL.
 | P17 | Tag pushed, no iOS artifact | Tag didn't match `v*`/`V*`, or job failed silently | Check Actions → iOS; on failure read the tail in the `iOS build log` issue (`ios.yml` reporter) + `app/ios-build.log` |
 | P18 | iOS artifact missing `.ipa` (only `.app`) | No Apple secrets configured | Expected: unsigned simulator build. Add the 4 secrets for a signed `.ipa`. |
 | P19 | Mobile change broke nothing locally but CI failed | `src/mobile/**` used to be outside every test glob, so a mobile-only parse error reached release unnoticed | **Closed** — `app/tests/mobile-syntax.test.mjs` now `node --check`s all 33 files inside `npm test`, and fails if the directory goes missing so it cannot pass vacuously. Manual fallback: `for f in src/mobile/*.js src/mobile/screens/*.js; do node --check "$f"; done` |
+
+## 2026-10-15 — Audit pass 1 (mobile P0 fixes)
+
+Full-repo bug/risk + dead-code audit (5 read-only sweeps; every P0 below
+re-read by hand before fixing — none inferred). Mobile batch:
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P44 | Vault-over-quota eviction notice never shows | `shared.js` called `toast(msg, "info", 4500)` — the kind landed in the `ms` slot (`toast(msg, ms = 3200, kind = "info")`), so `setTimeout(…, "info")` fired at 0 ms | argument order fixed → `toast(msg, 4500, "info")` |
+| P45 | After a crossfade/gapless handoff the transport glyphs freeze and pause no longer saves the resume position | `ensureStandby()` wired 4 events (`timeupdate/ended/error/canplay`) but `finishXfade()` promotes that element to `audio`; the shell's 11-event list was never attached to it | one shared `AUDIO_EVENTS` list used by both elements (+`canplay` on the standby) |
+| P46 | "New releases" shelf blank for 24 h after one offline/failed fetch | `fetchNewReleases` cached `[]`, and `loadCache()` treated any fresh array — including empty — as a hit | cache only non-empty results; `loadCache` rejects empty arrays |
+| P47 | On Android, "Edit description" / "Edit cover" silently do nothing | both used `window.prompt`, which this same file documents as dead in the Android WebView (`menus.js` comment) | routed through the existing bottom-sheet input (`openInputSheet`, new `allowEmpty` option for the two clearable fields) |
+| P48 | Settings footer repaints `VERSION 0.4.0` on a 0.5.1 build | `binders.js` hard-coded `APP_VERSION = "0.4.0"` | constant deleted; `paintVersion` uses `APP.version` from `legal.js` (single source) |
+| P49 | Analytics Week/Month/Year pills throw `ReferenceError` and never select | generated `screens/analytics.js` keeps `setPeriod` inside an IIFE; the fragment's `onclick="setPeriod(this)"` can never see it | `mountAnalytics` publishes a `window.setPeriod` shim (pill state only — the shelves are last-7-days regardless of period) |
+| P50 | Router fragment fetch failed silently offline (stale screen stayed, unhandled rejection) | `router.js` `fetch(...).then(paint)` had no status check and no `.catch` | `r.ok` check + `.catch` → toast "Couldn't open that screen — check your connection." |
+| P51 | Network probe chains could duplicate and strand a timer after online/offline events | `probe()` re-enters from 3 listeners; each run re-assigned the single `timer` id | single-flight guard + one queued `recheck` re-run |
+| P52 | Download progress channel callback never released on failed/cancelled downloads | `downloadTrack` never called `progress.cleanup()` (only the channel "end" path could) | `progress?.cleanup?.()` in the `finally` (idempotent) |
+| P53 | "Copy share code" could fail silently (unhandled rejection, no feedback) | `collab.js` `.writeText(...).then(...)` had no `.catch` and no no-clipboard branch | `.catch` + toast fallback |
+
+Gates: `npm run lint` clean · `npm test` **413/413**. Live device check
+(boot graph, version badge P48, analytics pills P49 on the emulator):
+recorded in `AGENTS.md` 2026-10-15h.

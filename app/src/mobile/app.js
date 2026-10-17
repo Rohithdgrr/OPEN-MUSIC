@@ -1,6 +1,6 @@
 // app.js — boot + global click delegation + widget player paint for the mobile shell.
 import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, isVaulted, pushDiag, HISTORY_KEY, checkForUpdates, AUTOUPDATE_KEY, pushEvent, refreshVault, haptic, isOnboarded, setOnboarded, saveTaste, LANG_KEY } from "./shared.js";
-import { playList, playPlaylist, toggle, onPaint, playerState, prev, next, seek, cycleRepeat, toggleShuffle, repaint, enqueue, audio } from "./player.js";
+import { playList, playPlaylist, toggle, onPaint, playerState, prev, next, seek, repaint, enqueue, audio } from "./player.js";
 import { startNet, netMode } from "./net.js";
 import { PRESETS, arm as armSleep } from "../sleep.js";
 import { MOUNT, openLib, entityNav } from "./binders.js";
@@ -137,24 +137,9 @@ document.addEventListener("click", (e) => {
     toggle();
     return;
   }
-  const wPrev = el("[data-w-prev]");
-  if (wPrev) {
-    prev();
-    return;
-  }
   const wNext = el("[data-w-next]");
   if (wNext) {
     next();
-    return;
-  }
-  const wRepeat = el("[data-w-repeat]");
-  if (wRepeat) {
-    cycleRepeat();
-    return;
-  }
-  const wShuffle = el("[data-w-shuffle]");
-  if (wShuffle) {
-    toggleShuffle();
     return;
   }
   const wFav = el("[data-w-fav]");

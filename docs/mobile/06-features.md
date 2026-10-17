@@ -485,3 +485,182 @@ miniplayer screenshot), so brand files are untouched this pass:
 green), launcher icons stay generated from `icons/icon.png`, and there is no
 splash screen configured in this app to swap. Send the mark and all three
 get cut from it in one pass.
+
+### Borderless input bays: Downloads search, queue-append, room chat (2026-10-15)
+
+Scope: **mobile only** (`mobile/index.html` theme engine, `mobile/binders.js`
+Downloads toolbar, `screens/nowplaying.html` sheet). Desktop untouched.
+
+Root cause (same class as the 2026-10-06 search-pill fix): the global
+`input[type="text"]` rules in **both** theme engines paint a bordered inset
+box with `!important`, and only `#search-input` is exempt — so the Downloads
+search (`data-dl-search`), the queue-append row (`jamAppendInput`) and the
+room-chat row (`jamChatInput`) each drew a sharp inner rectangle inside their
+own container (double border).
+
+Contract: all three inputs carry a shared `bay-input` marker class, exempted
+next to `#search-input` in both themes (input itself chromeless); each
+**container** owns the chrome as a borderless rich rectangle
+(`border-0`, solid surface bg, `rounded-2xl`, subtle shadow,
+`focus-within` ring keeps the focus indicator). The chat pill
+(`rounded-full`) becomes a rectangle and the send button grows from the
+`w-7` icon dot to a `w-10 h-10 rounded-2xl` target. No id, placeholder,
+disabled-state or delegation change — `jam.js` and the live probes address
+these elements by id only.
+
+### Lyrics full-view repair + karaoke stage, Gemini model swap, eyebrow removal (2026-10-15)
+
+Scope: **mobile Now Playing only** (`screens/nowplaying.html`,
+`screens/nowplaying.js`, `mobile/lyrics.js` untouched, `mobile/binders.js`
+full-view toggle, `mobile/index.html` stage CSS, `mobile/ai-lyrics.js`
+model). Desktop untouched (it makes no Gemini calls).
+
+- **Gemini key "not working": the model was shut down, not the key.**
+  `ai-lyrics.js` defaulted to `gemini-2.0-flash`, which Google shut down on
+  2026-06-01 (deprecation notice 2026-02-18) — every AI-lyrics call 404'd no
+  matter what key was pasted. Default is now the stable `gemini-2.5-flash`,
+  and a 404 now throws "no such model — update the app" instead of a raw
+  HTTP error so the next retirement reads clearly. Key storage is unchanged
+  (Settings `change` → `tm-gemini-key` → toast; cache `tm-ai-lyrics`, 100
+  tracks; AI lines always labeled, never overwrite real synced lyrics).
+- **Full View did nothing.** The toggle seeks
+  `closest("div.rounded-2xl, div.rounded-xl")`, but the sheet card has been
+  `rounded-3xl` since the 2026-10-10 mockup redesign — `closest` returned
+  null and the handler returned early. The selector now includes
+  `div.rounded-3xl`, promoting the sheet card to the fixed
+  `.tm-lyrics-full` stage (tab bar stays reachable; the button flips to
+  Close). Trap closed: switching to any other tab exits the stage and resets
+  the label (`switchTab` in `screens/nowplaying.js`), because the Close
+  button lives in the lyrics view and a fullscreen sheet without it would
+  strand the reader.
+- **Word-by-word highlight: no new engine — the wipe already exists and is
+  now reachable.** `lyrics.js` splits enhanced-LRC word tags, otherwise
+  spreads each line's words evenly across the gap to the next line, and
+  drives every word's fill through `--progress` on a ~15 Hz rAF clock (both
+  themes carry the wipe gradient). Polish for the stage: the active line in
+  full view gets a thicker bar + rounder pad so the current line reads at a
+  glance at 28px. Honest limit, unchanged: plain/AI lyrics carry no stamps,
+  so they render as static lines — karaoke needs synced lines.
+- **NOW PLAYING eyebrow removed** from `screens/nowplaying.html` (dot +
+  tracking-widest label row); the artwork section keeps `pt-3` rhythm. No
+  contract id was inside the row. `jam-ui.test.mjs` pins no copy here.
+
+### Artists home: mined Top Artists + full column browser (2026-10-15)
+
+Scope: **mobile only** (`mobile/recommend.js` insight, new
+`screens/artists.html`, `mobile/binders.js` shelf + mount, `router.js`
+route). Desktop untouched. No new backend calls, no new permissions.
+
+- **The mining already existed** — `buildProfile` weighs plays (log-scaled,
+  14-day half-life decay) + likes (+3) + downloads (+2.5) + library (+2) per
+  artist. New pure `artistInsights(profile, { follows })` projects that into
+  per-artist cards: `{ name, weight, plays, liked, downloaded, following,
+  token, image }`, ordered weight → plays → name. Art resolves from the
+  artist's own most-played track image (real local rows); follows match by
+  title/id and contribute their token + art. Tabs: All / Liked / Downloaded /
+  Following (`filterArtists`). Unit-tested in `recommend.test.mjs`.
+- **Artists chip opens the browser.** `data-home-cat="artists"` used to only
+  filter shelves down to the 10-circle rail; now it goes to `#/artists` (new
+  route, Library tab). The screen is a 3-column circle grid with an evidence
+  line per tile ("12 plays", "3 liked · 5 downloaded", "Following").
+- **Taps stay honest.** Tiles with a follow token navigate direct; every
+  other tile reuses the global `[data-entity-name]` delegation
+  (`resolveEntity` → `search_entities` → artist detail, offline toast when
+  offline). No invented artist pages.
+- **The home shelf shows YOUR artists.** The Top Artists rail repaints from
+  the mined top 10 (same circles, plus a restored See-all → `#/artists`);
+  the generic `feed.artists` rail remains the fresh-install fallback, and
+  the empty browser states the recipe (play / like / download) instead of
+  demo rows.
+- **Same pattern for albums, playlists, charts — each ordered its own way.**
+  Albums (`#/albums`) mine listening TIME (`duration × plays`) separately
+  from frequency: tabs Top / Most time / Most played / Liked / Downloaded,
+  tiles show art + `2h 14m · 34 plays`, taps resolve via the existing
+  album search. Playlists (`#/playlists`) split by provenance, not taste —
+  Yours (created/saved, newest first, offline marks) / Featured (feed order)
+  / Downloaded; every row navigates or plays through the existing paths.
+  Charts (`#/charts`) keep editorial rank untouched (re-ranking a chart by
+  local logs would destroy what a chart is): full ranked list with numerals,
+  counts and play bubbles. The home chips for all four now navigate instead
+  of filtering shelves.
+- **Latent data fix:** the `feat.` splitter dropped the abbreviation period
+  and minted ". Guest" artists in the weights (and every mix downstream).
+  One shared `leadArtists()` now splits `feat./ft.` with the period, used by
+  the profile, the affinity scorer and the browsers.
+
+### Home chips: restored strip + working selected state (2026-10-15b)
+
+Scope: **mobile only** (`screens/home.html` markup, `mobile/binders.js`
+wiring, `mobile/index.html` theme CSS). Desktop untouched.
+
+Home keeps its original **flat seven-chip strip** (All, Charts, Playlists,
+Albums, Artists, Genres, Heavy Rotation) with two verbs on the one strip:
+
+- **Browse chips** (Charts / Playlists / Albums / Artists) open their mined
+  browsers — `if (cat === "artists") return go("artists")`-style early
+  returns in the chip handler (see "Mined collection browsers" above).
+- **Shelf lenses** (All / Genres / Heavy Rotation) filter the shelves below
+  in place.
+
+History of the design, kept so nobody re-derives it: a same-day trial
+replaced the four destination chips with a labeled 2×2 browse-tile grid
+(invert squircle icons, live mined counts, chevron). It shipped and was
+verified live, then **reverted on user call** — the flat strip is the
+preferred look. The counts machinery (`paintBrowseCount`/`BROWSE_NOUNS`)
+and `.browse-tile-icon` CSS were removed with it.
+
+**The one change that survives is the selected-state fix.** The old active
+toggle keyed `bg-on-surface`, but the theme CSS inverts on `.bg-primary`, so
+in light theme the CSS `!important` override repainted the active chip white
+too — the selected filter was invisible (measured on device 2026-10-15:
+`All` = `linear-gradient(255,255,255 → 245,245,247)`, `color: rgb(71,70,75)`,
+identical to every inactive chip). The handler now toggles `.bg-primary` (the
+class the CSS was written for): obsidian pill + white text in light, white
+pill + black text in dark.
+
+- Contract gate: `app/tests/home-browse.test.mjs` pins the strip (7 chips in
+  the old order, a navigate branch per browse chip, `.bg-primary` on the
+  active pill, zero tile-grid leftovers in markup/handler/shell CSS).
+
+### Now Playing artwork: frameless + glass coating (2026-10-15f)
+
+Scope: **mobile only** (`screens/nowplaying.html` card classes,
+`mobile/index.html` theme CSS). Desktop `.np-art-card` (`styles.css`) untouched.
+
+The large artwork on Now Playing carried a visible dark frame from **two
+sources**: (1) the markup asked for `border border-outline-variant/30` and
+both theme blocks restated it — light drew a 1px border whose color blended
+over the card's own near-black backing (`#1b1b1e`), plus a second 1px ring
+(`0 0 0 1px rgba(0,0,0,.12)`); dark drew a `rgba(255,255,255,.1)` ring; and
+(2) the shared "Image and Artwork Depth" rule
+(`html:not(.dark) .aspect-square img`) put its own 1px
+`rgba(0,0,0,.06)` border on the img — over the near-black backing that
+composited to a dark ring too, and survived the card-level cleanup until the
+pixel probe caught it.
+
+Now:
+
+- **No frame** — the card border classes and both ring restatements are gone,
+  and the artwork img is excluded from the shared image border
+  (`:not(#np-art)`); the tile is defined by its artwork alone.
+- **Blended corners** — the hard 1px ring is replaced by a soft, large
+  diffuse shadow (`0 24px 48px -20px` light / `-18px` dark), so the
+  `rounded-3xl` corners melt into the page instead of sitting in a frame.
+- **Thin glass coating** — `#np-art-card::after` paints a diagonal light
+  sweep from the top-left (`rgba(255,255,255,.2)` → 0 by 38 %) plus a 1px
+  specular line along the top edge (`inset 0 1px 0 rgba(255,255,255,.22)`).
+  It is `pointer-events: none` (never intercepts touches), rides above the
+  img, and applies in both themes so dark artwork also catches the light.
+
+Contracts unchanged: `#np-art-card` remains the first/img-owning card (the
+`binders.js` paint-by-position contract) and the overlay is a pure
+pseudo-element — no DOM contract moves.
+
+Verified in headless Chrome @412 px, both themes (screenshots
+`np5-light.png` / `np5-dark.png` beside this session's probe notes): computed
+card **and** img border `0 px`; the screenshot pixel scan shows artwork
+reaching every edge — left/right/bottom strip minima luma 155-158 = art with
+no dark pixel, corner-box minimum 156 = art (the pre-fix probe found the
+1 px dark ring at luma 59-85); the sheen measures +18 luma at the top-left
+over the bottom-left art, and the top-edge specular line reads 180 against
+160 for the art below it.

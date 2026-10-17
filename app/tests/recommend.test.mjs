@@ -362,3 +362,67 @@ test("explain names the signals a mix was built from", () => {
   assert.match(why, /IN/);
   assert.equal(explain(p, { id: "downloads" }), "");
 });
+
+test("artistInsights ranks by mined weight with real evidence", async () => {
+  const { artistInsights, filterArtists, artistEvidence } = await import("../src/mobile/recommend.js");
+  const plays = [
+    ...Array.from({ length: 6 }, (_, i) => track(`w${i}`, { artist: "Workhorse", ts: daysAgo(i), count: 6 - i, image: "w.png" })),
+    track("f1", { artist: "Fave", image: "f.png" }),
+    track("d1", { artist: "Vault", image: "d.png" }),
+    track("x1", { artist: "Lead feat. Guest", image: "x.png" }),
+  ];
+  const p = buildProfile({
+    plays,
+    favs: [track("f1", { artist: "Fave" })],
+    downloads: [track("d1", { artist: "Vault" })],
+    now: NOW,
+  });
+  const list = artistInsights(p, { follows: [{ title: "Ghost", token: "tok-g", image: "g.png" }] });
+  const names = list.map((a) => a.name);
+  assert.ok(names.includes("Workhorse") && names.includes("Fave") && names.includes("Vault"), "log artists present");
+  assert.ok(names.includes("Lead") && names.includes("Guest"), "feat. split credits both");
+  assert.ok(list.indexOf(list.find((a) => a.name === "Workhorse")) < list.indexOf(list.find((a) => a.name === "Vault")), "plays outweigh one download");
+  const fave = list.find((a) => a.name === "Fave");
+  assert.equal(fave.liked, 1);
+  assert.equal(fave.image, "f.png");
+  assert.equal(artistEvidence(fave), "1 liked");
+  const work = list.find((a) => a.name === "Workhorse");
+  assert.match(artistEvidence(work), /plays/);
+  assert.equal(work.image, "w.png", "art is the most-played track image");
+  const ghost = list.find((a) => a.name === "Ghost");
+  assert.equal(ghost.following, true);
+  assert.equal(ghost.token, "tok-g");
+  assert.equal(artistEvidence(ghost), "Following");
+  assert.deepEqual(filterArtists(list, "liked").map((a) => a.name), ["Fave"]);
+  assert.deepEqual(filterArtists(list, "downloaded").map((a) => a.name), ["Vault"]);
+  assert.deepEqual(filterArtists(list, "following").map((a) => a.name), ["Ghost"]);
+  assert.equal(filterArtists(list, "all").length, list.length);
+});
+
+test("albumInsights separates listening time from play frequency", async () => {
+  const { albumInsights, filterAlbums, albumEvidence, fmtListenTime } = await import("../src/mobile/recommend.js");
+  const NOW2 = Date.UTC(2026, 9, 7, 14, 0, 0);
+  const mk = (id, album, artist, plays, secs) => track(id, { title: `T-${id}`, album, artist, duration_secs: secs, plays, count: plays, ts: NOW2, image: `${id}.png` });
+  const plays = [
+    mk("s1", "Short & Sweet", "Poppy", 10, 120),
+    mk("s2", "Short & Sweet", "Poppy", 8, 120),
+    mk("e1", "Epic Hour", "Wagner", 2, 1800),
+    mk("l1", "Loved One", "Adele", 1, 200),
+  ];
+  const p = buildProfile({ plays, favs: [track("l1", { title: "T-l1", album: "Loved One", artist: "Adele" })], now: NOW2 });
+  const list = albumInsights(p, {});
+  const byName = Object.fromEntries(list.map((a) => [a.title, a]));
+  assert.equal(byName["Short & Sweet"].plays, 18);
+  assert.equal(byName["Epic Hour"].timeSecs, 3600);
+  assert.equal(byName["Loved One"].liked, 1);
+  assert.equal(fmtListenTime(3600), "1h");
+  assert.equal(fmtListenTime(90), "2m");
+  assert.equal(fmtListenTime(90000), "25h");
+  assert.equal(fmtListenTime(180000), "2d 2h");
+  assert.equal(fmtListenTime(5021188466), "159y");
+  assert.match(albumEvidence(byName["Epic Hour"]), /1h/);
+  assert.equal(filterAlbums(list, "time")[0].title, "Epic Hour", "time orders by listening time");
+  assert.equal(filterAlbums(list, "played")[0].title, "Short & Sweet", "played orders by frequency");
+  assert.deepEqual(filterAlbums(list, "liked").map((a) => a.title), ["Loved One"]);
+  assert.equal(byName["Short & Sweet"].image, "s1.png", "art is the most-played track image");
+});

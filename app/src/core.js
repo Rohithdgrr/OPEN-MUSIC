@@ -198,14 +198,23 @@ for (const a of navLinks) {
 
 // ------------------------------------------------------------- diagnostics -
 export const diagEl = $("#diag");
+/// The last 40 lines survive even with no panel mounted (desktop `#diag` was
+/// removed in the 2026-10-09 revert): `__tmDiag()` in devtools — or a CDP
+/// probe — shows what this session logged, raw errors included. docs/search-
+/// resilience.md §4 F6.
+const diagRing = [];
+window.__tmDiag = () => diagRing.slice();
 export function diag(step, ok, detail) {
+  const t = new Date().toLocaleTimeString();
+  const line = detail ? `${t} ${step} — ${detail}` : `${t} ${step}`;
+  diagRing.unshift(line);
+  if (diagRing.length > 40) diagRing.pop();
   if (!diagEl) return;
   const li = document.createElement("li");
   li.className =
     "font-mono text-[11px] " +
     (ok === true ? "text-emerald-600" : ok === false ? "text-red-600" : "text-on-surface-variant");
-  const t = new Date().toLocaleTimeString();
-  li.textContent = detail ? `${t} ${step} — ${detail}` : `${t} ${step}`;
+  li.textContent = line;
   diagEl.prepend(li);
   while (diagEl.children.length > 40) diagEl.lastChild.remove();
 }

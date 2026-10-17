@@ -523,7 +523,7 @@ pub struct ImportedTrack {
 /// waiting for the callback.
 #[tauri::command]
 pub async fn spotify_signin(
-    app: tauri::State<'_, crate::proxy::AppState>,
+    app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>,
     handle: tauri::AppHandle,
 ) -> Result<bool, String> {
     let cid = client_id()?;
@@ -574,13 +574,15 @@ pub async fn spotify_signin(
 
 /// Sign out from Spotify by clearing the stored refresh token.
 #[tauri::command]
-pub fn spotify_signout(app: tauri::State<'_, crate::proxy::AppState>) -> Result<(), String> {
+pub fn spotify_signout(
+    app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>,
+) -> Result<(), String> {
     token_delete(app.store()?)
 }
 
 /// Check if the user is signed in with Spotify.
 #[tauri::command]
-pub fn spotify_is_signedin(app: tauri::State<'_, crate::proxy::AppState>) -> bool {
+pub fn spotify_is_signedin(app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>) -> bool {
     app.store()
         .ok()
         .and_then(|s| token_load(s).ok().flatten())
@@ -593,7 +595,7 @@ pub fn spotify_is_signedin(app: tauri::State<'_, crate::proxy::AppState>) -> boo
 #[tauri::command]
 pub async fn spotify_import_top(
     state: tauri::State<'_, SpotifyState>,
-    app: tauri::State<'_, crate::proxy::AppState>,
+    app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>,
     time_range: String,
     limit: u32,
 ) -> Result<Vec<ImportedTrack>, String> {

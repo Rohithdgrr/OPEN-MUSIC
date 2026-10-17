@@ -12,6 +12,7 @@
 //! Must NOT know anything about HTTP servers (that is `proxy.rs`'s job).
 
 use std::sync::Mutex;
+use std::time::Duration;
 
 use base64::Engine;
 use serde::Serialize;
@@ -83,6 +84,23 @@ pub fn prefs_key() -> String {
 // Transport
 // ---------------------------------------------------------------------------
 
+/// One calm retry for the primary source (docs/search-resilience.md §4 F4): a
+/// single blip — a transport error, one 5xx page, a short 429 — must not fail
+/// a whole multi-page search while the fallback chain is what it is. 4xx and
+/// malformed bodies are final: business answers are never retried.
+const MAX_ATTEMPTS: u32 = 2;
+
+/// Whether a failed attempt's answer is worth the one retry. `None` is a
+/// transport error; a 429 counts only when a short `Retry-After` confirms it
+/// (the caller checks the header before sleeping).
+fn retryable(status: Option<u16>) -> bool {
+    match status {
+        None => true,
+        Some(429) => true,
+        Some(s) => (500..=599).contains(&s),
+    }
+}
+
 /// One `api.php` round-trip. Upstream reports failures in HTTP 200 bodies, so
 /// both the status line and the JSON envelope are checked.
 async fn call(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<Value, String> {
@@ -108,34 +126,59 @@ async fn call(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<Value
         ser.finish()
     };
     let url = format!("{BASE}?{query}");
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("GET {url}: {e}"))?;
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(format!("{url} -> HTTP {status}"));
+    let mut last_err = format!("GET {url}: no attempt made");
+    for attempt in 0..MAX_ATTEMPTS {
+        let last = attempt + 1 == MAX_ATTEMPTS;
+        match client.get(&url).send().await {
+            Err(e) => {
+                last_err = format!("GET {url}: {e}");
+                if retryable(None) && !last {
+                    tokio::time::sleep(Duration::from_millis(crate::jiosaavn::backoff_ms(attempt)))
+                        .await;
+                }
+            }
+            Ok(resp) => {
+                let status = resp.status();
+                if retryable(Some(status.as_u16())) && !last {
+                    // 429: the server's own short Retry-After is honoured;
+                    // without one the answer is final (mirror policy).
+                    let delay = if status.as_u16() == 429 {
+                        crate::jiosaavn::retry_after_delay(&resp)
+                    } else {
+                        Some(Duration::from_millis(crate::jiosaavn::backoff_ms(attempt)))
+                    };
+                    if let Some(delay) = delay {
+                        tokio::time::sleep(delay).await;
+                        continue;
+                    }
+                }
+                if !status.is_success() {
+                    return Err(format!("{url} -> HTTP {status}"));
+                }
+                let body = resp.text().await.map_err(|e| format!("read {url}: {e}"))?;
+                let value: Value =
+                    serde_json::from_str(&body).map_err(|e| format!("decode {url}: {e}"))?;
+                if let Some(err) = value.get("error") {
+                    // Usually `{"error":{"msg":...}}`; a few endpoints answer
+                    // with a bare string ("No new song found for current radio.").
+                    let msg = err
+                        .as_str()
+                        .or_else(|| err.get("msg").and_then(Value::as_str))
+                        .unwrap_or("upstream error");
+                    return Err(format!("{BASE}: {msg}"));
+                }
+                if value.get("status").and_then(Value::as_str) == Some("failure") {
+                    let msg = value
+                        .get("msg")
+                        .and_then(Value::as_str)
+                        .unwrap_or("upstream failure");
+                    return Err(format!("{BASE}: {msg}"));
+                }
+                return Ok(value);
+            }
+        }
     }
-    let body = resp.text().await.map_err(|e| format!("read {url}: {e}"))?;
-    let value: Value = serde_json::from_str(&body).map_err(|e| format!("decode {url}: {e}"))?;
-    if let Some(err) = value.get("error") {
-        // Usually `{"error":{"msg":...}}`; a few endpoints answer with a bare
-        // string ("No new song found for current radio.").
-        let msg = err
-            .as_str()
-            .or_else(|| err.get("msg").and_then(Value::as_str))
-            .unwrap_or("upstream error");
-        return Err(format!("{BASE}: {msg}"));
-    }
-    if value.get("status").and_then(Value::as_str) == Some("failure") {
-        let msg = value
-            .get("msg")
-            .and_then(Value::as_str)
-            .unwrap_or("upstream failure");
-        return Err(format!("{BASE}: {msg}"));
-    }
-    Ok(value)
+    Err(last_err)
 }
 
 // ---------------------------------------------------------------------------
@@ -1139,6 +1182,17 @@ pub async fn recommend(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_transient_failures_earn_the_retry() {
+        assert!(retryable(None)); // transport error
+        assert!(retryable(Some(429))); // 429 *with* a short Retry-After
+        assert!(retryable(Some(500)));
+        assert!(retryable(Some(599)));
+        assert!(!retryable(Some(400))); // business answers are final
+        assert!(!retryable(Some(403)));
+        assert!(!retryable(Some(404)));
+    }
 
     /// Captured from `song.getDetails` for `aRZbUYD7` — the vector that
     /// pins the DES key, the base64 alphabet and the PKCS#7 unpad.

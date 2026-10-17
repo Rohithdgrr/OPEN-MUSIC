@@ -62,6 +62,20 @@ export async function recordPlay(track) {
   return typeof n === "number" ? n : null;
 }
 
+/// Append one play event to the taste log (docs/recommendations.md §8):
+/// { id, ts, ended_at, ms_played, duration_secs, outcome, source, title,
+///   artist, image }. Best-effort like every store call.
+export async function playEvent(event) {
+  if (!event || !event.id) return null;
+  return call("store_play_event", { event });
+}
+
+/// The newest `limit` play events, oldest-first. Resolves [] without IPC.
+export async function getPlayEvents(limit = 400) {
+  const r = await call("store_events", { limit });
+  return Array.isArray(r) ? r : [];
+}
+
 /// Mirror the favorite flag so offline fav lists survive without localStorage.
 export async function mirrorFav(track, fav) {
   const t = slim(track);

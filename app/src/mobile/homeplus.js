@@ -23,7 +23,7 @@ function routeKey() {
 function loadCache() {
   try {
     const c = load(NEWREL_KEY, null);
-    if (c && Date.now() - (c.ts || 0) < 86400000 && Array.isArray(c.items)) return c.items;
+    if (c && Date.now() - (c.ts || 0) < 86400000 && Array.isArray(c.items) && c.items.length) return c.items;
   } catch {}
   return null;
 }
@@ -72,9 +72,13 @@ async function fetchNewReleases() {
       if (out.length >= 10) break;
     }
   } catch {}
-  try {
-    save(NEWREL_KEY, { ts: Date.now(), items: out });
-  } catch {}
+  // Never cache an empty result — a failed/offline lookup would read as a
+  // fresh cache hit for 24h and keep the shelf blank.
+  if (out.length) {
+    try {
+      save(NEWREL_KEY, { ts: Date.now(), items: out });
+    } catch {}
+  }
   return out;
 }
 

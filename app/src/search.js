@@ -3,12 +3,12 @@
 import { art } from "./art.js";
 import { clearError, diag, esc, invoke, showError, showView, toast } from "./core.js";
 import { netMode } from "./net.js";
+import { nextRetryDelay } from "./searchretry.js";
 import { $, $$, errorEl } from "./dom.js";
 import { fuzzyScore, querySim } from "./fuzzy.js";
-import { didYouMean, matchesFilters, parseQuery, rankTracks } from "./query.js";
+import { didYouMean, matchesFilters, parseQuery, rankTracks, sourceOrder, sourcePlan, sourceRows } from "./query.js";
 import { loadHistory, pushHistory } from "./history.js";
-import { loadFavs, ddCard, favFill, openDetail, openPlaylist, plCard, playTracksAt, toggleFavTrack } from "./library.js";
-import { loadPlays } from "./home.js";
+import { ddCard, favFill, openDetail, openPlaylist, plCard, playTracksAt, toggleFavTrack } from "./library.js";
 import { playQueueItem } from "./playback.js";
 import { enqueue, insertNext, queue, queueIndex, renderQueue, setQueueTab } from "./queue.js";
 import { filterLang, prefCountry } from "./settings.js";
@@ -180,6 +180,9 @@ export let searchExhausted = false;
 // Sequence guard: every new search supersedes in-flight ones, so a slow
 // response can never overwrite the results of a newer query.
 export let searchSeq = 0;
+/// Pending auto-retry timer (searchretry.js ladder). Every new doSearch call
+/// cancels it, so a stale timer can never fire against a newer search.
+let searchRetryTimer = 0;
 export let featuredPage = 0;
 
 // ----------------------------------------------------- boot search snapshot -
@@ -307,20 +310,6 @@ export const isTracks = () => activeFilter === "tracks";
 /// Rows behind the active chip — the table and the card grid both page these.
 export const currentItems = () => (isTracks() ? lastResults : lastCards);
 
-/// Taste signals for the relevance boost, read once per repaint rather than
-/// once per row: what this listener played, what they hearted, and how often
-/// each artist shows up. ponytail: no negative signal yet — there is no
-/// "dislike" store to read, and inventing one here would be a lie.
-function tasteContext() {
-  const played = new Set();
-  const artistPlays = new Map();
-  for (const p of loadPlays()) {
-    played.add(p.id);
-    if (p.artist) artistPlays.set(p.artist, (artistPlays.get(p.artist) || 0) + 1);
-  }
-  return { played, liked: new Set(loadFavs().map((f) => f.id)), artistPlays, region: prefCountry(), moodOf };
-}
-
 /// The tracks the table and the featured cards show right now:
 /// filtered by the attribute selects *and* by whatever the query itself
 /// asked for ("kesariya 2022"), then ordered by the active sort — relevance
@@ -332,11 +321,15 @@ export function currentView() {
   if (by === "relevance") {
     if (!searchQuery.trim()) return list;
     const q = parsed || parseQuery(searchQuery);
-    const opts = tasteContext();
     const scored = list.filter((t) => matchesFilters(t, q));
     // The query's filters can empty the page (a language nothing speaks).
-    // Falling back beats showing the user nothing.
-    return rankTracks(scored.length ? scored : list, q, textScoreFor(q), opts);
+    // Falling back beats showing the user nothing. No taste opts: the rows
+    // keep JioSaavn's own ranking (§8.9) — the region setting still biases
+    // language, the query's own mood filter still applies. §8.11: the
+    // anchor's own source (movie or artist) leads the page.
+    return sourceOrder(
+      rankTracks(scored.length ? scored : list, q, textScoreFor(q), { region: prefCountry(), moodOf }),
+    );
   }
   return list.sort((a, b) => {
     if (by === "bitrate") {
@@ -545,10 +538,20 @@ export function showErrorRetry(msg, retry) {
   btn.className =
     "ml-3 px-2.5 py-1 rounded border border-current font-label-md text-label-md transition-opacity hover:opacity-70";
   btn.textContent = "Retry";
-  btn.addEventListener("click", retry);
+  btn.addEventListener("click", () => {
+    btn.disabled = true; // single-flight: a second click would double-fetch
+    retry();
+  });
   errorEl.append(span, btn);
   errorEl.classList.remove("hidden");
 }
+
+// F2 — recovery without a click: when connectivity returns, the query the
+// card sits on re-runs itself. Gated on the card's own Retry action so
+// unrelated error boxes are left alone. (docs/search-resilience.md §4)
+window.addEventListener("online", () => {
+  if (searchQuery && errorEl.querySelector("#error-retry")) doSearch({ query: searchQuery });
+});
 
 // ------------------------------------------------------- duplicate guard -
 // Mirrors the backend `dedup_tracks` collapse (original vs remaster vs
@@ -735,9 +738,34 @@ export function uniqById(list) {
   });
 }
 
+/// §8.11 — after the first page paints, ask the catalog for the anchor's own
+/// source (its movie for film hits, its artist otherwise) and fold those rows
+/// into the page. Best-effort: any failure leaves the ranked page as it was.
+async function maybeMergeSource(seq, q, upstream) {
+  try {
+    if (!isTracks() || netMode() === "offline") return;
+    const anchor = currentView()[0];
+    const plan = sourcePlan(anchor);
+    if (!plan || !plan.query) return;
+    const r = await invoke("search_songs", { query: plan.query, limit: 20, page: 1 });
+    if (seq !== searchSeq || searchQuery !== q || !isTracks()) return;
+    const known = new Set(lastResults.map((t) => t.id));
+    const extra = filterLang(sourceRows((r && r.tracks) || [], plan, known));
+    if (!extra.length) return;
+    lastResults = lastResults.concat(extra);
+    refreshResults();
+    saveSearchSnapshot(q, lastResults);
+    import("./store_db.js")
+      .then((m) => m.searchCachePut(`d:${upstream.toLowerCase()}`, { tracks: lastResults.slice(0, 50) }))
+      .catch(() => {});
+    diag(`source "${plan.query}"`, true, `+${extra.length} ${plan.kind} rows`);
+  } catch {}
+}
+
 export async function doSearch(opts = {}) {
   const append = !!opts.append;
   const silent = !!opts.silent;
+  const retry = Number(opts.retry) || 0;
   const q = String(opts.query ?? $("#search-input").value).trim();
   hideSuggest();
   if (!q) {
@@ -745,6 +773,9 @@ export async function doSearch(opts = {}) {
     return;
   }
   if (append && (loadingMore || searchExhausted || !currentItems().length)) return;
+  // This call supersedes any pending auto-retry (an early return above does
+  // not — a no-op click must not kill the running self-heal).
+  clearTimeout(searchRetryTimer);
 
   if (append) loadingMore = true;
   else {
@@ -836,7 +867,7 @@ export async function doSearch(opts = {}) {
     // Rows painted from the SQLite page cache stay on screen; the message
     // says so instead of reading like an empty failure.
     const saved = !append && lastResults.length > 0;
-    const short = append
+    let short = append
       ? `Could not load more results for "${q}".`
       : saved
         ? offline
@@ -845,6 +876,16 @@ export async function doSearch(opts = {}) {
         : offline
           ? "You're offline — check your connection, then retry."
           : "Search is down right now — retry in a bit.";
+    // Self-heal (docs/search-resilience.md §4 F1/F2): a transient failure
+    // re-runs itself on a bounded ladder instead of waiting for a click.
+    // Offline burns no timers — the `online` listener above re-runs instead.
+    const delay = nextRetryDelay(retry, { offline });
+    if (delay !== null) {
+      searchRetryTimer = setTimeout(() => {
+        if (seq === searchSeq) doSearch({ append, query: q, retry: retry + 1 });
+      }, delay);
+      short += " Retrying…";
+    }
     resultsSub.textContent = append ? short : "Search failed.";
     showErrorRetry(short, () => doSearch({ append, query: q }));
     return;
@@ -883,6 +924,8 @@ export async function doSearch(opts = {}) {
     );
     refreshResults();
     saveSearchSnapshot(q, lastResults);
+    // §8.11: the anchor's own source joins the page once it lands.
+    maybeMergeSource(seq, q, upstream);
     // SQLite caches: songs feed offline lists; the page row lets this query
     // repaint instantly (and offline) next time. Both are best-effort.
     try {

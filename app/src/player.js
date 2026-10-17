@@ -23,7 +23,14 @@ export function setBadge(status, info) {
   bar.badge.textContent = full ? `${info.chosen_quality}` : preview ? "PREVIEW" : "UNREACHABLE";
   bar.badge.classList.remove("hidden");
   if (np.badge) np.badge.textContent = badgeText;
-  if (np.format) np.format.textContent = info.chosen_quality;
+  if (np.format) {
+    // Tier readout only — the stream's origin never names a provider or CDN
+    // in the UI (branding guide, "Upstream attribution"). A vaulted copy is
+    // our own storage, so that label stays.
+    const vault = info.host === "vault";
+    np.format.textContent = vault ? `${info.chosen_quality} · local vault` : `${info.chosen_quality}`;
+    np.format.title = "";
+  }
   emitState(true);
   document.title = full
     ? "▶ " + bar.title.textContent

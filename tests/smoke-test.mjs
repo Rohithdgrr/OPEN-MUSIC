@@ -131,7 +131,17 @@ async function testBinaryLaunch() {
         args = [path, '--version'];
       }
 
-      const command = PLATFORM === 'linux' || PLATFORM === 'darwin' ? args[0] : path;
+      // An .msi is an installer, not an executable -- spawn() on it fails
+      // with EFTYPE. Launch the raw release binary the same build produced
+      // (present whenever the bundle is), falling back to the installer path
+      // only when the raw binary is missing.
+      let winTarget = path;
+      if (PLATFORM === 'win32' && path.toLowerCase().endsWith('.msi')) {
+        const raw = join(__dirname, '../app/src-tauri/target/release/trance-music.exe');
+        if (existsSync(raw)) winTarget = raw;
+      }
+
+      const command = PLATFORM === 'linux' || PLATFORM === 'darwin' ? args[0] : winTarget;
       const commandArgs = PLATFORM === 'linux' || PLATFORM === 'darwin' ? args.slice(1) : args.slice(1);
 
       const proc = spawn(command, commandArgs, {

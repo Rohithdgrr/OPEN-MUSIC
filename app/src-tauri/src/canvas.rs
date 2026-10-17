@@ -344,7 +344,7 @@ async fn query_canvas(
 #[tauri::command]
 pub async fn fetch_canvas(
     state: tauri::State<'_, CanvasState>,
-    app: tauri::State<'_, crate::proxy::AppState>,
+    app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>,
     isrc: Option<String>,
     title: String,
     artist: String,
@@ -395,7 +395,7 @@ pub async fn fetch_canvas(
 /// Store / clear the `sp_dc` cookie. Empty string clears it.
 #[tauri::command]
 pub fn set_canvas_cookie(
-    app: tauri::State<'_, crate::proxy::AppState>,
+    app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>,
     cookie: String,
 ) -> Result<(), String> {
     let trimmed = cookie.trim();
@@ -413,7 +413,7 @@ pub fn set_canvas_cookie(
 
 /// Whether Canvas is configured (a non-empty cookie exists).
 #[tauri::command]
-pub fn canvas_configured(app: tauri::State<'_, crate::proxy::AppState>) -> bool {
+pub fn canvas_configured(app: tauri::State<'_, std::sync::Arc<crate::proxy::AppState>>) -> bool {
     app.store()
         .ok()
         .and_then(|s| s.kv_get(SPDC_KEY).ok().flatten())

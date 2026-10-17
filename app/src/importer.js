@@ -1,10 +1,13 @@
 // importer.js — Exportify CSV → vault import
 // Parses Spotify CSV exports into local playlists.
 
+import { matchTrackToCatalog } from "./spotmatch.js";
+
 // core.js (desktop's DOM module) must NOT be imported at top level here: the
 // mobile shell imports the pure parsers too. Only the catalog-matching path
 // needs invoke, and it resolves desktop's lazily when the caller — mobile
-// passes its own (shared.js) — doesn't supply one.
+// passes its own (shared.js) — doesn't supply one. spotmatch.js is pure
+// (fuzzy.js only), so it is safe to import statically here.
 
 /// Parse Exportify CSV format into track objects.
 /// Expected columns: Track URI, Track Name, Artist URI(s), Artist Name(s),
@@ -77,6 +80,8 @@ function parseCsvLine(line) {
 
 /// Match CSV tracks to JioSaavn catalog via search.
 /// Limits to 100 tracks per batch to avoid overwhelming the API.
+/// Matching contract: docs/spotify-android-canvas.md §10 (name+artist query,
+/// scored candidates — the old ISRC-first query silently matched garbage).
 export async function importCsvToPlaylist(csvText, playlistName, doInvoke) {
   const call = doInvoke || (await import("./core.js")).invoke;
   const { tracks, errors } = parseExportifyCsv(csvText);
@@ -90,21 +95,10 @@ export async function importCsvToPlaylist(csvText, playlistName, doInvoke) {
   const batchSize = 100;
 
   for (const t of tracks.slice(0, batchSize)) {
-    try {
-      // Search JioSaavn for ISRC (most reliable) or title+artist
-      const query = t.isrc || `${t.name} ${t.artists[0]}`;
-      const results = await call("search_songs", { query, limit: 1 });
-
-      if (results.tracks && results.tracks.length > 0) {
-        matched.push({
-          ...results.tracks[0],
-          original: t,
-        });
-      } else {
-        missed.push(t);
-      }
-    } catch (err) {
-      console.error(`Failed to match track: ${t.name} - ${err}`);
+    const { track } = await matchTrackToCatalog(t, call);
+    if (track) {
+      matched.push({ ...track, original: t });
+    } else {
       missed.push(t);
     }
   }

@@ -2,45 +2,39 @@
 // Split from main.js (Phase 4 M1).
 import { diag, invoke } from "./core.js";
 import { homeFeed, loadLibrary, loadPlays } from "./home.js";
+import { loadFavs } from "./library.js";
 import { queue, queueIndex, renderQueue } from "./queue.js";
+import { getPlayEvents } from "./store_db.js";
+import { buildSignals, pickBatch } from "./taste.js";
 
 // ---------------------------------------------------------- endless radio -
 // When the queue runs out (repeat off) playback never just stops: a JioSaavn
-// radio station seeded from the current song keeps feeding the queue, and the
-// batch is re-ranked against local taste before it lands.
+// radio station seeded from the current song keeps feeding the queue. Batches
+// land in JioSaavn's own order — local logic only gates eligibility (queued /
+// recently heard / just-skipped), it never re-ranks (docs/recommendations.md
+// §8.8).
 export let radioStation = "";
 export let radioBusy = false;
 export let recoEmpty = 0;
 
-/// Rank one radio batch: favorites first, then artists the user actually
-/// plays, never anything already queued or heard in the last 15 plays.
-export function scoreReco(cands) {
-  const queued = new Set(queue.map((q) => q.track.id));
-  const heard = new Set(loadPlays().slice(0, 15).map((p) => p.id));
-  const weight = new Map();
-  for (const f of loadLibrary()) if (f.artist) weight.set(f.artist, (weight.get(f.artist) || 0) + 3);
-  for (const p of loadPlays()) if (p.artist) weight.set(p.artist, (weight.get(p.artist) || 0) + 1);
-  const album = queue[queueIndex]?.track.album;
-  const scored = [];
-  const taken = new Set();
-  for (const t of cands) {
-    if (!t?.id || queued.has(t.id) || heard.has(t.id) || taken.has(t.id)) continue;
-    taken.add(t.id);
-    let s = weight.get(t.artist) || 0;
-    if (album && t.album === album) s += 1;
-    scored.push({ t, s });
-  }
-  if (!scored.length) {
-    // The batch was all repeats — endless mode prefers a rerun over silence,
-    // so fall back to whatever at least is not sitting in the queue right now.
-    for (const t of cands) {
-      if (!t?.id || queued.has(t.id) || taken.has(t.id)) continue;
-      taken.add(t.id);
-      scored.push({ t, s: -1 });
-    }
-  }
-  scored.sort((a, b) => b.s - a.s);
-  return scored.slice(0, 12).map((x) => x.t);
+/// Everything the eligibility gate reads: local logs + the play-event log
+/// (docs/recommendations.md §8.8). Events are best-effort — without the store
+/// the gate still drops queued and heard tracks.
+async function tasteSignals() {
+  const plays = loadPlays();
+  let events = [];
+  try {
+    events = await getPlayEvents(400);
+  } catch {}
+  return buildSignals({
+    plays,
+    favs: loadFavs(),
+    library: loadLibrary(),
+    events,
+    queuedIds: queue.map((q) => q.track && q.track.id),
+    heardIds: plays.slice(0, 15).map((p) => p.id),
+    current: queue[queueIndex] && queue[queueIndex].track,
+  });
 }
 
 /// Last resort when the radio answers with nothing: everything else by this
@@ -83,7 +77,8 @@ export async function ensureReco() {
       diag("radio", false, String(err));
     }
     if (!fresh.length) fresh = await recoFallback(seed);
-    let added = scoreReco(fresh);
+    const signals = await tasteSignals();
+    let added = pickBatch(fresh, signals);
     // Three starved batches in a row means the station is exhausted: drop it
     // and re-seed from the current track so the radio can restart itself
     // instead of dead-ending at "No more recommendations".
@@ -95,7 +90,7 @@ export async function ensureReco() {
         const page = await invoke("recommend_songs", { song: seed.id, station: null });
         if (page && page.station) {
           radioStation = page.station;
-          added = scoreReco(page.tracks || []);
+          added = pickBatch(page.tracks || [], signals);
         }
       } catch (err) {
         diag("radio", false, String(err));

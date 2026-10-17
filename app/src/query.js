@@ -73,6 +73,18 @@ export function normalizeToken(t) {
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+/// A row's title with its `(From "Movie")` provenance removed — what a user
+/// typed when they meant this record. `'Tum Hi Ho (From "Aashiqui 2")'` reads
+/// as `'Tum Hi Ho'`; a `'- Official Remix'` stays part of the name.
+export function cleanTitle(name) {
+  return String(name || "")
+    .replace(/\(\s*from\s*["“'][^"”']+["”']\s*\)/gi, " ")
+    .replace(/\s*[-–]\s*$/u, "")
+    .replace(/\s+([,;])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const FOUR_DIGITS = /^(19|20)\d{2}$/;
 /// "90s", "2000s", "1990s" — people type the short form, so accept all three.
 /// The shape is the decade's leading digits plus its own "0s" tail.
@@ -250,9 +262,10 @@ export function matchesFilters(t, q) {
   return true;
 }
 
-/// Relevance of one track to a parsed query, roughly 0..1 before the personal
-/// boosts. Text match dominates; everything else only reorders rows that were
-/// already plausible.
+/// Relevance of one track to a parsed query, roughly 0..1. Text match
+/// dominates; everything else only reorders rows that were already plausible.
+/// No personal boosts — search keeps JioSaavn's own ranking, the local taste
+/// engine never reorders results (docs/recommendations.md §8.9).
 ///
 /// `textScore` is fuzzy.js's score, injected rather than imported so this
 /// module stays free of the ranking call site and tests can feed a stub.
@@ -262,9 +275,11 @@ export function relevance(t, q, textScore, opts = {}) {
 
   // The title *is* the query. fuzzyScore cannot tell "Kesariya" from
   // "Kesariya XYZ" (both contain every token), but a user typing the title
-  // wants that exact record first, so it is worth saying out loud.
+  // wants that exact record first, so it is worth saying out loud. The
+  // catalog's `(From "Movie")` provenance is not part of the name: without
+  // stripping it, a bare-titled cover outranks the original it covers.
   const wanted = normalize(q.text);
-  if (wanted && normalize(t.title) === wanted) s += 0.25;
+  if (wanted && normalize(cleanTitle(t.title)) === wanted) s += 0.25;
 
   // Language the user asked for, or that their region prefers.
   const have = trackLangs(t);
@@ -296,11 +311,6 @@ export function relevance(t, q, textScore, opts = {}) {
   if (t.hq) s += 0.03;
   if (Number(t.plays) > 0) s += 0.1 * Math.log10(Number(t.plays) / 10 + 1) / 6;
 
-  // Taste: what this listener already played or hearted.
-  if (opts.played && opts.played.has(t.id)) s += 0.15;
-  if (opts.liked && opts.liked.has(t.id)) s += 0.2;
-  if (opts.artistPlays && t.artist) s += 0.05 * Math.min(3, opts.artistPlays.get(t.artist) || 0);
-
   return s;
 }
 
@@ -311,6 +321,125 @@ export function rankTracks(list, q, textScore, opts = {}) {
     .map((t, i) => ({ t, i, s: relevance(t, q, textScore, opts) }))
     .sort((a, b) => b.s - a.s || a.i - b.i)
     .map((x) => x.t);
+}
+
+// -------------------------------------------------------- source-first pass -
+// §8.11 — "show more from the song's own source". A film hit's source is its
+// movie (the album, or the film its own title names in a `(From "…")` tag); a
+// singer-driven track's source is the artist. The pass only reads the ranked
+// page — no taste, no history — and the fetch that feeds it asks the catalog
+// for the source's own name.
+
+// Languages whose catalog is predominantly film soundtracks: the album leads.
+// Everything else (english, spanish, korean, …) leads with the artist instead.
+const FILM_LANGS = new Set([
+  "hindi", "punjabi", "tamil", "telugu", "bengali", "kannada", "malayalam",
+  "marathi", "gujarati", "odia", "urdu",
+]);
+
+/// How many rows one source fetch may add to a page.
+export const SOURCE_EXTRA_MAX = 12;
+
+/// The film a "(From \"Movie\")" variant names, else "".
+function fromClause(name) {
+  const m = /\(\s*from\s*["“']([^"”']+)["”']\s*\)/i.exec(String(name || ""));
+  return m ? m[1].trim() : "";
+}
+
+function stripAlbumTags(s) {
+  return String(s || "")
+    .replace(/\(\s*(?:original\s+(?:motion\s+picture\s+)?soundtrack|ost|deluxe(?:\s+edition)?|single|ep)\s*\)/gi, " ")
+    .replace(/\s+([,;])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/// Fold an album name for comparison. The catalog's remix/clip naming marks
+/// the real film inside the name — `X (From "Movie")` compares as the film
+/// itself — and soundtrack descriptors are dropped so one film's variants
+/// share a key.
+export function albumKey(name) {
+  return normalize(fromClause(name) || stripAlbumTags(name));
+}
+
+/// The display name to send upstream for an album: the film when the name is
+/// a "(From \"Movie\")" variant, else the name minus descriptor tags.
+function albumQuery(name) {
+  return fromClause(name) || stripAlbumTags(name);
+}
+
+const CREDIT_SPLIT = /[,;&]|\s+(?:feat\.?|ft\.?|featuring)\s+/i;
+
+/// Folded artist names of a row — "A, B & C feat. D" → ["a", "b", "c", "d"].
+/// Over-splitting only widens a match; it never invents one.
+export function leadArtists(t) {
+  return String((t && t.artist) || "")
+    .split(CREDIT_SPLIT)
+    .map((s) => normalize(s))
+    .filter(Boolean);
+}
+
+function firstArtist(t) {
+  const parts = String((t && t.artist) || "").split(CREDIT_SPLIT);
+  return (parts.find((s) => s && s.trim()) || "").trim();
+}
+
+/// The source name a row's provenance points at, most specific first: the
+/// `(From "Movie")` in its own title, the same in the album field, the album
+/// itself. Compilation albums hide the film in the title, so the title leads.
+function sourceAlbumName(t) {
+  return fromClause(t && t.title) || fromClause(t && t.album) || String((t && t.album) || "");
+}
+
+/// The source a hit points back to: its movie for film-language rows, its
+/// artist otherwise. Null when the row carries neither.
+export function sourcePlan(t) {
+  if (!t) return null;
+  const langs = String(t.language || "").toLowerCase().split(",").map((s) => s.trim());
+  const film = langs.some((l) => FILM_LANGS.has(l));
+  const srcName = sourceAlbumName(t);
+  const ak = albumKey(srcName);
+  const artists = leadArtists(t);
+  if (film && ak) return { kind: "album", key: ak, query: albumQuery(srcName) };
+  if (artists.length) return { kind: "artist", keys: artists, query: firstArtist(t) };
+  if (ak) return { kind: "album", key: ak, query: albumQuery(srcName) };
+  return null;
+}
+
+/// Does a row belong to the plan's source?
+export function sourceMatch(t, plan) {
+  if (!t || !plan) return false;
+  if (plan.kind === "album") return !!plan.key && albumKey(sourceAlbumName(t)) === plan.key;
+  return leadArtists(t).some((a) => (plan.keys || []).includes(a));
+}
+
+/// Stable re-order for one ranked page: the anchor's source rows first, in
+/// their own ranked order, then everything else untouched. Idempotent, drops
+/// nothing, and a no-op unless the source has at least one companion row.
+export function sourceOrder(ranked) {
+  const list = Array.isArray(ranked) ? ranked : [];
+  if (list.length < 2) return list;
+  const plan = sourcePlan(list[0]);
+  if (!plan) return list;
+  const hit = [];
+  const rest = [];
+  for (const t of list) (sourceMatch(t, plan) ? hit : rest).push(t);
+  return hit.length > 1 ? hit.concat(rest) : list;
+}
+
+/// The rows a source fetch contributes: the plan's own songs, deduped against
+/// the page and each other, capped. Pure — the caller owns the network.
+export function sourceRows(fetched, plan, seen) {
+  const have = seen instanceof Set ? seen : new Set(seen || []);
+  const out = [];
+  for (const t of fetched || []) {
+    if (out.length >= SOURCE_EXTRA_MAX) break;
+    if (!t || !t.id || have.has(t.id)) continue;
+    if (!sourceMatch(t, plan)) continue;
+    have.add(t.id);
+    out.push(t);
+  }
+  return out;
 }
 
 /// Nearby queries worth offering when a search comes back empty: the

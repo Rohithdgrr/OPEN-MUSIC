@@ -1,10 +1,12 @@
 // radio.js — endless radio for the mobile player.
 //
 // Port of the desktop's src/radio.js: when the queue runs low (repeat off) a
-// JioSaavn station seeded from the current song keeps feeding it, and each
-// batch is re-ranked against local taste before it lands. The queue array is
-// passed in by player.js, which owns it.
+// JioSaavn station seeded from the current song keeps feeding it. Batches land
+// in JioSaavn's own order — local logic only gates eligibility (queued /
+// recently heard / just-skipped), it never re-ranks (§8.8). The queue array
+// is passed in by player.js, which owns it.
 import { invoke, load, save, FAVS_KEY, PLAYS_KEY, LIBRARY_KEY } from "./shared.js";
+import { buildSignals, pickBatch } from "../taste.js";
 
 const RADIO_KEY = "tm-radio";
 
@@ -21,36 +23,25 @@ export let radioStation = "";
 let radioBusy = false;
 let recoEmpty = 0;
 
-/// Rank one batch: favourites first, then artists the user actually plays,
-/// never anything already queued or heard in the last 15 plays.
-function scoreReco(cands, queue, qi) {
-  const queued = new Set(queue.map((t) => t && t.id));
+/// Everything the eligibility gate reads: local logs + the play-event log
+/// (docs/recommendations.md §8.8). Events are best-effort — without the store
+/// the gate still drops queued and heard tracks.
+async function tasteSignals(queue, qi) {
   const plays = load(PLAYS_KEY, []);
-  const heard = new Set(plays.slice(0, 15).map((p) => p.id));
-  const weight = new Map();
-  for (const f of load(LIBRARY_KEY, [])) if (f && f.artist) weight.set(f.artist, (weight.get(f.artist) || 0) + 3);
-  for (const f of load(FAVS_KEY, [])) if (f && f.artist) weight.set(f.artist, (weight.get(f.artist) || 0) + 3);
-  for (const p of plays) if (p && p.artist) weight.set(p.artist, (weight.get(p.artist) || 0) + 1);
-  const album = queue[qi] && queue[qi].album;
-  const scored = [];
-  const taken = new Set();
-  for (const t of cands) {
-    if (!t || !t.id || queued.has(t.id) || heard.has(t.id) || taken.has(t.id)) continue;
-    taken.add(t.id);
-    let s = weight.get(t.artist) || 0;
-    if (album && t.album === album) s += 1;
-    scored.push({ t, s });
-  }
-  if (!scored.length) {
-    // The batch was all repeats — endless mode prefers a rerun over silence.
-    for (const t of cands) {
-      if (!t || !t.id || queued.has(t.id) || taken.has(t.id)) continue;
-      taken.add(t.id);
-      scored.push({ t, s: -1 });
-    }
-  }
-  scored.sort((a, b) => b.s - a.s);
-  return scored.slice(0, 12).map((x) => x.t);
+  let events = [];
+  try {
+    const db = await import("../store_db.js");
+    events = await db.getPlayEvents(400);
+  } catch {}
+  return buildSignals({
+    plays,
+    favs: load(FAVS_KEY, []),
+    library: load(LIBRARY_KEY, []),
+    events,
+    queuedIds: queue.map((t) => t && t.id),
+    heardIds: plays.slice(0, 15).map((p) => p.id),
+    current: queue[qi] || null,
+  });
 }
 
 /// Last resort when the radio answers with nothing: everything else by this
@@ -85,7 +76,8 @@ export async function ensureReco(queue, qi) {
       }
     } catch {}
     if (!fresh.length) fresh = await recoFallback(seed, queue);
-    added = scoreReco(fresh, queue, qi);
+    const signals = await tasteSignals(queue, qi);
+    added = pickBatch(fresh, signals);
     // Three starved batches in a row: drop the exhausted station and re-seed
     // from the current track instead of dead-ending the queue.
     if (!added.length && seed && ++recoEmpty >= 3) {
@@ -95,7 +87,7 @@ export async function ensureReco(queue, qi) {
         const page = await invoke("recommend_songs", { song: seed.id, station: null });
         if (page && page.station) {
           radioStation = page.station;
-          added = scoreReco(page.tracks || [], queue, qi);
+          added = pickBatch(page.tracks || [], signals);
         }
       } catch {}
     } else if (added.length) {

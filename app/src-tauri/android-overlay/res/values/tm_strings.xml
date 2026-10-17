@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overlay-only strings (separate file so the injector copies without
+     merging strings.xml, which init regenerates). -->
+<resources>
+    <string name="tm_widget_desc">OpenMusic player</string>
+</resources>

@@ -259,3 +259,21 @@ template (orange/cyan), so the installed icon is stale. Contract:
   init, `git status` it back and re-apply this pass instead of re-deriving it.
 - Verify: read back a generated mipmap (must be the black mark, full-bleed)
   + launcher screenshot on the emulator after reinstall.
+
+## Upstream attribution — never in the UI (2026-10-17)
+
+Contract: **no upstream provider or CDN name is ever rendered in either
+shell.** The app presents the catalog as its own; upstream names appear only
+in code, comments, docs and internal diagnostics.
+
+- Scrubbed this pass: the desktop About + Terms (`settings.js`), the
+  Spotify-import note, the mobile About + Terms (`mobile/legal.js`), and the
+  Now Playing source line — desktop `#np-format` and the mobile tier chip
+  print the tier only; a vaulted copy still says `local vault` (our own
+  storage). The `#np-src` element is gone from `screens/nowplaying.html`; the
+  origin host stays in the event payload for internal use.
+- Not UI, kept on purpose: `<link rel="preconnect">` hints, `img` src hosts,
+  code identifiers (`jiosaavn.rs`, `MIRRORS`), diag buffers.
+- Enforceable check (live probe 2026-10-17): `document.body.innerText` on
+  both shells must not match `/jiosaavn|saavn/i` — on a search page, a Now
+  Playing screen and the Settings panel.

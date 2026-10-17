@@ -71,14 +71,11 @@ Solo
 <span class="font-label-sm text-[8px] bg-surface-container-highest border border-outline-variant/40 px-1.5 py-0.5 rounded-full text-secondary font-semibold"></span>
 </div>
 </template>
-<div class="flex items-center justify-center gap-2 pt-3 pb-1">
-<span class="w-1.5 h-1.5 rounded-full bg-on-surface"></span>
-<span class="font-label-mono text-[10px] tracking-[0.25em] text-secondary font-semibold">NOW PLAYING</span>
-</div>
 <!-- Artwork: first <img> in <main> by contract (binders paints by position) -->
-<section class="px-margin pt-1 pb-1 flex justify-center">
-<div class="relative w-full aspect-square rounded-3xl overflow-hidden bg-surface-container-high shadow-xl border border-outline-variant/30 group transition-all duration-300" id="np-art-card">
+<section class="px-margin pt-3 pb-1 flex justify-center">
+<div class="relative w-full aspect-square rounded-3xl overflow-hidden bg-surface-container-high group transition-all duration-300" id="np-art-card">
 <img alt="" class="absolute inset-0 w-full h-full object-cover" id="np-art" src="logo.png"/>
+<video id="np-canvas" class="absolute inset-0 w-full h-full object-cover hidden pointer-events-none" muted loop playsinline aria-hidden="true"></video>
 </div>
 </section>
 <!-- Title / artist -->
@@ -87,9 +84,11 @@ Solo
 <h2 class="font-headline-md text-[20px] font-bold text-on-surface tracking-tight leading-tight" id="np-title">Not playing</h2>
 <p class="font-body-sm text-[13px] text-secondary truncate mt-0.5" id="np-artist"></p>
 </div>
+<div class="flex items-center gap-1.5 mt-1.5 flex-wrap" id="np-source-row">
+<span class="hidden font-label-sm text-[10px] bg-surface-container-highest border border-outline-variant/40 px-1.5 py-0.5 rounded-full text-secondary font-semibold" id="np-qchip"></span>
+</div>
 <div class="hidden">
 <span id="np-trackline">—</span>
-<span id="np-qchip"></span>
 <span id="np-album">—</span>
 <span id="np-length">—</span>
 <span id="np-room-members">1 (you)</span>
@@ -201,10 +200,10 @@ Synchronized
 </span>
 </div>
 <div class="flex flex-col gap-2 max-h-72 overflow-y-auto pr-0.5" data-upnext-list id="jamQueueList"></div>
-<div class="mt-1 flex items-center gap-2 bg-surface-container-low border border-outline-variant/30 p-1.5 rounded-xl opacity-60">
-<span class="material-symbols-outlined text-[18px] text-secondary pl-1.5">search</span>
-<input class="bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-none p-0 focus:ring-0" placeholder="Add tracks from the queue screen — no room append frame yet" type="text" id="jamAppendInput" disabled/>
-<button class="bg-primary text-on-primary px-3 py-1.5 rounded-lg font-label-sm text-[10px] font-semibold uppercase tracking-wider shrink-0" id="jamAppendBtn" disabled>
+<div class="mt-1 flex items-center gap-2 bg-surface-container-low border-0 p-1.5 pl-3 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow opacity-60">
+<span class="material-symbols-outlined text-[18px] text-secondary">search</span>
+<input class="bay-input bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-0 outline-none ring-0 shadow-none p-0" placeholder="Add tracks from the queue screen — no room append frame yet" type="text" id="jamAppendInput" disabled aria-label="Add tracks to the queue"/>
+<button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-sm text-[10px] font-semibold uppercase tracking-wider shrink-0" id="jamAppendBtn" disabled>
 + Append
 </button>
 </div>
@@ -322,10 +321,10 @@ Synchronized
 <button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="👏"><span>👏</span><span>Fire</span></button>
 <button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="⚡"><span>⚡</span><span>Sync</span></button>
 </div>
-<div class="flex items-center gap-2 bg-surface-container-low border border-outline-variant/30 p-1.5 rounded-full focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
-<input class="bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-none p-0 focus:ring-0 pl-2.5" placeholder="Message the room…" type="text" id="jamChatInput" maxlength="500" autocomplete="off"/>
-<button class="w-7 h-7 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-xs shrink-0" id="jamChatSend" aria-label="Send message">
-<span class="material-symbols-outlined text-[15px]">send</span>
+<div class="flex items-center gap-2 bg-surface-container-low border-0 p-1.5 pl-3 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow">
+<input class="bay-input bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-0 outline-none ring-0 shadow-none p-0" placeholder="Message the room…" type="text" id="jamChatInput" maxlength="500" autocomplete="off" aria-label="Message the room"/>
+<button class="w-10 h-10 rounded-2xl bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-sm shrink-0" id="jamChatSend" aria-label="Send message">
+<span class="material-symbols-outlined text-[18px]">send</span>
 </button>
 </div>
 </div>

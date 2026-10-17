@@ -27,6 +27,10 @@
     "reon-listening-analytics": "analytics",
     album: "album",
     artist: "artist",
+    artists: "artists",
+    albums: "albums",
+    playlists: "playlists",
+    charts: "charts",
     playlist: "playlist",
     liked: "liked-songs",
     "liked-songs": "liked-songs",
@@ -69,6 +73,10 @@
     "main-library": "library",
     album: "library",
     artist: "library",
+    artists: "library",
+    albums: "library",
+    playlists: "library",
+    charts: "library",
     playlist: "library",
     liked: "library",
     "liked-songs": "library",
@@ -180,12 +188,24 @@
     }
     fetch("screens/" + dir + ".html")
       .then(function (r) {
+        if (!r.ok) throw new Error("fragment " + dir + ": " + r.status);
         return r.text();
       })
       .then(function (html) {
         if (id !== seq) return; // a newer navigation won the race
         FRAGMENTS[dir] = html;
         paint(html, key, dir, query);
+      })
+      .catch(function () {
+        if (id !== seq) return;
+        // The fragment was never cached and the fetch failed (offline or a
+        // missing asset): say so instead of leaving the old screen up with
+        // no signal at all.
+        import("./shared.js")
+          .then(function (m) {
+            m.toast("Couldn't open that screen — check your connection.", 4000, "error");
+          })
+          .catch(function () {});
       });
   }
 

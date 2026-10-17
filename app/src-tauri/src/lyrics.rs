@@ -4,7 +4,7 @@
 //! Three sources, one answer:
 //! 1. **LRCLIB** `/api/get` — free, no key, returns `syncedLyrics` *and*
 //!    `plainLyrics` in one round trip. A duration match must agree within
-//!    ~2 s or the record is refused (404).
+//!    [`DURATION_TOLERANCE_SECS`] or the record is refused (404).
 //!    1b. **Better Lyrics** — syllable-synced TTML, free. Flattened to
 //!    timed lines so the frontend's word-by-word wipe works unchanged.
 //! 2. **JioSaavn** `lyrics.getLyrics` — the web player's own endpoint. Plain
@@ -24,6 +24,11 @@ const LRCLIB: &str = "https://lrclib.net/api";
 
 /// Better Lyrics: free syllable-synced TTML endpoint.
 const BETTER: &str = "https://api.betterlyrics.org/getLyrics";
+
+/// How far an LRCLIB record's own `duration` may sit from the track's before
+/// it is treated as a different song, in seconds. Single source for the module
+/// comment above and the check in [`Hit::duration_ok`].
+const DURATION_TOLERANCE_SECS: f64 = 3.0;
 
 /// One answer for the lyrics stage. `Deserialize` carries the L4 disk tier:
 /// entries are written as JSON and read back by `proxy::cached_lyrics`.
@@ -73,7 +78,7 @@ impl Hit {
     fn duration_ok(&self, wanted: u32) -> bool {
         match self.duration {
             None => true,
-            Some(d) => (d - f64::from(wanted)).abs() <= 3.0,
+            Some(d) => (d - f64::from(wanted)).abs() <= DURATION_TOLERANCE_SECS,
         }
     }
 }

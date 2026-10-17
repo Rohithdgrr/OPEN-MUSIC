@@ -31,12 +31,13 @@ Feature-by-feature comparison of the **desktop** and **mobile** surfaces.
 | Inline suggestions (`search_suggestions`) | ✅ | ✅ | |
 | Fuzzy / typo-tolerant matching | ✅ | ✅ | `app/src/fuzzy.js`; mobile ranks with it too (`mobile/rank.js`) |
 | Typo recovery ("did you mean") | ✅ | ✅ | Desktop: chips under the results. Mobile: toast action off `search_suggestions` |
+| Source-first results (§8.11) | ✅ | ✅ | A song hit's own source leads the page — its movie's songs for film rows, the artist's own tracks otherwise; catalog-fetched, query-intrinsic (no taste) |
 | Filter chips (320 kbps, 5 min+, genres) | ✅ | ✅ | Desktop: chips + sort menu |
 | Sort cycling (bitrate/popularity/longest/A–Z) | ✅ | ✅ | Desktop `search.js`; mobile cycles from a `↕` chip in the filter row, ordered by `mobile/rank.js` |
 | Featured releases carousel | ✅ | ✅ | Desktop hero + shelves (`home.js:342-383`); mobile spotlight hero + shelves (`mobile/binders.js` `mountHome`) |
 | Home feed (`home_feed`) | ✅ | ✅ | Curated feed + charts |
-| Retry on failure | ✅ | ✅ | Any search failure, 429 included |
-| Diagnostics log | ✅ | ✅ | Desktop `#diag` ring buffer (40 entries); mobile `Settings → Diagnostics` sheet off the same 40-entry ring (`shared.js` `pushDiag`) |
+| Retry on failure | ✅ | ✅ | Any search failure, 429 included. Desktop adds a bounded auto-retry ladder (1.5 s → 4 s → 15 s → 45 s) and an auto re-run on reconnect — `docs/search-resilience.md` |
+| Diagnostics log | ✅ | ✅ | Desktop: in-memory 40-entry ring, read via `__tmDiag()` in devtools (the `#diag` panel itself was removed in the 2026-10-09 desktop revert); mobile `Settings → Diagnostics` sheet off the same 40-entry ring (`shared.js` `pushDiag`) |
 
 ## 2. Playback
 
@@ -54,6 +55,7 @@ Feature-by-feature comparison of the **desktop** and **mobile** surfaces.
 | DSP / EQ presets | ❌ | ✅ | Desktop has no `AudioContext` — the "equalizer" glyphs in `index.html` sit next to placeholder copy ("DR14 Lossless Dynamic Range"), not a working control. Mobile has a real WebAudio chain: global 6-preset EQ + per-track override + normalize compressor (`mobile/player.js:441-562`, `mobile/audioplus.js`, `mobile/shared.js:972-1048`) |
 | Range qualification badge (`FULL SONG` / `PREVIEW ONLY` / `UNREACHABLE`) | ✅ | ✅ | Three-probe check before playback |
 | Bitrate / bit-depth badge | ✅ | ✅ | |
+| Bitrate-ladder fallback + visible origin proof | ✅ | ✅ | A dead top rendition walks down (320→…→12 kbps, never above the requested tier) instead of skipping; relay honours the resolved tier (`q=`) so the setting drives the bytes; Now Playing names the tier + CDN host. Spec: `architecture.md` §5.5 |
 | Local relay playback (`127.0.0.1` byte-range proxy) | ✅ | ✅ | Ephemeral port, bound before window load |
 | Speculative prefetch of next track (`prefetch_next`) | ✅ | ✅ | Resolves next ≤4 queue items, never bytes |
 | Lock-screen / notification transport (`navigator.mediaSession`) | ✅ | ✅ | Both set metadata, action handlers, `playbackState` and `positionState` (`media.js` / `player.js`); the OS renders it as the desktop taskbar/SMTC overlay vs a phone lock screen |
@@ -76,7 +78,7 @@ Feature-by-feature comparison of the **desktop** and **mobile** surfaces.
 | Local / saved playlists | ✅ | ✅ | Mobile create/rename/delete via bottom-sheet (`menus.js` `openInputSheet`); native `prompt()` never opens in a WebView |
 | Playlist remove by id | ✅ | ✅ | Mobile `libraryMenu` matches `id` first (was title-only, could remove the wrong list) |
 | Charts | ✅ | ✅ | Platform chart playlists |
-| Endless radio (`recommend_songs`) | ✅ | ✅ | `radio.js` on both shells |
+| Endless radio (`recommend_songs`) | ✅ | ✅ | `radio.js` on both shells — queues JioSaavn's own station order, local logic gates eligibility only (`docs/recommendations.md` §8.8) |
 | Liked Songs view | ⚠️ | ✅ | Mobile has a dedicated screen; desktop folds it into Library |
 | Smart playlists (Top 50 last 30d; favourited-not-downloaded) | ✅ | ❌ | Desktop 2026-10-07: auto-generated cards (`smart.js` rules), recomputed per Playlists visit |
 | Listening history | ✅ | ✅ | |
@@ -155,7 +157,7 @@ Feature-by-feature comparison of the **desktop** and **mobile** surfaces.
 | Export / import file dialogs (`export_file`, `read_import_file`) | ✅ | ❌ | `#[cfg(desktop)]` — `tauri-plugin-dialog` has no mobile build |
 | Backup / restore (JSON) | ✅ | ⚠️ | Desktop via native dialogs; mobile via share-sheet + hidden `<input type=file>` (no native picker — future scope) |
 | CSV / M3U export | ✅ | ✅ | Same generators both sides: `sync.js:355-410` (`playlistToCsv`/`playlistToM3u`). Desktop saves via `export_file` (`settings.js:1145-1146`); mobile shares the file from the playlist sheet (`mobile/menus.js:47,247`) — no native dialog needed |
-| Spotify sign-in + Top-tracks import (`spotify_*`, 4 commands) | ✅ | ❌ | Desktop Settings → Spotify (`settings.js:744-783,1860-1981`) + Exportify CSV import (`importer.js`). Mobile: `Err("Spotify sign-in is not supported on mobile yet")` via keyring stubs (`spotify.rs:118-131`) |
+| Spotify sign-in + Top-tracks import (`spotify_*`, 4 commands) | ✅ | ✅ | Both surfaces: Settings → Spotify (status, sign-in, top-tracks import, Exportify CSV). Sign-in: PKCE loopback, one client id; pending hop opens the system browser. Tokens: OS keyring (desktop) / `store.db` kv (mobile). Import matching: `spotmatch.js` (`docs/spotify-android-canvas.md` §10) |
 | Google Drive sync (`gdrive_*`, 5 commands) | ⚠️ | ❌ | Desktop engine live (`gsync.js`) but Settings UI **parked** (commented out, `settings.js:735-738`). Mobile: `Err("…not supported on Android yet")` — scaffolding only |
 | **Self-updater** — check (`update_check`) | ✅ | ✅ | Mobile only *notifies*; store handles install |
 | **Self-updater** — install / rollback (`update_install`, `update_rollback`) | ✅ | ❌ | `#[cfg(desktop)]` |
@@ -175,7 +177,6 @@ These are not gaps — they are concepts that only exist on one platform.
 | Native file/folder pickers, reveal-in-manager | Android needs SAF / document picker / a folder Intent — see backlog [P2](#p2--needs-a-native-bridge) |
 | In-app updater install + rollback | Mobile stores own the install step |
 | Autostart write | Android owns autostart + battery policy |
-| Spotify sign-in + Top-tracks/CSV import | Mobile keyring has no OS credential store (`spotify.rs:118-131`) |
 
 > **Not platform-only, just not ported yet:** vault quota + LRU eviction and
 > byte-prefetch used to sit in this table as "no mobile equivalent" — they are

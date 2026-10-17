@@ -239,30 +239,39 @@ npm run tauri -- android build --target aarch64 armv7 x86_64 --apk --ci
   old frontend for ABIs that already linked.
 
 
-## BUILD 8 + BUILD 9 (2026-10-08, after wipe) — fresh x86_64, then universal fix
+## BUILD 8 + BUILD 9 (2026-10-08, after wipe) ï¿½ fresh x86_64, then universal fix
 
 User asked to delete all old APK/AAB artifacts and factory-reset the AVD.
 All 5 APK/AAB files under `gen/android/app/build` deleted, `emulator -avd
 Pixel6_API36 -wipe-data` cold-booted (fresh onboarding confirmed via
 screenshot), `npm run css` rebuilt first.
 
-- **BUILD 8** — single `--target x86_64` release (7,629,167 B, `BUILD_EXIT=0`).
+- **BUILD 8** ï¿½ single `--target x86_64` release (7,629,167 B, `BUILD_EXIT=0`).
   Installed on the wiped emulator; search + play verified (ct 86 ? 89.7,
   rs:4, err:null). **But** it failed sideload to the user's physical phone:
   Android checks `lib/` against the device ABI and the APK shipped only
   `lib/x86_64` ? *"App not installed as app isn't compatible with your phone."*
-  (arm64 device, no matching native lib — not a signing or minSdk issue.)
-- **BUILD 9 (the fix)** — `npm run tauri -- android build --target aarch64
+  (arm64 device, no matching native lib ï¿½ not a signing or minSdk issue.)
+- **BUILD 9 (the fix)** ï¿½ `npm run tauri -- android build --target aarch64
   armv7 x86_64 --apk --ci`, full fat-LTO profile (no fast-build env vars;
   7m55s + 6m14s + 20m37s per-ABI Rust + gradle), `BUILD_EXIT=0`.
   **Artifact: `app-universal-release.apk` 17,5xx,xxx B (17.5 MB),
   08-10-2026 00:47:09.** Verified: `zipfile` lists all three ABIs
   (`arm64-v8a`, `armeabi-v7a`, `x86_64`, 1 lib each); apksigner exit 0,
-  `Signer #1 certificate DN: CN=TRANCE MUSIC…`, SHA-256 `8ad4da6f…cadfb`
+  `Signer #1 certificate DN: CN=TRANCE MUSICï¿½`, SHA-256 `8ad4da6fï¿½cadfb`
   (same signer as BUILD 6/7). Reinstalled on the emulator (`Success`,
   `lastUpdateTime 2026-10-08 00:48:53`, app launched pid 5968).
 
-**Rule for sideloading:** the emulator is x86_64, phones are arm64 — any
+**Rule for sideloading:** the emulator is x86_64, phones are arm64 ï¿½ any
 APK that leaves this machine for a real device must be built with all three
 `--target`s (or omit `--target` for all installed targets). A `--target
 x86_64`-only build installs on the emulator and nowhere else.
+
+## Portrait lock (2026-10-15)
+
+The app is portrait-only: `MainActivity` carries
+`android:screenOrientation="portrait"`, so rotation never recreates the
+WebView. `gen/` is wiped by `tauri android init`, so the attribute is
+injected by `build.sh inject_android_permissions` (guarded on its own
+absence, same pattern as the permission lines) and therefore lands on every
+`android` / `android-universal` build.

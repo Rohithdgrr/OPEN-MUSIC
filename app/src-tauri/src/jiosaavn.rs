@@ -13,13 +13,12 @@ use serde_json::Value;
 /// Preference-ordered mirror list. Failover order is declaration order.
 /// All mirrors must expose the same `/api/search/songs` and `/api/songs/{id}` contract.
 /// Only mirrors verified to serve the same API shape are listed.
-pub const MIRRORS: &[&str] = &[
-    "https://jiosaavn-api.vercel.app",
-    "https://saavn-api.vercel.app",
-    "https://jiosaavn-api-privatecvc.vercel.app",
-    "https://saavn.dev",
-    "https://saavn.sumit.co",
-];
+///
+/// 2026-10-16 sweep (docs/search-resilience.md §4 F5): of the previous five
+/// hosts only `saavn.sumit.co` answered the contract — the other four were
+/// 404 / connection-refused and only added latency to every fallback.
+/// Re-run the documented sweep before adding any host back.
+pub const MIRRORS: &[&str] = &["https://saavn.sumit.co"];
 
 /// Maximum retry attempts per mirror on transient failures (429, 5xx, timeouts).
 const MAX_RETRIES: u32 = 2;
@@ -478,13 +477,18 @@ fn parse_song(v: &Value) -> Track {
 // Mirror transport
 // ---------------------------------------------------------------------------
 
-/// Exponential backoff with ±25 % jitter so retries never synchronize.
-fn backoff_ms(attempt: u32) -> u64 {
+/// Exponential backoff with ±25 % jitter so retries never synchronize. The
+/// old arithmetic was deterministic — every retry of every mirror woke on the
+/// same tick. The band is `[0.75·exp, 1.25·exp)`; if the entropy source
+/// fails, the fallback is mid-band, still inside it.
+pub(crate) fn backoff_ms(attempt: u32) -> u64 {
     let exp = BACKOFF_BASE_MS
         .saturating_mul(2u64.saturating_pow(attempt))
         .min(BACKOFF_CAP_MS);
-    let jitter = (exp as f64 * 0.25) as u64;
-    exp.saturating_sub(jitter / 2) + (jitter / 3)
+    let span = (exp / 2).max(1); // width of the full ±25 % band
+    let mut b = [0u8; 8];
+    let frac = getrandom::getrandom(&mut b).map_or(span / 2, |()| u64::from_le_bytes(b) % span);
+    exp.saturating_sub(span / 2).saturating_add(frac)
 }
 
 async fn get_json(client: &reqwest::Client, path: &str) -> Result<Value, String> {
@@ -579,7 +583,7 @@ async fn get_json_from(
 
 /// Seconds the server asked us to wait, when the answer is a sane short
 /// pause. Malformed or long values return `None` (skip to next mirror).
-fn retry_after_delay(resp: &reqwest::Response) -> Option<Duration> {
+pub(crate) fn retry_after_delay(resp: &reqwest::Response) -> Option<Duration> {
     let raw = resp
         .headers()
         .get(reqwest::header::RETRY_AFTER)?
@@ -785,6 +789,32 @@ pub fn best_quality(qualities: &[QualityUrl], prefer: &str) -> Option<QualityUrl
         .cloned()
 }
 
+/// `"320kbps"` / `"320"` → `Some(320)`; anything else → `None`.
+pub fn parse_tier(label: &str) -> Option<u32> {
+    let lower = label.trim().to_ascii_lowercase();
+    let digits = lower.strip_suffix("kbps").unwrap_or(&lower);
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// `qualities` ordered from the requested tier downward — never above it.
+/// Unparsable labels are kept, ranked below every numbered tier.
+pub fn ranked_tiers(qualities: &[QualityUrl], prefer: &str) -> Vec<QualityUrl> {
+    let cap = parse_tier(prefer);
+    let mut tiers: Vec<QualityUrl> = qualities
+        .iter()
+        .filter(|q| match (parse_tier(&q.quality), cap) {
+            (Some(b), Some(c)) => b <= c,
+            _ => true,
+        })
+        .cloned()
+        .collect();
+    tiers.sort_by_key(|q| std::cmp::Reverse(parse_tier(&q.quality).unwrap_or(0)));
+    tiers
+}
+
 // ---------------------------------------------------------------------------
 // Duplicate collapsing
 // ---------------------------------------------------------------------------
@@ -815,6 +845,66 @@ fn is_junk(t: &Track) -> bool {
         return false;
     }
     true
+}
+
+// ---------------------------------------------------------------------------
+// Version re-uploads (cover / instrumental / karaoke …) — demoted, not dropped
+// ---------------------------------------------------------------------------
+
+/// Version markers that mark a listing as someone else's re-upload (or a
+/// derived form of the song): demoted below the original when both sit on
+/// the same page. Never a filter — the row stays selectable. Deliberately
+/// excludes `remix`/`live`/`acoustic`/`slowed`: those are label releases in
+/// their own right (docs/recommendations.md §8.7).
+const VERSION_MARKERS: &[&str] = &["cover", "tribute", "instrumental", "karaoke", "lofi", "8d"];
+/// Multi-word markers, matched as substrings of the lowercased title.
+const VERSION_PHRASES: &[&str] = &["made famous by", "in the style of", "lo-fi", "lo fi"];
+
+fn is_version_upload(t: &Track) -> bool {
+    let lower = t.title.to_lowercase();
+    if VERSION_PHRASES.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+    lower
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|w| VERSION_MARKERS.contains(&w))
+}
+
+/// `norm_text` minus the marker words — so "Kesariya Lofi" and
+/// "Kesariya (Cover)" (whose bracket group `norm_text` keeps) both bucket
+/// with a plain "Kesariya".
+fn version_key(title: &str) -> String {
+    norm_text(title)
+        .split_whitespace()
+        .filter(|w| !VERSION_MARKERS.contains(w))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Stable demotion of version re-uploads below the unmarked entry that
+/// shares their normalized title. Page-scoped and order-only: nothing is
+/// dropped, unrelated rows keep their order, and a lone cover (no original
+/// on the page) stays exactly where upstream put it.
+fn demote_version_uploads(out: Vec<Track>) -> Vec<Track> {
+    let clean_keys: std::collections::HashSet<String> = out
+        .iter()
+        .filter(|t| !is_version_upload(t))
+        .map(|t| norm_text(&t.title))
+        .collect();
+    if clean_keys.is_empty() {
+        return out;
+    }
+    let mut clean: Vec<Track> = Vec::with_capacity(out.len());
+    let mut marked: Vec<Track> = Vec::new();
+    for t in out {
+        if is_version_upload(&t) && clean_keys.contains(&version_key(&t.title)) {
+            marked.push(t);
+        } else {
+            clean.push(t);
+        }
+    }
+    clean.extend(marked);
+    clean
 }
 
 /// Collapse duplicate catalog entries, keeping the best copy.
@@ -881,7 +971,7 @@ pub fn dedup_tracks(tracks: Vec<Track>) -> Vec<Track> {
             }
         }
     }
-    out
+    demote_version_uploads(out)
 }
 
 /// Split a credit string into comparable artist names: lowercase, internal
@@ -1156,6 +1246,28 @@ mod tests {
     }
 
     #[test]
+    fn backoff_lands_inside_the_jitter_band_and_really_varies() {
+        let mut seen = std::collections::HashSet::new();
+        for attempt in 0..6 {
+            let exp = BACKOFF_BASE_MS
+                .saturating_mul(2u64.saturating_pow(attempt))
+                .min(BACKOFF_CAP_MS);
+            let span = (exp / 2).max(1);
+            for _ in 0..64 {
+                let got = backoff_ms(attempt);
+                assert!(
+                    got >= exp - span / 2 && got <= exp + span / 2 + 1,
+                    "attempt {attempt}: {got} outside the ±25 % band of {exp}"
+                );
+                if span > 8 {
+                    seen.insert((attempt, got));
+                }
+            }
+        }
+        assert!(seen.len() > 1, "jitter never varied across 64 draws");
+    }
+
+    #[test]
     fn check_id_accepts_real_ids_and_rejects_injection() {
         assert!(check_id("aRZbUYD7").is_ok());
         assert!(check_id("i-4OQoee").is_ok(), "real ids contain hyphens");
@@ -1199,6 +1311,49 @@ mod tests {
         assert!(best_quality(&[], "320kbps").is_none());
     }
 
+    #[test]
+    fn ranked_tiers_cap_at_the_request_and_order_top_down() {
+        let qs = |labels: &[&str]| -> Vec<QualityUrl> {
+            labels
+                .iter()
+                .map(|l| QualityUrl {
+                    quality: (*l).into(),
+                    url: format!("u{l}"),
+                })
+                .collect()
+        };
+        let order = |v: Vec<QualityUrl>| v.into_iter().map(|q| q.quality).collect::<Vec<_>>();
+        let all = qs(&["12kbps", "96kbps", "320kbps", "48kbps", "160kbps"]);
+        assert_eq!(
+            order(ranked_tiers(&all, "320kbps")),
+            ["320kbps", "160kbps", "96kbps", "48kbps", "12kbps"]
+        );
+        assert_eq!(
+            order(ranked_tiers(&all, "96kbps")),
+            ["96kbps", "48kbps", "12kbps"],
+            "never above the request"
+        );
+        assert_eq!(
+            order(ranked_tiers(&all, "64kbps")),
+            ["48kbps", "12kbps"],
+            "a sub-tier request floors to the next measured tier"
+        );
+        assert_eq!(order(ranked_tiers(&all, "12kbps")), ["12kbps"]);
+        // Unknown labels are kept, ranked below every numbered tier.
+        let odd = qs(&["hq", "96kbps"]);
+        assert_eq!(order(ranked_tiers(&odd, "320kbps")), ["96kbps", "hq"]);
+    }
+
+    #[test]
+    fn parse_tier_only_accepts_bitrate_labels() {
+        assert_eq!(parse_tier("320kbps"), Some(320));
+        assert_eq!(parse_tier(" 12KBPS "), Some(12));
+        assert_eq!(parse_tier("320"), Some(320));
+        assert_eq!(parse_tier("evil"), None);
+        assert_eq!(parse_tier(""), None);
+        assert_eq!(parse_tier("kbps"), None);
+    }
+
     fn dup_track(id: &str, title: &str, artist: &str, secs: u64, hq: bool, plays: u64) -> Track {
         Track {
             id: id.into(),
@@ -1232,6 +1387,53 @@ mod tests {
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].id, "a");
         assert_eq!(out[1].id, "b");
+    }
+
+    #[test]
+    fn cover_uploads_sink_below_the_original_on_the_page() {
+        let tracks = vec![
+            dup_track("c1", "Kesariya (Cover)", "Random Guy", 250, false, 900),
+            dup_track("o1", "Kesariya", "Arijit Singh", 250, false, 500),
+            dup_track("u1", "Unrelated Song", "Someone", 200, false, 100),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out.len(), 3, "demotion never drops rows");
+        assert_eq!(out[0].id, "o1");
+        assert_eq!(out[1].id, "u1");
+        assert_eq!(out[2].id, "c1", "the cover sinks to the end");
+    }
+
+    #[test]
+    fn lone_cover_stays_where_upstream_put_it() {
+        let tracks = vec![
+            dup_track("c1", "Kesariya (Cover)", "Random Guy", 250, false, 900),
+            dup_track("u1", "Unrelated Song", "Someone", 200, false, 100),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out[0].id, "c1", "no original on the page: no demotion");
+        assert_eq!(out[1].id, "u1");
+    }
+
+    #[test]
+    fn unbracketed_markers_bucket_with_the_original() {
+        let tracks = vec![
+            dup_track("l1", "Kesariya Lofi", "Chill Guy", 250, false, 50),
+            dup_track("o1", "Kesariya", "Arijit Singh", 250, false, 500),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out[0].id, "o1");
+        assert_eq!(out[1].id, "l1");
+    }
+
+    #[test]
+    fn remix_and_live_versions_are_not_demoted() {
+        let tracks = vec![
+            dup_track("r1", "Kesariya (Remix)", "DJ X", 250, false, 50),
+            dup_track("o1", "Kesariya", "Arijit Singh", 250, false, 500),
+        ];
+        let out = dedup_tracks(tracks);
+        assert_eq!(out[0].id, "r1", "remix keeps upstream order");
+        assert_eq!(out[1].id, "o1");
     }
 
     #[test]

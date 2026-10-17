@@ -222,10 +222,6 @@ function favSet() {
   return favIds;
 }
 
-export function isFav(id) {
-  return favSet().has(id);
-}
-
 export function toggleFav(track) {
   const list = load(FAVS_KEY, []);
   const i = list.findIndex((t) => t.id === track.id);
@@ -359,8 +355,8 @@ export async function enforceVaultQuota(currentId) {
     if (evicted) {
       toast(
         `Vault over quota: evicted ${evicted} least-recently played track${evicted === 1 ? "" : "s"}.`,
-        "info",
         4500,
+        "info",
       );
       await refreshVault();
       try {
@@ -612,7 +608,7 @@ export function setWifiOnly(on) {
   } catch {}
 }
 
-function onCellular() {
+export function onCellular() {
   try {
     const c = navigator.connection;
     if (!c) return false;
@@ -632,10 +628,6 @@ function onCellular() {
 
 export function wifiBlocked() {
   return wifiOnly() && onCellular();
-}
-
-export function isActiveDownload(id) {
-  return activeDownloads.has(String(id));
 }
 
 export function getActiveDownloads() {
@@ -806,8 +798,9 @@ export async function downloadTrack(track, btn, quiet = false) {
   } catch {}
   setBusy(btn, true);
   if (!quiet) toast(`Downloading ${track.title || "track"}…`);
+  let progress = null;
   try {
-    const progress = new Channel();
+    progress = new Channel();
     progress.onmessage = (p) => {
       if (!p) return;
       const cur = activeDownloads.get(key);
@@ -844,6 +837,12 @@ export async function downloadTrack(track, btn, quiet = false) {
   } finally {
     activeDownloads.delete(key);
     setBusy(btn, false);
+    // The Rust side may have already sent the channel "end" (auto-cleanup) —
+    // cleanup() is idempotent, and without it a failed/cancelled download
+    // leaves its callback registered for the life of the WebView.
+    try {
+      progress?.cleanup?.();
+    } catch {}
     try {
       hooks.repaintDownload?.();
     } catch {}
@@ -1146,22 +1145,6 @@ export function setPlaylistOffline(id, on) {
   try {
     localStorage.setItem(`tm-pl-offline-${id}`, on ? "1" : "0");
   } catch {}
-}
-
-// Bytes grouped by quality bucket (hq = 128k+), plus the entry count.
-export function storageBreakdown(entries) {
-  const list = Array.isArray(entries) ? entries : [];
-  let total = 0;
-  let hq = 0;
-  let std = 0;
-  for (const e of list) {
-    if (!e || typeof e !== "object") continue;
-    const sz = Number(e.size ?? e.total ?? e.bytes ?? e.received) || 0;
-    total += sz;
-    if (/320|128|hq|high/i.test(String(e.quality || ""))) hq += sz;
-    else std += sz;
-  }
-  return { total, byQuality: { hq, std }, count: list.filter(Boolean).length };
 }
 
 // ------------------------------------------------------- playlist editing -

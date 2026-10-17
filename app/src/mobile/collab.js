@@ -49,9 +49,19 @@ export function sharePlaylist(pl) {
   import("./shared.js")
     .then((m) => m.shareThing({ title: `${title} — OpenMusic`, text: `${title} · ${pl.tracks.length} tracks. In OpenMusic → Settings → Import shared playlist and paste this:\n\n${code}` }))
     .catch(() => {
+      const fallback = () => toast("Couldn't copy — select the code to share it.", 4000, "error");
       try {
-        if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => toast("Share code copied", 3000, "success"));
-      } catch {}
+        if (navigator.clipboard) {
+          navigator.clipboard
+            .writeText(code)
+            .then(() => toast("Share code copied", 3000, "success"))
+            .catch(fallback);
+        } else {
+          fallback();
+        }
+      } catch {
+        fallback();
+      }
     });
 }
 

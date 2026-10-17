@@ -129,6 +129,14 @@ function switchTab(targetTab) {
       : "tab-btn flex-1 text-on-surface-variant py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors";
     btn.className = roomOnly ? `${base} hidden` : base;
   });
+  // Leaving the lyrics tab exits the full-view stage: the Close button lives
+  // in the lyrics view, so a fullscreen sheet without it would strand the
+  // reader. The label reset mirrors the toggle binders.js owns.
+  if (targetTab !== "lyrics") {
+    document.querySelectorAll(".tm-lyrics-full").forEach((c) => c.classList.remove("tm-lyrics-full"));
+    const fb = document.querySelector("[data-lyrics-full]");
+    if (fb) fb.textContent = "Full View";
+  }
   // P41: the chat view sits below the sheet header — selecting the tab must
   // bring the chat UI itself into view, not leave it below the fold looking
   // unloaded. `nearest` never yanks when it is already visible.

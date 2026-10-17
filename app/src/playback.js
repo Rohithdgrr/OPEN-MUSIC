@@ -13,10 +13,47 @@ import { advanceQueue, markQueue, pickNextIndex, queue, queueIndex, renderQueue,
 import { ensureReco } from "./radio.js";
 import { prefetchNext, prefetchTrack, isDownloaded } from "./vault.js";
 import { netMode } from "./net.js";
+import { classifyPlay } from "./taste.js";
+import { playEvent } from "./store_db.js";
 import { npText, stampEntity } from "./util.js";
 
 // ---------------------------------------------------------------- playback -
 export let lastEndedAt = 0;
+
+// ------------------------------------------------------------ play events -
+// The taste log behind docs/recommendations.md §8: one row per finished or
+// abandoned play, written only on *transitions* (manual pick, natural end,
+// crossfade handover) — a paused song stays one play. Best-effort: without
+// the store it is silently skipped.
+let activePlay = null; // { track, startedAt, source }
+
+function beginPlay(track, source = "") {
+  activePlay = track && track.id ? { track, startedAt: Date.now(), source } : null;
+}
+
+function flushPlay(naturalEnd = false) {
+  const a = activePlay;
+  activePlay = null;
+  if (!a) return;
+  const ctime = Number.isFinite(audio.currentTime) ? Math.max(0, audio.currentTime) : 0;
+  const durationSecs =
+    Number.isFinite(audio.duration) && audio.duration > 0
+      ? audio.duration
+      : Number(a.track.duration_secs) || 0;
+  playEvent({
+    id: a.track.id,
+    ts: a.startedAt,
+    ended_at: Date.now(),
+    ms_played: Math.round(ctime * 1000),
+    duration_secs: Math.round(durationSecs),
+    outcome: classifyPlay({ msPlayed: ctime * 1000, durationSecs, naturalEnd }),
+    source: a.source,
+    title: a.track.title || "",
+    artist: a.track.artist || "",
+    image: a.track.image || "",
+  }).catch(() => {});
+}
+
 audio.addEventListener("ended", () => {
   // Some engines fire `ended` twice in quick succession; ignore the repeat
   // so a double event can never skip the next track.
@@ -25,6 +62,8 @@ audio.addEventListener("ended", () => {
   lastEndedAt = now;
   cancelFade(); // a fade that never got to hand over must not strand audio2
   if (repeatMode === "one" && audio.src) {
+    flushPlay(true);
+    beginPlay(queue[queueIndex] && queue[queueIndex].track);
     audio.currentTime = 0;
     audio.play().catch(() => {});
     return;
@@ -33,6 +72,7 @@ audio.addEventListener("ended", () => {
   try {
     localStorage.removeItem("tm-pos");
   } catch {}
+  flushPlay(true);
   markQueue("done");
   advanceQueue();
 });
@@ -216,6 +256,7 @@ function paintTrackUI(index, resolving = true) {
 
 export async function playQueueItem(index) {
   cancelFade(); // a manual pick kills any crossfade in flight
+  flushPlay(false); // finalize the previous play with the old playhead
   const track = paintTrackUI(index, true);
   if (!track) return;
 
@@ -261,6 +302,7 @@ export async function playQueueItem(index) {
     return;
   }
   setCurrent(info);
+  beginPlay(track, queue[index] && queue[index].reco ? "radio" : "queue");
   pushPlay(track);
   setBadge(info.range_status, info);
   renderQueue();
@@ -374,6 +416,7 @@ async function finishFade(f) {
   const info = f.info;
   const old = queueIndex;
   audio.pause();
+  flushPlay(false); // the outgoing track's fade is done — record what was heard
   audio.volume = f.userVol;
   if (old >= 0 && old !== f.nextIndex && queue[old]) queue[old].state = "done";
   const track = paintTrackUI(f.nextIndex, false); // badge straight to setBadge below
@@ -382,6 +425,7 @@ async function finishFade(f) {
     return;
   }
   setCurrent(info);
+  beginPlay(track, f.item.reco ? "radio" : "queue");
   pushPlay(track);
   setBadge(info.range_status, info);
   diag(`play ${track.id}`, true, `crossfade handover — ${info.range_status}`);

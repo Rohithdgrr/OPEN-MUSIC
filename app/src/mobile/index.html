@@ -131,6 +131,7 @@ html.dark .lyric-word,
 }
 .tm-lyrics-full [data-lyrics] { flex: 1 1 auto; max-height: none !important; padding: 2rem 0; }
 .tm-lyrics-full .lyric-text { font-size: 22px !important; line-height: 1.5 !important; }
+.tm-lyrics-full .lyric-active { border-left-width: 4px !important; border-radius: 10px !important; padding: 6px 6px 6px 12px !important; }
 .tm-lyrics-full .lyric-active .lyric-text { font-size: 28px !important; font-weight: 700 !important; line-height: 1.4 !important; }
 .tm-lyrics-full .lyric-past .lyric-text { font-size: 18px !important; opacity: 0.55 !important; }
 
@@ -410,11 +411,25 @@ html:not(.dark) .rounded-xl.border {
 
 /* The Now Playing artwork (P35) is a media frame, not a list card: the rule
    above must not repaint it or its frame. The metadata now lives in its own
-   card BELOW the art (`#np-meta`), which *does* want that rule. */
+   card BELOW the art (`#np-meta`), which *does* want that rule.
+   Frameless since 2026-10-15f: no border, no 1px ring — a soft diffuse
+   shadow only, so the rounded corners blend into the page. */
 html:not(.dark) #np-art-card {
   background: #1b1b1e !important;
-  border-color: rgba(0, 0, 0, 0.08) !important;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.12) !important;
+  box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.35), 0 6px 18px -10px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Thin glass coating on the artwork (both themes): a soft diagonal light
+   sweep from the top-left plus a 1px specular line along the top edge.
+   Painted above the img; never intercepts touches. */
+#np-art-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.07) 18%, rgba(255, 255, 255, 0) 38%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 /* 4. Interactive List Rows (Playlists, Albums, Tracklists, History) */
@@ -499,9 +514,13 @@ html:not(.dark) select:focus {
 
 /* The search bay carries its own pill chrome (container border +
    focus-within ring); the global inset input border above would double it
-   into a sharp inner rectangle. The input itself stays chromeless. */
+   into a sharp inner rectangle. The input itself stays chromeless.
+   .bay-input extends the same deal to the Downloads search, the queue-append
+   row and the room-chat row — their containers own the chrome. */
 html:not(.dark) #search-input,
-html:not(.dark) #search-input:focus {
+html:not(.dark) #search-input:focus,
+html:not(.dark) input.bay-input,
+html:not(.dark) input.bay-input:focus {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
@@ -509,7 +528,10 @@ html:not(.dark) #search-input:focus {
 }
 
 /* 7. Image and Artwork Depth */
-html:not(.dark) .aspect-square img,
+/* `:not(#np-art)` — the Now Playing artwork is a frameless media tile since
+   2026-10-15f; this 1px border composites over its near-black backing
+   (#1b1b1e) and read as the black ring around the art. */
+html:not(.dark) .aspect-square img:not(#np-art),
 html:not(.dark) [data-shelf] img,
 html:not(.dark) .w-52 img,
 html:not(.dark) .w-56 img {
@@ -721,12 +743,12 @@ html.dark .rounded-xl.border {
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
 }
 
-/* Artwork Shadow & Specular Frame */
+/* Artwork shadow — frameless since 2026-10-15f; the old 1px specular ring
+   is gone, the glass coating lives on #np-art-card::after. */
 .dark #np-art-card,
 html.dark #np-art-card {
   background: #101013 !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.65), 0 8px 22px -12px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* Fallback artwork = the platform logo. Since 2026-10-10 the file is the
@@ -866,11 +888,16 @@ html.dark select:focus {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15), 0 4px 16px rgba(0, 0, 0, 0.5) !important;
 }
 
-/* Same exemption as light mode: the search pill owns its chrome. */
+/* Same exemption as light mode: the search pill owns its chrome.
+   .bay-input extends it to the Downloads search, queue-append and chat rows. */
 .dark #search-input,
 .dark #search-input:focus,
+.dark input.bay-input,
+.dark input.bay-input:focus,
 html.dark #search-input,
-html.dark #search-input:focus {
+html.dark #search-input:focus,
+html.dark input.bay-input,
+html.dark input.bay-input:focus {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;

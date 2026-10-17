@@ -33,6 +33,7 @@ import { fmtBytes, npText } from "./util.js";
 import { DL_QUALITY_KEY, prefDlQuality } from "./vault.js";
 import { NET_MODE_KEY, setModePref } from "./net.js";
 import { importCsvToPlaylist, readCsvFile } from "./importer.js";
+import { matchTrackToCatalog } from "./spotmatch.js";
 
 // ---------------------------------------------------------------- settings -
 // One native <dialog>, three entries and nothing else. The body swaps between
@@ -193,10 +194,6 @@ export function prefLangs() {
 export function saveLangs(list) {
   savePref(LANG_KEY, JSON.stringify([...new Set(list.filter((s) => s && s !== "all"))]));
 }
-/// The one language the catalog itself is asked for — the first pick. The rest
-/// are applied client-side by `filterLang`, which is the only place that can
-/// keep a multi-language set.
-export const prefLang = () => prefLangs()[0] || "all";
 export const prefCountry = () => prefStr(COUNTRY_KEY, "");
 export const autostartPref = () => prefStr(AUTOSTART_KEY, "1") !== "0";
 
@@ -253,8 +250,6 @@ export const prefLyricsSize = () => {
   const v = prefStr(LYRICS_SIZE_KEY, "m");
   return ["s", "m", "l"].includes(v) ? v : "m";
 };
-export const lyricsSizePx = () => ({ s: "13px", m: "15px", l: "18px" })[prefLyricsSize()];
-
 export function paintGreeting() {
   const el = $("#home-name");
   if (el) el.textContent = prefName();
@@ -776,7 +771,7 @@ export const SETTINGS_VIEWS = {
           ),
         )}</div>
       </div>
-      ${setNote("CSV import works without signing in. For top tracks import, you need to sign in with your Spotify account. Tracks are matched to the JioSaavn catalog.")}
+      ${setNote("CSV import works without signing in. For top tracks import, you need to sign in with your Spotify account. Tracks are matched to the streaming catalog.")}
     </div>`;
     },
   },
@@ -862,13 +857,13 @@ export const SETTINGS_VIEWS = {
           <p class="font-label-mono text-[11px] text-on-surface-variant mt-0.5">v${esc(APP.version)} &middot; ${esc(APP.id)} &middot; ${PLATFORM}</p>
         </div>
       </div>
-      <p class="text-[13px] leading-relaxed text-on-surface-variant">A desktop music player that streams from JioSaavn through a local range relay, keeps an offline vault on your disk, and never lets the webview talk to a third-party CDN directly.</p>
+      <p class="text-[13px] leading-relaxed text-on-surface-variant">A desktop music player that streams through a local range relay, keeps an offline vault on your disk, and never lets the webview talk to a third-party CDN directly.</p>
       <dl class="rounded-xl border border-surface-container-highest/60 bg-surface-container-lowest overflow-hidden divide-y divide-surface-container-high/70">
         ${kv("Shell", "Tauri 2, Rust 1.77+")}
         ${kv("Front end", "Vanilla ES modules, no build step, Tailwind via CDN")}
-        ${kv("Catalog", "JioSaavn first-party, 5 community mirrors as fallback")}
+        ${kv("Catalog", "Streaming catalog with community-mirror failover")}
         ${kv("Playback", "Local axum relay on 127.0.0.1, Range forwarded verbatim")}
-        ${kv("Lyrics", "LRCLIB, Better Lyrics, then JioSaavn, LRCLIB search")}
+        ${kv("Lyrics", "LRCLIB, Better Lyrics, then catalog search")}
         ${kv("Vault", "App data folder · OpenMusic")}
         ${kv("Licence", "MIT")}
       </dl>
@@ -885,7 +880,7 @@ export const SETTINGS_VIEWS = {
         ${clause(1, "Personal, non-commercial use", "You may use OpenMusic for your own personal, non-commercial listening. Reselling access, redistributing the application, or operating a public service built on it requires written permission.")}
         ${clause(2, "No content is bundled", "OpenMusic ships no audio. It is a player: tracks, artwork and lyrics are fetched at request time from third-party services. Rights to that content stay with their owners, and those services' own terms also apply to you.")}
         ${clause(3, "Your downloads are yours", "Anything you save lands in this app's own data folder on your disk and is your responsibility to keep, back up and delete. OpenMusic is not liable for lost or damaged files.")}
-        ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by JioSaavn, LRCLIB, or any mirror listed in the source.`)}
+        ${clause(4, "No warranty", `The software is provided "as is", without warranty of any kind, to the maximum extent the law allows. It is pre-release: expect bugs, data-loss bugs included. ${esc(APP.name)} is an independent project and is not affiliated with, endorsed by, or sponsored by any third-party catalog, lyrics service, or mirror listed in the source.`)}
         ${clause(5, "Limitation of liability", "To the fullest extent permitted by law, the authors and contributors are not liable for any indirect, incidental or consequential damages arising from use of the software, including lost data, lost profits, or unavailable services.")}
         ${clause(6, "Copyright complaints", "Copyright holders may ask for stored media to be removed. Contact the maintainers through the repository and the relevant item will be deleted from the vault promptly.")}
         ${clause(7, "Changes", "These terms may change as the project matures. The date above and the copy in the repository are authoritative; material changes will be noted in the changelog.")}
@@ -1927,25 +1922,18 @@ async function doSpotifyTopImport() {
       return;
     }
 
-    // Match to JioSaavn catalog
+    // Match to the JioSaavn catalog. Contract: docs/spotify-android-canvas.md
+    // §10 — query by name+artist, score candidates (the old ISRC-first query
+    // silently matched garbage), accept only honest matches; everything else
+    // is an honest "not found" count.
     const matched = [];
     const missed = [];
 
     for (const t of tracks) {
-      try {
-        const query = t.isrc || `${t.name} ${t.artists[0]}`;
-        const results = await invoke("search_songs", { query, limit: 1 });
-
-        if (results.tracks && results.tracks.length > 0) {
-          matched.push({
-            ...results.tracks[0],
-            original: t,
-          });
-        } else {
-          missed.push(t);
-        }
-      } catch (err) {
-        console.error(`Failed to match track: ${t.name} - ${err}`);
+      const { track } = await matchTrackToCatalog(t, invoke);
+      if (track) {
+        matched.push({ ...track, original: t });
+      } else {
         missed.push(t);
       }
     }
