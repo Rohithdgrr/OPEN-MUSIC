@@ -16,6 +16,129 @@ import { netMode } from "./net.js";
 import { classifyPlay } from "./taste.js";
 import { playEvent } from "./store_db.js";
 import { npText, stampEntity } from "./util.js";
+import { buildStudioChain, wireChain, applyStudioChain, setSpatial, clearToggleKeys } from "./dsp.js";
+import { cachedLufs, rememberLufs, measureLoudness, gainForLufs, applyLoudnessGain } from "./loudness.js";
+
+// ------------------------------------------------------------- studio EQ -
+// Desktop parity with the mobile chain (dsp.js, docs/audio-quality.md T1):
+// a 5-band EQ + transparent limiter wired through a WebAudio graph. Built on
+// the first play attempt (a user gesture) because a MediaElementAudioSource-
+// Node captures the element's output for good — an AudioContext that never
+// resumes would mean silence, so wiring and resume ride the play path, with
+// a resume retry on every `play` event (the mobile-proven pattern). The
+// crossfade standby (audio2) gets its own chain so a handover never leaves
+// the graph. Everything the chain does is fully automated (docs/audio-quality.md
+// §6): transparent EQ, the built-in hall room, always-measured loudness —
+// both surfaces run the same shipped constants with no settings taps.
+let studioCtx = null;
+const studioChains = new Map(); // element -> chain
+
+// P36 on desktop, same lesson as mobile (docs/audio-quality.md T1): the relay
+// is a different origin than http://tauri.localhost, so a WebAudio chain fed
+// by these elements MUST load CORS-clean or the spec mandates silence. Set
+// at module scope — before any src assignment — because an impossible fix is
+// setting the attribute mid-load (the in-flight fetch ignores it).
+try {
+  audio.crossOrigin = "anonymous";
+  audio2.crossOrigin = "anonymous";
+} catch {}
+
+// One-time migration: these keys were the toggle-era settings; with
+// automation they can only carry stale state (e.g. an older install or a
+// probe that left `off` behind).
+try {
+  clearToggleKeys();
+} catch {}
+
+// The shipped automated behavior (docs/audio-quality.md §6): EQ transparent,
+// hall room at the shipped intensity, loudness correction always armed.
+const AUTO_EQ = "flat";
+const AUTO_SPATIAL = { mode: "hall", intensity: 60 };
+
+export function applyDesktopEq() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    if (!studioCtx) studioCtx = new AC();
+    let ok = false;
+    for (const el of [audio, audio2]) {
+      if (!el) continue;
+      if (!studioChains.has(el)) {
+        let src = null;
+        try {
+          src = studioCtx.createMediaElementSource(el);
+        } catch {
+          continue; // already wired (or unwirable) — don't crash, skip EQ
+        }
+        const chain = buildStudioChain(studioCtx);
+        wireChain(chain, src, studioCtx.destination);
+        studioChains.set(el, chain);
+      }
+      const chain = studioChains.get(el);
+      applyStudioChain(chain, AUTO_EQ, true);
+      // docs/audio-quality.md T2: spatial is render-side but its convolver
+      // tail is a delay line — in a Jam room it is forced direct, same rule
+      // that keeps crossfade single-timeline. Re-applied on the next apply,
+      // so it comes back the moment the room closes.
+      const inRoom = !!localRole();
+      setSpatial(
+        chain,
+        inRoom ? "off" : AUTO_SPATIAL.mode,
+        inRoom ? 0 : AUTO_SPATIAL.intensity,
+        inRoom,
+      );
+      ok = true;
+    }
+    if (studioCtx.state === "suspended") studioCtx.resume().catch(() => {});
+    // Diagnostic hook (docs/audio-quality.md §5): live probes meter the real
+    // chain through this — playhead state alone cannot hear quality.
+    try {
+      if (!window.__tmAudioProbe) {
+        window.__tmAudioProbe = () => ({
+          ctx: studioCtx,
+          chains: [...studioChains.values()],
+          elements: [...studioChains.keys()],
+        });
+      }
+    } catch {}
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+audio.addEventListener("play", () => {
+  try {
+    applyDesktopEq();
+  } catch {}
+});
+
+// docs/audio-quality.md T3 — loudness matching on the chain's loudGain slot.
+// "Volume normalization" now means a measured LUFS correction (±12 dB,
+// limiter-protected), not the old compressor pump. Cached per track (shared
+// with the phone); an uncached track plays at unity and is analyzed in the
+// background — a finished analysis only lands if that track is still playing.
+function applyDesktopLoudness(info, track) {
+  try {
+    if (!track || !info) return;
+    const chain = studioChains.get(audio);
+    const tier = String(info.chosen_quality || "");
+    const m = cachedLufs(track.id);
+    if (m && m.t === tier && Number.isFinite(m.l)) {
+      applyLoudnessGain(chain, gainForLufs(m.l));
+      return;
+    }
+    applyLoudnessGain(chain, 1);
+    measureLoudness(info.proxy_url)
+      .then((res) => {
+        if (!res || !Number.isFinite(res.lufs)) return;
+        rememberLufs(track.id, tier, res.lufs, res.peak);
+        const still = queue[queueIndex] && queue[queueIndex].track;
+        if (still && still.id === track.id) applyLoudnessGain(studioChains.get(audio), gainForLufs(res.lufs));
+      })
+      .catch(() => {});
+  } catch {}
+}
 
 // ---------------------------------------------------------------- playback -
 export let lastEndedAt = 0;
@@ -310,6 +433,8 @@ export async function playQueueItem(index) {
   streamRetries = 0;
   audio.src = info.proxy_url;
   applySpeed();
+  applyDesktopEq(); // wire + resume + current preset (first play only wires)
+  applyDesktopLoudness(info, track); // sync for cached values; async else
   resumeHere(track);
   try {
     await audio.play();
@@ -432,6 +557,8 @@ async function finishFade(f) {
   streamRetries = 0;
   const pos = audio2.currentTime;
   audio.src = info.proxy_url;
+  applyDesktopEq(); // the handover's chains already exist; re-applies the preset
+  applyDesktopLoudness(info, track);
   try {
     const v = Number(localStorage.getItem("tm-play-speed") || "1");
     audio.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;

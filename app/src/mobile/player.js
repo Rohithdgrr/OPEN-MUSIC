@@ -1,11 +1,21 @@
 // player.js — one shared <audio> for every mobile screen: queue, resolve, transport.
 import { invoke, pushPlay, toast, hqArt, LOGO, isVaulted, relayUrl, haptic, prefetchTrackBytes } from "./shared.js";
+// dsp.js is deliberately dependency-free (docs/audio-quality.md T1): it is
+// safe to import statically from the mobile graph — it pulls nothing behind
+// it, reads only guarded localStorage, and defines functions up front.
+import { buildStudioChain, wireChain, applyStudioChain, setSpatial, clearToggleKeys } from "../dsp.js";
 // Namespace import for forward-compatible helpers (effectiveStreamQuality,
-// isExplicitTrack, explicitHidden, eqPreset, normalizeOn) which may not exist
+// isExplicitTrack, explicitHidden, ...) which may not exist
 // in shared.js yet. A static named import of a missing export would fail the
 // whole module at link time, so access via the namespace object with guarded
 // optional calls instead — player never crashes when the export hasn't landed.
 import * as sharedHelpers from "./shared.js";
+
+// docs/audio-quality.md §6 — the quality system is fully automated; these
+// keys were the toggle-era settings and can only hold stale state now.
+try {
+  clearToggleKeys();
+} catch {}
 import { netMode } from "./net.js";
 import { ensureReco } from "./radio.js";
 import { localRole } from "../room.js";
@@ -521,33 +531,13 @@ export function ensureEqChain(el) {
       // Already wired (or unwirable) — don't crash, just skip EQ.
       return eqChains.get(target) || null;
     }
-    const low = eqCtx.createBiquadFilter();
-    low.type = "lowshelf";
-    low.frequency.value = 120;
-    const mid = eqCtx.createBiquadFilter();
-    mid.type = "peaking";
-    mid.frequency.value = 1000;
-    const high = eqCtx.createBiquadFilter();
-    high.type = "highshelf";
-    high.frequency.value = 8000;
-    const comp = eqCtx.createDynamicsCompressor();
-    try {
-      comp.threshold.value = 0;
-    } catch {}
-    const gain = eqCtx.createGain();
-    try {
-      gain.gain.value = 1;
-    } catch {}
-    src.connect(low);
-    low.connect(mid);
-    mid.connect(high);
-    high.connect(comp);
-    comp.connect(gain);
-    gain.connect(eqCtx.destination);
-    const nodes = { low, mid, high, comp, gain };
-    eqChains.set(target, nodes);
-    if (!el || target === audio) eqNodes = nodes;
-    return nodes;
+    // The studio chain shape lives in dsp.js (desktop shares it): 5-band EQ
+    // → normalize comp → preSpatial → loudGain → limiter.
+    const chain = buildStudioChain(eqCtx);
+    wireChain(chain, src, eqCtx.destination);
+    eqChains.set(target, chain);
+    if (!el || target === audio) eqNodes = chain;
+    return chain;
   } catch {
     return null;
   }
@@ -555,61 +545,28 @@ export function ensureEqChain(el) {
 
 export function applyEq() {
   try {
-    let preset = "flat";
-    // Per-track override wins (track menu → "EQ for this track"); the
-    // global preset stays the fallback for everything else.
-    try {
-      const cur = queue[qi];
-      const mapFn = sharedHelpers.trackEqFor;
-      const per = typeof mapFn === "function" && cur ? mapFn(cur.id) : "";
-      if (per) preset = per;
-      else {
-        const fn = sharedHelpers.eqPreset;
-        if (typeof fn === "function") preset = fn() || "flat";
-        else preset = localStorage.getItem("tm-eq-preset") || "flat";
-      }
-    } catch {
-      try {
-        preset = localStorage.getItem("tm-eq-preset") || "flat";
-      } catch {
-        preset = "flat";
-      }
-    }
-    let norm = false;
-    try {
-      const fn = sharedHelpers.normalizeOn;
-      if (typeof fn === "function") norm = !!fn();
-      else norm = localStorage.getItem("tm-normalize") === "1";
-    } catch {
-      try {
-        norm = localStorage.getItem("tm-normalize") === "1";
-      } catch {
-        norm = false;
-      }
-    }
-    const MAP = {
-      flat: [0, 0, 0],
-      bass: [6, 1, 2],
-      bassboost: [9, 3, 4],
-      pop: [2, 3, 4],
-      bright: [-1, 1, 5],
-      vocal: [-2, 4, 3],
-    };
-    const g = MAP[preset] || MAP.flat;
+    // Fully automated (docs/audio-quality.md §6): no stored prefs and no
+    // settings toggles — the EQ stages stay transparent (flat), the Immersive
+    // room rides the built-in hall feel at the shipped intensity, and the
+    // loudness slot is always armed (measurement fails open to unity).
     let ok = false;
     for (const el of [audio, standby]) {
       if (!el) continue;
       const nodes = ensureEqChain(el);
       if (!nodes) continue;
       try {
-        nodes.low.gain.value = g[0];
-        nodes.mid.gain.value = g[1];
-        nodes.high.gain.value = g[2];
+        applyStudioChain(nodes, "flat", true);
       } catch {}
       try {
-        // Threshold 0dB is effectively off (nothing peaks above it);
-        // -24dB gives the normalize compression.
-        nodes.comp.threshold.value = norm ? -24 : 0;
+        // docs/audio-quality.md T2 — same Jam rule as desktop: a convolver
+        // tail is a delay line; rooms render direct.
+        const inRoom = !!localRole();
+        setSpatial(
+          nodes,
+          inRoom ? "off" : "hall",
+          inRoom ? 0 : 60,
+          inRoom,
+        );
       } catch {}
       ok = true;
     }
@@ -619,10 +576,61 @@ export function applyEq() {
     try {
       if (eqCtx && eqCtx.state === "suspended") eqCtx.resume().catch(() => {});
     } catch {}
+    // Diagnostic hook (docs/audio-quality.md §5): live probes meter the real
+    // chain through this — playhead state alone cannot hear quality.
+    try {
+      if (!window.__tmMobileAudioProbe) {
+        window.__tmMobileAudioProbe = () => ({
+          ctx: eqCtx,
+          chains: [...eqChains.values()],
+          elements: [...eqChains.keys()],
+        });
+      }
+    } catch {}
     return ok;
   } catch {
     return false;
   }
+}
+
+// ------------------------------------------------------ loudness matching -
+// docs/audio-quality.md T3. Mobile gates the *measurement* to wifi/vault
+// (a full-stream fetch on cellular would burn the meter); a cached
+// correction applies anywhere, and the legacy comp (applyEq above) keeps
+// guarding tracks that never got measured. Dynamic import keeps dsp.js the
+// only static src-root edge in the mobile graph.
+function maybeMobileLoudness(url, trackId, tier) {
+  import("../loudness.js")
+    .then((loud) => {
+      if (!trackId) return;
+      const chain = eqChains.get(audio);
+      if (!chain) return;
+      const m = loud.cachedLufs(trackId);
+      // tier "" (the crossfade handover knows only the promoted src) accepts
+      // any cached tier — same file bytes; pinning only matters when the
+      // caller knows which rendition it resolved.
+      if (m && (tier === "" || m.t === tier) && Number.isFinite(m.l)) return loud.applyLoudnessGain(chain, loud.gainForLufs(m.l));
+      loud.applyLoudnessGain(chain, 1);
+      const onCell = (() => {
+        try {
+          const fn = sharedHelpers.onCellular;
+          return typeof fn === "function" && fn();
+        } catch {
+          return false;
+        }
+      })();
+      if (onCell) return; // measured gains only on unmetered paths
+      loud
+        .measureLoudness(url)
+        .then((res) => {
+          if (!res || !Number.isFinite(res.lufs)) return;
+          loud.rememberLufs(trackId, tier, res.lufs, res.peak);
+          const cur = queue[qi];
+          if (cur && cur.id === trackId) loud.applyLoudnessGain(eqChains.get(audio), loud.gainForLufs(res.lufs));
+        })
+        .catch(() => {});
+    })
+    .catch(() => {});
 }
 
 // ------------------------------------------------------- queue management
@@ -761,6 +769,9 @@ async function start() {
       applyEq();
     } catch {}
     try {
+      maybeMobileLoudness(info.proxy_url, track.id, String(info.chosen_quality || ""));
+    } catch {}
+    try {
       const v = Number(localStorage.getItem("tm-play-speed") || "1");
       audio.playbackRate = [0.75, 0.9, 1, 1.1, 1.25, 1.5].includes(v) ? v : 1;
     } catch {}
@@ -806,6 +817,9 @@ async function start() {
             audio.src = relayUrl(base, `/file?id=${encodeURIComponent(track.id)}`);
             try {
               applyEq();
+            } catch {}
+            try {
+              maybeMobileLoudness(relayUrl(base, `/file?id=${encodeURIComponent(track.id)}`), track.id, "vault");
             } catch {}
             badge = "VAULT";
             srcHost = "vault";
@@ -1065,6 +1079,11 @@ function finishXfade() {
   } catch {}
   try {
     applyEq();
+  } catch {}
+  try {
+    // The promoted element's chain starts at unity — match its track too.
+    const xinfo = x.info || {};
+    maybeMobileLoudness(xinfo.proxy_url || audio.src || "", queue[qi] && queue[qi].id, String(xinfo.chosen_quality || ""));
   } catch {}
   beginPlay(queue[qi]);
   try {

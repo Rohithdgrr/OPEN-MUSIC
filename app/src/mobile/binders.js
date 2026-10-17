@@ -1,5 +1,6 @@
 // binders.js — paints real backend data into each static design screen.
 import { esc } from "../html.js";
+import { playUrl } from "../sharelink.js";
 import { querySim } from "../fuzzy.js";
 import { didYouMean, sourcePlan, sourceRows } from "../query.js";
 import {
@@ -59,10 +60,6 @@ import {
   setEffStreamCell,
   explicitHidden,
   setExplicitHidden,
-  eqPreset,
-  setEqPreset,
-  normalizeOn,
-  setNormalize,
   smartDlOn,
   setSmartDl,
   vaultQuotaGb,
@@ -3769,7 +3766,9 @@ function mountNowplaying() {
     fresh.addEventListener("click", () => {
       const t = playerState().track;
       if (!t) return toast("Nothing is playing", 3000, "error");
-      shareThing({ title: t.title, text: t.artist, url: t.page_url });
+      // Canonical share link (docs/share-deep-links.md): receives with the
+      // app installed land in playback; everyone else gets the download.
+      shareThing({ title: t.title, text: t.artist, url: playUrl({ id: t.id, title: t.title || "", artist: t.artist || "" }) });
     });
   }
   const queueBtn = m.querySelector('button[aria-label="Queue"]');
@@ -4544,8 +4543,6 @@ function ensureMobilePrefs(m) {
         row("signal_cellular_alt", "Streaming Cellular", "Quality on mobile data", sel("m-stream-cell", "")) +
         row("data_saver_on", "Data Saver", "Force low quality everywhere", sw("m-datasaver")) +
         row("explicit", "Hide explicit", "Skip explicit-tagged tracks", sw("m-explicit")) +
-        row("equalizer", "EQ preset", "Tone shaping", sel("m-eq", "")) +
-        row("volume_up", "Normalize volume", "Even out loudness", sw("m-normalize")) +
         row("download_for_offline", "Smart downloads", "Auto-save mixes offline", sw("m-smart")) +
         row("all_inclusive", "Gapless playback", "No pause between tracks", sw("m-gapless")) +
         row("history", "Remember position", "Resume where you stopped", sw("m-remember")) +
@@ -4598,7 +4595,7 @@ function ensureMobilePrefs(m) {
           "Match your top 20 to the catalog",
           `<button type="button" id="m-spotify-top" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button>`,
         ) +
-        row("smart_display", "Now Playing Canvas", "Unofficial Spotify feature — best effort", sw("m-canvas")) +
+        row("smart_display", "Now Playing Canvas", "Animated artwork on the art card - best effort", sw("m-canvas")) +
         row("signal_cellular_alt", "Canvas on mobile data", "Off = Wi-Fi only", sw("m-canvas-cell")) +
         row(
           "key",
@@ -4649,10 +4646,6 @@ function ensureMobilePrefs(m) {
     setEffStreamCell(e.target.value);
     toast(`Cellular streaming: ${e.target.selectedOptions[0]?.textContent || e.target.value || "Auto"}`, 3000, "success");
   });
-  q("m-eq")?.addEventListener("change", (e) => {
-    setEqPreset(e.target.value);
-    toast(`EQ: ${e.target.value}`, 3000, "success");
-  });
   const flipShared = (id, get, set, msg) => {
     q(id)?.addEventListener("click", () => {
       const on = !get();
@@ -4663,7 +4656,6 @@ function ensureMobilePrefs(m) {
   };
   flipShared("m-datasaver", dataSaver, setDataSaver, (on) => (on ? "Data Saver on — low quality everywhere" : "Data Saver off"));
   flipShared("m-explicit", explicitHidden, setExplicitHidden, (on) => (on ? "Explicit tracks hidden" : "Explicit tracks shown"));
-  flipShared("m-normalize", normalizeOn, setNormalize, (on) => (on ? "Volume normalization on" : "Normalization off"));
   flipShared("m-smart", smartDlOn, setSmartDl, (on) => (on ? "Smart downloads on" : "Smart downloads off"));
   const flip = (id, key, msg) => {
     q(id)?.addEventListener("click", () => {
@@ -4895,11 +4887,6 @@ function paintMobilePrefs(m) {
     [["", "Auto"], ["320kbps", "320 kbps — max"], ["160kbps", "160 kbps"], ["96kbps", "96 kbps"], ["64kbps", "64 kbps — saver"]],
     effStreamCell(),
   );
-  fill(
-    "m-eq",
-    [["flat", "Flat"], ["bass", "Bass"], ["bassboost", "Bass Boost"], ["pop", "Pop"], ["bright", "Bright"], ["vocal", "Vocal"]],
-    eqPreset(),
-  );
   fill("m-speed", [["0.75", "0.75x"], ["0.9", "0.9x"], ["1", "1x"], ["1.1", "1.1x"], ["1.25", "1.25x"], ["1.5", "1.5x"]], mGet("tm-play-speed", "1"));
   fill("m-theme", [["system", "System"], ["light", "Light"], ["dark", "Dark"]], mGet("tm-theme", "system"));
   fill("m-density", [["comfortable", "Comfortable"], ["compact", "Compact"]], mGet("tm-density", "comfortable"));
@@ -4921,7 +4908,7 @@ function paintMobilePrefs(m) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
   }
-  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-normalize", normalizeOn()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()], ["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]]) {
+  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()], ["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, !!on);
   }

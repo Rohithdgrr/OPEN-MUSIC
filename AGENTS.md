@@ -1180,14 +1180,13 @@ git log origin/main..HEAD verified first (all 27 commits authored
 Rohithdgrr), push as a separate command, 6522ca7..79e89e1 main -> main,
 post-push ahead-range empty.
 
-- Gates before commit: 
-pm test **275/275** � eslint clean �
+- Gates before commit: `npm test **275/275** � eslint clean �
   cargo fmt --check clean � cargo clippy --all-targets -D warnings clean
   (3 real fixes found by clippy: unused hostSentPos in mobile/jam.js,
-  2 unused mut + 1 manual_contains in oom.rs tests).
-- Deliberately NOT committed (untracked, per 07j precedent): 	emporary/,
-  	emporary data/, pp/src-tauri/.cargo/ (machine-local lld config),
-  pp/tests/_debug-*.mjs + _probe-dom.mjs (temp CDP probes whose headers
+  2 unused mut + 1 manual_contains in `room.rs tests).
+- Deliberately NOT committed (untracked, per 07j precedent): `temporary/,
+  `temporary data/, `app/src-tauri/.cargo/ (machine-local lld config),
+  `app/tests/_debug-*.mjs + _probe-dom.mjs (temp CDP probes whose headers
   say "deleted after run").
 - PowerShell trap re-confirmed: native-tool stderr re-raises as
   NativeCommandError; CLIPPY_EXIT=0 is the real signal.
@@ -2008,3 +2007,83 @@ screens, chips restore.
 exit code was the only trustworthy signal until the re-read. `git add -A`
 warnings "LF will be replaced by CRLF" are core.autocrlf noise, not errors.
 
+
+
+## 2026-10-17d — Mobile Now Playing: 320kbps chip + scrubber time bubble removed (commit 09f2001, local only)
+
+User: *"REMOVE THE TEXT '320kbps' and that timeline in seekbar"* (mobile screenshot). Docs-first
+(docs/mobile/06-features.md, new "quality chip + seek position bubble removed" section) + CHANGELOG
+Unreleased line.
+
+| Item | Evidence |
+|---|---|
+| Chip removed | screens/nowplaying.html: the #np-qchip span plus its now-empty #np-source-row wrapper deleted (nothing ever wrote into the row) |
+| Bubble removed | #np-pos-bubble (mono time tooltip riding the needle) deleted - it duplicated #elapsed-time right below; the elapsed/remaining row untouched |
+| Painters | binders.js paintNowplaying: bubble setTxt + the whole qval/chip/#np-quality block deleted (the #np-quality write had been a null-safe no-op since the 2026-10-10 clean-art batch); [data-badge] management kept; stale comment rewritten |
+| Contracts | Neither id was in jam-ui.test.mjs C-6/ADDED/LEGACY; scrubber-needle/elapsed/remaining untouched |
+| Gates | npm test 463/463, eslint clean (binders.js), node --check clean. No npm run css (only shared utility classes left the markup; the compiled bundle keeps harmless dead selectors) |
+| Commit | 09f2001, Rohithdgrr <rohit93dgrr@gmail.com> - 4 files; tree carried only my files (post-2026-10-17c push), so the local commit is per rule 1; NOT pushed |
+
+Status: implemented + gated + committed locally; push awaits the user's go-ahead (rule 1).
+
+Postscript (same session): appending this entry via PowerShell `Add-Content` here-string
+re-confirmed an old trap at scale - backticks in the here-string are PS escape chars, so every
+inline-code backtick vanished and the escape collisions mangled six words across the
+2026-10-09 entry (`t`->TAB, `a`->BEL, `r`->CR, `n`->LF, plus a NUL from `0). All repaired by
+byte-pattern script (each asserted unique), verified zero control bytes remain. Mixed CRLF/LF
+line endings and the old U+FFFD separator mojibake in pre-2026-10-09 entries are pre-existing,
+harmless, and left alone. Rule for the future: append memory with the edit/write tools only,
+never PowerShell here-strings.
+
+## 2026-10-17e — Queue append browser: the append search now works (commit `3eeae80`)
+
+User: *"in nowplayingscreen append search make it work like in the search screen but show only some results directly … with three buttons at the position of text 'song' 1.play now, 2.play next, 3.add to queue this three buttons in append search"* + "don't push code to github until i ask".
+
+| Item | Evidence |
+|---|---|
+| Root cause | `#jamAppendInput`/`#jamAppendBtn` were a dead affordance — shipped `disabled` with **zero** JS references (the `smount` guard region only bound chat). jam-ui.test.mjs:127-129 asserted the disabled state, flipped TDD-first |
+| Docs first | `docs/mobile/06-features.md` "Queue append search browser (2026-10-17e)" + CHANGELOG Unreleased |
+| Pure module (zero imports) | new `app/src/mobile/appendsuggest.js`: `pickSongs` (song-shaped rows only from one `search_songs` page, dedupe by title, cap 5, drops id-less entity rows) + `appendRowHTML` (art + title + artist + the three actions where the search rows show the type label; art resolver injected so the module stays import-free — the 2026-10-07 mobile→core-graph lesson honored) |
+| Wiring | `jam.js` `wireAppendSearch()` in `wireControls()`: ≥2 letters → 180 ms debounce → `search_songs {query, limit:8, page:0}` single-flight (`appendSeq`; stale answers die on input value change or remount) → paints `#jamAppendSuggest`; `Enter`/`+ Append` = commit TOP result to queue then clear+hide; Escape clears; tab buttons hide the box (second listener, chat-tab precedent); delegated clicks: now=`playList([t],0)` / next=`insertNext` / queue=`enqueue`; HOST actions republish `broadcastQueue()` immediately (§4.7); guests stay local per the standing note (Play now re-syncs on the next host frame — same as any search tap mid-room) |
+| Honest failure lines | upstream error → "Search is down right now — try again"; empty → "No matches — try another spelling"; no backend → toast "Search needs the app backend"; empty input → "Type at least two letters to search" |
+| **Live 11/11 in real Chrome** | headless `--dump-dom` harness (06-session precedent): stubbed `window.__TAURI__` BEFORE the fixture imports app.js, drove the real nowplaying mount — 5 rows × 3 buttons, glyph fallback, seeds/plays/seats/clears through the REAL player verbs (queue count + up-next asserts), Enter commit, +Append guard, no-match, Escape, tab-switch hide; CALLS log = one bounded search per burst |
+| Gates | `npm test` **480/480** · eslint clean (touched) · `node --check` ×2 · `npm run css` rebuilt (+`.w-7{}`,`.gap-0.5`,`.text-[16px]` verified compiled) · module tests 4/4, jam-ui 16/16 |
+| Commit | `3eeae80` local only (rule 1): 8 files — the 2 new ones + jam.js, nowplaying.html, tailwind.css, jam-ui.test.mjs, 06-features.md, CHANGELOG.md. Parallel session's audio-quality CHANGELOG section excluded via `hash-object`+`update-index` plumbing (worktree untouched, `MM` state) |
+
+**Probe traps (cheap to re-derive, expensive to rediscover):**
+- The probe page must live **beside the mobile shell** (`app/src/mobile/`), not at the serve root — `import("./app.js")` from a root page resolves to the DESKTOP `app.js`, which dies on missing DOM (the 2026-10-07 `#audio2` class of failure). Fixture 404'd silently the first run; `fetch()` the URLs from node before blaming Chrome.
+- Headless Chrome served a **page-cache** dump once (`58488` bytes three runs in a row with identical state) even with a fresh profile — `--disk-cache-size=1` + query bust were unneeded after fixing the 404; verify with the dump's own content, not cache flags.
+- `--enable-logging=stderr` did NOT emit page console errors on this Chrome build; capture in-page instead (wrap the whole fixture in try/catch and always serialize `pre#probe-out`, then `--dump-dom` and grep).
+- PowerShell backtick-lists inside `-e "…"` strings mangle shell quoting — node inline eval with escaped quotes breaks on the second escape; write the script file and `node $env:TEMP\opencode\file.mjs` instead.
+
+Status: ✅ implemented + gates + committed locally (`3eeae80`) ⏳ **not pushed** (rule 1 — awaiting user go-ahead). Left running: nothing (emulator was not attached; verification was headless-Chrome-only — the §10 two-device runbook unchanged).
+
+## 2026-10-18 — Audio quality system: fully automated + live-verified 13/13 (local commits, not pushed)
+
+User directives: (1) ship the "Dolby-Atmos feel" audio-quality tiers (T0 source-fidelity lock, T1 studio chain, T2 Immersive room, T3 loudness matching); (2) **"make this fully automated and don't add any toggle buttons in settings."** Spec of record: `docs/audio-quality.md` (§6 automation + Tier-status/evidence tables). **Nothing pushed (rule 1).**
+
+| Piece | Where |
+|---|---|
+| T1 chain (zero-import library, both graphs) | new `app/src/dsp.js`: src → 5 bands → comp → preSpatial → loudGain → limiter → out; per-element Map; preset curves stay as unit-tested library surface |
+| T2 Immersive room | `ensureSpatial`/`setSpatial` in dsp.js: mid/side widener + synthesized stereo IR (binaural inter-aural delay) + psychoacoustic bass reconstruction; honest labels throughout — "room feel", no Dolby trademark |
+| T3 loudness | new `app/src/loudness.js`: BS.1770 K-weighting *approximation*, per-track cache (`tm-lufs`, tier-pinned), ramped ±12 dB gain into the loudGain slot |
+| Desktop wiring | `playback.js`: chains for audio+audio2 (crossfade standby never leaves the graph), `applyDesktopEq` + `applyDesktopLoudness` on the play paths, `window.__tmAudioProbe` diagnostic hook |
+| Mobile wiring | `mobile/player.js`: `ensureEqChain`/`applyEq` delegate to dsp.js; `maybeMobileLoudness` with the non-cellular measurement gate (cached gains apply anywhere); `__tmMobileAudioProbe` |
+| **Automation (the directive)** | no settings taps anywhere: desktop three rows deleted from the generated panel, mobile Immersive section + per-track EQ sheet (`tm-eq-sheet`) + "EQ for this track" menu entry + generated "EQ preset"/"Normalize volume" rows deleted; `audioplus.js` reduced to crossfade-only; `sync.js` allowlist loses `tm-eq-preset`/`tm-normalize`; **`clearToggleKeys()` (dsp.js) wipes the five toggle-era keys at boot** on both surfaces |
+| Enforced contract | `audio-quality.test.mjs` 8 tests: no control ids/key literals/settings-row ids, players match `AUTO_EQ = "flat"` + `AUTO_SPATIAL = { mode: "hall", intensity: 60 }` + `clearToggleKeys`, no stored-* reads in either player |
+
+**LIVE verification (real desktop app, real search → trusted `Input.dispatchMouseEvent` click, metering the ACTUAL chain — driver `%TEMP%\opencode\audio-quality-live.mjs`, final run 13/13):** K1 stale keys absent · S0b dialogs closed + restored track paused · S1/S2 real play (t advancing, relay) · S4 pause watchdog · P1 chains=2 ctx running · P2 badge `320kbps` (T0) · P3 bands `[0,0,0,0,0]` dB + comp −24 · P4 `sIn=1/sDir=0` + IR loaded (hall auto-routed) · P5 band energy low/mid/high ≈ −3.9/4.3/4.8 dB (audible through the chain) · P6 corr 0.77 / side 3.1e-3 (decorrelated field) · P7 measured −8.886 LUFS → loudGain **0.555 = expected 0.555** (cached-instant; earlier fresh-analysis run also matched: −7.8 → 0.4871 ≈ 0.49).
+
+**The big one — desktop P36 (CORS-tainted relay loads), found BY the meter:** runs 1–3: trusted gesture → ctx `running` → **analyser all −999 dB** despite correct params. Root cause identical to the 2026-10-08 mobile class: no `crossOrigin` on desktop `audio`/`audio2` for the non-CORS-clean relay feed. Fix at **module scope before any `src` assignment** (mid-load attribute is a no-op for the in-flight fetch) → P5 real energy. Lesson already enshrined (2026-10-08): *playhead probes cannot hear — meter the chain output*; this catch proves the class extends to desktop.
+
+**Probe traps of this session (each cost ≥1 run):**
+- `AudioNode.connect(dest, outputIndex, inputIndex)` — splitter output 0 = LEFT, 1 = RIGHT; tapping 0 into both yields corr = 1 trivially; band `BiquadFilterNode.gain` is **dB** (flat = 0, not 1.0 — run 8's assert demanded 1.0).
+- **Same-page reruns reuse prior meter taps**: `if (!window.__aqAn)` trusts globals left by an older bugged run — run 9 measured run 8's both-LEFT sockets and reported corr = 1 again. Rebuild taps EVERY run; never trust same-page meter state.
+- CDP `send()` must carry a response timeout — a detached page hangs the driver forever (run 7: node silently killed at harness timeout, no summary line).
+- Driver-vs-app races: boot **session restore** re-opens last session's dialogs (QR sheet swallowed a gesture) and re-paints the user's last search; the **source-first merge repaints rows ~1–2 s after first paint**, so a captured row id can be stale — key the loudness expectation from the **stream URL's id**, not the row snapshot (run 11: BeXBcbVK row vs 1aPY9cT- playing).
+- `doSearch` reads **`opts.query`** (not `q`) — a wrong key falls back to `#search-input.value`, i.e. the restore's own query; runs 1–3 actually played whatever the input still held. The loudness results were still valid (any real track), but the *query* asserted was wrong.
+- Inline-code **backticks inside an evalPage template literal** terminate the outer string (miss 5 min debugging a SyntaxError that points at the right line anyway).
+
+**Gates:** `npm test` **498/498** · eslint clean (touched) · `node --check` clean ×11 · `cargo build` exit 0 (13m22s incremental). Mobile surface: live pass pending — same shared dsp.js path, covered today by unit + `mobile-boot` graph execution; the doc's status table states that limit explicitly.
+
+**Commit(s):** audio-quality implementation + automation cut (15 files my-side incl. `dsp.js`, `loudness.js` new; docs/CHANGELOG/AGENTS memory) — local only, **not pushed (rule 1)**. Do-not-stage dirt: `app/src-tauri/src/{canvas,lib,spotify}.rs`, `docs/spotify-android-canvas.md` (2026-10-16 Spotify session). Deleted after reporting: the driver `audio-quality-live*.mjs/.out` + `peek-*.mjs` lives in `%TEMP%\opencode` (throwaway per precedent). Desktop app left running (CDP :9222).

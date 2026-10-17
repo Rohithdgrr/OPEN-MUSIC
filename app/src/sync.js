@@ -54,8 +54,6 @@ export const SETTINGS_KEYS = [
   "tm-stream-cell",
   "tm-data-saver",
   "tm-explicit-hide",
-  "tm-eq-preset",
-  "tm-normalize",
   "tm-smart-dl",
 ];
 

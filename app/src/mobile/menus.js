@@ -23,6 +23,7 @@ import {
   downloadAll,
   shareThing,
   shareCard,
+  relayUrl,
   haptic,
   movePlaylistTrack,
   removePlaylistTrack,
@@ -45,6 +46,73 @@ import {
 } from "./player.js";
 import { entityNav, MOUNT } from "./binders.js";
 import { playlistToCsv, playlistToM3u, playlistFilename } from "../sync.js";
+import { playUrl, smallArtUrl, vcf, bytesToB64 } from "../sharelink.js";
+
+// ------------------------------------------------- share links + vCard -----
+// docs/share-deep-links.md: every track share hands out the canonical play
+// link; the vCard variant embeds the CDN's own small artwork render fetched
+// through the local relay /art route (CSP-clean, SSRF-guarded), logo-free
+// when the art can't be fetched — the link itself always stays intact.
+
+const trackShareLink = (t) =>
+  shareThing({
+    title: t.title,
+    text: [t.artist, t.album].filter(Boolean).join(" • "),
+    url: playUrl({ id: t.id, title: t.title || "", artist: t.artist || "" }),
+  });
+
+async function shareTrackVcard(t) {
+  if (!invoke) {
+    toast("Sharing needs the app backend");
+    return;
+  }
+  toast("Building vCard…");
+  // The catalog art url usually carries the small render already; only a
+  // 500x500 get swapped down, foreign hosts resolve to no photo at all.
+  const raw = t.image || "";
+  const art = raw.includes("150x150") ? raw : smallArtUrl(raw);
+  let photoB64 = "";
+  if (art) {
+    try {
+      const res = await fetch(
+        relayUrl(window.__tmBase || "", `/art?u=${encodeURIComponent(art)}`),
+      );
+      if (res.ok) photoB64 = bytesToB64(new Uint8Array(await res.arrayBuffer()));
+    } catch {
+      photoB64 = ""; // honest omission: the card keeps the link, no art
+    }
+  }
+  const card = vcf({
+    title: t.title || "Shared track",
+    artist: t.artist || "",
+    url: playUrl({ id: t.id, title: t.title || "", artist: t.artist || "" }),
+    photoB64,
+  });
+  const name = `${(t.title || "OpenMusic-track")
+    .slice(0, 48)
+    .replace(/[\\/:*?"<>|\r\n]/g, "_")}.vcf`;
+  const file = new File([card], name, { type: "text/vcard" });
+  try {
+    if (navigator.share && navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: t.title || "OpenMusic track" });
+    } else {
+      // Share-sheet denied (or desktop WebView): fall back to a download
+      // anchor so the vCard still exists in one tap.
+      const url = URL.createObjectURL(new Blob([card], { type: "text/vcard" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 20000);
+      toast("vCard saved — send it from your files");
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+    toast("Could not share the vCard");
+  }
+}
 
 // --------------------------------------------------------------------- sheet
 
@@ -504,25 +572,18 @@ export function trackMenu(track, ctx, idx) {
   items.push({
     icon: "ios_share",
     label: "Share Track",
-    action: () => shareThing({ title: track.title, text: [track.artist, track.album].filter(Boolean).join(" • "), url: track.page_url }),
+    action: () => trackShareLink(track),
+  });
+  items.push({
+    icon: "contact_page",
+    label: "Share as vCard",
+    action: () => shareTrackVcard(track),
   });
   items.push({
     icon: "image",
     label: "Share Card",
     action: () => shareCard({ title: track.title, subtitle: track.artist, image: track.image, badge: "OpenMusic" }),
   });
-  if (track.id) {
-    items.push({
-      icon: "tune",
-      label: "EQ for this track",
-      action: () => {
-        try {
-          if (typeof window.__tmTrackEq === "function") window.__tmTrackEq(track);
-          else toast("EQ panel unavailable", 3000, "error");
-        } catch {}
-      },
-    });
-  }
   if (ctx === "queue" && Number.isInteger(idx)) {
     items.push({
       icon: "remove_from_queue",
@@ -683,7 +744,12 @@ export async function libraryMenu(item) {
         {
           icon: "ios_share",
           label: "Share Track",
-          action: () => shareThing({ title: t.title, text: [t.artist, t.album].filter(Boolean).join(" • "), url: t.page_url }),
+          action: () => trackShareLink(t),
+        },
+        {
+          icon: "contact_page",
+          label: "Share as vCard",
+          action: () => shareTrackVcard(t),
         },
         {
           icon: "image",
@@ -691,7 +757,6 @@ export async function libraryMenu(item) {
           action: () => shareCard({ title: t.title, subtitle: t.artist, image: t.image, badge: "OpenMusic" }),
         },
         { icon: "info", label: "Track Details", action: () => detailsSheet(t) },
-        ...(t.id ? [{ icon: "tune", label: "EQ for this track", action: () => { try { if (typeof window.__tmTrackEq === "function") window.__tmTrackEq(t); else toast("EQ panel unavailable", 3000, "error"); } catch {} } }] : []),
         { icon: "download", label: "Download", action: () => downloadTrack(t) },
         {
           icon: "delete",

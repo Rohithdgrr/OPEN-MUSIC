@@ -26,7 +26,6 @@ try {
 }
 
 const { streakStats } = await import("../src/mobile/streaks.js");
-const shared = await import("../src/mobile/shared.js");
 
 function seedPlays(dayOffsets) {
   const plays = dayOffsets.map((d, i) => {
@@ -65,22 +64,6 @@ test("empty log reads zero, never NaN", () => {
   const s = streakStats();
   assert.equal(s.streak, 0);
   assert.equal(s.today, 0);
-});
-
-test("per-track EQ round-trips and rejects bad presets", () => {
-  assert.equal(shared.trackEqFor("abc"), "");
-  assert.equal(shared.setTrackEq("abc", "bassboost"), true);
-  assert.equal(shared.trackEqFor("abc"), "bassboost");
-  assert.equal(shared.setTrackEq("abc", "超重低音"), false);
-  assert.equal(shared.trackEqFor("abc"), "bassboost");
-  assert.equal(shared.setTrackEq("abc", ""), true);
-  assert.equal(shared.trackEqFor("abc"), "");
-});
-
-test("global preset accepts the new bassboost value", () => {
-  shared.setEqPreset("bassboost");
-  assert.equal(shared.eqPreset(), "bassboost");
-  shared.setEqPreset("flat");
 });
 
 test("share codec round-trips playlists, unicode included", async () => {
