@@ -1973,3 +1973,38 @@ x86_64` `BUILD_EXIT=0`. Focused earlier in the batch: query+mobile-searchkit
 Left running: desktop app (CDP :9222), emulator `Pixel6_API36` with the fresh
 APK installed.
 
+## 2026-10-17c — Push record: bundle `0113853` on `main` (pushed, in sync; supersedes every "nothing pushed" note above)
+
+User: *"PUSH CODE TO GITHUB. ALL COMMIT'S INCLUDING OTHER SESSIONS WHICH YOU
+HAVEN'T WRITTEN BUT NEED PUSH."* Everything uncommitted from 10-15d…10-17b
+(all sessions) plus the two never-pushed local commits went out in this push.
+
+Procedure (rule 8; each step a separate command, outputs read between):
+1. `git fetch` + `git log origin/main..HEAD` → **2 commits** (`dc37a82`
+   hardening, `37bd3dc` Cache 2.0 slice 1), both `Rohithdgrr <rohit93dgrr@gmail.com>`.
+2. Dirty inventory: **58 tracked** (incl. 4 deletions — `survey.js`,
+   `audius.rs`, `catalog.rs`, `jiosaavn_catalog.rs`) + **17 untracked entries**
+   (= 24 new files; `android-overlay/` expands to 8). `temporary/`,
+   `temporary data/`, `app/src-tauri/.cargo/` no longer exist on disk — nothing
+   to exclude; untracked total ≈ 103 KB, all source/tests/docs.
+3. Gates on the **combined** tree (owning every session's code in one commit):
+   `npm test` **463/463** · eslint clean · `cargo fmt --check` clean ·
+   `OP_OFFLINE=1 cargo test --lib` **223/223**.
+4. `git add -A` → 82 entries → commit **`0113853`** (82 files, +6 228/−2 471).
+5. Re-verified range (3 commits, authors all `Rohithdgrr`) → push
+   **`1b8b746..0113853  main -> main`** → ahead-range empty, `origin/main` =
+   `0113853`, tree clean.
+
+Bundle contents = all sessions since `37bd3dc`: 10-15h audit batches (mobile
+P44–P53, Rust hardening, ~1.8k lines dead code), 10-16 Spotify E2E
+(`Arc<AppState>` state fix + `spotmatch.js` matcher), 10-16b search resilience,
+10-16e taste + play-events, 10-17 JioSaavn-first radio + search, 10-17b
+source-first search + branding scrub, media widget + portrait lock, browse
+screens, chips restore.
+
+**Traps re-confirmed:** PowerShell `*>` log redirect writes UTF-16 → a
+`Select-String` on the first read of the npm log missed every summary line
+(re-encoded via `Get-Content | Out-File -Encoding utf8`, then read fine) —
+exit code was the only trustworthy signal until the re-read. `git add -A`
+warnings "LF will be replaced by CRLF" are core.autocrlf noise, not errors.
+
