@@ -692,3 +692,55 @@ Contracts intact: neither `np-qchip` nor `np-pos-bubble` was in
 `remaining-time`, `scrubber-*` all remain contracted. If the chip is ever
 wanted back, re-add the element and the paint resumes (painters stay
 null-safe by the same rule as the 2026-10-10 batch).
+
+### Queue append search browser (2026-10-17e)
+
+User: *"in nowplayingscreen append search make it work like in the search
+screen but show only some results directly … with three buttons at the
+position of text 'song' 1. play now, 2. play next, 3. add to queue."*
+Scope: **mobile Now Playing queue tab only** (`screens/nowplaying.html`,
+`mobile/jam.js` wiring, new pure module `mobile/appendsuggest.js`). Desktop
+untouched.
+
+Root cause: the Up Next tab's append row shipped **disabled with no wiring
+at all** — zero JS references to `jamAppendInput` / `jamAppendBtn` anywhere
+(the `smount` guard region only bound chat). A dead affordance straight from
+the design export.
+
+What typing does now (search-screen behaviour, capped):
+
+- ≥ 2 letters runs one bounded query per keystroke burst — `search_songs`
+  `{ query, limit: 8, page: 0 }`, 180 ms debounce, single-flight counter
+  (a newer keystroke supersedes a slow older answer, and a stale page is
+  discarded if the input changed or remounted mid-flight). **Five song rows**
+  paint in a dropdown under the input, styled like the search screen's
+  suggestion rows (art + title + artist; `search_songs` full shapes, so ids
+  are playable — no autocomplete-prefix rows).
+- Where the search rows show the type label (`SONG`), each row carries the
+  three actions: **Play now** → `playList([t], 0)`, **Play next** →
+  `insertNext(t)`, **Add to queue** → `enqueue(t)` — the player's own queue
+  verbs. Rows are songs only; entity results (album/artist/playlist rows)
+  can never leak in — `pickSongs` keeps shaped `{id,title,artist,image}`
+  rows only, deduped by title, capped at 5.
+- `Enter` and the `+ Append` button commit the **top result to the queue**
+  (the historical "append" verb), then clear the input and close the box;
+  with no results yet they run the search instead, and an empty input says
+  so. `Escape` clears and hides. Switching sheet tabs hides the box.
+- Failures are honest: an upstream error says "Search is down right now"
+  (retry on next keystroke or Enter), an empty answer says "No matches",
+  a missing backend says search needs the app backend — never a silent
+  blank dropdown.
+
+Roles (unchanged contracts, §12 / §4.7): all three actions edit the
+**local** queue. A guest's additions stay on their own device (the standing
+note under the row); a guest's Play now behaves like tapping a track in
+search mid-room — the next host state frame re-takes the playhead. A
+**host's** queue-affecting edit republishes the up-next snapshot
+(`broadcastQueue`) immediately, so guests' read-only lists follow without
+waiting for the next track change.
+
+Contract: the enabled row and the `#jamAppendSuggest` box are asserted by
+`jam-ui.test.mjs` (the old "ships disabled" assertions flipped), and the
+pure shaping module carries `appendsuggest.test.mjs` (pick/cap/dedupe +
+row markup with the three actions, art resolver injected so the module stays
+import-free).

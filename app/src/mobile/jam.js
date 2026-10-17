@@ -19,9 +19,9 @@
 // switchTab is defined by the generated `screens/nowplaying.js`, which the
 // router loads as a classic script — it is the tab switcher the tab buttons
 // call, so this module moves the deck with the same function.
-import { FAVS_KEY, invoke, load, PLAYS_KEY, toast } from "./shared.js";
+import { art, FAVS_KEY, invoke, load, PLAYS_KEY, toast } from "./shared.js";
 import { paintQr } from "../qrview.js";
-import { onPaint, playerState, playList, queueHistory, queueUpNext, repaint, seek, toggle } from "./player.js";
+import { onPaint, playerState, playList, queueHistory, queueUpNext, repaint, seek, toggle, insertNext, enqueue } from "./player.js";
 import {
   createRoomState,
   inviteText,
@@ -44,6 +44,7 @@ import {
   worstDriftMs,
 } from "../room.js";
 import { resolveFromCatalog } from "../jam/follow.js";
+import { appendRowHTML, pickSongs } from "./appendsuggest.js";
 import { startScanner } from "./scanner.js";
 
 let room = createRoomState();
@@ -1069,6 +1070,8 @@ function wireControls() {
       });
     }
   });
+
+  wireAppendSearch();
 }
 
 function sendChatText(text, restore) {
@@ -1114,9 +1117,170 @@ function sendChat() {
   sendChatText(text, text);
 }
 
+// ---------------------------------------------------------------- append ----
+// The queue tab's append search (docs/mobile/06-features.md "Queue append
+// search browser", 2026-10-17e): the row shipped disabled with zero wiring;
+// it now behaves like the search screen — type, get a few song rows directly,
+// act on each through the player's own queue verbs. Roles are the standing
+// contracts: actions edit the LOCAL queue (a guest's additions stay on their
+// device, and a guest's play gets re-taken by the next host frame, same as
+// tapping a track in search mid-room); a HOST's edit republishes the §4.7
+// snapshot immediately so guests' lists follow before the next track change.
+let appendTracks = [];
+let appendSeq = 0;
+let appendTimer = 0;
+
+/// The pure shaper formats rows for display; `art` (shared.js) keeps the
+/// artwork identical to every other row painter (logo fallback, hq, relay).
+const appendArt = (url) => art(url);
+
+function hideAppendBox() {
+  appendTracks = [];
+  const box = el("jamAppendSuggest");
+  if (!box) return;
+  box.classList.add("hidden");
+  box.classList.remove("flex");
+  box.innerHTML = "";
+}
+
+function showAppendBox(html) {
+  const box = el("jamAppendSuggest");
+  if (!box) return;
+  box.innerHTML = html;
+  box.classList.remove("hidden");
+  box.classList.add("flex");
+}
+
+function wireAppendSearch() {
+  const input = el("jamAppendInput");
+  const box = el("jamAppendSuggest");
+  if (!input || !box || input.dataset.jamAppendWired) return;
+  input.dataset.jamAppendWired = "1";
+
+  input.addEventListener("input", () => {
+    clearTimeout(appendTimer);
+    appendTimer = setTimeout(() => void runAppendSearch(), 180);
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (input) input.value = "";
+      clearTimeout(appendTimer);
+      hideAppendBox();
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      clearTimeout(appendTimer);
+      void appendCommitTop();
+    }
+  });
+  const btn = el("jamAppendBtn");
+  if (btn && !btn.dataset.jamAppendWired) {
+    btn.dataset.jamAppendWired = "1";
+    btn.addEventListener("click", () => void appendCommitTop());
+  }
+  box.addEventListener("click", (e) => {
+    const btn2 = e.target.closest("[data-append-action]");
+    if (!btn2) return;
+    const i = Number(btn2.dataset.appendRow);
+    if (Number.isInteger(i) && i >= 0) appendAction(i, btn2.dataset.appendAction);
+  });
+  // A second listener alongside the screen's tab switcher is fine — both run
+  // (the same rule as the chat tab's unread clear above).
+  document.querySelectorAll("button.tab-btn[data-tab]").forEach((tb) => {
+    if (tb.dataset.jamAppendTabWired) return;
+    tb.dataset.jamAppendTabWired = "1";
+    tb.addEventListener("click", hideAppendBox);
+  });
+}
+
+/// One bounded query per keystroke burst. `search_songs` returns the same
+/// full track shapes the search screen rows paint, so every id here is
+/// playable (not autocomplete prefixes). Single-flight: a newer run wins,
+/// and a stale answer also dies when the input changed or the screen
+/// remounted while the fetch ran.
+async function runAppendSearch() {
+  const box = el("jamAppendSuggest");
+  const input = el("jamAppendInput");
+  if (!box || !input) return;
+  const needle = String(input.value || "").trim();
+  if (needle.length < 2) {
+    hideAppendBox();
+    return;
+  }
+  const mine = ++appendSeq;
+  let payload = null;
+  let failed = false;
+  try {
+    payload = invoke ? await invoke("search_songs", { query: needle, limit: 8, page: 0 }) : null;
+  } catch {
+    failed = true;
+  }
+  // Superseded, input changed, or the screen remounted during the fetch.
+  const input2 = el("jamAppendInput");
+  const box2 = el("jamAppendSuggest");
+  if (mine !== appendSeq || !input2 || !box2 || String(input2.value || "").trim() !== needle) return;
+
+  appendTracks = pickSongs(payload);
+  const head =
+    '<div class="px-3 pt-2 pb-1 font-label-mono text-[10px] uppercase tracking-wider text-secondary">Songs</div>';
+  if (appendTracks.length) {
+    showAppendBox(head + appendTracks.map((t, i) => appendRowHTML(t, i, appendArt)).join(""));
+    return;
+  }
+  showAppendBox(
+    failed
+      ? '<div class="px-3 py-3 font-body-sm text-[11px] text-secondary">Search is down right now — try again</div>'
+      : '<div class="px-3 py-3 font-body-sm text-[11px] text-secondary">No matches — try another spelling</div>',
+  );
+}
+
+/// Enter / “+ Append”: the row's historical verb — commit the TOP result to
+/// the queue. With nothing shaped yet it runs the search instead, so a fast
+/// typist pressing Enter immediately still gets results.
+async function appendCommitTop() {
+  if (appendTracks.length) {
+    appendAction(0, "queue");
+    const input = el("jamAppendInput");
+    if (input) input.value = "";
+    hideAppendBox();
+    return;
+  }
+  const input = el("jamAppendInput");
+  const typed = String(input && input.value ? input.value : "").trim();
+  if (!invoke) {
+    toast("Search needs the app backend", 2500, "error");
+    return;
+  }
+  if (typed.length < 2) {
+    toast("Type at least two letters to search", 2500);
+    return;
+  }
+  await runAppendSearch();
+}
+
+function appendAction(i, how) {
+  const t = appendTracks[i];
+  if (!t) return;
+  if (how === "now") {
+    playList([t], 0);
+    toast(`Now playing ${t.title}`, 2500, "success");
+  } else if (how === "next") {
+    insertNext(t);
+    toast(`${t.title} plays after this track`, 2500, "success");
+  } else {
+    enqueue(t);
+    toast(`${t.title} added to the queue`, 2500, "success");
+  }
+  // §4.7: the host's queue IS the room queue — a guest's read-only list
+  // follows the snapshot, not the local state, so republish right away.
+  if (room.role === "host") broadcastQueue();
+}
+
 /// §4.7: the host's up-next snapshot (current track excluded — `playback`
-/// already carries it). The mobile queue has no edit UI in a room (the
-/// append row ships disabled), so track changes + open + refresh cover it.
+/// already carries it). Track changes + open + refresh cover it, and the
+/// append browser's queue-affecting actions call this directly (the mobile
+/// queue now has edit UI — a host's append must reach guests before the
+/// next track change).
 function broadcastQueue() {
   if (room.role !== "host") return;
   const tracks = queueUpNext()

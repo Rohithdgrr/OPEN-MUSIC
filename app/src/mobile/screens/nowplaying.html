@@ -196,13 +196,14 @@ Synchronized
 </span>
 </div>
 <div class="flex flex-col gap-2 max-h-72 overflow-y-auto pr-0.5" data-upnext-list id="jamQueueList"></div>
-<div class="mt-1 flex items-center gap-2 bg-surface-container-low border-0 p-1.5 pl-3 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow opacity-60">
+<div class="mt-1 flex items-center gap-2 bg-surface-container-low border-0 p-1.5 pl-3 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow">
 <span class="material-symbols-outlined text-[18px] text-secondary">search</span>
-<input class="bay-input bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-0 outline-none ring-0 shadow-none p-0" placeholder="Add tracks from the queue screen — no room append frame yet" type="text" id="jamAppendInput" disabled aria-label="Add tracks to the queue"/>
-<button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-sm text-[10px] font-semibold uppercase tracking-wider shrink-0" id="jamAppendBtn" disabled>
+<input class="bay-input bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-0 outline-none ring-0 shadow-none p-0" placeholder="Search tracks to append" type="text" id="jamAppendInput" aria-label="Add tracks to the queue"/>
+<button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-sm text-[10px] font-semibold uppercase tracking-wider shrink-0" id="jamAppendBtn">
 + Append
 </button>
 </div>
+<div id="jamAppendSuggest" role="listbox" aria-label="Append search results" class="mt-2 hidden flex-col rounded-xl bg-surface-container-lowest border border-surface-container shadow-md overflow-y-auto max-h-72"></div>
 <p class="text-[10px] font-label-sm text-secondary px-1" id="jamAppendNote">The host's queue is the room queue; a guest's additions stay on their own device.</p>
 </div>
 <div class="tab-content hidden px-3 pb-3 pt-1 flex-col gap-3 transition-opacity duration-200" id="view-jam-data">

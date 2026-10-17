@@ -41,7 +41,7 @@ const C6 = [
 // Additions this milestone documents (docs/listen-together.md §13.2): the room
 // member list, the chat/append status lines and the local paint hooks.
 const ADDED = [
-  "jamMembersList", "jamChatState", "jamAppendNote", "jamTransportNote",
+  "jamMembersList", "jamChatState", "jamAppendNote", "jamTransportNote", "jamAppendSuggest",
   "np-title", "np-artist", "np-album", "np-art", "more-options-btn",
 ];
 
@@ -124,9 +124,13 @@ test("social chrome ships hidden: Solo is the default state", () => {
     assert.ok(tag, `#${id} does not exist`);
     assert.match(tag, /\bhidden\b/, `#${id} must ship hidden — Solo cannot show room chrome`);
   }
-  assert.match(html, /id="jamAppendInput" disabled/, "the append row ships disabled");
-  assert.match(html, /id="jamAppendBtn" disabled/, "the append button ships disabled");
-  assert.ok(html.includes("no room append frame"), "the append row must state why it is disabled");
+  assert.match(html, /id="jamAppendInput"/, "the append input exists");
+  const appendInputTag = tagFor("jamAppendInput");
+  assert.ok(appendInputTag && !/\bdisabled\b/.test(appendInputTag), "the append input must be live — the append search works like the search screen");
+  const appendBtnTag = tagFor("jamAppendBtn");
+  assert.ok(appendBtnTag && !/\bdisabled\b/.test(appendBtnTag), "the append button must be live");
+  assert.ok(html.includes('id="jamAppendSuggest"'), "the append results box exists");
+  assert.ok(html.includes("Search tracks to append"), "the append input says what it does");
 });
 
 test("the Social view offers an explicit create/join entry point", () => {

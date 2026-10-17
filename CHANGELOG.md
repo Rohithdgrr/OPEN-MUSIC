@@ -6,6 +6,9 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Added (mobile Now Playing queue append browser — 2026-10-17e)
+- **The queue tab's append search now works like the search screen**: typing shows a few matching songs directly under the input, each with **Play now / Play next / Add to queue** buttons where the search rows show their type label. The row shipped disabled with zero wiring before (a dead affordance). `Enter`/`+ Append` commits the top result to the queue; host edits republish the room queue to guests immediately, and guest additions stay local (§4.7/§12). Spec: `docs/mobile/06-features.md` ("Queue append search browser").
+
 ### Changed (Now Playing mobile cleanup — 2026-10-17)
 - **Mobile Now Playing drops the `320kbps` tier chip and the time bubble riding the scrubber needle** — the elapsed/remaining readout under the track is the single time source, so the floating bubble (which duplicated it) and the pill under the artist are gone. Spec: `docs/mobile/06-features.md` ("quality chip + seek position bubble removed").
 
