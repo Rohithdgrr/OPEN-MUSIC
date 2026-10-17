@@ -3465,8 +3465,6 @@ function paintNowplaying(st) {
   };
   const el = document.getElementById("elapsed-time");
   setTxt(el, fmtTime(st.pos));
-  // Scrubber knob bubble mirrors the elapsed paint.
-  setTxt(document.getElementById("np-pos-bubble"), fmtTime(st.pos));
   const rm = document.getElementById("remaining-time");
   setTxt(rm, `-${fmtTime(Math.max(0, st.dur - st.pos))}`);
   const icon = document.getElementById("play-pause-icon");
@@ -3514,10 +3512,9 @@ function paintNowplaying(st) {
   // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity). TRACK nn
   // and the length are real player state; STEREO DIRECT is desktop's exact
   // historical wording (the desktop eyebrow row was removed 2026-10-10 —
-  // docs/social-nowplaying.md §6d), and the quality chip is fed
-  // only by the resolve's own `chosen_quality` (st.badge "320KBPS") — a
-  // transient state (RESOLVING/ERROR) hides the chip rather than inventing
-  // a number (docs/mobile/06-features.md, Android UI parity batch).
+  // docs/social-nowplaying.md §6d). The visible `#np-qchip` quality pill was
+  // removed 2026-10-17c (docs/mobile/06-features.md, same-day user call) —
+  // only the hidden telemetry spans below stay fed.
   setTxt(
     document.getElementById("np-trackline"),
     t && st.queue.length
@@ -3525,14 +3522,6 @@ function paintNowplaying(st) {
       : "—",
   );
   setTxt(document.getElementById("np-length"), st.dur ? fmtTime(st.dur) : "—");
-  const qm = /^(\d{2,3})K?BPS$/.exec(String(st.badge || ""));
-  const qval = qm ? `${qm[1]}kbps` : String(st.badge || "") === "VAULT" ? "vault" : "";
-  const chip = document.getElementById("np-qchip");
-  if (chip) {
-    chip.textContent = qval;
-    chip.classList.toggle("hidden", !qval);
-  }
-  setTxt(document.getElementById("np-quality"), qval || "—");
 
   const bd = document.querySelector("[data-badge]");
   if (bd) {

@@ -6,6 +6,9 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Changed (Now Playing mobile cleanup — 2026-10-17)
+- **Mobile Now Playing drops the `320kbps` tier chip and the time bubble riding the scrubber needle** — the elapsed/remaining readout under the track is the single time source, so the floating bubble (which duplicated it) and the pill under the artist are gone. Spec: `docs/mobile/06-features.md` ("quality chip + seek position bubble removed").
+
 ### Added / Changed (source-first search + branding scrub — 2026-10-17)
 - **Search results now lead with the matched song's own source**: search a film song and its movie's tracks — fetched from the catalog and folded in after the anchor — come first; for singer-driven rows (English and other non-film catalogs) the anchor's artist's own tracks lead instead. Query-intrinsic grouping, no taste and no history; after the first paint, so the page never waits on it. The film is read from the title's own `(From "Movie")` tag first (compilations hide it in the album field) and that provenance no longer blinds the exact-title bonus — the 374M-play original leads instead of a bare-titled cover. Spec: `docs/recommendations.md` §8.11.
 - **No upstream provider or CDN name is shown anywhere in the UI**: About/Terms copy, the Spotify-import note and the Now Playing source line are scrubbed on both shells — desktop `#np-format` and the mobile tier chip show the tier only (`local vault` for on-disk copies); the stream's origin host stays internal. Contract: `docs/branding/trance-music-guide.md`, "Upstream attribution".

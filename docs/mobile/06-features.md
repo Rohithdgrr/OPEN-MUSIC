@@ -664,3 +664,31 @@ no dark pixel, corner-box minimum 156 = art (the pre-fix probe found the
 1 px dark ring at luma 59-85); the sheen measures +18 luma at the top-left
 over the bottom-left art, and the top-edge specular line reads 180 against
 160 for the art below it.
+
+### Now Playing: quality chip + seek position bubble removed (2026-10-17c)
+
+User: *"REMOVE THE TEXT '320kbps' and that timeline in seekbar"* (screenshot:
+light Now Playing, `320kbps` pill under the artist, `2:13` bubble floating
+above the scrubber needle). Mobile only — desktop already dropped its
+quality/eyebrow chrome on 2026-10-10 (`docs/social-nowplaying.md` §6d).
+
+Removed:
+
+- **`#np-qchip`** (`screens/nowplaying.html`) — the `320kbps` / `vault` pill
+  under the artist, and its now-empty wrapper row `#np-source-row`
+  (nothing else ever wrote into the row; the 2026-10-17b "tier only" wording
+  dies with the element).
+- **`#np-pos-bubble`** — the mono time bubble riding the scrubber needle. It
+  duplicated the elapsed readout painted directly under the track
+  (`#elapsed-time`), and sat in the touch path of the thumb.
+- `binders.js` `paintNowplaying` stops writing both; the `st.badge`
+  `[data-badge]` chip management and the `#elapsed-time` / `#remaining-time`
+  row are untouched. The legacy `#np-quality` fill in the same block went with
+  it — that element has not existed in the mobile screen since the 2026-10-10
+  "clean art" batch, so the write was already a null-safe no-op.
+
+Contracts intact: neither `np-qchip` nor `np-pos-bubble` was in
+`jam-ui.test.mjs`'s C-6/ADDED/LEGACY id lists; `elapsed-time`,
+`remaining-time`, `scrubber-*` all remain contracted. If the chip is ever
+wanted back, re-add the element and the paint resumes (painters stay
+null-safe by the same rule as the 2026-10-10 batch).
