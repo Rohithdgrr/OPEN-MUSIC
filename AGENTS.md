@@ -2183,3 +2183,138 @@ capability-test whitelist carries the one documented grant).
 
 Status: ✅ feature live-verified both surfaces ✅ docs (§10 record) + CHANGELOG ⏳ local commit
 pending, **not pushed** (rule 1). Probes (throwaway) in `%TEMP%\opencode\` deleted after reporting.
+
+## 2026-10-24 — Android Now Playing Canvas parked (commented out, invisible; live-verified 5/5, uncommitted)
+
+User: *"let's keep the canvas aside — comment out canvas related and make it
+don't visible in android app."* Spec first: `docs/spotify-android-canvas.md`
+**§18** (park record + revive checklist §18.3). **Nothing committed, nothing
+pushed (rule 1).**
+
+| Piece | Where |
+|---|---|
+| Renderer unreachable | `mobile/binders.js:93` import → `// PARKED §18 …` (canvas.js never evaluates; binders was its only importer) |
+| Per-track hookup | `paintNowplaying` call → commented with marker |
+| Self-driver | `canvas.js` bottom `onPaint` hook → commented (even a future accidental re-import paints nothing) + file-head note; `onPaint` member removed from the import (eslint no-unused) |
+| Settings rows | the three Canvas rows in `ensureMobilePrefs` commented; the chain re-ended at the "Import top tracks" row (`),`) so the Spotify account/import rows stay live |
+| Settings wiring | `paintSpdc` + `m-spdc-save` + both `flipCanvas` calls wrapped verbatim in a block comment (opener marker "Un-comment this whole block to revive") |
+| Switch-state init | `paintMobilePrefs` array loses the two canvas entries (stored right above as a comment) |
+| Untouched on purpose | `canvas.js`/`canvasmath.js` bodies, the cinematic CSS in `mobile/index.html` (keyed on `np-canvas-*` classes nothing adds any more), `canvas.rs` + `/canvas` relay + `canvaz.scdn.co` CSP — all idle, invisible; kept so revive = marker surgery (§18.3) |
+| Docs | `spotify-android-canvas.md` §18 + status row; CHANGELOG Unreleased "Removed … parked"; `tests/live-canvas.mjs` header parked note |
+
+**Gate the parked state (mobile-spotify.test.mjs reshaped — the lesson of the change):**
+- Raw `includes()` assertions stay green **even with the wiring commented**
+  (the comment *is* the string) — all four canvas gates were vacuous before.
+- New "Canvas is parked" test: marker presence (5 sites in binders + canvas.js)
+  and an **active-code view** (strip `//` lines + the one block comment) that
+  must contain none of `invoke("set_canvas_cookie"|"canvas_configured"`,
+  `canvasEnabled…stopCanvas`, `paintCanvasForTrack`, `flipCanvas`, `"m-canvas"`,
+  `"m-canvas-cell"`, `"m-spdc"`)
+- "**first-cut dead-end fixed en route**: the parked rows shared one
+  `sec("tm-m-spotify")` block with Spotify sign-in/imports — they were split at
+  the row boundary, Spotify stays live.
+
+**Gates:** `node --check` ×3 · eslint clean (touched) · active-view checker
+(NO ACTIVE CANVAS REFERENCES in binders) · focused suites 33/33 · `npm test`
+**507/507** · static gate bite-proved: copy of the tree with the import
+uncommented → test fails (never on the live tree).
+Build: `tauri android build --debug --target x86_64` exit 0 → universal debug
+APK 31.85 MiB; the P29 mtime trap surfaced (apk 07:32:38 < so 07:32:51) but the
+packaged `lib/x86_64/libapp_lib.so` SHA-256 == target `.so` byte-identical
+(`412D3571…BB48D1`) — no stale bytes; the ASCII "PARKED 2026-10-24" scan on the
+.so returns not-found because assets are stored compressed (marker-on-ELF is
+not a real signal). `hide_console` dead-code warning is pre-existing template
+noise (mobile debug only).
+
+**On-device proof (Pixel6_API36, CDP :9223, drivers in `%TEMP%\opencode\`):**
+- P1 boot: `__tmCanvasProbe` **undefined** (canvas.js never evaluated — the
+  decisive check), no `#np-canvas-layer`, no `np-canvas-live/art/motion`; the
+  device's leftover `tm-canvas="1"` pref changes **nothing**.
+- P2 play: UI search "believer" → real row click → audio **playing** (`/stream?
+  id=SdZc6-ST…`, t 7.2 → 9.6 advancing) with the layer still absent and
+  canvas.js still unevaluated ("PARKED_WHILE_PLAYING OK").
+- P3 Settings: **0** "Canvas" mentions, no `m-canvas`/`m-canvas-cell`/`m-spdc*`
+  ids; `tm-m-spotify` + account/status/sign-in/sign-out/top-import rows intact.
+- P4 final: still inert after playback.
+- Screenshots for the eye: `%TEMP%\opencode\canvas-parked-settings.png`,
+  `canvas-parked-nowplaying-playing.png`.
+
+**Traps added this session:**
+- PowerShell: `$pid` is read-only (the assignment fails silently and leaves the
+  shell's own pid in an `adb forward` — use a differently named variable);
+  `%TEMP%` is NOT expanded by PS inside an argument (`%TEMP%\...` reaches node
+  literally — use `$env:TEMP`); `$env:VAR\path` as a command needs the call
+  operator `& "$env:VAR\tool.exe"`; `[ZipArchiveEntry]` exposes `.Open()` not
+  `.Stream`; native-tool stderr trips NativeCommandError again (exit code +
+  output IS the truth).
+- CDP: the page-match `x.url === PAGE_URL` misses once a hash route changes the
+  URL (that page showed `…#/settings`) — match with `startsWith(PAGE_URL)`.
+- **`[data-track-id]` is stale for the mobile shell** — song rows are
+  `[data-list="sres"][data-idx]` now (rowHTML import); two drivers no-op'd on
+  the old selector. `import("./shared.js").readDiag()` in-page is the quick
+  truth read for backend calls on Android.
+
+**Status:** ✅ parked + gated + built + live-verified 5/5 ⏳ **nothing committed
+or pushed (rule 1)** — report first; hunk-split at commit time if needed
+(`binders.js` was clean of parallel dirt this time; `CHANGELOG.md` may carry
+parallel-session edits). Emulator left running with the parked debug APK
+installed and a track playing.
+
+## 2026-10-24b — Four-item device batch: notification ticker + recent-search X + lyrics wipe + offline boot (uncommitted)
+
+User batch (4 asks), every item live-verified on `Pixel6_API36` / `emulator-5554` before claiming
+done. Probes were throwaway files in `%TEMP%\opencode\`, deleted after reporting.
+
+| # | Ask | What shipped | Live evidence |
+|---|---|---|---|
+| 1 | Seekbar moves in notification / widget | Native-only: `MediaHub.kt` split `publishPlayback()` (per-tick, speed `0.0f` when paused) from `publishSession()`; forever `startTick()` Runnable (from `init()`) advances `posMs` 1 s/s while playing (idle 5 s) and calls `publishPlayback()` + `refreshWidgets()`; `tm_widget.xml` gained `tm_w_progress` ProgressBar (max 1000, white) | `ticker-check.mjs` **5/5**: app backgrounded, `dumpsys media_session` positions 5996→8904→11174 ms — **+~2.9 s per 3 s wall clock with zero JS pushes** |
+| 2 | Remove button on Recent Searches | `sugQueryRow(text,toks,icon,del)` wraps the dropdown history row in `div.relative`; X is `data-sug-del` **outside** the row button (removal never re-runs the query); delegated handler updates `tm-history` + same-context repaint; keyboard-nav selector excludes it | **7/7** after the fix: dropdown painted 3 rows w/ X, removal hit storage, others kept, dropdown **repainted in place**, row click still commits search |
+| 3 | Lyrics wipe word-by-word (like desktop) | No defect — re-verified as-is | **8/8**: mid-line mixed states (5 done @100%, 1 @68%, 3 @0%) advancing; the user's "not working" reads as a stale-APK/screenshot artifact, not code |
+| 4 | Whole UI renders offline | Fonts bundled into `app/src/fonts/` (`icons.woff2` variable 4.0 MB + `geist-latin` 29 KB + `jetbrains-mono-latin` 40 KB); both shell heads replaced Google `<link>`s with inline `@font-face` + **verbatim `.material-symbols-outlined` class rule** (the icon counters only existed in Google's stylesheet); both CSPs dropped `fonts.googleapis.com`/`gstatic.com` | `offline-boot.mjs` **8/8** airplane-on cold boot: all 3 faces `:loaded`, `bad=0/30` icon spans, glyph probe `favorite=24` at `fs=24` (ligatures render ≈1×fs; raw text would be ~10×fs), home painted 1446 nodes with airplane still on |
+
+**P58 (new, `docs/mobile/09`):** vault dedupe keyed on a byte join, so a re-downloaded vault copy
+missed and MediaProvider saved `Song (1).m4a`. Dedupe is now **display-name-only**, and after
+insert Kotlin reads back the row's real `DISPLAY_NAME` so the toast never lies on a race.
+Live: "Already saved on this device", no `(1)` duplicates (v10 driver 27/27 incl. save).
+
+**The remove-then-bubble bug (the session's main find):** the X handler replaced the dropdown's
+`innerHTML`, then the click **kept bubbling** to the document away-click listener where the
+now-detached button failed `closest("#m-suggest")` → `hide()` closed the freshly repainted box.
+Fix: `e.stopPropagation()` on the very first line of the del branch. Gate = assert that call inside
+the handler segment. **Corollary:** any in-box repaint by innerHTML replace needs stopPropagation
+first, or the detached-target away-close closes the box you just painted.
+
+**Overlay-injection gap (cost one full build):** `npm run tauri -- android build` does **not** run
+`build.sh inject_android_mediahub` — gen/ compiled a stale MediaHub. Manually copy overlay Kotlin +
+res into `gen/.../{java/…,res/layout/}` **before gradle**, verify byte-identity + `startTick`
+presence. Tracked gen/ markers (permissions + TM-MEDIA) survive.
+
+**APK freshness, mtime is a false alarm:** this build's `app-universal-debug.apk` (10:14:59) was
+*older* than its `.so` (10:15:09), the P29 pattern. Decided via SHA-256 of the zip-extracted
+`lib/x86_64/libapp_lib.so` vs `target/x86_64-linux-android/debug/`: **matched** (`F3C525BB…`). Rule:
+never judge staleness on mtime — extract and hash.
+
+**Probe/gate lessons of the session (each cost iterations):**
+- Thumbnail-verify: pick resolvable-by-evidence rows (in resolver cache `tm-artist-art-v1` AND on
+  the mount) — unresolved tiles are mostly *legal-name aliases* ("Abel Tesfaye" → "The Weeknd")
+  where the catalog honestly misses; classifying on `/artists/`-substring was over-tight (fix:
+  assert non-`artist-default` catalog image).
+- Ligature check: raw `textContent` always contains the glyph name (vacuous), DOM-width ratio is
+  fooled by fixed 78 px flex stretch; **measure an unconstrained hidden probe span vs a gibberish
+  baseline** instead.
+- Gate slice windows (`.slice(i, i+700)`) are brittle: a comment block inserted in front of the
+  code pushed the repaint calls outside the window → 1 fail; extended to 1100 → 4/4. Assert
+  windows must cover inserted comments.
+- Jetbrains Mono: Google's CSS API intermittently answers bot-page **HTML** instead of CSS —
+  fall back to jsdelivr fontsource (`jetbrains-mono:vf@latest/latin-wght-normal.woff2`).
+- PowerShell console renders UTF-8 as `A-`-style mojibake (×/—) — rendering-only; check bytes with
+  node `readFileSync`, don't "repair" them.
+
+**Gates:** full `npm test` **533/533** (exit 0) · focused `recent-sug` 4/4 · eslint clean · fresh
+debug APK **37,473,163 B**, `adb install -r` Success, monkey-launched (pid 6972). `cargo` untouched
+(all four items frontend + Kotlin overlay-side).
+
+**Status:** ✅ items 1, 2, 4 + P58 live-verified; item 3 re-verified no-defect ✅ docs first
+(`docs/android-media-widget.md` ticker section, `docs/mobile/06-features.md` fonts/X/lyrics/lead-artist,
+P58, CHANGELOG Unreleased) ⏳ **nothing committed or pushed (rule 1)** — awaiting go-ahead.
+Emulator left running with the fixed build installed.

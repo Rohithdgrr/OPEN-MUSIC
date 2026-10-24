@@ -42,12 +42,6 @@ fn client_id() -> Result<&'static str, String> {
     }
 }
 
-/// Same credential, for sibling modules (`canvas.rs`). The Spotify Dashboard
-/// client id is shared: the cookie exchange and the PKCE flow both need it.
-pub fn client_id_public() -> Result<&'static str, String> {
-    client_id()
-}
-
 pub struct SpotifyState {
     http: reqwest::Client,
     inner: std::sync::Mutex<SpotifyInner>,

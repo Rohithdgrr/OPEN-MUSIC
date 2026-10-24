@@ -6,6 +6,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -14,11 +16,15 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.webkit.WebView
 import android.widget.RemoteViews
+import java.io.File
+import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -62,6 +68,13 @@ object MediaHub {
   private var durMs = 0L
   private var everMeta = false
 
+  // 1-second playback ticker: while playing it advances posMs locally and
+  // re-publishes PlaybackState + widget progress. The JS-side pushes throttle
+  // at 2-5 s and stall entirely once the WebView is backgrounded (Android
+  // throttles its timers), which froze the notification bar, the Android 16
+  // status chip and the widget at the last pushed anchor.
+  private var ticker: Runnable? = null
+
   private val lock = Any()
   private var pendingAction = ""
   private var pendingRoute = ""
@@ -99,6 +112,7 @@ object MediaHub {
       } catch (_: Exception) {
       }
     }
+    startTick()
   }
 
   fun setWebView(w: WebView?) {
@@ -143,6 +157,49 @@ object MediaHub {
       postNotif()
       refreshWidgets()
     }
+  }
+
+  /// Cheap per-tick publish: position + transport state only — no metadata
+  /// churn, cheap enough to run every second. Speed is 1.0 while playing so
+  /// the system extrapolates between ticks, and 0.0 while paused so nothing
+  /// drifts forward.
+  private fun publishPlayback() {
+    val s = session ?: return
+    try {
+      val state = if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
+      s.setPlaybackState(
+        PlaybackState.Builder()
+          .setState(state, posMs, if (playing) 1.0f else 0.0f)
+          .setActions(
+            PlaybackState.ACTION_PLAY or
+              PlaybackState.ACTION_PAUSE or
+              PlaybackState.ACTION_SKIP_TO_NEXT or
+              PlaybackState.ACTION_SKIP_TO_PREVIOUS or
+              PlaybackState.ACTION_SEEK_TO or
+              PlaybackState.ACTION_STOP,
+          ).build(),
+      )
+    } catch (_: Exception) {
+    }
+  }
+
+  private fun startTick() {
+    if (ticker != null) return
+    val r =
+      object : Runnable {
+        override fun run() {
+          if (playing && durMs > 0L && posMs < durMs) {
+            posMs = (posMs + 1000L).coerceAtMost(durMs)
+            publishPlayback()
+            refreshWidgets()
+          }
+          // Keeps polling (slowly) while paused so a resumed push is picked
+          // up seamlessly; the JS push remains authoritative on every change.
+          main.postDelayed(this, if (playing) 1000L else 5000L)
+        }
+      }
+    ticker = r
+    main.postDelayed(r, 1000L)
   }
 
   fun dismiss() {
@@ -238,19 +295,7 @@ object MediaHub {
       val bmp = art
       if (bmp != null) mb.putBitmap(MediaMetadata.METADATA_KEY_ART, bmp)
       s.setMetadata(mb.build())
-      val state = if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED
-      s.setPlaybackState(
-        PlaybackState.Builder()
-          .setState(state, posMs, 1.0f)
-          .setActions(
-            PlaybackState.ACTION_PLAY or
-              PlaybackState.ACTION_PAUSE or
-              PlaybackState.ACTION_SKIP_TO_NEXT or
-              PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-              PlaybackState.ACTION_SEEK_TO or
-              PlaybackState.ACTION_STOP,
-          ).build(),
-      )
+      publishPlayback()
       s.isActive = everMeta
     } catch (_: Exception) {
     }
@@ -433,6 +478,17 @@ object MediaHub {
         R.id.tm_w_toggle,
         if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
       )
+      // Seek bar: visible only once a track with a duration is known; the
+      // ticker refreshes it every second while playing.
+      val hasProgress = everMeta && durMs > 0L
+      views.setViewVisibility(
+        R.id.tm_w_progress,
+        if (hasProgress) android.view.View.VISIBLE else android.view.View.GONE,
+      )
+      if (hasProgress) {
+        val pct = ((posMs * 1000L) / durMs).coerceIn(0L, 1000L).toInt()
+        views.setProgressBar(R.id.tm_w_progress, 1000, pct, false)
+      }
     } catch (_: Exception) {
     }
   }
@@ -456,5 +512,132 @@ object MediaHub {
       }
     } catch (_: Exception) {
     }
+  }
+
+  // ------------------------------------------------------------ save local -
+
+  /// Copy one vaulted song file into MediaStore (Music/OpenMusic/) — the
+  /// "Save to local" menu item (savelocal.js). Scoped storage makes this a
+  /// plain insert, no storage permission on API 29+; older versions answer
+  /// honestly instead of failing oddly. Runs on the caller's (WebView)
+  /// thread; a few MB copy is milliseconds-to-seconds of work.
+  fun saveLocal(json: String): String {
+    if (!this::app.isInitialized) return "err: app not ready"
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+      return "err: save to local needs Android 10 or newer"
+    }
+    try {
+      val o = JSONObject(json)
+      val src = File(o.optString("path", ""))
+      if (!src.isFile) return "err: saved file not found — download it again"
+      val bytes = src.length()
+      if (bytes <= 0L) return "err: saved file is empty"
+
+      // The display name from savelocal.js localFileName(), re-sanitized here
+      // as defense in depth: same strip rule, so dedupe compares the same
+      // final string the JS side computed.
+      val display = sanitizeName(o.optString("display", "")) ?: "song.m4a"
+      val ext = display.substringAfterLast('.', "m4a")
+      val mime = if (ext.equals("opus", ignoreCase = true)) "audio/ogg" else "audio/mp4"
+      val sanitized = sanitizeName(o.optString("title", "")) ?: display.substringBeforeLast('.')
+      val artistName = sanitizeName(o.optString("artist", "")) ?: "Unknown artist"
+      val albumName = sanitizeName(o.optString("album", "")) ?: "Unknown album"
+
+      val cr = app.contentResolver
+      // Idempotent subject = the name, not the bytes: a re-downloaded vault
+      // copy can differ byte-for-byte (CDN encode drift) while being the same
+      // song; treating that as new made MediaStore auto-rename the second
+      // insert to " <n>.m4a" and the device filled with duplicates.
+      val media = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+      cr.query(
+        media,
+        arrayOf(MediaStore.MediaColumns._ID),
+        "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+        arrayOf(display),
+        null,
+      )?.use { c ->
+        if (c.moveToFirst()) {
+          return "same $display"
+        }
+      }
+
+      val values = ContentValues().apply {
+        put(MediaStore.MediaColumns.DISPLAY_NAME, display)
+        put(MediaStore.MediaColumns.MIME_TYPE, mime)
+        put(MediaStore.MediaColumns.RELATIVE_PATH, "Music/OpenMusic/")
+        put(MediaStore.Audio.AudioColumns.TITLE, sanitized)
+        put(MediaStore.Audio.AudioColumns.ARTIST, artistName.ifEmpty { "Unknown artist" })
+        put(MediaStore.Audio.AudioColumns.ALBUM, albumName.ifEmpty { "Unknown album" })
+        put(MediaStore.Audio.AudioColumns.IS_MUSIC, 1)
+        put(MediaStore.Audio.AudioColumns.IS_RINGTONE, 0)
+        put(MediaStore.Audio.AudioColumns.IS_NOTIFICATION, 0)
+        put(MediaStore.Audio.AudioColumns.IS_ALARM, 0)
+        put(MediaStore.Audio.AudioColumns.IS_PODCAST, 0)
+        put(MediaStore.MediaColumns.IS_PENDING, 1)
+      }
+      val uri = cr.insert(media, values) ?: return "err: media library rejected the insert"
+      try {
+        cr.openOutputStream(uri)?.use { outs ->
+          src.inputStream().use { ins ->
+            ins.copyTo(outs, 64 * 1024)
+          }
+          outs.flush()
+        } ?: run {
+          fail(uri, cr, display)
+          return "err: could not open storage stream"
+        }
+        val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+        cr.update(uri, done, null, null)
+        // MediaProvider can rename on a display-name race ("song (1).m4a") —
+        // the honest result is the name the row actually carries now.
+        var actual = display
+        try {
+          cr.query(
+            uri,
+            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+          )?.use { c ->
+            if (c.moveToFirst()) actual = c.getString(0) ?: display
+          }
+        } catch (_: Exception) {
+        }
+        return "ok $actual"
+      } catch (e: Exception) {
+        fail(uri, cr, display)
+        return "err: save failed — ${e.message ?: "copy error"}"
+      }
+    } catch (e: Exception) {
+      return "err: ${e.message ?: "save error"}"
+    }
+  }
+
+  private fun fail(uri: Uri, cr: ContentResolver, name: String) {
+    try {
+      cr.delete(uri, null, null)
+    } catch (_: Exception) {
+      logW("[TM] saveLocal: could not discard pending row ($name)")
+    }
+  }
+
+  private fun logW(msg: String) {
+    try {
+      android.util.Log.w("OpenMusic", msg)
+    } catch (_: Exception) {
+    }
+  }
+
+  /// Same strip rule as savelocal.js localFileName: Android-hostile
+  /// separators + control chars → space, spacing collapsed, trimmed.
+  private fun sanitizeName(raw: String): String? {
+    val s = raw
+      .replace(Regex("[/:*?\"<>|\\\\]"), " ")
+      .replace(Regex("[\\x00-\\x1f]"), " ")
+      .replace(Regex("\\s+"), " ")
+      .trim()
+      .trimEnd('-', '.', ' ')
+      .take(96)
+    return if (s.isEmpty()) null else s
   }
 }

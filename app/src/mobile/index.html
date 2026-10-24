@@ -5,10 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="shell-type" content="mobile_tab">
 <title>OpenMusic</title>
-<link href="https://fonts.googleapis.com" rel="preconnect">
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<!-- Fonts are bundled locally (app/src/fonts, same-origin): the shell must
+     render icons and text with zero connectivity (2026-10-24 offline-boot
+     fix — the CDN stylesheet never retried and left raw ligature names).
+     The icon class definition comes from that same stylesheet, so it is
+     inlined below unchanged. -->
+<style>
+@font-face{font-family:"Geist";src:url("/fonts/geist-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("/fonts/jetbrains-mono-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"Material Symbols Outlined";src:url("/fonts/icons.woff2") format("woff2");font-weight:100 700;font-style:normal;font-display:block}
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+</style>
 <link rel="stylesheet" href="/tailwind.css">
 <script src="tailwind-config.js"></script>
 <style>
@@ -1062,6 +1083,294 @@ html body button[data-nav="settings"][data-net-state] {
 }
 html body button[data-nav="settings"][data-net-state] .material-symbols-outlined {
   color: #ffffff !important;
+}
+
+/* ==========================================================================
+   FULL-BLEED / AMBIENT NOW PLAYING CANVAS (2026-10-19, ambient 2026-10-20)
+   docs/spotify-android-canvas.md §15 + §16. canvas.js appends
+   #np-canvas-layer to <body>. It survives navigation: the canvas is an
+   app-wide backdrop, not a Now Playing ornament.
+   - #np-canvas-backdrop carries the track cover (Ken Burns drift) — the
+     fallback that guarantees every song has a backdrop;
+   - #np-canvas carries the Apple animated cut when one resolves;
+   - html.np-canvas-live is the cinematic scope (transparent page/main, dark
+     glass header + sheet; html.dark is forced by the renderer so every token
+     and text colour flips with it);
+   - html.np-canvas-focus marks Now Playing (clear scrim, art-card window);
+     every other screen carries .dim on the layer for a stronger scrim;
+   - html.np-canvas-art opens the art card onto the video only while the video
+     is actually up — during a lookup the card keeps painting the cover.
+   ========================================================================== */
+
+#np-canvas-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #000;
+  pointer-events: none;
+}
+
+/* The cover of the current track: full-bleed, slowly drifting. The blur
+   hides the upscale from the catalog's 500 px art on a 1080 px screen. */
+#np-canvas-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  filter: blur(3px) saturate(1.05);
+  transform: scale(1.12);
+  animation: np-canvas-drift 6s ease-in-out infinite alternate;
+  will-change: transform;
+  transition: opacity 0.5s ease;
+}
+
+@keyframes np-canvas-drift {
+  from {
+    transform: scale(1.12) translate3d(-1.2%, -1.4%, 0);
+  }
+  to {
+    transform: scale(1.22) translate3d(1.2%, 1.4%, 0);
+  }
+}
+
+/* The generated canvas's colour/light layer (§17.3): a 6 s soft-light wash
+   over the cover so the fallback is visibly alive even on a dark cover. It
+   is hidden when a real video takes over — the video is the subject then. */
+#np-canvas-wash {
+  position: absolute;
+  inset: -12%;
+  pointer-events: none;
+  background:
+    radial-gradient(45% 55% at 28% 32%, rgba(255, 255, 255, 0.18), transparent 70%),
+    radial-gradient(40% 50% at 72% 68%, rgba(255, 255, 255, 0.12), transparent 70%),
+    conic-gradient(
+      from 120deg at 50% 50%,
+      rgba(255, 255, 255, 0.06),
+      transparent 40%,
+      rgba(255, 255, 255, 0.1),
+      transparent 75%
+    );
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
+  transform: scale(1.1);
+  animation: np-canvas-wash 6s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+}
+@keyframes np-canvas-wash {
+  from {
+    transform: scale(1.1) translate3d(-2%, -1%, 0) rotate(-2deg);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1.2) translate3d(2%, 1%, 0) rotate(2deg);
+    opacity: 0.85;
+  }
+}
+
+#np-canvas-layer video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  opacity: 0;
+  transition: none;
+}
+
+/* The front/standby opacities are driven every frame by canvas.js during the
+   0.6 s crossfade; a CSS transition would lag behind the rAF ticker. */
+#np-canvas-layer[data-mode="video"] #np-canvas-wash {
+  opacity: 0;
+}
+#np-canvas-layer[data-mode="video"] #np-canvas-backdrop {
+  opacity: 0;
+  animation-play-state: paused;
+}
+
+/* Dark at the header and at the transport, clear through the middle so the
+   loop itself stays visible (the Now Playing/focused look). */
+#np-canvas-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.72) 0%,
+    rgba(0, 0, 0, 0.28) 16%,
+    rgba(0, 0, 0, 0.08) 34%,
+    rgba(0, 0, 0, 0.22) 55%,
+    rgba(0, 0, 0, 0.66) 78%,
+    rgba(0, 0, 0, 0.9) 100%
+  );
+}
+
+/* Ambient (Home, Search, Library, Settings…): the same layer under a stronger
+   scrim, so page text and cards read over arbitrary footage. */
+#np-canvas-layer.dim::after {
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.82) 0%,
+    rgba(0, 0, 0, 0.58) 22%,
+    rgba(0, 0, 0, 0.5) 50%,
+    rgba(0, 0, 0, 0.62) 78%,
+    rgba(0, 0, 0, 0.88) 100%
+  );
+}
+
+/* The layer is a sibling of #screen (both on <body>): lift the content. */
+html.np-canvas-live #screen {
+  position: relative;
+  z-index: 1;
+}
+
+/* The page becomes a window onto the video. Later in this sheet than the
+   theme gradients, so specificity ties resolve to these rules. */
+html.np-canvas-live,
+html.np-canvas-live #screen,
+html.np-canvas-live .screen-anim,
+html.np-canvas-live main {
+  background: transparent !important;
+}
+
+/* The dark theme inverts the `bg-surface` utility with `html.dark
+   .bg-surface !important` (specificity 0,2,1), which outranks the bare
+   `main` selector above — the fragment's main carries that class. Two
+   classes + three types wins the inversion while the canvas is up. */
+html.np-canvas-live main.bg-surface {
+  background-color: transparent !important;
+}
+
+/* Header: dark glass instead of the opaque surface. The `#screen` id is
+   required: the fragment header carries `bg-surface/90`, whose dark-theme
+   inversion (0,2,1) outranks a bare `header` selector. */
+html.np-canvas-live #screen header {
+  background: rgba(9, 9, 11, 0.42) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+/* Ambient screens get slightly denser header glass: the backdrop under it is
+   the same canvas, but the page content (not the artwork) is the subject. */
+html.np-canvas-live:not(.np-canvas-focus) #screen header {
+  background: rgba(9, 9, 11, 0.6) !important;
+}
+
+#np-art {
+  transition: opacity 0.35s ease;
+}
+
+/* The art card is a window onto the video while it plays. */
+html.np-canvas-live.np-canvas-art #np-art-card {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+html.np-canvas-live.np-canvas-art #np-art {
+  opacity: 0;
+}
+html.np-canvas-live.np-canvas-art #np-art-card::after {
+  display: none !important;
+}
+
+/* No Apple cut: the cover itself is the running canvas (2026-10-20).
+   The card used to stay sharp and still for these tracks, so every song
+   without motion artwork read as "canvas not working". The fallback now
+   pans/zooms the cover inside the card and sweeps a soft light across it,
+   while the full-bleed copy drifts a little faster and clearer. The Apple
+   video remains a progressive upgrade: when it plays, np-canvas-motion is
+   removed and these rules stop applying. */
+html.np-canvas-motion #np-canvas-backdrop {
+  filter: blur(2px) saturate(1.1);
+  animation-duration: 6s;
+}
+html.np-canvas-motion #np-art {
+  transform-origin: 50% 45%;
+  animation: np-cover-drift 6s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes np-cover-drift {
+  from {
+    transform: scale(1.03) translate3d(-1.4%, -1.8%, 0);
+  }
+  to {
+    transform: scale(1.16) translate3d(1.4%, 1.8%, 0);
+  }
+}
+/* A narrow light band crossing the artwork on a slow loop. On a dark cover
+   (Hurt You was the report) the drift alone is subtle; this is the cue that
+   the canvas is alive. Painted above the img, below the static glass. */
+html.np-canvas-motion #np-art-card::before {
+  content: "";
+  position: absolute;
+  inset: -35%;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0) 38%,
+    rgba(255, 255, 255, 0.16) 49%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  transform: translate3d(-75%, 0, 0);
+  animation: np-cover-sheen 6s ease-in-out infinite;
+}
+@keyframes np-cover-sheen {
+  0%,
+  42% {
+    transform: translate3d(-75%, 0, 0);
+  }
+  74%,
+  100% {
+    transform: translate3d(75%, 0, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #np-canvas-backdrop,
+  #np-canvas-wash,
+  html.np-canvas-motion #np-art,
+  html.np-canvas-motion #np-art-card::before {
+    animation: none !important;
+  }
+}
+
+/* Queue sheet: dark glass so the loop reads behind it. */
+html.np-canvas-live #np-sheet > div {
+  background: rgba(16, 16, 19, 0.55) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  backdrop-filter: blur(22px) saturate(140%);
+}
+
+/* Action row: glass circles over the video. */
+html.np-canvas-live #np-action-like > span,
+html.np-canvas-live #np-action-lyrics > span,
+html.np-canvas-live #np-action-queue > span,
+html.np-canvas-live #np-action-chat > span,
+html.np-canvas-live #np-action-jam > span {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* Legibility over arbitrary footage: a soft shadow under the metadata and
+   the transport glyphs (the scrim alone cannot promise contrast on a bright
+   frame). */
+html.np-canvas-live #np-title,
+html.np-canvas-live #np-artist,
+html.np-canvas-live #elapsed-time,
+html.np-canvas-live #remaining-time {
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.6);
+}
+html.np-canvas-live #np-top .material-symbols-outlined {
+  filter: drop-shadow(0 1px 6px rgba(0, 0, 0, 0.55));
 }
 </style>
 <script>

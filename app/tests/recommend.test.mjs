@@ -399,6 +399,29 @@ test("artistInsights ranks by mined weight with real evidence", async () => {
   assert.equal(filterArtists(list, "all").length, list.length);
 });
 
+test("artistInsights marks image provenance for the art resolver", async () => {
+  const { artistInsights } = await import("../src/mobile/recommend.js");
+  const p = buildProfile({
+    plays: [track("w1", { artist: "Covered", ts: daysAgo(1), image: "cover.png" })],
+    favs: [],
+    downloads: [],
+    now: NOW,
+  });
+  const list = artistInsights(p, {
+    follows: [
+      { title: "Real Art", token: "tok-ra", image: "ra.png" },
+      { title: "No Art Follow", token: "tok-na" },
+    ],
+  });
+  const covered = list.find((a) => a.name === "Covered");
+  assert.equal(covered.art, "track", "mined cover art is a stand-in the resolver must replace");
+  const real = list.find((a) => a.name === "Real Art");
+  assert.equal(real.image, "ra.png", "follow art beats a track cover");
+  assert.equal(real.art, "artist", "follow art is already the real thing — resolver skips it");
+  const bare = list.find((a) => a.name === "No Art Follow");
+  assert.equal(bare.art, "", "no art provenance yet");
+});
+
 test("albumInsights separates listening time from play frequency", async () => {
   const { albumInsights, filterAlbums, albumEvidence, fmtListenTime } = await import("../src/mobile/recommend.js");
   const NOW2 = Date.UTC(2026, 9, 7, 14, 0, 0);

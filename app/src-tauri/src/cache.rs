@@ -1,4 +1,4 @@
-//! Disk tiers of the cache stack (L3 album art, L4 lyrics).
+//! Disk tiers of the cache stack (L3 album art, L4 lyrics, L4b Canvas video).
 //!
 //! Content-hash keys, atomic writes, a byte budget with LRU eviction and a
 //! 30-day unread window for lyrics — see docs/cache-architecture.md. The RAM
@@ -6,7 +6,7 @@
 //! caches on `proxy::AppState`; the offline vault is deliberately NOT part
 //! of this tree (user files under Downloads, own ledger, own quota).
 //!
-//! ponytail: no `walkdir` — this tree is exactly two flat directories, so a
+//! ponytail: no `walkdir` — this tree is three flat directories, so a
 //! recursive `read_dir` is cheaper than the dependency (sha256.rs: one hash
 //! function was not worth a dependency either).
 
@@ -46,6 +46,9 @@ pub struct CacheStats {
     pub art_count: u64,
     pub lyrics_bytes: u64,
     pub lyrics_count: u64,
+    /// Canvas/animated-artwork videos (docs/spotify-android-canvas.md §14).
+    pub canvas_bytes: u64,
+    pub canvas_count: u64,
     /// Vault size, computed by the caller — downloads are not in this tree.
     pub vault_bytes: u64,
     pub budget_bytes: u64,
@@ -73,6 +76,7 @@ pub struct DiskCache {
     dir: PathBuf,
     art_dir: PathBuf,
     lyrics_dir: PathBuf,
+    canvas_dir: PathBuf,
     enabled: bool,
     budget: AtomicU64,
 }
@@ -87,12 +91,14 @@ impl DiskCache {
     pub fn new(dir: PathBuf) -> Self {
         let art_dir = dir.join("art");
         let lyrics_dir = dir.join("lyrics");
-        let enabled = probe_writable(&dir, &art_dir, &lyrics_dir);
+        let canvas_dir = dir.join("canvas");
+        let enabled = probe_writable(&dir, &art_dir, &lyrics_dir, &canvas_dir);
         let budget = load_budget(&dir.join(BUDGET_FILE));
         Self {
             dir,
             art_dir,
             lyrics_dir,
+            canvas_dir,
             enabled,
             budget: AtomicU64::new(budget),
         }
@@ -119,6 +125,13 @@ impl DiskCache {
     /// L3 key: content-hash of the (normalised) art URL, 32 hex chars.
     pub fn art_path(&self, key: &str) -> PathBuf {
         self.art_dir.join(format!("{}.img", hash_key(key)))
+    }
+
+    /// L4b key: the video id (canvas.rs's 16-hex FNV of the source URL).
+    /// The id is validated upstream (`check_id` on the relay route), so it is
+    /// used as a name directly — same contract as `lyrics_path`'s safe ids.
+    pub fn canvas_path(&self, id: &str) -> PathBuf {
+        self.canvas_dir.join(format!("{id}.mp4"))
     }
 
     /// L4 key: the song id when it is filename-safe, else its hash.
@@ -186,10 +199,10 @@ impl DiskCache {
         self.read_touch(path).await
     }
 
-    /// Walk the tree: art + lyrics files with size and mtime.
+    /// Walk the tree: art + lyrics + canvas files with size and mtime.
     fn walk(&self) -> Vec<FileRow> {
         let mut rows = Vec::new();
-        for dir in [&self.art_dir, &self.lyrics_dir] {
+        for dir in [&self.art_dir, &self.lyrics_dir, &self.canvas_dir] {
             collect(dir, &mut rows);
         }
         rows
@@ -202,6 +215,8 @@ impl DiskCache {
             art_count: 0,
             lyrics_bytes: 0,
             lyrics_count: 0,
+            canvas_bytes: 0,
+            canvas_count: 0,
             vault_bytes,
             budget_bytes: self.budget(),
             disk_enabled: self.enabled,
@@ -211,6 +226,9 @@ impl DiskCache {
             if path.parent() == Some(&self.art_dir) {
                 s.art_bytes += bytes;
                 s.art_count += 1;
+            } else if path.parent() == Some(&self.canvas_dir) {
+                s.canvas_bytes += bytes;
+                s.canvas_count += 1;
             } else {
                 s.lyrics_bytes += bytes;
                 s.lyrics_count += 1;
@@ -261,10 +279,10 @@ impl DiskCache {
         }
     }
 
-    /// Clear-cache button: every art + lyrics file, budget file kept,
-    /// vault untouched (it lives outside this tree by construction).
+    /// Clear-cache button: every art + lyrics + canvas file, budget file
+    /// kept, vault untouched (it lives outside this tree by construction).
     pub fn clear(&self) {
-        for dir in [&self.art_dir, &self.lyrics_dir] {
+        for dir in [&self.art_dir, &self.lyrics_dir, &self.canvas_dir] {
             let Ok(entries) = std::fs::read_dir(dir) else {
                 continue;
             };
@@ -313,9 +331,9 @@ fn load_budget(path: &Path) -> u64 {
         .unwrap_or(DEFAULT_BUDGET)
 }
 
-/// True when the three directories exist and a probe file round-trips.
-fn probe_writable(dir: &Path, art: &Path, lyrics: &Path) -> bool {
-    for d in [dir, art, lyrics] {
+/// True when the four directories exist and a probe file round-trips.
+fn probe_writable(dir: &Path, art: &Path, lyrics: &Path, canvas: &Path) -> bool {
+    for d in [dir, art, lyrics, canvas] {
         if std::fs::create_dir_all(d).is_err() {
             return false;
         }

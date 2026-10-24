@@ -29,6 +29,7 @@ import {
   removePlaylistTrack,
   updatePlaylistMeta,
 } from "./shared.js";
+import { saveTrackLocal, saveLocalBridge, SAVED_DIR } from "./savelocal.js";
 import {
   playerState,
   insertNext,
@@ -521,6 +522,21 @@ export function deleteLocalPlaylist(id, title) {
 
 // ------------------------------------------------------------------- menus
 
+/// "Save to local" glue: run the vault→bridge pipeline and translate the
+/// outcome into the sheet's toasts (docs/mobile/06-features.md, 2026-10-24).
+async function runSaveLocal(track) {
+  try {
+    const r = await saveTrackLocal(track);
+    if (r.status === "same") {
+      toast(`Already saved on this device — ${SAVED_DIR}${r.name ? `/${r.name}` : ""}`, 4200, "success");
+    } else {
+      toast(`Saved to ${SAVED_DIR}/${r.name}`, 4200, "success");
+    }
+  } catch (e) {
+    toast(e && e.message ? String(e.message) : "Couldn't save to this device", 5000, "error");
+  }
+}
+
 /// The full track menu — the one the design shows on NowPlaying.
 /// `ctx` is "history" | "queue" | null; `idx` is the absolute queue index
 /// that only the queue context needs (for the removal entry).
@@ -532,8 +548,8 @@ export function trackMenu(track, ctx, idx) {
   const items = [];
   // Order is the user's (docs/mobile/06-features.md, Android UI parity
   // batch): track info → artist → album → queue → playlist → download →
-  // share. Play Next stays next to Add to Queue; EQ and the context
-  // removals keep their old positions below.
+  // save-to-local → share. Play Next stays next to Add to Queue; EQ and the
+  // context removals keep their old positions below.
   items.push({ icon: "info", label: "Track Details", action: () => detailsSheet(track) });
   if (track.artist || track.artist_ids?.length) {
     items.push({ icon: "artist", label: "Go to Artist", action: () => goToArtist(track) });
@@ -568,6 +584,13 @@ export function trackMenu(track, ctx, idx) {
       label: "Download",
       action: () => downloadTrack(track),
     });
+    // "Save to local" = hand the song file to the DEVICE (Music/OpenMusic/
+    // via MediaStore) — "Download" only fills the app-private vault. Hidden
+    // where the native bridge doesn't exist (desktop preview): an option
+    // that can only ever error is a dead affordance.
+    if (saveLocalBridge()) {
+      items.push({ icon: "save", label: "Save to local", action: () => runSaveLocal(track) });
+    }
   }
   items.push({
     icon: "ios_share",
@@ -758,6 +781,7 @@ export async function libraryMenu(item) {
         },
         { icon: "info", label: "Track Details", action: () => detailsSheet(t) },
         { icon: "download", label: "Download", action: () => downloadTrack(t) },
+        ...(saveLocalBridge() ? [{ icon: "save", label: "Save to local", action: () => runSaveLocal(t) }] : []),
         {
           icon: "delete",
           label: "Remove from list",

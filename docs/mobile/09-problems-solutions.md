@@ -113,3 +113,45 @@ re-read by hand before fixing — none inferred). Mobile batch:
 Gates: `npm run lint` clean · `npm test` **413/413**. Live device check
 (boot graph, version badge P48, analytics pills P49 on the emulator):
 recorded in `AGENTS.md` 2026-10-15h.
+
+## 2026-10-17 — Now Playing Canvas: the cookie-free route (docs/spotify-android-canvas.md §14)
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P54 | The "Now Playing Canvas" toggle never produced anything — no content ever appeared on any build | the whole route was gated behind the Spotify `sp_dc` web-session cookie, and the app's own OAuth sign-in cannot mint one (§13: `clienttoken` 400 / Pathfinder 403), so without a hand-pasted cookie every fetch was skipped | replaced with the cookie-free Apple Music animated-artwork route (§14): the public web player's bearer is scraped from its JS bundle (memoised; re-scraped once on a 401), an artist-agreement + artwork matcher picks the album (or the matched song's parent album), the square AVC rendition (smallest ≥ 460 px) is downloaded once to the budget-managed cache and served by the new loopback `/canvas` route (`video/mp4`, Range). The `sp_dc` field stays as the R2 hook |
+
+Live-verified 2026-10-17 on `Pixel6_API36` at **6/6** (debug APK): command →
+relay (200 + 206, `video/mp4`, 1,917,354 B) → real `<video>` playback (486×486)
+→ honest miss → full UI path (search → trusted touch → `#np-canvas` playing).
+Probe table: `docs/spotify-android-canvas.md` §14.4; driver kept at
+`app/tests/live-canvas.mjs`.
+
+## 2026-10-19 — Canvas presentation: a tile, not a Canvas (§15 supersedes the P54 rendition note)
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P55 | The canvas works but reads as a small blinking tile in the album-art square — the user asked for the Spotify-Canvas look | P54 painted the video **inside** `#np-art-card` (~380 px, 486 px square source) | §15 full-bleed presentation: `canvas.js` creates a body-level fixed `#np-canvas-layer` (`object-fit: cover`, scrim), reveals it on `playing`, and enters a cinematic dark mode (`html.dark` + `html.np-canvas-live`, art card a window onto the video); leaving Now Playing / toggle-off / any miss restores art + theme (lifecycle flag, not a body class — screen modules rewrite body classes). Source is now tall-first (`motionDetailTall` → `motionTallVideo3x4`) with the rendition floor at **780 px** (was 460). Live record: §16.5 |
+
+## 2026-10-20 — Canvas coverage + scope: not every song, not every screen
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P56 | The full-bleed canvas only appeared for the few tracks Apple ships motion artwork for, and it vanished the moment the user left Now Playing | (a) a `fetch_canvas` miss exited the mode to the static art card — most of the Indian film catalog; (b) the `smount` listener called `stopCanvas()` for every destination other than nowplaying | §16 ambient layer: the track cover becomes a full-bleed Ken Burns backdrop (`#np-canvas-backdrop`, blur + drift) painted immediately, so no song is empty; the Apple video is an upgrade. A global `player.onPaint` hook paints on any screen, `smount` only syncs `np-canvas-focus` / `.dim`, and the theme is restored only when the canvas stops. Transport pause/visibility pause the loop. Live checks M4–M8 in `app/tests/live-canvas.mjs`; spec `docs/spotify-android-canvas.md` §16 |
+
+## 2026-10-20b — Every song must move, not just the Apple-covered ones
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P57 | After the ambient pass only *After Hours* looked like a running canvas; other tracks (report screenshot: *Hurt You*) showed a still cover. User: *"make all song canvas run properly"* | Apple's cookie-free motion-artwork coverage is editorial, not catalog-wide. Live `fetch_canvas` probe on `Pixel6_API36`: **HIT** After Hours, Blinding Lights; **MISS** Hurt You (both artist forms **and** the real track metadata), Starboy, Double Fantasy, Tum Hi Ho, Kesariya, Gaali Vaaluga, Vaathi Coming. The previous fallback animated only the blurred full-bleed copy; the sharp art card covered it, so the focal artwork never moved | §16.1 follow-up: `html.np-canvas-motion` (armed by `showBackdrop()`, removed by `showVideo()`) makes the **art card cover itself** pan/zoom (22 s) with an 8 s light sweep, and the full-bleed copy drifts faster/clearer. `exitMode()` removes the class unconditionally; reduced-motion guard. Static contract + M7 transform check. Live record: §16.5 |
+
+
+## 2026-10-24 — Save to local: second save wrote a "(1).m4a" duplicate
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P58 | Saving the same track twice produced two files in `Music/OpenMusic/` — the second tap's toast said "Saved" (not "Already saved"), and the device listed `… <name>.m4a` plus `… <name> (1).m4a` | the bridge's idempotency query joined DISPLAY_NAME **and** SIZE; a re-downloaded vault copy of the same song can differ byte-for-byte (CDN encode drift), so the query missed the existing row and MediaProvider auto-renamed the second insert to `" (1)"` — and the `ok <display>` answer reported the *requested* name, not the row's actual one | dedupe is now name-only (the name carries the song; a same-named different-bytes copy is the same save, not a new one), and after the insert the bridge reads the row's real DISPLAY_NAME back so the toast never lies about what landed |
+
+Driver record: `verify-artists-save.mjs` D7 round (v7) reproduced the
+duplicate; the fixed build re-proves D5–D7 (file exists exactly once, second
+tap = `same`). Static gate: `savelocal.test.mjs` "Kotlin bridge dedupes on
+the display name, not the bytes".

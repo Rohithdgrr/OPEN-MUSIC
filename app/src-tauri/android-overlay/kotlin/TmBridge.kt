@@ -47,4 +47,12 @@ class TmBridge(private val hub: MediaHub) {
 
   @JavascriptInterface
   fun consumeRoute(): String = hub.takeRoute()
+
+  /// "Save to local" (menus.js trackMenu): copy one vaulted song file into
+  /// the device's MediaStore (Music/OpenMusic/) so other players see it.
+  /// Returns a line protocol consumed by savelocal.js bridgeResult():
+  /// `ok <name>` / `same <name>` / `err: …` — `same` makes the menu item
+  /// idempotent (docs/mobile/06-features.md, 2026-10-24).
+  @JavascriptInterface
+  fun saveLocal(json: String): String = hub.saveLocal(json)
 }

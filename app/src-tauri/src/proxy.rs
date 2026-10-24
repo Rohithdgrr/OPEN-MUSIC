@@ -1137,6 +1137,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/stream", get(stream))
         .route("/file", get(vault_file))
         .route("/art", get(art))
+        .route("/canvas", get(canvas_video))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1300,11 +1301,16 @@ async fn vault_file(
     if !path.starts_with(&state.vault) {
         return (StatusCode::FORBIDDEN, "outside the vault").into_response();
     }
-    // Size comes from metadata: the range is answered without touching the
-    // payload. The body then streams straight off disk — a full-range
-    // request (`bytes=0-`) never materialises the 10 MB file in memory
-    // (review O2), and a scrub only touches its own window.
-    let total = match tokio::fs::metadata(&path).await {
+    serve_media_file(&path, &headers).await
+}
+
+/// Serve one file with byte ranges — shared by the vault and the Canvas disk
+/// cache. Size comes from metadata: the range is answered without touching
+/// the payload, and the body streams straight off disk, so a full-range
+/// request (`bytes=0-`) never materialises the file in memory (review O2)
+/// and a scrub only touches its own window.
+async fn serve_media_file(path: &Path, headers: &HeaderMap) -> Response {
+    let total = match tokio::fs::metadata(path).await {
         Ok(meta) => meta.len() as usize,
         Err(e) => {
             return (
@@ -1338,7 +1344,7 @@ async fn vault_file(
         Body::empty()
     } else {
         use tokio::io::AsyncSeekExt;
-        let mut file = match tokio::fs::File::open(&path).await {
+        let mut file = match tokio::fs::File::open(path).await {
             Ok(f) => f,
             Err(e) => {
                 return (
@@ -1370,6 +1376,25 @@ async fn vault_file(
     builder
         .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+/// Serve one cached Canvas video (docs/spotify-android-canvas.md §14). The id
+/// is canvas.rs's FNV of the source URL and the file lives in the
+/// budget-managed disk cache — so, exactly like the vault, the query never
+/// carries a path and an evicted id simply 404s (the renderer keeps the art).
+async fn canvas_video(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let id = match params.get("id") {
+        Some(id) => id.clone(),
+        None => return bad_request("missing ?id="),
+    };
+    if let Err(e) = check_id(&id) {
+        return bad_request(e);
+    }
+    serve_media_file(&state.disk.canvas_path(&id), &headers).await
 }
 
 /// Parse `Range: bytes=a-b` / `bytes=a-` / `bytes=-n` into inclusive offsets

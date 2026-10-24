@@ -87,10 +87,14 @@ import { trackMenu, openSheet, detailsSheet } from "./menus.js";
 // The taste engine (pure + unit-tested in tests/recommend.test.mjs). Home's
 // Made-for-you shelves are a windowed projection of one profile built here.
 import { buildProfile, explain, shelfPlan, trackLangs, artistInsights, filterArtists, artistEvidence, albumInsights, filterAlbums, albumEvidence } from "./recommend.js";
+import { hydrateArtistArt } from "./artresolve.js";
 import { similarShelf } from "../taste.js";
 import { groupLangAlbums, variantsFor } from "../albumgroup.js";
 import { matchTrackToCatalog } from "../spotmatch.js";
-import { canvasEnabled, canvasCellularAllowed, setCanvasEnabled, setCanvasCellular, stopCanvas, paintCanvasForTrack } from "./canvas.js";
+// PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the Canvas renderer
+// is unwired — binders is canvas.js's only importer, so the whole ambient
+// layer never evaluates. Un-comment to revive (see §18.3).
+// import { canvasEnabled, canvasCellularAllowed, setCanvasEnabled, setCanvasCellular, stopCanvas, paintCanvasForTrack } from "./canvas.js";
 
 const main = () => document.querySelector("#screen main");
 
@@ -647,6 +651,12 @@ async function mountHome() {
     if (c) {
       if (mined.length) {
         c.innerHTML = mined.map((a) => minedArtistTile(a, true)).join("");
+        // Mined art is a track's cover; the real catalog artist art lands in
+        // the background and re-renders the rail as hits resolve.
+        withArtistArt(mined, m, () => {
+          const cur = afterHead(artS, "Top Artists");
+          if (cur) cur.innerHTML = mined.map((a) => minedArtistTile(a, true)).join("");
+        });
       } else {
         const artists = feed.artists || [];
         setList("artists", artists);
@@ -1221,11 +1231,21 @@ async function mountSearch(query) {
       </div>
       <span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary shrink-0">${esc(kind)}</span>
     </button>`;
-  const sugQueryRow = (text, toks, icon) =>
-    `<button type="button" role="option" data-sug-q="${esc(text)}" class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-container focus:bg-surface-container outline-none transition-colors border-b border-surface-container/60 last:border-b-0">
+  const sugQueryRow = (text, toks, icon, del) => {
+    const main =
+      `<button type="button" role="option" data-sug-q="${esc(text)}" class="w-full flex items-center gap-3 ${del ? "pr-11" : "px-3"} py-2.5 text-left hover:bg-surface-container focus:bg-surface-container outline-none transition-colors border-b border-surface-container/60 last:border-b-0">
       <span class="material-symbols-outlined text-[18px] text-secondary shrink-0">${icon}</span>
       <span class="font-body-md text-body-md text-on-surface truncate flex-1">${highlight(text, toks)}</span>
     </button>`;
+    if (!del) return main;
+    // Recent-search rows carry a remove button — outside the row button so
+    // clearing never re-runs the query it belongs to.
+    return `<div class="relative">${main}
+      <button type="button" data-sug-del="${esc(text)}" aria-label="Remove recent search" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all">
+        <span class="material-symbols-outlined text-[16px]">close</span>
+      </button>
+    </div>`;
+  };
 
   /// The dropdown for one server answer: the listener's own matching recent
   /// searches first (free, and the likeliest intent), then the catalog's
@@ -1245,7 +1265,7 @@ async function mountSearch(query) {
       parts.push(sugLabel("Recent searches"));
       for (const r of recent) {
         seen.add(String(r).toLowerCase());
-        parts.push(sugQueryRow(r, toks, "history"));
+        parts.push(sugQueryRow(r, toks, "history", true));
       }
     }
     const groups = {
@@ -1282,7 +1302,7 @@ async function mountSearch(query) {
       hideSug();
       return;
     }
-    showSug(sugLabel("Recent searches") + hist.map((s) => sugQueryRow(s, [], "history")).join(""));
+    showSug(sugLabel("Recent searches") + hist.map((s) => sugQueryRow(s, [], "history", true)).join(""));
   };
 
   /// One autocomplete call per keystroke burst, memoized per prefix; the
@@ -1635,6 +1655,22 @@ async function mountSearch(query) {
   }
 
   sugBox.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-sug-del]");
+    if (del) {
+      // The repaint below replaces innerHTML — once detached, this very
+      // button fails the away-click's `closest("#m-suggest")` and the
+      // document listener would close the box we just repainted. Stop the
+      // bubble: an inside-the-box click must never be an away click.
+      e.stopPropagation();
+      const q = del.dataset.sugDel || "";
+      save(HISTORY_KEY, load(HISTORY_KEY, []).filter((x) => String(x) !== q));
+      // Repaint the same context the row came from: typed input → prefix
+      // suggestions (cached, instant), empty input → plain recents.
+      const text = input ? input.value.trim() : "";
+      if (text.length < 2) recentSuggest();
+      else fetchSuggest(text);
+      return;
+    }
     const qb = e.target.closest("[data-sug-q]");
     if (qb) {
       if (input) input.value = qb.dataset.sugQ;
@@ -1803,6 +1839,34 @@ let dlQuery = "";
 /// home chips open these instead of only filtering shelves. Tiles reuse the
 /// global delegations — [data-nav] for token/id rows, [data-entity-name] for
 /// name-resolved artists/albums — so no new navigation paths exist.
+/// Background art resolution shared by the mined-artist paint sites
+/// (docs/mobile/06-features.md "Artist art resolved from the catalog"):
+/// the local paint stays instant; the real `search_entities` artist image +
+/// token land one call per artist (pool inside artresolve.js, exact-match
+/// discipline) and `refresh` re-renders. `home` is the mounted <main> the
+/// list was painted into — refresh is skipped once it detaches (navigated
+/// away). Browser grids re-render throttled; the 10-tile rail repaints free.
+function withArtistArt(list, home, refresh, throttleMs = 0) {
+  if (!invoke || !Array.isArray(list) || !list.length) return;
+  if (!(home && home.isConnected)) return;
+  let queued = false;
+  const settle = () => {
+    if (queued || !home.isConnected) return;
+    queued = true;
+    setTimeout(() => {
+      queued = false;
+      if (home.isConnected) {
+        try {
+          refresh();
+        } catch {}
+      }
+    }, throttleMs);
+  };
+  try {
+    hydrateArtistArt(list, invoke, settle).catch(() => {});
+  } catch {}
+}
+
 function minedArtistTile(a, rail) {
   const ev = artistEvidence(a);
   const wrap = rail ? "w-[76px] flex-shrink-0 flex flex-col items-center" : "w-full flex flex-col items-center";
@@ -1868,6 +1932,12 @@ async function mountArtists() {
     empty?.classList.add("hidden");
     if (grid) grid.innerHTML = rows.map((a) => minedArtistTile(a, false)).join("");
   };
+  withArtistArt(
+    list,
+    m,
+    paint,
+    200, // up to ~110 tiles stream in; coalesce repaints instead of per-hit
+  );
   m.querySelectorAll("[data-artists-tab]").forEach((b) => {
     b.addEventListener("click", () => {
       tab = b.dataset.artistsTab || "all";
@@ -3494,10 +3564,11 @@ function paintNowplaying(st) {
     // Always paint — see the widget: an artless track must fall back to the
     // brand mark instead of keeping the last cover (06-features batch).
     if (artImg) paintArt(artImg, t.image || "");
-    // Spotify Canvas (docs/spotify-android-canvas.md §3B): a no-op unless the
-    // screen, the toggle and a configured cookie all line up — the art above
-    // is the fallback by construction.
-    paintCanvasForTrack(t);
+    // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the Canvas
+    // per-track hookup is off. Previously (§3B): a no-op unless the screen,
+    // the toggle and a configured cookie all lined up — the art above was the
+    // fallback by construction.
+    // paintCanvasForTrack(t);
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
     // The action-row Like icon mirrors the same state (paintFavs covers every
@@ -4594,15 +4665,18 @@ function ensureMobilePrefs(m) {
           "Import top tracks",
           "Match your top 20 to the catalog",
           `<button type="button" id="m-spotify-top" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button>`,
-        ) +
-        row("smart_display", "Now Playing Canvas", "Animated artwork on the art card - best effort", sw("m-canvas")) +
-        row("signal_cellular_alt", "Canvas on mobile data", "Off = Wi-Fi only", sw("m-canvas-cell")) +
-        row(
-          "key",
-          "Canvas session cookie",
-          `Browser sp_dc — <span id="m-spdc-status">checking…</span>`,
-          `<input type="password" id="m-spdc" autocomplete="off" spellcheck="false" placeholder="sp_dc" class="w-24 shrink-0 rounded-xl border border-surface-container-high bg-surface-container-low px-3 py-1.5 font-body-sm text-body-sm text-on-surface focus:outline-none" /><button type="button" id="m-spdc-save" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Save</button>`,
         ),
+        // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the three
+        // Canvas rows are commented out, not re-run. Un-comment them (and the
+        // flip wiring below) to bring the Canvas settings UI back.
+        // row("smart_display", "Now Playing Canvas", "Full-screen artwork on every screen - animated when available", sw("m-canvas")) +
+        // row("signal_cellular_alt", "Canvas on mobile data", "Off = Wi-Fi only (artwork still shows)", sw("m-canvas-cell")) +
+        // row(
+        //   "key",
+        //   "Canvas session cookie",
+        //   `Browser sp_dc — <span id="m-spdc-status">checking…</span>`,
+        //   `<input type="password" id="m-spdc" autocomplete="off" spellcheck="false" placeholder="sp_dc" class="w-24 shrink-0 rounded-xl border border-surface-container-high bg-surface-container-low px-3 py-1.5 font-body-sm text-body-sm text-on-surface focus:outline-none" /><button type="button" id="m-spdc-save" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Save</button>`,
+        // ),
     );
   const wrap = m.querySelector("div.space-y-6") || m.firstElementChild || m;
   // Before the Legal block when it exists so prefs stay together.
@@ -4825,6 +4899,11 @@ function ensureMobilePrefs(m) {
       toast(String(err).slice(0, 160), 6000, "error");
     }
   });
+  // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the Canvas
+  // session-cookie status/save and both flip switches below are off with the
+  // renderer. The whole block is commented verbatim; un-comment it (plus the
+  // three Settings rows) to revive.
+  /*
   const paintSpdc = async () => {
     const st = q("m-spdc-status");
     if (!st) return;
@@ -4864,8 +4943,9 @@ function ensureMobilePrefs(m) {
       toast(msg(on), 3000, "success");
     });
   };
-  flipCanvas("m-canvas", canvasEnabled, setCanvasEnabled, (on) => (on ? "Canvas on — video over the artwork" : "Canvas off"));
+  flipCanvas("m-canvas", canvasEnabled, setCanvasEnabled, (on) => (on ? "Canvas on - full-screen artwork" : "Canvas off"));
   flipCanvas("m-canvas-cell", canvasCellularAllowed, setCanvasCellular, (on) => (on ? "Canvas allowed on mobile data" : "Canvas Wi-Fi only"));
+  */
   if (invoke) invoke("cache_stats").then((s) => paintCache(s)).catch(() => {});
   applyMobileTheme();
 }
@@ -4908,7 +4988,10 @@ function paintMobilePrefs(m) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
   }
-  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()], ["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]]) {
+  // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the canvas
+  // switch-state entries were (put them back when reviving):
+  // ["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]
+  for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, !!on);
   }

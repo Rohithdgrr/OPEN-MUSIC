@@ -281,7 +281,10 @@ export function artistInsights(profile, { follows } = {}) {
   const card = (name) => {
     let c = byName.get(name);
     if (!c) {
-      c = { name, weight: 0, plays: 0, liked: 0, downloaded: 0, following: false, token: "", image: "", bestPlays: -1 };
+      // `art` is image provenance for the resolver (2026-10-24): "track" ==
+      // a song's cover standing in for the artist, "" == nothing, "artist"
+      // == a follow's real catalog image (already correct, never re-resolved).
+      c = { name, weight: 0, plays: 0, liked: 0, downloaded: 0, following: false, token: "", image: "", art: "", bestPlays: -1 };
       byName.set(name, c);
     }
     return c;
@@ -302,6 +305,7 @@ export function artistInsights(profile, { follows } = {}) {
         if (plays > c.bestPlays && str(t.image)) {
           c.bestPlays = plays;
           c.image = str(t.image);
+          c.art = "track";
         }
       }
     });
@@ -318,7 +322,12 @@ export function artistInsights(profile, { follows } = {}) {
     const c = hit || card(key);
     c.following = true;
     if (!c.token) c.token = str(f.token || f.id);
-    if (!c.image) c.image = str(f.image);
+    // A follow record IS the catalog artist: its image beats a track-cover
+    // stand-in a miner already painted, and marks provenance for the resolver.
+    if (str(f.image)) {
+      c.image = str(f.image);
+      c.art = "artist";
+    }
   }
   for (const c of byName.values()) delete c.bestPlays;
   return [...byName.values()].sort(

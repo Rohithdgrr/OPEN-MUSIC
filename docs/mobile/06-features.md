@@ -38,7 +38,14 @@ instead of failing oddly.
   karaoke paint in `mobile/lyrics.js` + `.lyric-*` CSS in `mobile/index.html`.
   Per-track manual offset (±100 ms buttons in the Lyrics tab, clamp
   ±2 s, `tm-lyrics-offsets`, same `currentTime + offset/1000` formula
-  as desktop `lyrics.js:313`).
+    as desktop `lyrics.js:313`).
+  **Live-verified word-by-word (2026-10-24, 8/8)**: on a synced track the
+  active line holds per-word spans in mixed wipe states at one instant
+  (`100% ×5, 68%, 0% ×3` advancing to `64%` a moment later) — karaoke word
+  mode, not line mode. A nowplaying screenshot showing a fully-lit line is
+  line-complete state, not a defect; a fully-stale look on an old install is
+  the stale-APK trap (the karaoke engine predates it only in recent builds).
+
 - NowPlaying (`mobile/screens/nowplaying.*`): the artwork card mirrors the
   desktop overlay's metadata — eyebrow track line (`#np-trackline`),
   title/artist with favorite / download / add / share actions, and an
@@ -744,3 +751,207 @@ Contract: the enabled row and the `#jamAppendSuggest` box are asserted by
 pure shaping module carries `appendsuggest.test.mjs` (pick/cap/dedupe +
 row markup with the three actions, art resolver injected so the module stays
 import-free).
+
+## Now Playing Canvas: full-bleed presentation (2026-10-19)
+
+User: *"i want canvas like this not just that blinking"* — a Spotify Canvas
+reel reference. The 2026-10-17 rendering put the loop inside the square art
+card; at ~380 px it reads as a tile. The canvas is now the **screen**.
+
+- **Source**: the backend prefers Apple's tall cuts (`motionDetailTall` →
+  `motionTallVideo3x4`, 3:4) and only falls back to square when a release
+  has no tall cut; the rendition floor rises to 780 px so the video is sharp
+  when it fills a 1080×2400 screen (After Hours: 830×1106, 7.1 MB fMP4).
+- **Layer**: `canvas.js` creates `#np-canvas-layer` on `<body>` — fixed,
+  inset 0, `object-fit: cover`, scrim gradients top/bottom. It is not inside
+  the screen fragment, so the router's screen-enter transform cannot trap it
+  and navigating away stops it explicitly (`smount`).
+- **Cinematic mode**: while the video actually plays (the `playing` event —
+  never a black loading screen) the app adds `html.np-canvas-live` and
+  forces `html.dark`; the page, `main` and the art card become transparent
+  (the card is a window onto the video), the header and queue sheet become
+  dark glass. The classes live on `<html>` because every screen module
+  rewrites `document.body.className` on mount; the lifecycle is an internal
+  `modeOn` flag, so the saved theme is restored even if the DOM was
+  rewritten. On stop (leave the screen, toggle off, cellular gate, fetch or
+  video error) the saved theme is restored and the art card returns.
+- The album art remains the fallback for every miss; the canvas never blocks
+  playback. Spec: `docs/spotify-android-canvas.md` §15; live checks M4/M5 in
+  `app/tests/live-canvas.mjs`.
+
+## Ambient Canvas: every screen, every song (2026-10-20)
+
+User: *"still not every song is not showing canvas. make canvas show for
+every screen"*. Two gaps were real: Apple has no animated cut for most of the
+Indian film catalog, and the renderer tore the layer down on every `smount`
+that was not Now Playing.
+
+- **Every song** — `#np-canvas-layer` now also carries `#np-canvas-backdrop`,
+  a full-bleed `<img>` of the track's own cover (`hqArt`, relay-cached; the
+  brand mark if the track has none), painted the moment the track is painted.
+  A 28 s alternating Ken Burns drift (scale 1.12 → 1.22, ±1.4 % pan) plus a
+  3 px blur makes it a living backdrop instead of a stretched square. The
+  Apple video takes over when it resolves; every miss keeps the cover.
+- **Every song moves** (2026-10-20b): the first fallback animated only the
+  blurred full-bleed copy, so the sharp art card hid the motion and a track
+  without an Apple cut still read as a still image (report: *Hurt You*; the
+  live Apple probe misses Hurt You, Starboy, Double Fantasy and the Indian
+  catalog, and hits After Hours + Blinding Lights). `html.np-canvas-motion`
+  now pans/zooms the card cover (22 s) with an 8 s light sweep, and the
+  full-bleed copy drifts faster and clearer. The video path removes the
+  class, stop removes it, and `prefers-reduced-motion` disables all three.
+- **Every screen** — a global `player.onPaint` hook paints the canvas on any
+  route; `smount` only re-syncs the presentation. `html.np-canvas-focus`
+  marks Now Playing (clear scrim, art-card window); everywhere else the layer
+  carries `.dim` (≈0.5 scrim) and the header glass is denser, so Home, Search,
+  Library and Settings stay readable over the backdrop. The cinematic dark
+  scope persists across navigation; the user's theme returns when the canvas
+  stops (toggle off / no track).
+- **Transport** — the muted loop pauses with the audio (the frame stays) and
+  resumes with it; backgrounding pauses it and returning resumes. The
+  cellular gate now suppresses only the video fetch — the artwork backdrop
+  always shows.
+- Spec: `docs/spotify-android-canvas.md` §16; live checks M4–M8 in
+  `app/tests/live-canvas.mjs`.
+
+## Canvas format contract: 9:16, 720×1280, 3–8 s (2026-10-23)
+
+User: *"only 'the weekend after hours' song is playing the canvas not other
+make canvas play for all"*. Spec: `docs/spotify-android-canvas.md` §17.
+
+- **Official cut** — Rust picks the smallest Apple rendition whose **centred
+  9:16 crop** clears **720×1280** (`pick_variant`, `crop_9x16`,
+  `meets_canvas_floor`). For After Hours that is 1078×1438 → **808×1438**.
+  JioSaavn has no video and public Spotify pages expose none; Apple's
+  `editorialVideo` remains the only zero-config motion source.
+- **Every song** — a track with no Apple cut gets a **cover-derived generated
+  canvas**: backdrop drift + `#np-canvas-wash` colour/light layer + card drift
+  + light sweep, all on the **same 6 s clock**. It is a motion treatment of the
+  track's own cover, not a fabricated official clip; the docs say so.
+- **6 s loop** — two muted `<video>` elements, both `loop=false`; a rAF ticker
+  crossfades the standby 0.6 s before the window end. The anchor is the
+  **first presented media frame**, published as `data-base`; Apple's fMP4
+  starts at ~10.03 s (edit-list offset), so a fixed 0.6 s anchor made every
+  frame read "past the window" and the two videos crossfaded every 0.4–0.6 s.
+  The fix pre-seeks the outgoing element while invisible and waits for
+  `requestVideoFrameCallback` before the first tick.
+- **Contract published on the layer** — `data-source` (1078x1438),
+  `data-crop` (808x1438), `data-loop` (6), `data-base` (10.07), `data-floor`
+  (`ok`). The art card is a window onto the full-bleed video; the phone
+  viewport is taller than 9:16, so the layer keeps `object-fit: cover`.
+- **Verification** — `live-canvas.mjs` **11/11** on `Pixel6_API36`: M2 floor,
+  M4 real search/tap + attributes, M9 visible front returns to `base + 0.6`
+  while playing, M7 generated-canvas motion, M8 clean stop. Static gates:
+  `canvasmath.test.mjs` (6), `mobile-spotify.test.mjs` (Canvas contract).
+  *Parked 2026-10-24 — §18 of `docs/spotify-android-canvas.md`.*
+
+## Artist art resolved from the catalog + Save to local (2026-10-24)
+
+Two user asks landed together: (1) *"artists thumbnails are not properly
+loading and showing (it is showing some other thumbnail) — fix this to show
+original artists thumbnails"*; (2) *"add a save to local in options to save
+the track/song directly in local device"*.
+
+### 1. Artist thumbnails — the wrong image source
+
+Mined artist tiles (Home "Top Artists" rail + the `#/artists` browser) paint
+`recommend.js artistInsights` output, whose `image` is the artist's
+**most-played track's cover art** — an album poster, never the artist photo.
+The catalog's own artist entity (`search_entities kind:"artist"`) carries the
+real artist avatar + a `token` for direct `#artist?token=…` navigation, but
+mined tiles never consulted it (follows and search shelves did).
+
+Fix — background resolution on top of the instant local paint:
+
+- `recommend.js artistInsights` gains provenance `art`: `"track"` (image came
+  from a track row), `"artist"` (a follow's real catalog image), `""` (none).
+  Only `"track"`/`""` candidates are resolved — follows already carry real
+  art and must not spark upstream calls.
+- New pure module `mobile/artresolve.js` (zero imports, injectable invoke):
+  `hydrateArtistArt(list, doInvoke, onEach)` resolves each candidate via one
+  `search_entities(kind:"artist", query:name, limit 4, page 1)` call,
+  matching the entity whose title **equals the artist name (case-folded) or
+  starts with it**. Never "first result blindly" — `items[0]` is how a tile
+  shows somebody else's face; an unmatched artist keeps today's art.
+  Concurrency pool of 4, results cached in `tm-artist-art-v1`
+  (`name → {image, token, at}`, LRU-ish, capped), so after the first pass
+  the tiles paint correct art instantly from cache with zero calls.
+- Paint sites: the Top-Artists rail (10 tiles) and the artists browser
+  (repaint throttled ~200 ms as hits land) re-render once each artist
+  resolves. A resolved token upgrades the tile's nav to the direct hop;
+  unresolved tiles keep the name-resolve fallback.
+- Honest limits: offline → cache + current art only; no exact/prefix match
+  → never a wrong artist's image.
+
+### 2. Save to local — the file on the device itself
+
+"Download" (existing item) writes into the app-private vault
+(`app_local_data_dir/TRANCE MUSIC`) — it is only visible inside OpenMusic.
+"Save to local" makes the song file land in the device's own storage so
+other players/files apps see it. Both menu items coexist: Download = offline
+play in-app, Save to local = give the file to the device.
+
+- Pipeline (`mobile/savelocal.js`, injectable for tests):
+  1. Ledger first: `list_downloads` → the vault entry for the id (already
+     vaulted → instant). Content-deduped tracks whose row lives under
+     another id re-resolve via `downloadTrack`, whose `DownloadOutcome`
+     carries the real `path` (the dedup keeper's).
+  2. Track not in the vault → `downloadTrack(track)` first (existing
+     progress pipeline + toasts); failure bubbles honestly.
+  3. `TMNative.saveLocal(json)` — the bridge copies the vaulted file into
+     MediaStore; returns `ok <name>` / `same` / `err: …`.
+  4. Toasts: "Saved to Music/OpenMusic/<name>" / "Already saved to your
+     device" / the error otherwise.
+- The bridge rides the Android overlay (kotlin/TmBridge.kt +
+  `MediaHub.kt`, copied per-build by `build.sh
+  inject_android_mediahub`): `saveLocal(json)` reads the vault file (same
+  app's private dir — directly readable) and inserts it into
+  `MediaStore.Audio` under `Music/OpenMusic/` with TITLE/ARTIST/ALBUM set,
+  mime from the extension (`m4a` → audio/mp4, `opus` → audio/ogg), and
+  size dedupe (same name+size already there → `same`). API ≥ 29 only —
+  scoped storage, **no storage permission**; older versions get an honest
+  "Android 10+" error. Idempotent: repeated taps report `same`.
+- Menu order: the item rides directly under "Download" in the track menu
+  (NowPlaying / rows / queue / history) and in the library menu. The item
+  is hidden when the native bridge is absent (desktop preview): a menu
+  option that can only ever error is a dead affordance.
+
+## Fonts are bundled: the shell renders with zero connectivity (2026-10-24)
+
+Report: with no internet the app booted into a half-broken UI — every icon
+painted as its raw ligature word (a literal "chevron_right" / "favorite" /
+"download" across cards) and stayed broken after reconnecting.
+
+Root cause: both shells loaded Material Symbols (and the mobile text fonts
+Geist / JetBrains Mono) from fonts.googleapis.com. Offline boot -> the
+stylesheet and the woff2 never load -> ligature text with no font; CSS font
+loading is one-shot per document, so reconnecting never retried it.
+
+Fix: real woff2 files now ship in `app/src/fonts/` (Material Symbols
+variable icon font with all four axes, Geist + JetBrains Mono latin subsets),
+referenced by inline `@font-face` in both `index.html` heads; the Google
+`<link>`s and preconnects are deleted and the CSPs no longer allow the
+Google font domains. The `.material-symbols-outlined` class definition that
+lived only in Google's stylesheet is inlined verbatim. Icon faces use
+font-display: block so an unloaded icon span is blank, never raw text.
+
+Companion probe: `fonts-local.test.mjs` gates all of it (files present,
+heads reference them, zero google font URLs in heads/CSPs).
+
+## Recent-search rows get a remove button in the suggest dropdown (2026-10-24)
+
+The "Recent searches" card under the search pill (the keyboard suggestions)
+now carries a per-row close button, same as the Recent searches bay already had: tapping the X deletes that query from `tm-history` storage and
+repaints the dropdown in place (typed input -> prefix suggestions, empty ->
+plain recents). The X lives outside the row's own button so removing a query
+never re-runs it, and keyboard navigation (arrow keys + Enter) still selects
+the row itself, never the remove. The bay ("Recent searches" chips on the
+generated screen) already had working per-pill `data-qdel` removal; the
+dropdown simply didn't.
+
+## Save-file name capped to the lead artist (2026-10-24)
+
+The "Save to local" MediaStore name was `Artist - Title.ext` built from the
+whole married artist string — a six-way collaboration minted a 100+ char stem
+(observed live: "Dan Reynolds, Wayne Sermon, Ben Mckee, ...m4a"). The stem now
+uses the lead (first) artist only.

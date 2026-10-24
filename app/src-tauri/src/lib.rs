@@ -1618,6 +1618,7 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()>
 /// or warm path capture (docs/share-deep-links.md §4). On Android/iOS the
 /// deep-link plugin stores its own current urls instead — the shared command
 /// is a harmless None there.
+#[cfg(desktop)]
 static LAUNCH_URI: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
 #[cfg(desktop)]
@@ -1733,7 +1734,8 @@ pub fn run() {
             app.manage(crate::gdrive::GDriveState::new());
             // Optional Spotify integration: dormant until sign-in.
             app.manage(crate::spotify::SpotifyState::new());
-            // Spotify Canvas: dormant until a session cookie is pasted in.
+            // Now Playing Canvas: Apple animated-artwork route, no account —
+            // docs/spotify-android-canvas.md §14.
             app.manage(crate::canvas::CanvasState::new());
             // Listen Together room server/client state (docs/listen-together.md).
             app.manage(crate::room::RoomState::new());
