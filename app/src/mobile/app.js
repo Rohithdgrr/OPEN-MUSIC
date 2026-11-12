@@ -1,6 +1,7 @@
 // app.js — boot + global click delegation + widget player paint for the mobile shell.
 import { invoke, load, save, store, hooks, go, toast, toggleFav, paintFavs, downloadTrack, paintArt, isVaulted, pushDiag, HISTORY_KEY, checkForUpdates, AUTOUPDATE_KEY, pushEvent, refreshVault, haptic, isOnboarded, setOnboarded, saveTaste, LANG_KEY } from "./shared.js";
 import { playList, playPlaylist, toggle, onPaint, playerState, prev, next, seek, repaint, enqueue, audio } from "./player.js";
+import { wireQueuePersistence, restoreLastSession } from "./wiring.js";
 import { parseDeepUri } from "../sharelink.js";
 import { startNet, netMode } from "./net.js";
 import { PRESETS, arm as armSleep } from "../sleep.js";
@@ -25,9 +26,11 @@ const onSmount = async (e) => {
   }
 };
 document.addEventListener("smount", onSmount);
-// Registered before the queued-mount flush below, so a deep link straight to
-// NowPlaying still gets its jam bindings.
+// Boot wiring for queue persistence + last-session restore. Desktop wires
+// the same sequence in main.js before first mount.
 initJam();
+wireQueuePersistence();
+restoreLastSession();
 // The router can paint the first screen before this deferred module runs —
 // that mount was queued, not dispatched (see router.js). Flush it once.
 window.__tmAppReady = true;
@@ -53,9 +56,18 @@ async function resolveEntity(kind, name) {
   try {
     const r = await invoke("search_entities", { query, kind, limit: 8, page: 1 });
     const items = (r && r.items) || [];
-    const want = query.toLowerCase();
-    const hit = items.find((x) => String(x.title || "").toLowerCase() === want) || items[0];
-    if (!hit || !(hit.token || hit.id)) return toast(`No ${kind} found for “${query}”`, 4000, "error");
+    // Fold the title so "Arijit Singh" matches "arijit  singh". The old
+    // `items.find(exact) || items[0]` silently opened the FIRST search hit
+    // whenever the title was not byte-identical — tapping artist #2 or #3
+    // opened artist #1 (2026-11-12). A hit must now actually match.
+    const fold = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const want = fold(query);
+    let hit = items.find((x) => fold(x.title) === want);
+    if (!hit) hit = items.find((x) => fold(x.title).startsWith(want) && want.length > 2);
+    if (!hit) hit = items.find((x) => fold(x.title).includes(want) && want.length > 3);
+    if (!hit || !(hit.token || hit.id)) {
+      return toast(`No ${kind} found for “${query}”`, 4000, "error");
+    }
     go(entityNav(kind, hit));
   } catch (e) {
     console.error(e);
@@ -182,7 +194,12 @@ document.addEventListener("click", (e) => {
   // playback (the spans are siblings of fav/dl/kebab, so those stay clear).
   const ent = el("[data-entity-name]");
   if (ent) {
-    const name = ent.textContent.trim();
+    // data-entity-title carries the name ALONE. The tile's own text also
+    // holds the subtitle (artist line, evidence line), so falling back to
+    // textContent made the lookup miss — and the old `|| items[0]` fallback
+    // then opened the first search result instead of the tapped artist
+    // (2026-11-12).
+    const name = (ent.dataset.entityTitle || ent.textContent).trim();
     if (name) {
       resolveEntity(ent.dataset.entityKind || "artist", name);
       return;

@@ -20,6 +20,7 @@ import { netMode } from "./net.js";
 import { ensureReco } from "./radio.js";
 import { localRole } from "../room.js";
 import { classifyPlay } from "../taste.js";
+import { queueSnapshot, parseQueueSnapshot } from "./queue-persistence.js";
 
 // Every transport element loads media from the relay (`http://127.0.0.1:port`) —
 // a different origin from the page (`http://tauri.localhost`). Before the EQ
@@ -73,6 +74,84 @@ export function onPaint(fn) {
 // Lock-screen / notification transport. Android's WebView surfaces these once
 // metadata + action handlers exist; position state keeps the seek bar honest.
 const msSupported = typeof navigator !== "undefined" && "mediaSession" in navigator;
+
+// ------------------------------------------------------ queue persistence
+// Desktop has survived restarts on `tm-queue` for a long time (queue.js).
+// Mobile does the same through a 400 ms debounce so rapid mutations
+// (play-next, enqueue, shuffle, clear, smart-shuffle) coalesce into one
+// write; tapping into the menus / boot restores without autoplaying.
+const PERSIST_DELAY_MS = 400;
+let persistTimer = 0;
+const snapString = () =>
+  JSON.stringify(queueSnapshot(queue, qi, shuffle, repeat === 2 ? "one" : repeat === 1 ? "all" : "off"));
+// paint() fires on every timeupdate, but the queue only *changes* on
+// mutations. Comparing this signature keeps the 400 ms debounce from
+// rewriting unchanged data on every paint tick.
+let lastSig = "";
+const queueSig = () => `${qi}|${shuffle}|${repeat}|${queue.map((t) => t.id).join(",")}`;
+export function persistQueue() {
+  if (typeof localStorage === "undefined") return false;
+  const sig = queueSig();
+  if (sig === lastSig) return true;
+  if (persistTimer) return true;
+  persistTimer = setTimeout(() => {
+    persistTimer = 0;
+    try {
+      localStorage.setItem("tm-queue", snapString());
+      lastSig = queueSig();
+    } catch {}
+  }, PERSIST_DELAY_MS);
+  return true;
+}
+export function flushQueue() {
+  if (typeof localStorage === "undefined") return false;
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = 0;
+  }
+  try {
+    localStorage.setItem("tm-queue", snapString());
+    lastSig = queueSig();
+    return true;
+  } catch {
+    return false;
+  }
+}
+/// Restore a saved queue without autoplaying (mirror of desktop's
+/// restoreQueue). Returns the restored queue length so the boot path can
+/// decide whether to seed something.
+export function restoreQueue() {
+  if (typeof localStorage === "undefined") return 0;
+  let raw;
+  try {
+    raw = localStorage.getItem("tm-queue");
+  } catch {
+    return 0;
+  }
+  const saved = parseQueueSnapshot(raw);
+  if (!saved) return 0;
+  queue = saved.q;
+  qi = saved.i;
+  shuffle = saved.shuffle;
+  repeat = saved.repeat === "one" ? 2 : saved.repeat === "all" ? 1 : 0;
+  mediaMeta(queue[qi]);
+  try {
+    paint();
+  } catch {}
+  // The restored state IS the snapshot: don't let the restore-paint
+  // immediately schedule a redundant write.
+  lastSig = queueSig();
+  return queue.length;
+}
+export function clearRestoredQueue() {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = 0;
+  }
+  try {
+    localStorage.removeItem("tm-queue");
+  } catch {}
+}
 
 function mediaMeta(track) {
   if (!msSupported || !track) return;
@@ -178,6 +257,9 @@ export function playerState() {
 function paint() {
   const s = playerState();
   mediaState();
+  try {
+    persistQueue();
+  } catch {}
   for (const f of painters) {
     try {
       f(s);
