@@ -2534,3 +2534,36 @@ font is bundled, hence larger than the 17.11 MiB build without it).
 
 Status: ✅ six asks implemented and verified on the device ✅ 528 tests ✅ docs
 ⏳ **uncommitted, unpushed** (rule 1).
+
+## 2026-11-13c — Push record: `mobile-dark-theme` @ `c4d4069` on GitHub (main UNTOUCHED)
+
+User: *"push code to github using gmail: Rohithdgrr <rohit93dgrr@gmail.com> .
+github https://github.com/Rohithdgrr/OPEN-MUSIC ."*
+
+**Prompt restated (rule 5):** *"push the working tree to the OPEN-MUSIC repo
+under my identity."* The answer to that request is not one push but **where**
+to put it — GitHub's `main` held `f2bf828` (the batch the user rolled back
+from, still on the remote), local was `f22f107` + `4064b25`; the two
+diverged. A straight push to `main` would be rejected (non-fast-forward);
+force-push would have deleted the user's Android-device-batch commit from
+GitHub (forbidden by rule 2); a merge would have re-introduced everything the
+user deliberately rolled back. **The user chose the side branch.**
+
+| Item | Evidence |
+|---|---|
+| Identity verified | `git config user.name/email` (repo-local) = `Rohithdgrr <rohit93dgrr@gmail.com>`; commit `c4d4069` authored by it |
+| Staged | `git add -A` then `git diff --cached --stat` read before committing: 54 files, ~2.6k lines; the machine-local paths (`temporary/`, `temporary data/`, `app/src-tauri/.cargo/`, `gen/`) were **not** staged (already gitignored, confirmed by grep on the staged list) |
+| Commit | `c4d4069 fix(mobile): dark-theme translucent utilities, offline boot, native share, save-to-local, grid kebab, art tint` |
+| Push route | **`origin/mobile-dark-theme`** (new branch). `git push origin HEAD:refs/heads/mobile-dark-theme` → `* [new branch] HEAD -> mobile-dark-theme` |
+| Verified after push | `git ls-remote origin mobile-dark-theme` → `c4d4069…` = local HEAD ✓; `git ls-remote origin main` → still `f2bf828` ✓ (untouched); `git rev-list --left-right --count origin/main...HEAD` → `1 1` before push (diverged) |
+| PR URL offered by GitHub | `https://github.com/Rohithdgrr/OPEN-MUSIC/pull/new/mobile-dark-theme` |
+
+**Rule 8 followed to the letter:** the stage-check and the push were separate
+commands; the push output was read before issuing any other git command; the
+divergence was surfaced to the user **before** pushing, not after.
+
+**Rule 2 ok**: no force-push, no rewrite of `main`. `f2bf828` remains on
+GitHub; a local `backup/android-device-batch` ref also still exists.
+
+Working tree clean after the commit. Nothing pushed to `main`; the user can
+open the PR from the branch, or retarget later.
