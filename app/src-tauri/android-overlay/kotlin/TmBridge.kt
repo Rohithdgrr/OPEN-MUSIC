@@ -42,6 +42,20 @@ class TmBridge(private val hub: MediaHub) {
     hub.dismiss()
   }
 
+  /// Native share sheet. The Android WebView does not implement
+  /// `navigator.share`, so the JS side falls back to this: an ACTION_SEND
+  /// chooser — the real Android share sheet (2026-11-13).
+  @JavascriptInterface
+  fun share(text: String) {
+    hub.share(text)
+  }
+
+  /// "Save to local": put the file in the device's own storage (MediaStore)
+  /// so other players see it. Distinct from "Download", which vaults into the
+  /// app-private folder only OpenMusic can read.
+  @JavascriptInterface
+  fun saveLocal(json: String): String = hub.saveLocal(json)
+
   @JavascriptInterface
   fun consumeAction(): String = hub.takeAction()
 

@@ -214,6 +214,13 @@
     var qi = raw.indexOf("?");
     var key = (qi >= 0 ? raw.slice(0, qi) : raw).toLowerCase();
     var query = new URLSearchParams(qi >= 0 ? raw.slice(qi + 1) : "");
+    // The Now Playing tint (arttint.js) belongs to that screen only — clear
+    // it on the way out so no other screen inherits the colour (2026-11-13).
+    if (key !== "nowplaying") {
+      try {
+        document.documentElement.style.removeProperty("--np-tint");
+      } catch {}
+    }
     render(key || "home", query);
   }
 

@@ -5,10 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="shell-type" content="mobile_tab">
 <title>OpenMusic</title>
-<link href="https://fonts.googleapis.com" rel="preconnect">
-<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=JetBrains+Mono:wght@100..900&amp;display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+<!-- Fonts are bundled locally (app/src/fonts, same-origin): the shell must
+     render icons and text with zero connectivity (2026-10-24 offline-boot
+     fix — the CDN stylesheet never retried and left raw ligature names).
+     The icon class definition comes from that same stylesheet, so it is
+     inlined below unchanged. -->
+<style>
+@font-face{font-family:"Geist";src:url("/fonts/geist-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("/fonts/jetbrains-mono-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"Material Symbols Outlined";src:url("/fonts/icons.woff2") format("woff2");font-weight:100 700;font-style:normal;font-display:block}
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+</style>
 <link rel="stylesheet" href="/tailwind.css">
 <script src="tailwind-config.js"></script>
 <style>
@@ -586,11 +607,230 @@ body.dark {
   background-color: #09090b !important;
 }
 
+/* Dark elevation. Tailwind's shadow-sm/md are BLACK shadows — invisible on a
+   #09090b surface, so cards read as flat smudges. On dark, elevation is a
+   hairline ring plus a soft ambient shadow (2026-11-12). */
+.dark .shadow-sm,
+.dark .shadow,
+.dark .shadow-md,
+html.dark .shadow-sm,
+html.dark .shadow,
+html.dark .shadow-md {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Play bubbles and small action discs. `bg-on-surface` is WHITE in dark
+   mode, so each one punched a solid hole in the page. A translucent "glass"
+   disc reads as a control instead of a lamp (2026-11-13). */
+.dark .bg-on-surface.text-surface,
+html.dark .bg-on-surface.text-surface {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.dark .bg-on-surface.text-surface span,
+html.dark .bg-on-surface.text-surface span {
+  color: #ffffff !important;
+}
+
+/* The play bubble on a shelf card is a LITERAL white disc (`bg-white
+   text-black`), not the theme token — so the rule above never matched it.
+   In dark mode it is glass, not a lamp (2026-11-13). */
+.dark .bg-white.text-black,
+html.dark .bg-white.text-black {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.dark .bg-white.text-black span,
+html.dark .bg-white.text-black span {
+  color: #ffffff !important;
+}
+
+/* Now Playing: the page follows the artwork. `--np-tint` is set by the
+   Now Playing painter (arttint.js) and cleared by the router when the user
+   leaves, so no other screen inherits it. Light theme only — in dark the
+   artwork already carries the colour and a wash would fight it. */
+html:not(.dark) body {
+  background-image: linear-gradient(180deg, var(--np-tint, rgba(249, 249, 251, 0)) 0%, rgba(249, 249, 251, 0) 62%) !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
+}
+
 /* Background Utility Inversions */
 .dark .bg-surface,
 html.dark .bg-surface {
   background-color: #09090b !important;
 }
+/* --- Opacity-modified theme colours (bg-surface-container-low/90, …) -------
+   Tailwind bakes the LIGHT Stitch palette into every "/NN" variant: an opacity
+   modifier cannot reference the runtime dark overrides, so the utility carries
+   the light value outright. The plain class rules above never matched either
+   (the class name carries the /NN suffix), so translucent surfaces stayed
+   near-white in dark mode — the options sheet, the header bands, the card
+   borders (2026-11-13). One rule per variant, alpha preserved; borders read
+   as hairlines. Generated from the utilities the shell actually uses. */
+.dark .bg-primary\/10,
+html.dark .bg-primary\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .bg-primary\/40,
+html.dark .bg-primary\/40 {
+  background-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.dark .bg-primary\/90,
+html.dark .bg-primary\/90 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.dark .bg-surface-container\/60,
+html.dark .bg-surface-container\/60 {
+  background-color: rgba(24, 24, 28, 0.6) !important;
+}
+
+.dark .bg-surface-container\/70,
+html.dark .bg-surface-container\/70 {
+  background-color: rgba(24, 24, 28, 0.7) !important;
+}
+
+.dark .bg-surface-container-high\/60,
+html.dark .bg-surface-container-high\/60 {
+  background-color: rgba(34, 34, 40, 0.6) !important;
+}
+
+.dark .bg-surface-container-high\/70,
+html.dark .bg-surface-container-high\/70 {
+  background-color: rgba(34, 34, 40, 0.7) !important;
+}
+
+.dark .bg-surface-container-high\/80,
+html.dark .bg-surface-container-high\/80 {
+  background-color: rgba(34, 34, 40, 0.8) !important;
+}
+
+.dark .bg-surface-container-low\/40,
+html.dark .bg-surface-container-low\/40 {
+  background-color: rgba(20, 20, 23, 0.4) !important;
+}
+
+.dark .bg-surface-container-low\/50,
+html.dark .bg-surface-container-low\/50 {
+  background-color: rgba(20, 20, 23, 0.5) !important;
+}
+
+.dark .bg-surface-container-low\/60,
+html.dark .bg-surface-container-low\/60 {
+  background-color: rgba(20, 20, 23, 0.6) !important;
+}
+
+.dark .bg-surface-container-low\/70,
+html.dark .bg-surface-container-low\/70 {
+  background-color: rgba(20, 20, 23, 0.7) !important;
+}
+
+.dark .bg-surface-container-low\/80,
+html.dark .bg-surface-container-low\/80 {
+  background-color: rgba(20, 20, 23, 0.8) !important;
+}
+
+.dark .bg-surface-container-low\/90,
+html.dark .bg-surface-container-low\/90 {
+  background-color: rgba(20, 20, 23, 0.9) !important;
+}
+
+.dark .bg-surface-container-lowest\/15,
+html.dark .bg-surface-container-lowest\/15 {
+  background-color: rgba(16, 16, 19, 0.15) !important;
+}
+
+.dark .bg-surface-container-lowest\/80,
+html.dark .bg-surface-container-lowest\/80 {
+  background-color: rgba(16, 16, 19, 0.8) !important;
+}
+
+.dark .bg-surface-container-lowest\/90,
+html.dark .bg-surface-container-lowest\/90 {
+  background-color: rgba(16, 16, 19, 0.9) !important;
+}
+
+.dark .bg-surface-container-lowest\/95,
+html.dark .bg-surface-container-lowest\/95 {
+  background-color: rgba(16, 16, 19, 0.95) !important;
+}
+
+.dark .border-primary\/40,
+html.dark .border-primary\/40 {
+  border-color: rgba(255, 255, 255, 0.053) !important;
+}
+
+.dark .border-primary\/50,
+html.dark .border-primary\/50 {
+  border-color: rgba(255, 255, 255, 0.067) !important;
+}
+
+.dark .border-surface-container-high\/50,
+html.dark .border-surface-container-high\/50 {
+  border-color: rgba(255, 255, 255, 0.067) !important;
+}
+
+.dark .border-surface-container-highest\/60,
+html.dark .border-surface-container-highest\/60 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .divide-surface-container\/40 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container\/40 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.053) !important;
+}
+
+.dark .divide-surface-container-high\/40 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container-high\/40 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.053) !important;
+}
+
+.dark .divide-surface-container-high\/60 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container-high\/60 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .divide-surface-container-high\/70 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container-high\/70 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.093) !important;
+}
+
+.dark .ring-primary\/10,
+html.dark .ring-primary\/10 {
+  --tw-ring-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .ring-surface-container-high\/40,
+html.dark .ring-surface-container-high\/40 {
+  --tw-ring-color: rgba(34, 34, 40, 0.4) !important;
+}
+
+.dark .text-secondary\/80,
+html.dark .text-secondary\/80 {
+  color: rgba(161, 161, 170, 0.8) !important;
+}
+
+.dark .text-surface-container-lowest\/80,
+html.dark .text-surface-container-lowest\/80 {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.dark .text-surface-container-lowest\/90,
+html.dark .text-surface-container-lowest\/90 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
 
 .dark .bg-surface-container,
 html.dark .bg-surface-container {
@@ -730,12 +970,15 @@ html.dark .border-surface-container\/40 {
 }
 
 /* Interactive Cards, Grids & Shelves in Dark Mode */
+/* NOTE: the "first child div" selector of every shelf used to be in this
+   list. It matched each shelf's header row ("Jump Back In", "Monthly Mix")
+   and painted a card gradient behind the title, which read as a stray band
+   across the home screen (2026-11-13). The shelf cards carry their own
+   background class, so the rule is not needed. */
 .dark .bg-surface-container-lowest,
-.dark [data-shelf] > div,
 .dark .rounded-2xl.border,
 .dark .rounded-xl.border,
 html.dark .bg-surface-container-lowest,
-html.dark [data-shelf] > div,
 html.dark .rounded-2xl.border,
 html.dark .rounded-xl.border {
   background: linear-gradient(180deg, #161619 0%, #101013 100%) !important;
@@ -790,14 +1033,16 @@ html.dark .recent-pill {
   color: #ffffff !important;
 }
 
-/* Primary Contrast Inversion (Black button -> Pure Glowing White in dark mode) */
+/* Primary Contrast Inversion (Black button -> Pure White in dark mode) */
 .dark button.bg-primary,
 .dark .bg-primary:not(span),
 html.dark button.bg-primary,
 html.dark .bg-primary:not(span) {
   background: linear-gradient(180deg, #ffffff 0%, #ededed 100%) !important;
   color: #000000 !important;
-  box-shadow: 0 4px 18px rgba(255, 255, 255, 0.22), 0 1px 3px rgba(0, 0, 0, 0.4) !important;
+  /* Neutral shadow: a white glow around a white button read as "lit from
+     behind" (2026-11-12). */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45) !important;
   border: 1px solid #ffffff !important;
 }
 
@@ -904,22 +1149,25 @@ html.dark input.bay-input:focus {
   outline: none !important;
 }
 
-/* Scrubber in Dark Mode */
+/* Scrubber in Dark Mode — flat, no glow. The container must stay
+   transparent: a translucent white wash over the whole 24px track turned the
+   seekbar into a glowing tube (2026-11-12). */
 .dark #scrubber-container,
 html.dark #scrubber-container {
-  background: rgba(255, 255, 255, 0.16) !important;
+  background: transparent !important;
 }
 
 .dark #scrubber-container #scrubber-bar,
 html.dark #scrubber-container #scrubber-bar {
-  background: linear-gradient(90deg, #ffffff 0%, #f4f4f5 100%) !important;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.6) !important;
+  background: linear-gradient(90deg, #ffffff 0%, #e4e4e7 100%) !important;
+  box-shadow: none !important;
 }
 
 .dark #scrubber-needle,
 html.dark #scrubber-needle {
   background: #ffffff !important;
-  box-shadow: 0 0 14px rgba(255, 255, 255, 0.8), 0 2px 6px rgba(0, 0, 0, 0.6) !important;
+  /* A dark drop shadow reads as depth; a white one read as a lamp. */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.65) !important;
   border: 2px solid #09090b !important;
 }
 

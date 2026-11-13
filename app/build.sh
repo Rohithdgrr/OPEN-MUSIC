@@ -5,6 +5,10 @@
 #   ./build.sh            verify + every target available here
 #   ./build.sh check      lint + css + tests only
 #   ./build.sh android    release APKs, split per ABI (aarch64 + x86_64)
+#   ./build.sh android-debug
+#                           debug APK for the emulator (x86_64 only — one Rust
+#                           target, smallest/fastest build; tuned gradle +
+#                           legacy packaging, docs/dev-loop-speed.md)
 #   ./build.sh android-universal
 #                           one signed universal APK (arm64 + armv7 + x86_64)
 #   ./build.sh linux      .deb + .AppImage (Linux only)
@@ -64,6 +68,73 @@ ensure_linux_deps() {
 
 cmd_check()  { npm_run lint; npm_run css; npm_run test; echo "check: OK"; }
 
+tune_android_build() {
+  # Build-speed + APK-size levers for the Android project (docs/dev-loop-speed.md
+  # §2 and §3). Both files live in the **gitignored** gen/ tree, so they are
+  # wiped by every `tauri android init` — that is why they are applied here,
+  # not hand-edited once. Every android build path calls this.
+  #
+  #   1. gradle.properties — parallel execution + task output cache + a
+  #      bigger heap. Applies to the NEXT build: gradle reuses the daemon, the
+  #      configuration cache and the task cache, and rust-only changes no
+  #      longer re-run packaging.
+  #   2. useLegacyPackaging on the debug buildType — the x86_64 debug .so is
+  #      ~87% of the APK; legacy packaging deflates it instead of storing it
+  #      raw (56.4 MB -> 19.9 MiB, measured 2026-10-11, docs/dev-loop-speed.md
+  #      BUILD D1). Packaging only, no runtime behaviour change.
+  local props="src-tauri/gen/android/gradle.properties"
+  if [[ -f "$props" ]]; then
+    # NEVER blind-overwrite this file (docs/dev-loop-speed.md §2 INCIDENT
+    # 2026-10-07): the Tauri template lines (android.builtInKotlin=false,
+    # android.newDsl=false, android.proguard.failOnMissingFiles=false) are
+    # load-bearing — dropping them breaks the build at configuration time.
+    # Read, merge, keep everything else.
+    _set_prop() {
+      local key="$1" val="$2"
+      if grep -q "^${key}=" "$props"; then
+        sed -i "s|^${key}=.*|${key}=${val}|" "$props"
+      else
+        printf '%s=%s\n' "$key" "$val" >> "$props"
+      fi
+    }
+    _set_prop org.gradle.jvmargs "-Xmx4g -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=512m -XX:+UseParallelGC"
+    _set_prop org.gradle.parallel "true"
+    _set_prop org.gradle.caching "true"
+    echo "✓ Gradle tuned for faster rebuilds (parallel + task cache + 4g heap)"
+  else
+    echo "⚠ gradle.properties not found - run 'tauri android init' first"
+  fi
+
+  local gradle="src-tauri/gen/android/app/build.gradle.kts"
+  if [[ -f "$gradle" ]]; then
+    # AGP 8+ spells this `packaging { jniLibs { useLegacyPackaging = true } }`.
+    # A bare `useLegacyPackaging` directly under `packaging {` is an
+    # unresolved reference -> the whole Kotlin script fails to compile
+    # (measured 2026-11-12). Drop any wrongly-placed line first.
+    sed -i '/^[[:space:]]*useLegacyPackaging[[:space:]]*=[[:space:]]*true[[:space:]]*$/d' "$gradle"
+    if grep -q 'useLegacyPackaging' "$gradle"; then
+      echo "✓ useLegacyPackaging already set (debug APK stays small)"
+    else
+      # Insert a jniLibs block into the debug buildType's own packaging block.
+      # The range ends at the 8-space "}" that closes getByName("debug") { ... }.
+      sed -i '/getByName("debug")/,/^        }/ s|^\( *\)packaging {$|\1packaging {\n\1    jniLibs {\n\1        useLegacyPackaging = true\n\1    }|' "$gradle"
+      # keepDebugSymbols on a native lib makes AGP reserve aligned space for
+      # an UNCOMPRESSED copy of it, which showed up as ~13 MB of zero padding
+      # in the APK (the .so is deflated anyway with useLegacyPackaging). It
+      # buys nothing here: extractNativeLibs=true, so the lib is unpacked at
+      # install time and no native debugger reads symbols from the APK.
+      sed -i '/getByName("debug")/,/^        }/ s|^\( *\)jniLibs\.keepDebugSymbols\.add(.*$||' "$gradle"
+      if grep -q 'useLegacyPackaging' "$gradle"; then
+        echo "✓ useLegacyPackaging enabled on the debug buildType (smaller APK)"
+      else
+        echo "⚠ could not set useLegacyPackaging (debug APK will be ~55 MiB)"
+      fi
+    fi
+  else
+    echo "⚠ build.gradle.kts not found - run 'tauri android init' first"
+  fi
+}
+
 inject_android_permissions() {
   local manifest="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
   if [[ ! -f "$manifest" ]]; then
@@ -84,25 +155,47 @@ inject_android_permissions() {
      && grep -q 'android.permission.CAMERA' "$manifest" \
      && grep -q 'android.permission.ACCESS_LOCAL_NETWORK' "$manifest" \
      && grep -q 'android:screenOrientation="portrait"' "$manifest" \
-     && grep -q 'android:scheme="openmusic"' "$manifest"; then
+     && grep -q 'android:scheme="openmusic"' "$manifest" \
+     && grep -q 'android:networkSecurityConfig' "$manifest"; then
     echo "✓ Android manifest injections already present"
     return 0
   fi
 
   echo "Injecting Android permissions..."
   
-  # Create network security config for cleartext loopback (media proxy)
+  # Create network security config for cleartext loopback (media proxy).
+  # Written PER BUILD TYPE, because a referenced NSC makes Android ignore the
+  # usesCleartextTraffic placeholder: the release build must keep the
+  # loopback-only policy, while the debug build declares
+  # usesCleartextTraffic=true (tauri android dev's LAN devUrl) and must not
+  # be narrowed by the referenced config (2026-11-12, P54).
   local nsc="src-tauri/gen/android/app/src/main/res/xml/network_security_config.xml"
   mkdir -p "$(dirname "$nsc")"
   cat > "$nsc" << 'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <!-- Allow cleartext for localhost/loopback only (media proxy) -->
+    <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">::1</domain>
     </domain-config>
+</network-security-config>
+EOF
+  # Debug override: the debug build type sets usesCleartextTraffic=true, and
+  # `tauri android dev` serves the frontend from http://<pc-ip>:1430.
+  local nsc_debug="src-tauri/gen/android/app/src/debug/res/xml/network_security_config.xml"
+  mkdir -p "$(dirname "$nsc_debug")"
+  cat > "$nsc_debug" << 'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Debug builds keep global cleartext (tauri android dev LAN devUrl). -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>
 EOF
   
@@ -111,9 +204,16 @@ EOF
   # doubling the lines it already has (jam-upgrade.md §4.1).
   if ! grep -q 'android.permission.INTERNET' "$manifest"; then
     sed -i '/<manifest/a\    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>' "$manifest"
-    # Add network security config reference to <application> tag
+    echo "✓ Injected INTERNET permission"
+  fi
+  # The network security config reference MUST NOT live in the INTERNET
+  # branch: the Tauri template ships INTERNET by default, so that branch is
+  # skipped and the attribute was silently dropped — a release build then
+  # applied usesCleartextTraffic=false with no loopback allowance and the
+  # media relay was blocked (2026-11-12, P54).
+  if ! grep -q 'android:networkSecurityConfig' "$manifest"; then
     sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"|' "$manifest"
-    echo "✓ Injected INTERNET permission and network security config"
+    echo "✓ Referenced network security config (loopback cleartext)"
   fi
   if ! grep -q 'android.permission.CAMERA' "$manifest"; then
     # Camera for the scan-to-join QR flow; runtime prompt fires on first
@@ -221,7 +321,29 @@ cmd_android() {
   # APK carrying every target's .so.
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
+  tune_android_build || die "Failed to tune the Android build"
   local args=(android build --target aarch64 x86_64 --split-per-abi --apk --ci)
+  tauri_android "${args[@]}"
+}
+
+cmd_android_debug() {
+  # Debug, single ABI (x86_64) — the artifact used on the Pixel6_API36
+  # emulator. One Rust target instead of three is the single biggest build
+  # speed lever, and the debug profile keeps the APK small
+  # (docs/dev-loop-speed.md BUILD D1: 18.98 MiB with legacy packaging).
+  inject_android_permissions || die "Failed to inject Android permissions"
+  inject_android_mediahub || die "Failed to inject Android media layer"
+  tune_android_build || die "Failed to tune the Android build"
+  # AGP's incremental packager leaves a zero-filled alignment placeholder
+  # (roughly the size of the COMPRESSED .so) inside the APK on a rebuild —
+  # a ~10 MB phantom that only appears on the second build of a tree, and
+  # that makes the APK look like it grew for no reason. A clean packaging
+  # state avoids it. The Rust artifacts in app/src-tauri/target are NOT
+  # touched, so this costs the dex/Kotlin step, not a rebuild.
+  rm -rf src-tauri/gen/android/app/build/intermediates \
+         src-tauri/gen/android/app/build/outputs \
+         src-tauri/gen/android/app/build/tmp
+  local args=(android build --target x86_64 --debug --apk --ci)
   tauri_android "${args[@]}"
 }
 
@@ -231,6 +353,7 @@ cmd_android_universal() {
   # no per-architecture choice at download time.
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
+  tune_android_build || die "Failed to tune the Android build"
   local args=(android build --target aarch64 armv7 x86_64 --apk --ci)
   tauri_android "${args[@]}"
 }
@@ -278,6 +401,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 case "${1:-all}" in
   check)   cmd_check ;;
   android) stamp=$(mktemp); touch "$stamp"; cmd_android; show_artifacts "$stamp" ;;
+  android-debug) stamp=$(mktemp); touch "$stamp"; cmd_android_debug; show_artifacts "$stamp" ;;
   android-universal) stamp=$(mktemp); touch "$stamp"; cmd_android_universal; show_artifacts "$stamp" ;;
   linux)   stamp=$(mktemp); touch "$stamp"; cmd_linux;   show_artifacts "$stamp" ;;
   windows) cmd_windows ;;

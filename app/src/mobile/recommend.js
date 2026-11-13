@@ -337,10 +337,22 @@ export function filterArtists(list, tab = "all") {
 }
 
 /// One honest evidence line per tile — empty when the card has no signal.
+/// Play counts reach the mined profile straight from the catalogue payload,
+/// where they are platform-wide totals (375,623,677 and up). Printed raw
+/// they read as a broken number, so they are abbreviated like the rest of the
+/// app's counters (2026-11-12).
+function fmtPlays(n) {
+  const v = Number(n) || 0;
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e4) return `${Math.round(v / 1e3)}K`;
+  return String(v);
+}
+
 export function artistEvidence(a) {
   if (!a) return "";
   const bits = [];
-  if (a.plays > 0) bits.push(`${a.plays} play${a.plays === 1 ? "" : "s"}`);
+  if (a.plays > 0) bits.push(`${fmtPlays(a.plays)} play${a.plays === 1 ? "" : "s"}`);
   if (a.liked > 0) bits.push(`${a.liked} liked`);
   if (a.downloaded > 0) bits.push(`${a.downloaded} downloaded`);
   if (a.following) bits.push("Following");
@@ -419,7 +431,7 @@ export function albumEvidence(a) {
   if (!a) return "";
   const bits = [];
   if (a.timeSecs > 0) bits.push(fmtListenTime(a.timeSecs));
-  if (a.plays > 0) bits.push(`${a.plays} play${a.plays === 1 ? "" : "s"}`);
+  if (a.plays > 0) bits.push(`${fmtPlays(a.plays)} play${a.plays === 1 ? "" : "s"}`);
   if (a.liked > 0) bits.push(`${a.liked} liked`);
   if (a.downloaded > 0) bits.push(`${a.downloaded} downloaded`);
   return bits.join(" · ");

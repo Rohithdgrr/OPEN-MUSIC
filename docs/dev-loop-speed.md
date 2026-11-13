@@ -122,9 +122,16 @@ android.newDsl=false
   changes where gradle tasks are otherwise re-run.
 - `jvmargs`: enough heap to avoid GC stalls mid-build; the machine builds the
   universal APK (3 Rust targets + packaging).
-- `org.gradle.configuration-cache` is deliberately **not** enabled: Tauri's
-  generated build scripts may not be configuration-cache clean; enabling it
-  risks hard failures for little gain.
+- `org.gradle.configuration-cache` **is** enabled by the Tauri template
+  (`gradle.properties` ships it), and the build logs
+  `Configuration cache entry stored.` on success — so it is kept. (An earlier
+  revision of this doc claimed it was "deliberately not enabled"; that was
+  wrong — the flag comes from the template, and the 2026-11-12 build proved it
+  works with this project's scripts.)
+- **Never blind-overwrite** this file (see the INCIDENT box above): the
+  tuning is **merged** into the generated file by
+  `app/build.sh` → `tune_android_build()`, which rewrites the three keys and
+  appends only what is missing. The Tauri template lines stay untouched.
 
 ## 3. Debug APK size budget (< 50 MiB)
 
@@ -201,6 +208,114 @@ Result: ✅ PASS (2026-10-11, this session).
   INTERNET already in the fresh template, added ACCESS_NETWORK_STATE +
   CAMERA + loopback `network_security_config.xml` + `OpenMusic` label by
   hand (PowerShell, no bash/CRLF round-trip).
+
+## BUILD D2 (2026-11-12) — one-command lightweight debug APK + a fast next build
+
+User requirement (2026-11-12): *"build lightweight apk. and build in a way so
+that next build will take less time, fast, efficient."*
+
+### What changed (all in `app/build.sh`, all re-applied automatically)
+
+| Lever | Where | Effect |
+|---|---|---|
+| `tune_android_build()` | new function in `app/build.sh` | merges `org.gradle.jvmargs=-Xmx4g …`, `org.gradle.parallel=true`, `org.gradle.caching=true` into `gen/android/gradle.properties`, and sets `useLegacyPackaging` on the **debug** buildType |
+| `./build.sh android-debug` | new dispatcher target | the emulator APK in one command: permissions + media layer + tuning + `android build --target x86_64 --debug --apk --ci` |
+| every android path calls it | `cmd_android`, `cmd_android_debug`, `cmd_android_universal` | the tuning is never a one-off manual edit |
+
+**Why it has to live in `build.sh`:** `gen/` is **gitignored**
+(`.gitignore:56`), so `tauri android init` wipes `gradle.properties` and
+`build.gradle.kts` back to the Tauri template. A hand-edited setting is lost
+at the worst moment. `tune_android_build()` re-applies both files on every
+build, so "the next build is fast + small" is the default, not a chore.
+
+### The two measured size levers
+
+`useLegacyPackaging` decides whether the `.so` is **deflated** or **stored
+raw** in the APK. The x86_64 debug `libapp_lib.so` is ~87% of the artifact:
+
+| Build | APK bytes | MiB | `lib/x86_64/libapp_lib.so` | method |
+|---|---|---|---|---|
+| without legacy packaging | 58,440,387 | **55.73** | 51,098,640 raw | **STORED** |
+| with legacy packaging (`./build.sh android-debug`) | **20,264,813** | **19.33** | 51,098,640 raw → 12,921,083 packed | DEFLATE |
+
+**−36.4 MiB (−65%)** for one line of Kotlin DSL. The 19.33 MiB result is
+slightly above BUILD D1's 18.98 MiB because this build also carries the
+Android media/widget layer (`android-overlay/` → 10 dex files + widget
+resources), which BUILD D1 did not inject.
+
+### Result (2026-11-12, this session)
+
+- `./build.sh android-debug` → `REAL_BUILD_EXIT=0` (measured with
+  `set -o pipefail`; the earlier run reported a false `BUILD_EXIT=0`).
+- Artifact: `app/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
+  — **20,264,813 B = 19.33 MiB**.
+- Packaged manifest (aapt2 dump): `networkSecurityConfig=@0x7f120002`,
+  `usesCleartextTraffic=true`, `ACCESS_LOCAL_NETWORK` + `CAMERA` +
+  `INTERNET` permissions, `screenOrientation=1` (portrait), the
+  `android:scheme="openmusic"` intent filter.
+- Install on `Pixel6_API36`: `adb uninstall` (old signature) → `adb install`
+  → **Success**; `versionName=0.5.1`, `versionCode=5001`, `targetSdk=37`.
+- Live: onboarding 3 steps → Home renders live catalog + artwork → **playback
+  works** (Now Playing "Dil Lagana Mana Tha" at 0:07, `AAudioStream` opened
+  and started) — the loopback relay needs the P54 cleartext fix, so this also
+  proves that fix end-to-end.
+
+### Two API traps measured here (both fail the build, not silently)
+
+1. **`useLegacyPackaging` placement.** AGP 8+ spells it
+   `packaging { jniLibs { useLegacyPackaging = true } }`. Written directly
+   under `packaging { }` it is an **unresolved reference** and the whole
+   Kotlin script fails to compile:
+   `e: …/build.gradle.kts:35:17: Unresolved reference 'useLegacyPackaging'.`
+   → `BUILD FAILED in 18s`. `tune_android_build()` now deletes any
+   wrongly-placed line before inserting the correct `jniLibs { }` block.
+2. **`cmd | tail` masks the failure.** The first run printed
+   `BUILD_EXIT=0` while gradle had failed — `$?` was `tail`'s status, not the
+   build's. Use `set -o pipefail` around any build pipeline (the repo's
+   standing CI rule, `docs/cross-platform-ci.md`).
+
+### Fast-next-build checklist
+
+| Step | Effect |
+|---|---|
+| never `cargo clean` / never delete `app/src-tauri/target` | the 488-crate dependency graph stays compiled (a cold Rust build is ~10 min; a warm one is seconds) |
+| `--target x86_64` only | one Rust target instead of three — the single biggest lever |
+| `--debug` | the dev profile; `[profile.dev.package."*"]` already builds deps at `-O1` without debuginfo |
+| `org.gradle.caching=true` + configuration cache | rust-only changes skip packaging entirely |
+| `./build.sh android-debug` | re-applies the tuning, so a fresh `tauri android init` costs nothing |
+
+### The 13 MB of invisible padding (2026-11-12)
+
+A rebuild produced a **31.65 MiB** APK even though the `.so` was deflated
+exactly as before. The zip explained it: between `classes9.dex` and
+`lib/x86_64/libapp_lib.so` sat **12,921,137 bytes of zero padding** behind a
+dummy local file header (empty name, STORED) — the size of the compressed
+`.so` itself.
+
+**Two separate causes, both fixed in `tune_android_build()` / `cmd_android_debug`:**
+
+1. **`jniLibs.keepDebugSymbols` kept the symbols in the `.so`.** AGP strips a
+   native lib's debug symbols unless a `keepDebugSymbols` pattern claims it —
+   and this template claims all four ABIs. The shipped `.so` was therefore
+   **51 MB** with DWARF instead of **31 MB**. The tuner now strips those four
+   lines from the debug buildType. It buys nothing here: `extractNativeLibs=true`,
+   so the library is unpacked at install time and no native debugger reads
+   symbols out of the APK.
+2. **AGP's incremental packager leaves a stale alignment placeholder.** With
+   the symbols gone the `.so` deflated to 10.6 MB, but the APK still carried a
+   zero-filled dummy entry of the same size — **on a rebuild only**. A clean
+   packaging state does not produce it. `cmd_android_debug` therefore wipes
+   `gen/android/app/build/{intermediates,outputs,tmp}` before the APK step
+   (the Rust artifacts in `app/src-tauri/target` are untouched, so this costs
+   the dex/Kotlin step, not a rebuild).
+
+Result: **17,941,741 B = 17.11 MiB**, `.so` 31 MB → 10.6 MB packed, no
+padding.
+
+How to see it: parse the zip's **local** headers (the central directory's
+`extra` length is not the local one — using it invents gaps that are not
+there). An entry whose data is zeros, right before the `.so`, is the
+reservation.
 
 ## Related
 

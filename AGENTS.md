@@ -2183,3 +2183,354 @@ capability-test whitelist carries the one documented grant).
 
 Status: ✅ feature live-verified both surfaces ✅ docs (§10 record) + CHANGELOG ⏳ local commit
 pending, **not pushed** (rule 1). Probes (throwaway) in `%TEMP%\opencode\` deleted after reporting.
+
+## 2026-11-12 — Rolled the repo back to `f22f107` (share deep links) on user call
+
+User: *"now i want to go back to this commit codes so go back"* with the
+`f22f107d46ac6ba992239ea54b95bf948e2504e5` link.
+
+**Prompt restated (rule 5):** the ask is *"reset the branch to this known-good
+commit"* (a local `git reset --hard` of the branch pointer), not *"delete later
+commits"* and not *"revert the changes"*. Distinction matters: the newer work
+must stay **recoverable**, so nothing was deleted.
+
+| Item | Evidence |
+|---|---|
+| State on arrival | fresh clone (reflog: `clone` → `checkout: moving from main to f22f107`), so HEAD was **detached at `f22f107`** already — the files on disk were the target code (`git diff f22f107 --stat` empty). The ref that still pointed forward was `main` = `origin/main` = **`f2bf828`** ("Android device batch: session ticker, recent-search X, offline boot fonts, vault dedupe", 40 files / +401 −5248 vs the target) |
+| Action | `git branch backup/android-device-batch f2bf828` → `git branch -f main f22f107` → `git switch main`. `git status -sb`: `## main...origin/main [behind 1]`, tree clean |
+| Nothing lost | `f2bf828` survives in **three** places: `origin/main` (on GitHub), local `backup/android-device-batch`, and the reflog. Restore with `git reset --hard origin/main` (full) or `git cherry-pick f2bf828` (re-apply on top) |
+| **Not pushed** | `origin/main` still points at `f2bf828`. Making GitHub match would need a **force-push**, which rule 2 forbids — so the rollback is **local only** and was reported, not performed |
+| Build artifacts | `app/src-tauri/target`, `app/src-tauri/gen`, `app/node_modules` are **absent** → no stale binaries from `f2bf828`; a build from this source starts clean (`npm install` first) |
+| Git identity | repo-local `user.email` is `rohit@users.noreply.github.com`, **not** the rule-2 `rohit93dgrr@gmail.com` — no commit was made, so nothing to fix yet; set it before any commit |
+
+**Trap:** `git checkout main` on a detached HEAD whose target differs from the
+current commit would have **moved the worktree to `f2bf828`** — the opposite of
+the request. The correct order is `git branch -f main <target>` first (pointer
+only, no worktree churn), then `git switch main`.
+
+Status: ✅ local repo back on `f22f107` ✅ newer work preserved ⏳ **not pushed**
+(rule 1) — GitHub still serves `f2bf828` on `main`.
+
+## 2026-11-12 — ARTEMIS installed (Android automation agent, MCP live) — desktop untouched
+
+User: *"install google artemis for android mobile. note: i want to develop only
+android mobile so don't touch the desktop."* Prompt restated (rule 5): the ask is
+*"add Google's ARTEMIS Android automation agent to the local Android dev loop"* —
+**not** *"add an AI feature to the app"*. ARTEMIS is a **dev tool** (it drives a
+phone over ADB); it is not shipped in the app.
+
+**Spec of record:** `docs/artemis-android-testing.md` (new). **Nothing committed,
+nothing pushed** (rule 1).
+
+| Item | Evidence |
+|---|---|
+| What ARTEMIS is | `google/artemis` (Apache 2.0) — natural-language Android UI automation over ADB; `flash` (~3–5 s/step) and `pro` (~15–40 s/step) profiles; native **MCP** server (v1.29.0) with 5 tools |
+| Layout (all OUTSIDE the repo) | source `C:\Users\rohit\desktop\artemis` (commit `351ca84`), venv `.venv`, `uv` via `pip install uv`, scrcpy 5.0.1 at `C:\Users\rohit\desktop\tools\scrcpy-win64-v5.0.1` → the app's `git status` stays clean |
+| Gaps found & closed | `uv` **missing** (AGENTS.md 2026-10-06e said so) → `pip install uv` 0.13.7 · `emulator` not on PATH → `…\Android\Sdk\emulator\emulator.exe` · **scrcpy missing** (no winget on this box) → standalone zip from GitHub releases · **ffmpeg missing** → no install needed, ARTEMIS resolves it from the venv's embedded `imageio-ffmpeg` (resolver Tier 5) |
+| `artemis doctor` | **"Status: Ready — All system checks passed!"** (Python 3.12.4 · system config · MCP host · multimodal key · device `sdk_gphone64_x86_64` 1080×2400 · video toolchain) |
+| On-device helper | `artemis helper install --serial emulator-5554` → `installed (version 6, service enabled)` |
+| **No secret on disk** | the Gemini key comes from the Windows **user-level env var** `GEMINI_API_KEY`; `.env` deliberately has **no** `GEMINI_API_KEY=` line (an empty one would shadow the env var and break perception) |
+| MCP wired into OpenCode | global `~/.config/opencode/opencode.json`, V2 `mcp.servers` → `artemis` with `command` = `.venv\Scripts\python.exe -m mcp_server`, `cwd` = the artemis repo, `env` `PYTHONUNBUFFERED`/`PYTHONPATH`. `opencode mcp list` → **✓ artemis connected**; the 5 tools appeared in-session |
+| Live proof (from this session) | `mobile_get_device_state` → real screenshot of the emulator home screen; `mobile_run_task` → enqueued, trace `87a0a7f1-e54e-4398-b207-fbc09996478f` |
+
+**Traps (measured):**
+- `artemis run` takes **`--device-serial`**; `artemis helper install` takes `--serial`. The wrong one aborts with `No such option`.
+- **Git Bash mangles a `C:\…` PATH entry** (the colon in `C:` splits it) → `shutil.which("scrcpy")` returned `None` even with the dir "on PATH". Fix: ARTEMIS's own Tier-1 override `ARTEMIS_SCRCPY_PATH` in `.env` — never PATH surgery.
+- The emulator must be **unlocked and awake** or `doctor` reports the device as not ready (`adb shell input keyevent KEYCODE_WAKEUP` + `wm dismiss-keyguard`).
+- scrcpy's bundled `adb.exe` is version-matched to the system adb (both `37.0.1-15733141`) — a mismatch would restart the adb server and drop the device mid-task.
+- `python -m mcp_server` **works from any cwd** given `PYTHONPATH` = the artemis repo; `cwd` in the OpenCode entry is belt-and-braces, not a hard requirement.
+
+**Desktop untouched, as instructed:** no desktop file in the repo was modified;
+the only repo additions are the new doc and this entry. ARTEMIS has no desktop
+concept (ADB-only).
+
+Status: ✅ installed + verified live ✅ MCP connected ✅ docs ⏳ **uncommitted,
+unpushed** (rule 1). Emulator `Pixel6_API36` left running with the ARTEMIS
+helper installed.
+
+## 2026-11-12b — Android APK rebuilt lightweight (19.33 MiB) + one-command fast rebuild
+
+User: *"leave artemis and continue build apk and install in emulator"*, then
+*"build lightweight apk. and build in a way so that next build will take less
+time, fast, efficient."* Prompt restated (rule 5): the ask is *"make the debug
+APK small **and** make the build itself cheap to repeat"* — i.e. **both** an
+artifact-size lever and a **build-loop** lever, not just a smaller file.
+Docs-first: `docs/dev-loop-speed.md` § BUILD D2 (new) + §2/§3 corrections,
+`docs/android-universal-release.md` § "Network security config reference
+(2026-11-12)", `docs/mobile/09-problems-solutions.md` **P54**. **Nothing
+committed, nothing pushed** (rule 1).
+
+| Item | Evidence |
+|---|---|
+| Baseline APK | 58,440,387 B = **55.73 MiB** — `lib/x86_64/libapp_lib.so` 51,098,640 B **STORED raw** (87%) |
+| Final APK | **20,264,813 B = 19.33 MiB** — same `.so` **DEFLATE**s to 12,921,083 B. **−36.4 MiB (−65%)** |
+| Why it was slow to repeat | `gen/` is **gitignored** → `tauri android init` wipes `gradle.properties` + `build.gradle.kts` back to the Tauri template, so every tuning edit was a manual chore that silently vanished |
+| Fix | new `tune_android_build()` in **`app/build.sh`** re-applies both files on every build: `org.gradle.jvmargs=-Xmx4g…` + `org.gradle.parallel=true` + `org.gradle.caching=true` (merged, **never** blind-overwritten — the Tauri template lines `android.builtInKotlin=false` / `android.newDsl=false` / `android.proguard.failOnMissingFiles=false` are load-bearing, §2 INCIDENT 2026-10-07) and `useLegacyPackaging` on the debug buildType |
+| One command | new dispatcher target **`./build.sh android-debug`** → permissions + media overlay + tuning + `android build --target x86_64 --debug --apk --ci` (one Rust target instead of three = the biggest speed lever). `cmd_android` / `cmd_android_universal` call the same tuner |
+| **P54 real defect fixed** | `inject_android_permissions` wrote `network_security_config.xml` **and** referenced it inside the **INTERNET permission branch** — but the Tauri 2.12 template ships INTERNET by default, so the branch is skipped and the attribute was silently absent → a **release** APK falls back to `usesCleartextTraffic=false` with no loopback allowance → the media relay is blocked (`ERR_CLEARTEXT_NOT_PERMITTED`, the 2026-10-07 streaming failure). Debug was unaffected (`true`), which hid it on every emulator run. Fix: the NSC reference has its own guarded block; the config is written **per build type** (`src/main` = loopback only for release, `src/debug` = `base-config cleartextTrafficPermitted="true"` so debug keeps `tauri android dev`'s LAN `devUrl`) |
+| Packaged manifest (aapt2) | `networkSecurityConfig=@0x7f120002`, `usesCleartextTraffic=true`, INTERNET/CAMERA/ACCESS_LOCAL_NETWORK, `screenOrientation=1`, `android:scheme="openmusic"` — every injection present |
+| Install + live | `adb uninstall` (old signature) → `adb install` **Success**; `versionName=0.5.1` `versionCode=5001` `targetSdk=37` `minSdk=24`; POST_NOTIFICATIONS prompt → Allow; onboarding 3 steps (step 2 fetched **live** artist data) → Home renders real catalog + artwork → **playback works**: Now Playing "Dil Lagana Mana Tha" at 0:07, `AAudioStreamBuilder_openStream() returns 0 = AAUDIO_OK` — i.e. the loopback relay works, proving the P54 fix end-to-end |
+| Media layer | the `android-overlay/` Kotlin media/widget layer was injected by the build.sh path (5 `.kt` files, `tm_widget.xml`, 10 dex files in the APK) — a raw `tauri android build` **skips** it |
+
+**Traps (measured):**
+- **`useLegacyPackaging` is `packaging { jniLibs { useLegacyPackaging = true } }`.** Written directly under `packaging { }` it is an unresolved reference and the **whole Kotlin script fails**: `e: …/build.gradle.kts:35:17: Unresolved reference 'useLegacyPackaging'` → `BUILD FAILED in 18s`. The tuner deletes a wrongly-placed line before inserting the correct block.
+- **`cmd | tail` masked the failure again**: the first run printed `BUILD_EXIT=0` while gradle had failed — `$?` was `tail`'s status. Fixed with `set -o pipefail` (the repo's standing CI rule).
+- **`adb pull`/`screencap` need `MSYS_NO_PATHCONV=1`** in Git Bash — otherwise `/sdcard/x.png` is rewritten to `C:/Program Files/Git/sdcard/x.png` ("failed to stat remote object"). `screencap` on this emulator also rejects `-p` before the filename; `screencap /sdcard/x.png` (filename ends with `.png`) works.
+- **uiautomator cannot see the mobile WebView**: `uiautomator dump` on the onboarding screen returns a 2.3 KB tree with **no** text nodes → tap coordinates must be read off a screenshot and scaled (device is 1080×2400; the screenshot shown to a model may be downscaled — multiply by 1.2 when it renders at 900 wide).
+- `npm run css` regenerated `app/src/tailwind.css` and **removed one stale class** (`-mt-1`, present in the committed CSS but referenced by no source file) — the committed bundle was stale, the rebuild is correct.
+
+**Still open (not blocked on me):** ARTEMIS's LLM call fails on this key —
+`gemini-3.8-flash` returns **HTTP 503 "high demand"** (measured with a direct
+`generateContent` call), and ARTEMIS retries it silently, so a task sits on
+"Waiting for LLM call response" forever. Every configured model *is* listed
+for the key (63 models, `gemini-3.8-flash` included), so this is upstream
+capacity, not configuration. `gemini-flash-lite-latest` was the one that
+worked for the AI-lyrics feature (2026-10-15).
+
+Status: ✅ APK built (19.33 MiB) + installed + streaming live ✅ build loop
+made repeatable ✅ P54 fixed ✅ docs ⏳ **uncommitted, unpushed** (rule 1).
+Emulator left running with the new APK installed and playing.
+
+## 2026-11-12c — Dark theme + every mobile screen captured (20 PNGs)
+
+User: *"now change theme to dark theme and take screenshots of every screen."*
+Prompt restated (rule 5): the ask is *"switch the app's theme to dark and
+capture a screenshot of each screen"* — the theme is an **app preference**
+(`tm-theme`), and "every screen" means the full routed surface, not a couple
+of highlights. **Nothing committed, nothing pushed** (rule 1).
+
+| Item | Evidence |
+|---|---|
+| Theme switched the **app's way** | `Settings → Display → Theme → Dark`: `select#m-theme` → `value="dark"` → `dispatchEvent(new Event("change"))` → the app's own listener wrote `localStorage.tm-theme="dark"` and toggled `html.dark`. Verified: `htmlClass="dark"`, body `background-color: rgb(9, 9, 11)`. Not a DOM poke — the app's change handler is the path |
+| Where the theme lives | `localStorage["tm-theme"]` ∈ `system\|light\|dark`; applied by `app/src/mobile/app.js:543` (`applyTheme`), `binders.js:4516` and `mobile/index.html:1071` → `document.documentElement.classList.toggle("dark", …)` |
+| Capture method | CDP over `adb forward tcp:9223 localabstract:webview_devtools_remote_<pid>`; Node 24's global `WebSocket` (no `ws` install). Per screen: set `location.hash` → settle → `adb shell screencap` → `adb pull` |
+| **20 screens captured**, all dark | home · search · library · settings · analytics · artists · albums · playlists · charts · liked-songs · download · history · notification · nowplaying · album-detail · artist-detail · playlist-detail · queue-sheet · jam-sheet · chat-sheet. Each capture re-verified `html.dark === true` and body `rgb(9, 9, 11)` at capture time (`_manifest.json` / `_details.json`) |
+| Output | `screenshots/mobile-dark/*.png` (20 files, 12.57 MB) + `README.md` (index + method + the two traps) + the JSON manifests. **Untracked** — the repo has no `screenshots/` dir at this commit; the older gallery folders were moved by the user (2026-10-14b) |
+| Detail screens reached by clicking | the app resolves name→id via `resolveEntity()` (`app/src/mobile/app.js:183`) — there is no id to type. Album → `#/album?token=…&id=79121261` ("Awarapan 2"), Playlist → `#/playlist?token=…&id=1134543272` ("Hindi: India Superhits Top 50"), Artist → `#/artist?token=…&id=22084941` ("Krish Mondal") |
+
+**Traps (each cost one run):**
+- **`data-nav` starts with the TOKEN, not the id**: the real value is `album?token=e9NTAB1tQ9M_&id=79121261&title=…`. Matching on `album?id=` matches **nothing** and the poller times out with no error — the app is fine.
+- **A leftover bottom sheet swallows navigation.** The chat/jam sheets persist across a route change; the next `location.hash` assignment appears to work (the hash changes) but the app stays where the sheet was. Clear `#tm-options-sheet` (and friends) before navigating, and force a re-render by passing through a *different* hash — setting the **same** hash fires no `hashchange`, so the router never re-renders and the screen keeps stale content.
+- **The album grid's tiles are not clickable**: their `[data-entity-name]` wrapper holds the album name **and** the artist line, and the resolver needs only the name (comment at `binders.js:1811`). The home screen's rows carry `data-nav="album?…"` and do navigate.
+- `uiautomator dump` returns a 2.3 KB tree with **no text nodes** on the mobile WebView → uiautomator cannot be used to find buttons here; CDP + `el.click()` can.
+- The `playlists` screen's default **"Yours" tab is empty on a fresh install** — click "Featured" before capturing or the shot shows an empty state.
+- `screencap` on this emulator rejects `-p` before the filename; `screencap /sdcard/x.png` works (a `.png` filename implies png), and `adb` needs `MSYS_NO_PATHCONV=1` in Git Bash or `/sdcard/x.png` is rewritten to `C:/Program Files/Git/sdcard/x.png`.
+
+Status: ✅ dark theme applied through the app's own setting ✅ 20 screens
+captured and each verified dark ✅ index README written ⏳ **uncommitted,
+unpushed** (rule 1). Emulator left running, app still in dark theme.
+
+## 2026-11-13 — Quick wins batch 1: mobile queue persistence + last-session restore (uncommitted)
+
+User directive: "now add all quick wins, small" (after the FOSS-app feature
+comparison). Surveyed the quick-win list against the codebase first — several
+already exist and were **not** re-built: queue reorder UI (menus queue sheet
+`data-q-up/down`), save-queue-as-playlist (menus.js `createPlaylistSheet(fq…)`),
+quality picker (`m-stream-q`), headset/noisy-audio pause (`__pauseNoisy`),
+lyrics offset (`tm-lyrics-offsets`), Wrapped share. The one real gap:
+**mobile queue persistence** (desktop `queue.js tm-queue` had no mobile twin).
+
+| Piece | Where |
+|---|---|
+| Pure helpers (zero imports) | new `app/src/mobile/queue-persistence.js`: `queueSnapshot` (desktop shape `{i,shuffle,repeat,q}`, 200 cap), `parseQueueSnapshot` (malformed → null, bogus index clamped, id-less rows dropped), `hasRestorableQueue` |
+| Player wiring | `mobile/player.js`: `persistQueue` (400 ms debounce), `flushQueue`, `restoreQueue` (no autoplay; mediaSession metadata + paint), `clearRestoredQueue`; `paint()` calls `persistQueue()` so every mutation funnels through it |
+| **Signature guard (key design point)** | `timeupdate` fires paint constantly; a `qi|shuffle|repeat|ids` signature keeps the debounce from rewriting unchanged data on every tick. `restoreQueue` sets `lastSig` so the restore-paint doesn't immediately re-schedule |
+| Boot wiring | new `mobile/wiring.js`: `wireQueuePersistence` (visibilitychange-hidden + pagehide flush — process-death tail) + `restoreLastSession`, called from `app.js` boot before the pending-smount flush |
+| Gates | `npm test` **512/512** (incl. 5 new `mobile-queue-persistence.test.mjs` + boot-graph gate), eslint clean on all 5 touched files, `node --check` ×5 |
+
+**Session trap (cost several edits):** the first pass at the app.js boot block
+left a stray `}`, a mid-file import, and a duplicate orphan comment — from
+repeated edit/rollback cycles. Lesson stands: when a boot block grows through
+multiple edits, re-read the whole block and rewrite it once, cleanly, instead
+of patching forward. Verify with `node --check` + eslint (caught 3 real issues:
+unused import, 2 `no-useless-assignment`) before believing the diff.
+
+Not mine, do not stage: `binders.js`, `index.html`, `recommend.js`,
+`mobile-dark-layout.test.mjs`, `AGENTS.md` (their 2026-11-12d entry),
+`CHANGELOG.md` + `docs/mobile/06-features.md` (my docs hunks sit adjacent to
+their uncommitted entries — single merged hunk, needs the 07i hunk-split at
+commit time), `build.sh`, dev-loop docs, `screenshots/`.
+
+Next quick-wins candidates actually missing (medium, not small): Last.fm/
+ListenBrainz scrobbling, lyrics translation/romanization, Android Auto.
+
+Nothing committed or pushed (rule 1). Left running: nothing attached
+(emulator was not up this session).
+
+## 2026-11-12d — Dark theme polish + wrong-artist fix + grid/list layout (uncommitted)
+
+User: *"improve the dark theme to be more better, efficient and properly like
+professional application some icons, text, buttons, cards are not properly
+visible and shadow is showing that is ugly like this seekbar in nowplaying
+screen. while clicked on artist of one from 3 it is navigating directly to
+first one only fix that. increase the size of the thumbnails at locations like
+playlists thumbnails, artists screen, charts, liked songs screen, download
+screen etc like in square grid do one thing add setting to see like grid and
+vertical grids."* Prompt restated (rule 5): four separate asks — **dark-theme
+polish**, **a wrong-navigation bug**, **bigger grid artwork**, **a grid/list
+setting**. Spec of record: `docs/mobile/06-features.md` § "Dark theme polish +
+grid/list layout (2026-11-12)". **Nothing committed, nothing pushed** (rule 1).
+
+| Item | Evidence |
+|---|---|
+| The ugly seekbar | the dark engine styled the **container** (`background: rgba(255,255,255,0.16)` — a white wash over the whole 24px track), the filled bar with a **10px white glow** and the needle with a **14px white glow**. Now: container transparent · bar a clean white gradient, no glow · needle a dark drop shadow + the dark ring. Measured on device: container `rgba(0,0,0,0)`, bar `box-shadow: none`, needle `0 1px 4px rgba(0,0,0,0.65)` |
+| The white "lit from behind" buttons | `.dark button.bg-primary` carried `0 4px 18px rgba(255,255,255,0.22)` — a white glow around a white button | replaced with a neutral `0 2px 10px rgba(0,0,0,0.45)` |
+| Flat cards in dark | Tailwind's `shadow-sm/md` are **black** shadows — invisible on `#09090b`. Elevation is now a **hairline**: `inset 0 0 0 1px rgba(255,255,255,0.06)` + a soft ambient shadow. Only **2** white-glow rules existed in the whole dark engine (both the scrubber) |
+| **Wrong-artist bug (root cause)** | `resolveEntity()` resolved a tapped artist **by name** and picked `items.find(exact) \|\| items[0]` — the fallback meant any imperfect title match opened the **first search result**, so artist #2 and #3 both opened #1. Fixed at the root: the title is **folded** (case/punctuation/whitespace) and matched exact → prefix → contains; **no `items[0]` fallback** — an unmatched tap says so instead of opening the wrong artist. Tiles that carry an id/token now navigate **directly** (`data-nav="artist?token=…&id=…"`), and the name reaches the resolver via a new `data-entity-title` attribute (the tile's own text also holds the subtitle, which used to make the lookup miss) |
+| Grid ⇄ list setting | one pref `tm-layout` (`grid`\|`list`, default grid) in **Settings → Appearance & Theme → Layout**, honoured by Artists, Albums, Playlists, Charts, Liked songs and Downloads. Grid = **2 columns of square artwork** (artists stay circular but 184px, up from ~120px); List = the rows those screens already had. Reuses the library's existing `setViewMode` pattern |
+| Two extra defects found while verifying | (1) the count pill next to Artists/Albums/Playlists/Charts was an **empty blob** — it lives in the screen **header**, outside `#screen`, so `m.querySelector` never found it (now `document.querySelector`); (2) the mined evidence line read **"375623677 plays"** — the counter is a platform-wide total from the catalogue payload, now abbreviated (`375.6M plays`) |
+| **Live verification 11/11** | on the emulator, CDP: dark theme on · scrubber container transparent · bar no glow · needle no white glow · artists grid 2 columns · artwork square (184×184) · 154 tiles · **tapping artist #2 opened artist #2** (`Imagine Dragons` → `#/artist?token=f0aFxsa231o_&id=599452`, not #1) · Settings exposes Layout · `tm-layout` persists · artists switch to a vertical list |
+| APK got smaller, again | `jniLibs.keepDebugSymbols` makes AGP reserve aligned space for an **uncompressed** copy of the lib → a **12,921,137-byte zero-filled dummy entry** inside the APK (the `.so` is deflated anyway, and `extractNativeLibs=true` means nothing reads symbols from the APK). The tuner now strips those lines: the `.so` dropped 51 MB → **31 MB**, the APK → **17,941,741 B = 17.11 MiB**, and the padding is gone. Full record: `docs/dev-loop-speed.md` § "The 13 MB of invisible padding" |
+| Gates | `npm test` **507/507** (+8 new `mobile-dark-layout.test.mjs`) · `npm run lint` clean · `node --check` clean · build `REAL_BUILD_EXIT=0` (with `set -o pipefail` — `cmd \| tail` masks the status, again) |
+
+**Traps (measured):**
+- **Parse a zip's LOCAL headers, not the central directory's.** The central
+  `extra` length differs from the local one; using it invents gaps that are
+  not there and sends you hunting a phantom.
+- **`m.querySelector` cannot see the screen header.** The mount functions
+  query inside `#screen`, but the header (title + count pill) is a sibling of
+  it — anything in the header needs `document.querySelector`.
+- **A fresh install has no play history**, so the taste-profile-driven screens
+  (Artists, Albums) are legitimately empty. Seed real plays by searching and
+  clicking a row (`#sm-results [data-list]`) — the profile reads the SQLite
+  ledger, so localStorage seeding does nothing.
+- The play-event rows are correct (`ts`/`ms_played`/`outcome`); the absurd
+  "plays" numbers come from the **catalogue payload's** `plays` field, which
+  `normTrack` maps onto the mined counter.
+
+Status: ✅ dark theme polished ✅ artist bug fixed ✅ grid/list setting live ✅
+APK 17.11 MiB ✅ 11/11 live checks ✅ docs ⏳ **uncommitted, unpushed**
+(rule 1). Emulator left running with the new build installed.
+
+## 2026-11-13 — Dark theme: the translucent-utility bug, real artist art, glass discs (uncommitted)
+
+User (with screenshots): *"improve this home screen dark theme headers background
+shade. make proper thumbnails show some are showing irrelavant thumbnails like
+for artist it is showing album thumbnail for playlists, albums, charts etc.
+improve code reusability, code quality, code optimizations, security,
+maintenance & bugs and edge test general all cases handling."* Prompt restated
+(rule 5): the ask is **not** "restyle the dark theme" but **"fix the
+mechanism that makes the dark theme wrong"** — the screenshots show four
+symptoms with one root cause behind three of them. Spec: `docs/mobile/06-features.md`
+§ "Dark theme: the translucent-utility fix, real artist art, glass discs".
+**Nothing committed, nothing pushed** (rule 1).
+
+### The systematic bug (the big one)
+
+| | |
+|---|---|
+| Symptom | the **options sheet rendered as a white panel** on a dark page; the Downloads/Favorites headers carried a **light grey band**; card borders were near white; icons and text looked wrong all over |
+| Cause | **Tailwind cannot apply an opacity modifier to a plain hex theme colour**, so it bakes the value in from the **light** Stitch theme: `.bg-surface-container-lowest\/95 { background-color: hsla(0,0%,100%,.95) }`. The dark engine's plain-class rules (`.dark .bg-surface-container-lowest`) never matched either — the class name carries the `/NN` suffix |
+| Census | **39 distinct variants / ~300 uses**; only **8** were covered by hand-written rules, **31** were not — including `bg-surface-container-low/90` (x23, the header bands) and `bg-surface-container-lowest/95` (x3, the sheet) |
+| Fix | one dark rule per variant, alpha preserved, borders reduced to hairlines (`0.08 × modifier/60`). The rules are **generated from the utilities the shell actually uses**, so the set cannot drift. `text-surface-container-lowest/*` maps to **light** text (it is a surface colour used as text) |
+
+### The other three
+
+| Defect | Cause | Fix |
+|---|---|---|
+| Artist tiles showed album/film covers ("Arijit Singh" wore a compilation cover, "Rahul Sipligunj" a film poster) | the mined taste profile only knows the **track's** artwork | shared `artistArt(name)` resolver (`binders.js`): the catalogue entity search returns the artist's own photo **and its token**, and the backend caches per query. Failures cache as `null` (no retry storm). Measured: `artists/Rahul_Sipligunj_500x500.jpg`, `artists/Arijit_Singh_004_…jpg`, `artists/Imagine_Dragons_500x500.jpg`. A resolved artist also carries its **token**, so the tile navigates **directly** (`data-nav="artist?token=…"`) instead of resolving the name at tap time. Both the Artists screen and the home "Top Artists" shelf use it (the shelf swaps pictures in place via `paintArt`) |
+| Solid white discs | `bg-on-surface` is white in dark mode, and the shelf-card bubble is a **literal** `bg-white text-black` | both are **glass** now: a 14–16% white fill, a hairline, a backdrop blur. Two separate rules were needed — the theme-token discs and the literal-white card bubble |
+| A band behind the home shelf titles | the dark card rule included `[data-shelf] > div`, which matched each shelf's **first child** — the header row | the selector is gone; the shelf cards carry their own background. Measured: header row `background-color: rgba(0,0,0,0)`, `background-image: none` |
+
+### Gates
+
+- `app/tests/mobile-dark-layout.test.mjs` grew to **13 checks**, including a
+  **coverage gate**: every opacity-modified theme colour used anywhere in the
+  mobile shell must have a dark rule — the next `bg-…/40` cannot silently
+  ship in the light palette.
+- `npm test` **516/516** · `npm run lint` clean · `node --check` clean ·
+  build `REAL_BUILD_EXIT=0` · APK **17.9 MiB**.
+
+**Traps (measured):**
+- **Tailwind opacity modifiers on hex theme colours silently bake the LIGHT
+  value.** There is no warning and no runtime signal — the class simply has no
+  dark counterpart. The only reliable detector is to compare the *compiled*
+  CSS against the theme's runtime overrides.
+- **The CSS class escape must be unescaped as a PAIR** (`\/` → `/`). Replacing
+  every backslash with a slash turns `\/` into `//` and the regex then
+  matches nothing — which looks exactly like "no rules exist" (cost two
+  wrong conclusions).
+- **The dark engine is a slice from the `GLOBAL MOBILE DARK THEME ENGINE`
+  marker** — slicing from a bad offset silently reports zero handled rules.
+- `m.querySelector` cannot see the screen header (it lives outside `#screen`).
+- The emulator is cycled by other sessions on this box: expect it to vanish
+  mid-run and re-check `adb devices` before every probe.
+
+Status: ✅ systematic dark bug fixed ✅ artist artwork real ✅ discs glass ✅
+shelf band gone ✅ 13 static gates ✅ docs ⏳ **uncommitted, unpushed**
+(rule 1). Emulator left running with the build installed.
+
+## 2026-11-13b — Offline boot, native share, "Save to local", art-tinted Now Playing
+
+User (with screenshots): *"add remove button in this recent search. while
+opening app without internet it is not loading perfect instead it is showing
+like check second and third image fix that make it render properly while
+opening in offline also. check 4th and 5th make that share dialog open when
+clicked on share. remove this text 'CORE V2.4' FROM TOP NAV BAR BESIDE
+BRANDING. FOR NOWPLAYING SCREEN IN LIGHT THEME MAKE BACKGROUND COLOUR CHANGE
+AND MATCH DYNAMICALLY ACCORDING TO THUMBNAILS (only in nowplaying screen). IN
+DOWNLOADS SCREEN FOR ALL DOWNLOADED SONGS ADD OPTION TO 'SAVE TO LOCAL' to
+save in local storage."* Prompt restated (rule 5): six discrete mobile asks.
+Spec: `docs/mobile/06-features.md` § "Offline boot, native share, 'Save to
+local', art-tinted Now Playing". **Nothing committed, nothing pushed** (rule 1).
+
+### The key insight
+
+**Three of the six asks were already implemented in the commit the user rolled
+back** (`f2bf828`, "Android device batch: … offline boot fonts …"). The
+rollback (their explicit call) removed them. Rather than re-implement, the
+work was **restored from that commit**:
+
+| Ask | How |
+|---|---|
+| offline boot (images 2–3: raw icon names `chevron_right`, `favorite_border`, `more_vert`…) | `app/src/fonts/*.woff2` restored + the `@font-face` block in the **mobile** shell + the mobile CSP drops `fonts.googleapis.com`/`fonts.gstatic.com`. The desktop shell was left alone (user: android only) |
+| "Save to local" for downloaded songs | `app/src/mobile/savelocal.js` + `app/tests/savelocal.test.mjs` restored, and the Kotlin side (`TmBridge.saveLocal` → `MediaHub.saveLocal`, MediaStore insert) re-applied **extractively** (the function + `sanitizeName` + 3 imports were lifted out of `f2bf828`'s `MediaHub.kt`, because that file also carries the media-ticker work this tree does not have) |
+| recent-search remove button | `data-sug-del` row button + the click handler restored from `f2bf828` — including the subtle part: `stopPropagation()` **before** the repaint, because the repaint replaces the dropdown's `innerHTML`, which detaches the button, and the document's away-click handler would otherwise close the box it had just repainted |
+| share sheet (images 4–5) | **new** work: `navigator.share` does not exist in the Android WebView, so the tap degraded to "copied to clipboard". Added `TmBridge.share(text)` → `MediaHub.share()` → `ACTION_SEND` chooser, and `shareThing()` now prefers the bridge |
+| "CORE V2.4" chip | removed from `screens/home.html` |
+| Now Playing background follows the artwork (light only) | **new**: `app/src/mobile/arttint.js` — the art comes from the app's own relay (same-origin), so a canvas reads its pixels untainted; greys/near-blacks are skipped so a moody cover cannot wash the page grey; the result becomes `--np-tint`, a soft gradient. The **router clears the variable** when the user leaves, so no other screen inherits it. Dark keeps its flat surface (the artwork already carries the colour there) |
+
+### Gates
+
+`npm test` **528/528** (incl. the restored `savelocal` gate + 5 new
+`arttint` unit tests) · `npm run lint` clean · `node --check` clean ·
+build `REAL_BUILD_EXIT=0` · APK **22,026,589 B = 21.0 MiB** (the 4 MB icon
+font is bundled, hence larger than the 17.11 MiB build without it).
+
+### Live verification (on the emulator, the new build)
+
+| Check | Result |
+|---|---|
+| the icon font is the **local** Material Symbols | `document.fonts.check('24px "Material Symbols Outlined"')` → **true**, and the glyph renders **20px** wide (a ligature, not the raw word) — the offline bug is gone |
+| "CORE V2.4" chip | `body.innerText.indexOf("CORE V2.4")` → **-1** |
+| recent-search remove button | present (`aria-label="Remove recent search"`, `data-sug-del="kesariya"`) and it **removes the row**: 1 → 0 |
+| the native bridge | `window.TMNative.share` → function, `window.TMNative.saveLocal` → function |
+| the Downloads grid menu | opens the track menu with **"Save to local"** in it (Track Details · Go to Artist · View Album · Play Next · Add to Queue · Download · **Save to local** · Share Track · Share Card) |
+| the Now Playing tint | `--np-tint: rgba(73, 55, 76, 0.16)` — sampled from the cover, and the screenshot shows the wash fading out by 62% |
+
+**Traps:**
+- **The relay is a DIFFERENT origin than the page** (`http://tauri.localhost`
+  vs `http://127.0.0.1:<port>`), so drawing the `<img>` into a canvas taints
+  it and `getImageData` throws a SecurityError. The art tint therefore
+  **fetches the bytes** (the relay answers `access-control-allow-origin`)
+  and draws the blob — a blob is same-origin, so the canvas stays readable.
+  The first implementation silently did nothing because of this.
+- **The grid tiles had lost every button.** The square tile carries the row's
+  `data-list`/`data-idx`, but the tile markup had no kebab — so the
+  Downloads **grid** had no way to reach the row menu at all (and therefore
+  no way to "Save to local"). The tile now carries a kebab in its corner.
+- **A grey/dark cover must still tint the page.** Skipping near-black and
+  near-grey pixels (to avoid a washed-out page) left dark covers with **no**
+  tint at all; the rule now falls back to the cover's overall tone.
+- **The Kotlin overlay is copied into `gen/`** by `build.sh`'s
+  `inject_android_mediahub`. Editing `android-overlay/kotlin/*.kt` and then
+  running gradle **directly** compiles the stale copy — three build failures
+  in a row came from that. Always build through `build.sh`.
+- `f2bf828`'s `MediaHub.kt` also carries the media-ticker work this tree does
+  not have, so the `saveLocal` function was lifted **extractively** (the
+  function, its `fail` helper, `sanitizeName` and four imports) rather than
+  restoring the whole file; its `logW` helper does not exist here and was
+  inlined as `android.util.Log.w`.
+
+Status: ✅ six asks implemented and verified on the device ✅ 528 tests ✅ docs
+⏳ **uncommitted, unpushed** (rule 1).

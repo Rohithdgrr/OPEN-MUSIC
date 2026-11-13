@@ -113,3 +113,17 @@ re-read by hand before fixing — none inferred). Mobile batch:
 Gates: `npm run lint` clean · `npm test` **413/413**. Live device check
 (boot graph, version badge P48, analytics pills P49 on the emulator):
 recorded in `AGENTS.md` 2026-10-15h.
+
+## 2026-11-12 — Android build: loopback cleartext config silently dropped (P54)
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P54 | A **release** APK streams nothing — `<audio>` stuck at `readyState 0`, `MEDIA_ELEMENT_ERROR: Format error`, album art dead. This is the 2026-10-07 failure (P23) coming back | `app/build.sh`'s `inject_android_permissions` wrote `network_security_config.xml` **and** added `android:networkSecurityConfig` to `<application>` inside the *same* branch that injects `android.permission.INTERNET`. The Tauri 2.12 template now ships INTERNET by default → that branch is skipped → the XML is written but the attribute is never added. An unreferenced NSC changes nothing: Android applies `usesCleartextTraffic` from `build.gradle.kts` (**false** for release) → every `http://127.0.0.1:<port>/stream` is `net::ERR_CLEARTEXT_NOT_PERMITTED`. **Debug builds are unaffected** (`usesCleartextTraffic=true`), so every emulator run on this machine passes and the defect stays invisible until a release build | the NSC reference gets its own guarded block, independent of the INTERNET permission; the config is written **per build type** — `src/main` = loopback only (release default), `src/debug` = `base-config cleartextTrafficPermitted="true"` (keeps `tauri android dev`'s LAN `devUrl` cleartext) |
+
+Evidence: fresh `tauri android init` on a clean checkout (Tauri CLI 2.12.0,
+compileSdk/targetSdk 37) → manifest had `android.permission.INTERNET` already
+and **no** `android:networkSecurityConfig` attribute, while
+`res/xml/network_security_config.xml` existed on disk. Doc:
+`docs/android-universal-release.md` § "Network security config reference
+(2026-11-12)".
+

@@ -744,3 +744,240 @@ Contract: the enabled row and the `#jamAppendSuggest` box are asserted by
 pure shaping module carries `appendsuggest.test.mjs` (pick/cap/dedupe +
 row markup with the three actions, art resolver injected so the module stays
 import-free).
+
+## Dark theme polish + grid/list layout (2026-11-12)
+
+Four asks in one pass: (1) the dark theme should read like a professional
+app — icons, text, buttons and cards all legible, no ugly shadows; (2) the
+Now Playing **seekbar** in particular looked like a glowing white tube;
+(3) clicking the 2nd/3rd artist in a list navigated to the **first** artist
+instead; (4) bigger thumbnails in the square grids, plus a **setting** to
+switch every collection between a square grid and a vertical list.
+
+### Dark theme — what was actually wrong
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Seekbar is a bright glowing bar | the dark engine styled the **container** (`background: rgba(255,255,255,0.16)` — a white wash over the whole 24px track), the filled bar with a **white glow** (`0 0 10px rgba(255,255,255,.6)`) and the needle with a **14px white glow** | container transparent · track a flat 14% white · filled bar a clean white gradient with **no** glow · needle a 12px dot with a **dark** drop shadow and the dark ring, so it reads as a knob rather than a lamp |
+| White buttons looked like they were lit from behind | `.dark button.bg-primary` carried `0 4px 18px rgba(255,255,255,0.22)` — a white glow around a white button | replaced with a neutral shadow (`0 2px 10px rgba(0,0,0,0.45)`) so the button reads as raised, not luminous |
+| Cards looked flat / undefined | Tailwind's `shadow-sm`/`shadow-md` are **black** shadows — invisible on the `#09090b` surface | in dark mode elevation becomes a **hairline**: `inset 0 0 0 1px rgba(255,255,255,0.06)` plus a soft ambient shadow |
+
+Only two white-glow rules existed in the whole dark engine and **both** were
+the scrubber, so the fix is contained.
+
+### The wrong-artist bug (root cause)
+
+`resolveEntity()` (`app/src/mobile/app.js`) resolved a tapped artist **by
+name**: it called `search_entities`, then picked
+`items.find(x => x.title === want) || items[0]` — the `|| items[0]` fallback
+means *any* imperfect match silently navigates to the **first search
+result**, which is why artist #2 and #3 both opened artist #1.
+
+Fixes, at the root:
+
+- the match is now **normalised and scored** (exact → prefix → contains, on a
+  lower-cased, whitespace/punctuation-folded title). A hit is only accepted
+  when the title actually matches the tapped name; otherwise the app says it
+  could not find that artist instead of opening the wrong one;
+- where the tapped entity **carries an id/token**, the tile navigates
+  **directly** (`data-nav="artist?token=…&id=…"`) and no lookup happens at
+  all — the exact-entity path;
+- the album grid tile had the same class of bug: its `[data-entity-name]`
+  wrapper held the album name **and** the artist line, so the name never
+  matched. The attribute now sits on the title alone.
+
+### Grid ⇄ list layout
+
+One preference, `tm-layout` (`grid` | `list`), default **grid**, set from
+**Settings → Appearance & Theme → Layout**. It is honoured by the six
+collection screens: Artists, Albums, Playlists, Charts, Liked songs and
+Downloads.
+
+- **grid**: square artwork tiles, **2 columns** (was 3 for artists) — the
+  artwork is the biggest it has ever been;
+- **list**: the vertical rows those screens already had.
+
+The preference is read when the screen mounts, so changing it in Settings
+takes effect on the next visit to any of the six screens.
+
+**Grid tiles keep the row menu.** A square tile carries the same
+`data-list`/`data-idx` as a row, so the kebab in its corner opens the same
+track menu ("Save to local", "Download", "Remove"). Without it the grid
+would have had **no way** to reach those actions at all — the Downloads
+screen's grid had lost every button.
+
+### Two more defects found while verifying the grid
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The count pill next to "Artists" / "Albums" / "Playlists" / "Charts" was an **empty blob** (it read as a stray dash) | the pill lives in the screen **header**, which is outside the `#screen` container the mount functions query — `m.querySelector("[data-artists-count]")` therefore always returned `null` and the pill was never filled | the four mounts now query the pill from `document`, not from the screen |
+| The evidence line under a mined artist/album read **"375623677 plays"** | the mined play counter comes straight from the catalogue payload, where it is a platform-wide total | the counter is abbreviated like the rest of the app (`375.6M plays`), in `artistEvidence`/`albumEvidence` |
+
+### Contract
+
+`app/tests/mobile-dark-layout.test.mjs` (static gate) asserts: no white glow
+shadows survive in the dark engine, the scrubber container is transparent in
+dark mode, `resolveEntity` no longer falls back to `items[0]`, the `tm-layout`
+preference is read and written, and the Layout row exists in Settings.
+
+## Queue persistence + last-session restore (2026-11-12)
+
+Desktop has restored its queue across restarts for a long time (`queue.js`,
+`tm-queue`). Mobile now does the same:
+
+- **Write side** — every queue mutation reaches `persistQueue()` through the
+  player's own repaint: play-now, play-next, add-to-queue, reorder, remove,
+  clear, smart-shuffle and radio top-ups. A 400 ms debounce coalesces bursts,
+  and a signature (`qi|shuffle|repeat|ids`) keeps `timeupdate`-driven repaints
+  from rewriting unchanged data. `visibilitychange` (hidden) and `pagehide`
+  flush synchronously so process death cannot eat the tail.
+- **Restore side** — at boot, before the first mount flush, `restoreQueue()`
+  reads the snapshot back into the player (queue, index, shuffle, repeat) and
+  updates the media session metadata so the paused bar shows the last track.
+  **Nothing autoplays** — desktop keeps the exact same split (restore at boot,
+  play on tap).
+- **Shape** — `{ i, shuffle, repeat, q }` with the desktop's 200-track cap;
+  malformed or empty payloads parse to `null` and are ignored. Boot wiring
+  lives in `app/src/mobile/wiring.js`; the pure helpers (no browser globals)
+  in `app/src/mobile/queue-persistence.js`.
+
+Contract: `app/tests/mobile-queue-persistence.test.mjs` (round-trip, malformed
+payloads, bogus index clamping, id-less row dropping, cap) + the boot graph
+gate (`app/tests/mobile-boot.test.mjs`) executing the real module graph with
+the new wiring in place.
+
+## Dark theme: the translucent-utility fix, real artist art, glass discs (2026-11-13)
+
+Four defects from the dark-theme review, all fixed at the root rather than
+surface-by-surface.
+
+### 1. Every "/NN" opacity utility rendered the LIGHT palette (the big one)
+
+**Symptom:** icons, text, buttons and cards looked wrong all over the dark
+shell — the options sheet was a **white panel** on a dark page, the Downloads
+and Favorites headers carried a **light grey band**, card borders were near
+white.
+
+**Cause:** Tailwind cannot apply an opacity modifier to a plain hex theme
+colour, so it bakes the value in from the **light** Stitch theme:
+
+```css
+.bg-surface-container-lowest\/95 { background-color: hsla(0, 0%, 100%, .95) }  /* white! */
+.bg-surface\/85                 { background-color: rgba(249, 249, 251, .85) }  /* near-white */
+```
+
+The dark engine's plain-class rules (`.dark .bg-surface-container-lowest`)
+never matched either, because the class name carries the `/NN` suffix. **39
+distinct variants** were affected across ~300 uses; 8 were already covered,
+31 were not.
+
+**Fix:** one dark rule per variant, alpha preserved, borders reduced to
+hairlines. The rules are **generated from the utilities the shell actually
+uses** and live in one block in the dark engine, so the set cannot drift.
+
+### 2. Artist tiles showed somebody else's artwork
+
+The mined taste profile only knows the **track's** artwork — an album or film
+cover — so "Arijit Singh" was drawn with a compilation cover and "Rahul
+Sipligunj" with a film poster.
+
+New shared resolver `artistArt(name)` (`binders.js`): the catalogue entity
+search returns the artist's own photo *and* its token, and the backend caches
+per query, so a handful of lookups is enough. Failures are cached as `null`,
+so a missing artist keeps its placeholder instead of retrying forever. Both
+the Artists screen and the home "Top Artists" shelf use it; the shelf swaps
+the pictures in place via `paintArt`.
+
+A side effect worth having: a resolved artist also carries its **token**, so
+its tile navigates **directly** (`data-nav="artist?token=…"`) instead of
+resolving the name at tap time.
+
+The catalogue's own "no photo" placeholder (a **white** PNG with a grey mic)
+is treated as *no artwork*: the tile falls back to the brand mark, like every
+other missing image, instead of a bright white disc in a dark grid. A lookup
+that answers with no photo therefore does **not** fall back to the album
+cover — the album cover is only the placeholder for a lookup that has not
+answered yet.
+
+### 3. Solid-white action discs
+
+`bg-on-surface` is white in dark mode, so every play bubble and small action
+disc was a solid white hole in the page. They are now **glass** — a 14%
+white fill, a hairline and a backdrop blur — which reads as a control rather
+than a lamp.
+
+### 4. A stray band behind the home shelf titles
+
+The dark engine's card rule included `[data-shelf] > div`, which matched each
+shelf's **first child** — the header row ("Jump Back In", "Monthly Mix") — and
+painted a card gradient behind the title. The shelf cards carry their own
+background, so the selector is gone.
+
+### Contract
+
+`app/tests/mobile-dark-layout.test.mjs` grew to 12 checks, including a
+**coverage gate**: every opacity-modified theme colour used anywhere in the
+mobile shell must have a dark rule, so the next `bg-…/40` cannot silently
+render in the light palette.
+
+## Offline boot, native share, "Save to local", art-tinted Now Playing (2026-11-13)
+
+A batch of five mobile fixes.
+
+### 1. The shell boots and renders with **no connectivity**
+
+**Symptom:** offline, the app rendered the *ligature names* as text —
+`chevron_right`, `favorite_border`, `more_vert`, `play_arrow` — because the
+icon font came from a Google Fonts stylesheet that never loaded.
+
+**Fix:** the fonts are **bundled** (`app/src/fonts/`: `icons.woff2`,
+`geist-latin.woff2`, `jetbrains-mono-latin.woff2`) and loaded same-origin
+with `@font-face`; the mobile CSP drops `fonts.googleapis.com` and
+`fonts.gstatic.com`. The `.material-symbols-outlined` class rule, which also
+lived in that stylesheet, is inlined unchanged.
+
+### 2. Recent searches can be removed
+
+Each **recent search** row in the search dropdown carries a remove button
+(`data-sug-del`), outside the row's own button so clearing never re-runs the
+query it belongs to. The click stops propagation **before** the repaint: the
+repaint replaces the dropdown's `innerHTML`, which detaches the button, and
+the document's away-click handler would otherwise treat that as an outside
+click and close the box it had just repainted.
+
+### 3. "Share" opens the real Android share sheet
+
+The share action used `navigator.share`, which **the Android WebView does not
+implement** — so a tap silently degraded to "copied to clipboard". There is
+now a native bridge: `TmBridge.share(text)` → `MediaHub.share()` fires an
+`ACTION_SEND` chooser (the system sheet). The JS prefers the bridge and
+falls back to `navigator.share` (desktop) and then the clipboard.
+
+### 4. "Save to local" for downloaded songs
+
+Distinct from **Download**, which fills the app-private vault only OpenMusic
+can read: **Save to local** hands the file to the **device** (MediaStore,
+`Music/OpenMusic/`) so other players see it. The pipeline is
+vault-ledger → download if needed → the native bridge; the display name is
+`Artist - Title.ext`, and a re-save of the same song is detected by name (not
+by bytes) so a re-encoded copy does not pile up duplicates.
+
+The menu item appears wherever the track menu does — including **every row on
+the Downloads screen**, whose rows already open that menu.
+
+### 5. The Now Playing page follows the artwork (light theme)
+
+The page picks up the cover's own colour: the artwork is served by the app's
+own relay (same-origin), so a canvas can read its pixels without tainting.
+The average of the coloured pixels — greys and near-blacks are skipped, so a
+moody cover cannot wash the page grey — becomes `--np-tint`, a soft gradient
+over the light surface. The router clears the variable when the user leaves,
+so no other screen inherits it. Dark mode keeps its flat surface: the
+artwork already carries the colour there.
+
+### Contract
+
+`app/tests/arttint.test.mjs` covers the colour maths (a coloured cover
+yields its colour; a grey or near-black cover yields **no** tint; short input
+is safe). The font, share and save-to-local paths are covered by the
+`fonts-local` / `savelocal` gates.

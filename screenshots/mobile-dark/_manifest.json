@@ -1,0 +1,144 @@
+[
+  {
+    "name": "dark theme active",
+    "ok": false,
+    "detail": "{\"t\":\"light\",\"d\":false}"
+  },
+  {
+    "name": "options sheet is dark (not a white panel)",
+    "ok": false,
+    "detail": "{\"bg\":\"rgba(255, 255, 255, 0.95)\",\"sheetBg\":\"none\",\"color\":\"rgb(26, 28, 29)\"}"
+  },
+  {
+    "name": "card play bubble is glass, not a solid white disc",
+    "ok": false,
+    "detail": "{\"bg\":\"rgb(255, 255, 255)\",\"color\":\"rgb(0, 0, 0)\",\"border\":\"rgb(229, 231, 235)\"}"
+  },
+  {
+    "name": "artist tiles have artwork",
+    "ok": true,
+    "detail": "153 tiles"
+  },
+  {
+    "name": "artist tiles no longer show album/film covers",
+    "ok": true,
+    "detail": "0 still album-ish: [\"avncdn.com/artists/Rahul_Sipligunj_500x500.jpg\",\"http://tauri.localhost/mobile/logo.png\",\"ists/Kaala_Bhairava_20181003123414_500x500.jpg\"]"
+  },
+  {
+    "name": "home shelf header has no gradient band",
+    "ok": true,
+    "detail": "{\"cls\":\"flex items-center justify-between\",\"bg\":\"rgba(0, 0, 0, 0)\",\"img\":\"linear-gradient(rgb(255, 255, 255) 0%, r\"}"
+  },
+  {
+    "name": "home",
+    "bytes": 1250471,
+    "hash": "#/home",
+    "dark": false,
+    "txt": "graphic_eq OPENMUSIC CORE V2.4 search history person FRIDAY,",
+    "note": "landing"
+  },
+  {
+    "name": "search",
+    "bytes": 135555,
+    "hash": "#/search",
+    "dark": false,
+    "txt": "Search search close All Tracks Albums Artists Playlists grap",
+    "note": "search"
+  },
+  {
+    "name": "library",
+    "bytes": 559168,
+    "hash": "#/library",
+    "dark": false,
+    "txt": "Library tune person Your Library search add swap_vert All ar",
+    "note": "main library"
+  },
+  {
+    "name": "settings",
+    "bytes": 322922,
+    "hash": "#/settings",
+    "dark": false,
+    "txt": "arrow_back Settings v0.5.1 PREFERENCES SETUP badge Display n",
+    "note": "settings"
+  },
+  {
+    "name": "analytics",
+    "bytes": 342541,
+    "hash": "#/analytics",
+    "dark": false,
+    "txt": "Telemetry person arrow_back TELEMETRY BAY Listening Insights",
+    "note": "listening analytics"
+  },
+  {
+    "name": "artists",
+    "bytes": 1433788,
+    "hash": "#/artists",
+    "dark": false,
+    "txt": "arrow_back Artists 153 All Liked Downloaded Following Rahul ",
+    "note": "artists grid"
+  },
+  {
+    "name": "albums",
+    "bytes": 1720726,
+    "hash": "#/albums",
+    "dark": false,
+    "txt": "arrow_back Albums 114 Top Most time Most played Liked Downlo",
+    "note": "albums grid"
+  },
+  {
+    "name": "playlists",
+    "bytes": 101171,
+    "hash": "#/playlists",
+    "dark": false,
+    "txt": "arrow_back Playlists 0 Yours Featured Downloaded Nothing her",
+    "note": "playlists grid"
+  },
+  {
+    "name": "charts",
+    "bytes": 92542,
+    "hash": "#/charts",
+    "dark": false,
+    "txt": "arrow_back Charts 0 Editorial rank — the order is the chart,",
+    "note": "charts grid"
+  },
+  {
+    "name": "liked-songs",
+    "bytes": 206798,
+    "hash": "#/liked-songs",
+    "dark": false,
+    "txt": "Favorites tune person arrow_back download OFFLINE more_horiz",
+    "note": "liked songs"
+  },
+  {
+    "name": "download",
+    "bytes": 1702757,
+    "hash": "#/download",
+    "dark": false,
+    "txt": "Downloads tune person arrow_back Offline Vault NVME sync har",
+    "note": "downloads"
+  },
+  {
+    "name": "history",
+    "bytes": 602997,
+    "hash": "#/history",
+    "dark": false,
+    "txt": "History tune person arrow_back Listening History ACOUSTIC TI",
+    "note": "history"
+  },
+  {
+    "name": "notification",
+    "bytes": 221529,
+    "hash": "#/notification",
+    "dark": false,
+    "txt": "arrow_back Notifications clear_all settings EVENT FEED: 1 LO",
+    "note": "notifications"
+  },
+  {
+    "name": "nowplaying",
+    "bytes": 1272742,
+    "hash": "#/nowplaying",
+    "dark": false,
+    "txt": "keyboard_arrow_down Solo Social PLAYING FROM PLAYLIST Dosti ",
+    "note": "now playing"
+  }
+]

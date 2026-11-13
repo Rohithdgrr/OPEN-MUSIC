@@ -1,0 +1,34 @@
+[
+  {
+    "name": "album-detail",
+    "bytes": 1099181,
+    "hash": "#/home",
+    "dark": true,
+    "txt": "graphic_eq OPENMUSIC CORE V2.4 search history person THURSDAY, NOVEMBER 12 Good ",
+    "note": "detail via home album row (NO_ALBUM_NAV)"
+  },
+  {
+    "name": "playlist-detail",
+    "bytes": 1099056,
+    "hash": "#/home",
+    "dark": true,
+    "txt": "graphic_eq OPENMUSIC CORE V2.4 search history person THURSDAY, NOVEMBER 12 Good ",
+    "note": "detail via home chart card (NO_PLAYLIST_NAV)"
+  },
+  {
+    "name": "playlists",
+    "bytes": 680192,
+    "hash": "#/playlists",
+    "dark": true,
+    "txt": "arrow_back Playlists Yours Featured Downloaded Let's Play - Arijit Singh - Hindi",
+    "note": "playlists browser, Featured tab (clicked featured)"
+  },
+  {
+    "name": "chat-sheet",
+    "bytes": 1346739,
+    "hash": "#/nowplaying",
+    "dark": true,
+    "txt": "keyboard_arrow_down Solo Social PLAYING FROM JAM Puli (From \"Puli\") more_horiz p",
+    "note": "chat panel (clicked chat)"
+  }
+]

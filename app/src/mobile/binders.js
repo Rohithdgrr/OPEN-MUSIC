@@ -87,6 +87,7 @@ import { trackMenu, openSheet, detailsSheet } from "./menus.js";
 // The taste engine (pure + unit-tested in tests/recommend.test.mjs). Home's
 // Made-for-you shelves are a windowed projection of one profile built here.
 import { buildProfile, explain, shelfPlan, trackLangs, artistInsights, filterArtists, artistEvidence, albumInsights, filterAlbums, albumEvidence } from "./recommend.js";
+import { applyArtTint } from "./arttint.js";
 import { similarShelf } from "../taste.js";
 import { groupLangAlbums, variantsFor } from "../albumgroup.js";
 import { matchTrackToCatalog } from "../spotmatch.js";
@@ -1221,11 +1222,21 @@ async function mountSearch(query) {
       </div>
       <span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary shrink-0">${esc(kind)}</span>
     </button>`;
-  const sugQueryRow = (text, toks, icon) =>
-    `<button type="button" role="option" data-sug-q="${esc(text)}" class="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-container focus:bg-surface-container outline-none transition-colors border-b border-surface-container/60 last:border-b-0">
+  const sugQueryRow = (text, toks, icon, del) => {
+    const main =
+      `<button type="button" role="option" data-sug-q="${esc(text)}" class="w-full flex items-center gap-3 ${del ? "pr-11" : "px-3"} py-2.5 text-left hover:bg-surface-container focus:bg-surface-container outline-none transition-colors border-b border-surface-container/60 last:border-b-0">
       <span class="material-symbols-outlined text-[18px] text-secondary shrink-0">${icon}</span>
       <span class="font-body-md text-body-md text-on-surface truncate flex-1">${highlight(text, toks)}</span>
     </button>`;
+    if (!del) return main;
+    // Recent-search rows carry a remove button — outside the row button so
+    // clearing never re-runs the query it belongs to.
+    return `<div class="relative">${main}
+      <button type="button" data-sug-del="${esc(text)}" aria-label="Remove recent search" class="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-container active:scale-95 transition-all">
+        <span class="material-symbols-outlined text-[16px]">close</span>
+      </button>
+    </div>`;
+  };
 
   /// The dropdown for one server answer: the listener's own matching recent
   /// searches first (free, and the likeliest intent), then the catalog's
@@ -1245,7 +1256,7 @@ async function mountSearch(query) {
       parts.push(sugLabel("Recent searches"));
       for (const r of recent) {
         seen.add(String(r).toLowerCase());
-        parts.push(sugQueryRow(r, toks, "history"));
+        parts.push(sugQueryRow(r, toks, "history", true));
       }
     }
     const groups = {
@@ -1635,6 +1646,22 @@ async function mountSearch(query) {
   }
 
   sugBox.addEventListener("click", (e) => {
+    const del = e.target.closest("[data-sug-del]");
+    if (del) {
+      // The repaint below replaces innerHTML — once detached, this very
+      // button fails the away-click's `closest("#m-suggest")` and the
+      // document listener would close the box we just repainted. Stop the
+      // bubble: an inside-the-box click must never be an away click.
+      e.stopPropagation();
+      const q = del.dataset.sugDel || "";
+      save(HISTORY_KEY, load(HISTORY_KEY, []).filter((x) => String(x) !== q));
+      // Repaint the same context the row came from: typed input → prefix
+      // suggestions (cached, instant), empty input → plain recents.
+      const text = input ? input.value.trim() : "";
+      if (text.length < 2) recentSuggest();
+      else fetchSuggest(text);
+      return;
+    }
     const qb = e.target.closest("[data-sug-q]");
     if (qb) {
       if (input) input.value = qb.dataset.sugQ;
@@ -1803,6 +1830,103 @@ let dlQuery = "";
 /// home chips open these instead of only filtering shelves. Tiles reuse the
 /// global delegations — [data-nav] for token/id rows, [data-entity-name] for
 /// name-resolved artists/albums — so no new navigation paths exist.
+
+/// Collection layout (2026-11-12): ONE preference, "tm-layout" (grid|list),
+/// read when a screen mounts, drives every collection screen — Artists,
+/// Albums, Playlists, Charts, Liked songs, Downloads. Grid = square artwork
+/// tiles, 2 columns (the biggest artwork the app has shipped); List = the
+/// vertical rows those screens already had.
+const layoutMode = () => (mGet("tm-layout", "grid") === "list" ? "list" : "grid");
+const layoutGridClass = "grid grid-cols-2 gap-x-3 gap-y-4";
+const layoutListClass = "flex flex-col gap-2";
+
+/// Navigation attributes for one collection item. Prefer the exact entity
+/// path (data-nav, id/token in hand); fall back to name resolution, which
+/// needs the name ALONE — hence data-entity-title (the tile's own text also
+/// carries the subtitle, which used to make the lookup miss).
+function itemNavAttrs(o) {
+  if (o.nav) return `data-nav="${esc(o.nav)}"`;
+  if (o.entityTitle) return `data-entity-name data-entity-kind="${esc(o.entityKind || "artist")}" data-entity-title="${esc(o.entityTitle)}"`;
+  return "";
+}
+
+/// Real artist artwork, by name.
+///
+/// The mined taste profile only knows the TRACK's artwork — an album or film
+/// cover — so an artist tile used to show somebody else's picture (the
+/// "Arijit Singh" tile showed a compilation cover). The catalogue entity
+/// search returns the artist's own photo *and* its token, and the backend
+/// caches per query, so a handful of lookups is enough. Failures are cached
+/// as null: the tile then keeps its placeholder instead of retrying forever.
+const artistArtCache = new Map();
+async function artistArt(name) {
+  const key = String(name || "").trim();
+  if (!key || !invoke) return null;
+  if (artistArtCache.has(key)) return artistArtCache.get(key);
+  try {
+    const r = await invoke("search_entities", { query: key, kind: "artist", limit: 4, page: 1 });
+    const items = (r && r.items) || [];
+    const fold = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const want = fold(key);
+    const hit =
+      items.find((x) => fold(x.title) === want) ||
+      items.find((x) => want && fold(x.title).includes(want)) ||
+      items[0];
+    // The catalogue's own "no photo" placeholder is a white PNG — a bright
+    // disc in a dark grid. Treat it as no artwork so the tile falls back to
+    // the brand mark like every other missing image.
+    const raw = hit && hit.image ? String(hit.image) : "";
+    const placeholder = /default[-_]?(music|artist|image|art)|_i\/3\.0\/default/i.test(raw);
+    const found = hit ? { image: placeholder ? "" : raw, token: hit.token || "", id: hit.id || "" } : null;
+    artistArtCache.set(key, found);
+    return found;
+  } catch (e) {
+    artistArtCache.set(key, null);
+    return null;
+  }
+}
+
+/// Resolve a batch of artist names and hand the results back, so a screen can
+/// paint once and then repaint with the real artwork.
+async function resolveArtistArt(names) {
+  await Promise.all([...new Set(names)].map((n) => artistArt(n)));
+}
+
+/// Square artwork tile — the grid half of every collection screen.
+function artTileHTML(o) {
+  const play = o.playId
+    ? `<button data-pl-play="${esc(o.playId)}" aria-label="Play" class="absolute bottom-2 right-2 w-9 h-9 rounded-full bg-on-surface text-surface flex items-center justify-center shadow-md active:scale-90 transition-all"><span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1;">play_arrow</span></button>`
+    : "";
+  // Grid tiles keep the row menu: the tile carries data-list/data-idx, so the
+  // kebab resolves to the same track menu the list rows open ("Save to
+  // local", "Download", "Remove"). Without it the grid would have no way to
+  // reach those actions at all (2026-11-13).
+  const menu = o.list
+    ? `<button type="button" aria-label="More options" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center text-white/90 hover:text-white active:scale-90 transition-all"><span class="material-symbols-outlined text-[16px]">more_vert</span></button>`
+    : "";
+  return `<div ${itemNavAttrs(o)} ${o.list ? `data-list="${esc(o.list)}" data-idx="${esc(o.idx)}"` : ""} class="w-full flex flex-col cursor-pointer active:scale-[0.98] transition-all">
+    <div class="relative w-full aspect-square ${o.circle ? "rounded-full" : "rounded-2xl"} overflow-hidden bg-surface-container-highest ring-1 ring-black/5">
+      <img alt="" class="w-full h-full object-cover" ${art(o.image)}>${play}${menu}
+    </div>
+    <div class="font-body-md text-[13px] font-semibold text-on-surface truncate mt-2 text-center">${esc(o.title || "")}</div>
+    ${o.sub ? `<div class="font-body-sm text-[11px] text-secondary truncate text-center">${esc(o.sub)}</div>` : ""}
+  </div>`;
+}
+
+/// Vertical row — the list half of every collection screen.
+function entityRowHTML(o) {
+  const play = o.playId
+    ? `<button data-pl-play="${esc(o.playId)}" aria-label="Play" class="w-10 h-10 rounded-full bg-on-surface text-surface flex items-center justify-center shrink-0 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings:'FILL' 1;">play_arrow</span></button>`
+    : "";
+  return `<div ${itemNavAttrs(o)} class="flex items-center gap-3 p-2 rounded-2xl bg-surface-container-lowest border border-surface-container-high/50 shadow-sm cursor-pointer active:scale-[0.99] transition-all">
+    <div class="w-14 h-14 ${o.circle ? "rounded-full" : "rounded-xl"} overflow-hidden bg-surface-container-highest shrink-0 ring-1 ring-black/5"><img alt="" class="w-full h-full object-cover" ${art(o.image)}></div>
+    <div class="flex flex-col min-w-0 flex-1">
+      <div class="font-body-md text-[14px] font-semibold text-on-surface truncate">${esc(o.title || "")}</div>
+      ${o.sub ? `<div class="font-body-sm text-[11px] text-secondary truncate">${esc(o.sub)}</div>` : ""}
+    </div>${play}
+  </div>`;
+}
+
 function minedArtistTile(a, rail) {
   const ev = artistEvidence(a);
   const wrap = rail ? "w-[76px] flex-shrink-0 flex flex-col items-center" : "w-full flex flex-col items-center";
@@ -1812,16 +1936,8 @@ function minedArtistTile(a, rail) {
   // name + art (empty alt), never the evidence line.
   const nav = a.token
     ? `<div data-nav="${esc(entityNav("artist", { token: a.token, title: a.name, image: a.image }))}" class="${wrap} cursor-pointer active:scale-95 transition-all">${body}${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full text-center">${esc(ev)}</div>` : ""}</div>`
-    : `<div class="${wrap} cursor-pointer active:scale-95 transition-all"><div data-entity-name data-entity-kind="artist" class="w-full flex flex-col items-center">${body}</div>${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full text-center">${esc(ev)}</div>` : ""}</div>`;
+    : `<div class="${wrap} cursor-pointer active:scale-95 transition-all"><div data-entity-name data-entity-kind="artist" data-entity-title="${esc(a.name)}" class="w-full flex flex-col items-center">${body}</div>${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full text-center">${esc(ev)}</div>` : ""}</div>`;
   return nav;
-}
-
-function minedAlbumTile(a) {
-  const ev = albumEvidence(a);
-  return `<div class="w-full flex flex-col cursor-pointer active:scale-[0.98] transition-all"><div data-entity-name data-entity-kind="album" class="w-full flex flex-col"><div class="w-full aspect-square rounded-xl overflow-hidden bg-surface-container-highest ring-1 ring-black/5 shadow-sm"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
-    <div class="font-label-md text-[12px] font-semibold text-on-surface truncate mt-2 max-w-full">${esc(a.title)}</div>
-    <div class="font-body-sm text-[10px] text-secondary truncate max-w-full">${esc(a.artist)}</div></div>
-    ${ev ? `<div class="font-body-sm text-[9px] text-secondary truncate max-w-full mt-0.5">${esc(ev)}</div>` : ""}</div>`;
 }
 
 function playlistRow(p) {
@@ -1849,7 +1965,10 @@ async function mountArtists() {
   wireBack(m);
   const grid = m.querySelector("[data-artists-grid]");
   const empty = m.querySelector("[data-artists-empty]");
-  const count = m.querySelector("[data-artists-count]");
+  // The count pill lives in the screen HEADER, outside #screen, so the
+  // screen-scoped query never found it and the pill stayed empty
+  // (2026-11-12).
+  const count = document.querySelector("[data-artists-count]");
   let tab = "all";
   let list = [];
   try {
@@ -1866,7 +1985,29 @@ async function mountArtists() {
       return;
     }
     empty?.classList.add("hidden");
-    if (grid) grid.innerHTML = rows.map((a) => minedArtistTile(a, false)).join("");
+    if (!grid) return;
+    const isGrid = layoutMode() === "grid";
+    grid.className = isGrid ? layoutGridClass : layoutListClass;
+    grid.innerHTML = rows
+      .map((a) => {
+        // The resolved artist photo (and token) wins over the mined album
+        // cover; until the catalogue answers, the cover is the placeholder.
+        // An answered lookup with no photo means "use the brand mark", so it
+        // must not fall back to the cover.
+        const ra = artistArtCache.get(a.name) || null;
+        const o = {
+          image: ra ? ra.image : a.image,
+          title: a.name,
+          sub: artistEvidence(a),
+          entityKind: "artist",
+          entityTitle: a.name,
+          circle: true,
+        };
+        const token = (ra && ra.token) || a.token;
+        if (token) o.nav = entityNav("artist", { token, title: a.name, image: o.image });
+        return isGrid ? artTileHTML(o) : entityRowHTML({ ...o, circle: true });
+      })
+      .join("");
   };
   m.querySelectorAll("[data-artists-tab]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -1876,6 +2017,12 @@ async function mountArtists() {
     });
   });
   paint();
+  // Swap the album covers for the artists' own photos as the catalogue
+  // answers, then repaint. Best effort: a failure keeps the cover, and a
+  // screen the user already left is not repainted.
+  resolveArtistArt(list.map((a) => a.name)).then(() => {
+    if (grid && grid.isConnected) paint();
+  });
 }
 
 async function mountAlbums() {
@@ -1884,7 +2031,10 @@ async function mountAlbums() {
   wireBack(m);
   const grid = m.querySelector("[data-albums-grid]");
   const empty = m.querySelector("[data-albums-empty]");
-  const count = m.querySelector("[data-albums-count]");
+  // The count pill lives in the screen HEADER, outside #screen, so the
+  // screen-scoped query never found it and the pill stayed empty
+  // (2026-11-12).
+  const count = document.querySelector("[data-albums-count]");
   let tab = "all";
   let list = [];
   try {
@@ -1901,7 +2051,23 @@ async function mountAlbums() {
       return;
     }
     empty?.classList.add("hidden");
-    if (grid) grid.innerHTML = rows.map(minedAlbumTile).join("");
+    if (!grid) return;
+    const isGrid = layoutMode() === "grid";
+    grid.className = isGrid ? layoutGridClass : layoutListClass;
+    grid.innerHTML = rows
+      .map((a) => {
+        const ev = albumEvidence(a);
+        const o = {
+          image: a.image,
+          title: a.title,
+          sub: [a.artist, ev].filter(Boolean).join(" · "),
+          entityKind: "album",
+          entityTitle: a.title,
+        };
+        if (a.token) o.nav = entityNav("album", { token: a.token, title: a.title, image: a.image });
+        return isGrid ? artTileHTML(o) : entityRowHTML(o);
+      })
+      .join("");
   };
   m.querySelectorAll("[data-albums-tab]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -1919,7 +2085,10 @@ async function mountPlaylists() {
   wireBack(m);
   const box = m.querySelector("[data-playlists-list]");
   const empty = m.querySelector("[data-playlists-empty]");
-  const count = m.querySelector("[data-playlists-count]");
+  // The count pill lives in the screen HEADER, outside #screen, so the
+  // screen-scoped query never found it and the pill stayed empty
+  // (2026-11-12).
+  const count = document.querySelector("[data-playlists-count]");
   let tab = "yours";
   const lib = load(LIBRARY_KEY, []).filter((e) => e && (e.kind || (e.token ? "album" : "playlist")) === "playlist");
   const yours = lib.map((e) => {
@@ -1965,7 +2134,12 @@ async function mountPlaylists() {
       return;
     }
     empty?.classList.add("hidden");
-    if (box) box.innerHTML = rows.map(playlistRow).join("");
+    if (!box) return;
+    const isGrid = layoutMode() === "grid";
+    box.className = isGrid ? layoutGridClass : "flex flex-col gap-2.5";
+    box.innerHTML = isGrid
+      ? rows.map((p) => artTileHTML({ image: p.image, title: p.title, sub: p.sub, nav: p.nav, playId: p.playId })).join("")
+      : rows.map(playlistRow).join("");
   };
   m.querySelectorAll("[data-playlists-tab]").forEach((b) => {
     b.addEventListener("click", () => {
@@ -1983,7 +2157,10 @@ async function mountCharts() {
   wireBack(m);
   const box = m.querySelector("[data-charts-list]");
   const empty = m.querySelector("[data-charts-empty]");
-  const count = m.querySelector("[data-charts-count]");
+  // The count pill lives in the screen HEADER, outside #screen, so the
+  // screen-scoped query never found it and the pill stayed empty
+  // (2026-11-12).
+  const count = document.querySelector("[data-charts-count]");
   let charts = [];
   if (invoke && netMode() !== "offline") {
     try {
@@ -2000,9 +2177,21 @@ async function mountCharts() {
   }
   empty?.classList.add("hidden");
   if (box) {
-    box.innerHTML = charts
-      .map(
-        (p, i) => `<div data-nav="${esc(entityNav("playlist", p))}" class="flex items-center gap-3 p-2 rounded-2xl bg-surface-container-lowest border border-surface-container-high/50 shadow-sm cursor-pointer active:scale-[0.99] transition-all">
+    const isGrid = layoutMode() === "grid";
+    box.className = isGrid ? layoutGridClass : "flex flex-col gap-2.5";
+    const chartTile = (p, i) =>
+      artTileHTML({
+        image: p.image,
+        title: p.title || "",
+        sub: p.subtitle || (p.count ? `${p.count} tracks` : ""),
+        nav: entityNav("playlist", p),
+        playId: p.id,
+      });
+    box.innerHTML = isGrid
+      ? charts.map(chartTile).join("")
+      : charts
+          .map(
+            (p, i) => `<div data-nav="${esc(entityNav("playlist", p))}" class="flex items-center gap-3 p-2 rounded-2xl bg-surface-container-lowest border border-surface-container-high/50 shadow-sm cursor-pointer active:scale-[0.99] transition-all">
       <span class="font-label-mono text-[15px] font-bold text-secondary w-8 text-center shrink-0">${i + 1}</span>
       <div class="w-14 h-14 rounded-xl overflow-hidden bg-surface-container-highest shrink-0"><img alt="" class="w-full h-full object-cover" ${art(p.image)}></div>
       <div class="flex flex-col min-w-0 flex-1">
@@ -2010,8 +2199,8 @@ async function mountCharts() {
         <div class="font-body-sm text-[11px] text-secondary truncate">${esc(p.subtitle || (p.count ? `${p.count} tracks` : ""))}</div>
       </div>
       <button data-pl-play="${esc(p.id)}" aria-label="Play" class="w-10 h-10 rounded-full bg-on-surface text-surface flex items-center justify-center shrink-0 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings:'FILL' 1;">play_arrow</span></button></div>`,
-      )
-      .join("");
+          )
+          .join("");
   }
 }
 
@@ -2358,8 +2547,19 @@ function mountLiked() {
   const listBox = firstRow && firstRow.parentElement;
   const empty = m.querySelector("div.opacity-70");
   if (listBox) {
+    // The fragment is re-rendered on every mount, so the pristine class is
+    // captured here and restored when the user switches back to list.
+    const listClass = listBox.className;
     if (favs.length) {
-      listBox.innerHTML = favs.map((t, i) => rowHTML("favs", i, t)).join("");
+      const isGrid = layoutMode() === "grid";
+      listBox.className = isGrid ? layoutGridClass : listClass;
+      listBox.innerHTML = isGrid
+        ? favs
+            .map((t, i) =>
+              artTileHTML({ image: t.image, title: t.title || "", sub: t.artist || "", list: "favs", idx: i }),
+            )
+            .join("")
+        : favs.map((t, i) => rowHTML("favs", i, t)).join("");
       listBox.classList.remove("hidden");
       empty?.classList.add("hidden");
     } else {
@@ -2571,9 +2771,23 @@ async function mountDownload() {
     else if (dlSort === "size") shown = [...shown].sort((a, b) => Number(b.bytes || 0) - Number(a.bytes || 0));
     else shown = [...shown].sort((a, b) => Number(b.at || 0) - Number(a.at || 0));
     setList("dls", shown);
+    const isGrid = layoutMode() === "grid";
+    box.className = isGrid ? layoutGridClass : box.className;
     box.innerHTML = shown.length
-      ? shown
-          .map(
+      ? isGrid
+        ? shown
+            .map((e, i) =>
+              artTileHTML({
+                image: e.image,
+                title: e.title || "",
+                sub: [e.artist, e.quality].filter(Boolean).join(" · "),
+                list: "dls",
+                idx: i,
+              }),
+            )
+            .join("")
+        : shown
+            .map(
             (e, i) => `<div data-list="dls" data-idx="${i}" class="flex items-center justify-between p-space-sm rounded-lg hover:bg-surface-container-low cursor-pointer transition-colors">
           <div class="flex items-center gap-space-sm min-w-0 flex-1">
             <div class="relative w-12 h-12 rounded bg-surface-container flex-shrink-0 overflow-hidden"><img alt="" class="w-full h-full object-cover" ${art(e.image)}></div>
@@ -2589,7 +2803,7 @@ async function mountDownload() {
           </div>
         </div>`,
           )
-          .join("")
+            .join("")
       : `<div class="py-space-md text-center font-body-sm text-secondary">${entries.length ? "No downloads match this filter." : "No downloads yet"}</div>`;
   };
   // Exposed for the search input above (same tick, no remount).
@@ -3494,6 +3708,14 @@ function paintNowplaying(st) {
     // Always paint — see the widget: an artless track must fall back to the
     // brand mark instead of keeping the last cover (06-features batch).
     if (artImg) paintArt(artImg, t.image || "");
+    // Now Playing follows the artwork in the light theme: the page tint is
+    // the cover's own colour (arttint.js). Dark mode keeps its flat
+    // surface — a coloured wash there fights the artwork.
+    if (artImg) {
+      applyArtTint(document.getElementById("np-art") || artImg, (css) => {
+        document.documentElement.style.setProperty("--np-tint", css);
+      });
+    }
     // Spotify Canvas (docs/spotify-android-canvas.md §3B): a no-op unless the
     // screen, the toggle and a configured cookie all line up — the art above
     // is the fallback by construction.
@@ -4126,7 +4348,7 @@ function mountAnalytics() {
     listHost.innerHTML = top.length
       ? top
           .map(
-            (a, i) => `<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors">
+            (a, i) => `<div class="flex items-center justify-between p-2 rounded-lg hover:bg-surface-container-low transition-colors" data-artist-row="${esc(a.name)}">
             <div class="flex items-center gap-space-sm min-w-0">
               <span class="font-label-mono text-label-mono font-semibold text-secondary w-3">${String(i + 1).padStart(2, "0")}</span>
               <div class="w-10 h-10 rounded-lg overflow-hidden bg-surface-container-high flex-shrink-0"><img alt="" class="w-full h-full object-cover" ${art(a.image)}></div>
@@ -4146,6 +4368,16 @@ function mountAnalytics() {
         if (!mine.length) return;
         playList(mine, 0);
         go("nowplaying");
+      });
+    });
+    // The mined rows only know the track's album cover; swap in the artist's
+    // own photo once the catalogue answers. Best effort, and only while the
+    // shelf is still on screen.
+    resolveArtistArt(top.map((a) => a.name)).then(() => {
+      if (!listHost.isConnected) return;
+      listHost.querySelectorAll("[data-artist-row]").forEach((row) => {
+        const found = artistArtCache.get(row.dataset.artistRow || "");
+        if (found && found.image) paintArt(row.querySelector("img"), found.image);
       });
     });
   }
@@ -4553,7 +4785,8 @@ function ensureMobilePrefs(m) {
       "Appearance & Theme",
       "THEME",
       row("palette", "Theme", "System follows your OS", sel("m-theme", "")) +
-        row("density_medium", "Density", "Compact fits more rows", sel("m-density", "")),
+        row("density_medium", "Density", "Compact fits more rows", sel("m-density", "")) +
+        row("grid_view", "Layout", "Grid or list for collections", sel("m-layout", "")),
     ) +
     sec(
       "tm-m-lyrics",
@@ -4633,6 +4866,10 @@ function ensureMobilePrefs(m) {
     mSet("tm-density", e.target.value);
     applyMobileTheme();
     toast(`Density: ${e.target.selectedOptions[0]?.textContent}`, 3000, "success");
+  });
+  q("m-layout")?.addEventListener("change", (e) => {
+    mSet("tm-layout", e.target.value);
+    toast(`Layout: ${e.target.selectedOptions[0]?.textContent}`, 3000, "success");
   });
   q("m-lyr-size")?.addEventListener("change", (e) => {
     mSet("tm-lyrics-size", e.target.value);
@@ -4890,6 +5127,7 @@ function paintMobilePrefs(m) {
   fill("m-speed", [["0.75", "0.75x"], ["0.9", "0.9x"], ["1", "1x"], ["1.1", "1.1x"], ["1.25", "1.25x"], ["1.5", "1.5x"]], mGet("tm-play-speed", "1"));
   fill("m-theme", [["system", "System"], ["light", "Light"], ["dark", "Dark"]], mGet("tm-theme", "system"));
   fill("m-density", [["comfortable", "Comfortable"], ["compact", "Compact"]], mGet("tm-density", "comfortable"));
+  fill("m-layout", [["grid", "Grid"], ["list", "List"]], mGet("tm-layout", "grid"));
   fill("m-lyr-size", [["s", "Small"], ["m", "Medium"], ["l", "Large"]], mGet("tm-lyrics-size", "m"));
   fill(
     "m-quota",

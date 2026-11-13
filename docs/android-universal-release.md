@@ -267,6 +267,38 @@ APK that leaves this machine for a real device must be built with all three
 `--target`s (or omit `--target` for all installed targets). A `--target
 x86_64`-only build installs on the emulator and nowhere else.
 
+## Network security config reference (2026-11-12)
+
+`app/build.sh`'s `inject_android_permissions` writes
+`gen/android/app/src/main/res/xml/network_security_config.xml` (loopback
+cleartext for the media relay) and references it from
+`<application android:networkSecurityConfig="@xml/network_security_config">`.
+
+**That reference used to live inside the `INTERNET` permission branch** — and
+the Tauri 2.12 template now ships `android.permission.INTERNET` by default,
+so that branch is skipped, the XML is written but never referenced, and the
+attribute is silently absent.
+
+A present-but-unreferenced NSC changes nothing: Android then applies
+`usesCleartextTraffic` from `build.gradle.kts` (**`false`** for release,
+**`true`** for debug), so a **release** APK loses the loopback allowance and
+the relay is blocked with `net::ERR_CLEARTEXT_NOT_PERMITTED` — the exact
+2026-10-07 streaming failure recorded above. Debug builds keep working,
+which hides the defect on every emulator run.
+
+Fix (2026-11-12): the reference has its own guarded block, independent of the
+INTERNET permission, and the config is written **per build type** so the
+variant that declares `usesCleartextTraffic=true` keeps global cleartext:
+
+| File | Build type | Policy |
+|---|---|---|
+| `src/main/res/xml/network_security_config.xml` | release (default) | loopback only (`localhost`, `127.0.0.1`, `::1`) |
+| `src/debug/res/xml/network_security_config.xml` | debug | `base-config cleartextTrafficPermitted="true"` — keeps `tauri android dev`'s LAN `devUrl` cleartext |
+
+`src/main` stays the restrictive default so **every** build type resolves the
+resource (a manifest attribute pointing at a missing resource is a hard
+aapt failure); the debug variant overrides it with the permissive copy.
+
 ## Portrait lock (2026-10-15)
 
 The app is portrait-only: `MainActivity` carries

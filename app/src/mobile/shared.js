@@ -186,6 +186,19 @@ export async function shareThing({ title, text, url }) {
   if (title) payload.title = title;
   if (text) payload.text = text;
   if (url) payload.url = url;
+  const line = [title, text, url].filter(Boolean).join(" — ");
+  // Android first: the WebView does not implement `navigator.share`, so the
+  // native bridge fires the real share sheet (ACTION_SEND + chooser). Without
+  // this the tap silently degraded to "copied to clipboard" (2026-11-13).
+  try {
+    const native = typeof window !== "undefined" ? window.TMNative : null;
+    if (native && typeof native.share === "function") {
+      native.share(line);
+      return;
+    }
+  } catch (e) {
+    console.error(e);
+  }
   if (navigator.share) {
     try {
       await navigator.share(payload);
@@ -194,7 +207,6 @@ export async function shareThing({ title, text, url }) {
       if (e && e.name === "AbortError") return; // user dismissed the sheet
     }
   }
-  const line = [title, text, url].filter(Boolean).join(" — ");
   try {
     await navigator.clipboard.writeText(line);
     toast("Share text copied");
