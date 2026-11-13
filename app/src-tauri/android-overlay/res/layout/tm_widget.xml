@@ -46,6 +46,17 @@
             android:text="Nothing playing"
             android:textColor="#A1A1AA"
             android:textSize="12sp" />
+
+        <ProgressBar
+            style="?android:attr/progressBarStyleHorizontal"
+            android:id="@+id/tm_w_progress"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_marginTop="6dp"
+            android:max="1000"
+            android:progress="0"
+            android:progressBackgroundTint="#3F3F46"
+            android:progressTint="#FFFFFF" />
     </LinearLayout>
 
     <ImageButton

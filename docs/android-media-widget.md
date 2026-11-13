@@ -29,6 +29,18 @@ Remote taps (notification buttons, widget, headset) --PendingIntent-->
                                 : stash -> consumeAction()/consumeRoute()
 ```
 
+### `saveLocal` — the sixth bridge method (2026-10-24)
+
+`saveLocal(json) -> String` is **not** a media-surface method — it serves the
+"Save to local" menu item (`mobile/savelocal.js` → menus.js): copies one
+vaulted song file (absolute path in the JSON) into
+`MediaStore.Audio` under `Music/OpenMusic/` with TITLE/ARTIST/ALBUM set and
+a size dedupe. Returns the line protocol `ok <name>` / `same <name>` /
+`err: …` (parsed by `savelocal.js bridgeResult()`). Media-surface
+methods stay in `native.js`; this one's JS caller lives in
+`savelocal.js` — both consume the bridge, so the "names are a contract"
+note spans two consumers. API ≥ 29 only (scoped storage, no permission).
+
 ## Native layer (all framework APIs, zero new Gradle deps)
 
 `app/src-tauri/android-overlay/` is the tracked source of truth; `gen/` is
@@ -89,3 +101,28 @@ no `androidx.media` / media3 — framework only, so offline gradle stays green.
 - Fix shipped from a failing first build: framework `Notification.Builder`
   has no `(PendingIntent, CharSequence)` addAction — `Notification.Action`
   (API 23+, minSdk 24) via a `notifAction` helper.
+
+## Seek bar ticks while playing (2026-10-24)
+
+Report: the seek bar in the notification center, on the widget and on the
+Android 16 status chip did not move.
+
+Root cause chain: the JS side pushes state only every 2-5 s (throttled
+onPaint + a 5 s heartbeat) and the WebView throttles page timers hard once
+backgrounded, so posMs anchors went stale; the AppWidget renders RemoteViews
+only when re-set (no extrapolation) and had **no progress bar at all**; the
+notification/chip surfaces extrapolate from the session's PlaybackState, which
+froze between rare anchors.
+
+Fix (Kotlin only, MediaHub.kt + tm_widget.xml):
+1. publishPlayback() — a cheap per-tick publish (position + transport
+   only; paused speed is 0.0 so nothing drifts). publishSession() (metadata
+   churn) is unchanged and calls it.
+2. A forever ticker started by init() (startTick()): while playing &&
+   durMs > 0 it advances posMs by 1 s locally each second, publishes
+   PlaybackState and refreshes the widget; idle cadence 5 s. The next JS push
+   remains authoritative and re-anchors (posMs = pos).
+3. The widget layout gained a horizontal ProgressBar (tm_w_progress,
+   max 1000); bindWidget() sets progress/visibility (visible only once a
+   track with a duration is known). The Android 16 status chip reads the same
+   PlaybackState, so one fix feeds all three surfaces.

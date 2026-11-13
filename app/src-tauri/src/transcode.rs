@@ -213,6 +213,10 @@ pub fn content_type(ext: Option<&str>) -> &'static str {
     match ext.map(str::to_ascii_lowercase).as_deref() {
         Some("mp3") => "audio/mpeg",
         Some("opus") | Some("ogg") => "audio/ogg",
+        // Canvas videos (and any stray video in the vault): the container is
+        // still MP4, but `<video>` wants the video/* flavour to pick the
+        // demuxer without sniffing.
+        Some("mp4") | Some("m4v") => "video/mp4",
         _ => "audio/mp4",
     }
 }
@@ -297,6 +301,7 @@ mod tests {
         assert_eq!(content_type(Some("OPUS")), "audio/ogg");
         assert_eq!(content_type(Some("mp3")), "audio/mpeg");
         assert_eq!(content_type(Some("m4a")), "audio/mp4");
+        assert_eq!(content_type(Some("mp4")), "video/mp4");
         assert_eq!(content_type(None), "audio/mp4");
     }
 }

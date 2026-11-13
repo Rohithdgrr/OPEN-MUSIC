@@ -29,6 +29,7 @@ import {
   removePlaylistTrack,
   updatePlaylistMeta,
 } from "./shared.js";
+import { saveTrackLocal, saveLocalBridge, SAVED_DIR } from "./savelocal.js";
 import {
   playerState,
   insertNext,
@@ -45,7 +46,6 @@ import {
   repaint,
 } from "./player.js";
 import { entityNav, MOUNT } from "./binders.js";
-import { saveTrackLocal, saveLocalBridge, SAVED_DIR } from "./savelocal.js";
 import { playlistToCsv, playlistToM3u, playlistFilename } from "../sync.js";
 import { playUrl, smallArtUrl, vcf, bytesToB64 } from "../sharelink.js";
 
@@ -548,8 +548,8 @@ export function trackMenu(track, ctx, idx) {
   const items = [];
   // Order is the user's (docs/mobile/06-features.md, Android UI parity
   // batch): track info → artist → album → queue → playlist → download →
-  // share. Play Next stays next to Add to Queue; EQ and the context
-  // removals keep their old positions below.
+  // save-to-local → share. Play Next stays next to Add to Queue; EQ and the
+  // context removals keep their old positions below.
   items.push({ icon: "info", label: "Track Details", action: () => detailsSheet(track) });
   if (track.artist || track.artist_ids?.length) {
     items.push({ icon: "artist", label: "Go to Artist", action: () => goToArtist(track) });
