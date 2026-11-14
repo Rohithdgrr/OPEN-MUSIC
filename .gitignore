@@ -5,6 +5,7 @@ app/src-tauri/target/
 app/node_modules/
 app/dist/
 app/.vite/
+app/src/mobile/dist/
 
 # Tauri-generated schema dumps (recreated by `tauri dev`)
 app/src-tauri/gen/schemas/

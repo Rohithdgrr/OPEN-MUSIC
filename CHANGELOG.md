@@ -6,6 +6,14 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Added (mobile listening surfaces + Android build hardening)
+- **Now Playing visualizer:** a lightweight spectrum canvas reuses the active EQ audio graph and stops outside visible playback; its zero-gain analyser branch does not add an audible output path.
+- **Jam room roster:** Home can show the current room's members while hosting or joined, and clears the section in Solo mode.
+- **Yearly summary:** Analytics can summarize retained local play events by local calendar year, with coverage and playhead-estimate caveats.
+- **Android frontend bundle and style-element CSP:** Android build targets bundle the mobile entry with esbuild, retain source fallback for development, and load extracted local shell CSS. The policy blocks inline style elements but intentionally still permits runtime style attributes.
+- **Android share cards use the system image chooser.** The rendered PNG is validated, stored temporarily in app-private cache, and shared through a read-only content URI grant; no public-storage permission is needed. Web Share and text/clipboard fallbacks remain.
+- **Smart playlists and track tags are available on mobile.** Create rule-based playlists for likes, play count, tags, or language; they resolve from the local song store when opened. Track menus can add, replace, or clear bounded tags, which survive cache clearing.
+
 ### Removed (mobile: Now Playing Canvas — 2026-11-14)
 - **The Canvas feature is removed completely.** The renderer (`mobile/canvas.js`, `canvasmath.js`), its three Settings rows and wiring, the cinematic CSS, the `fetch_canvas` / `set_canvas_cookie` / `canvas_configured` commands, the `/canvas` relay route and its cache tier are gone. Now Playing shows album artwork only.
 

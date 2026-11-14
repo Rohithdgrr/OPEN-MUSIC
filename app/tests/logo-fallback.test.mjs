@@ -43,7 +43,7 @@ test("mobile now-playing art boots on the local logo", () => {
 });
 
 test("backing rule ships; the old zoom-crop transform does not", () => {
-  const css = fs.readFileSync(path.join(src, "mobile", "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(src, "mobile", "shell.css"), "utf8");
   assert.ok(css.includes('img[src$="logo.png"]'), "backs the logo with black");
   assert.ok(
     !css.includes("transform: scale(1.18)"),

@@ -55,3 +55,29 @@ before (RUSTSEC-2026-0346…0349 against `rustls 0.23.45`), fixed by locking
   and annotations are the only readable channel (`docs/cross-platform-ci.md`).
 - Apple platforms are build-verified only (no Apple hardware here); the
   field runbook is `docs/jam-apple-field-runbook.md`.
+
+## Mobile build/CSP hardening contract
+
+The mobile shell is a separate build target: bundle only its JavaScript,
+preserve dynamic chunk loading, leave the desktop source and entrypoint
+unchanged, and verify the actual Android/Tauri asset path. The mobile CSP now
+blocks inline style elements, but still permits style attributes for runtime
+layout writes. Do not claim style attributes are locked down until they are
+migrated and the Android UI is verified.
+
+The mobile build/CSP boundary is:
+
+- The Android build paths run esbuild on the mobile entry; generated files stay
+  ignored, dynamic chunks remain loadable, and screen-fragment scripts remain
+  source-loaded. The entry falls back to source modules when the bundle is
+  absent; the regular desktop Tauri command clears generated mobile output.
+- Embedded mobile `<style>` blocks live in local `shell.css`. CSP
+  `style-src-elem 'self'` blocks inline stylesheets while
+  `style-src-attr 'unsafe-inline'` remains for runtime layout writes. The
+  legacy `style-src 'unsafe-inline'` fallback remains for older Android
+  WebViews. Device boot/UI validation is still required before treating the
+  tighter policy as verified at runtime.
+
+No trust boundary is widened for a user-configured catalog endpoint: accept
+only an explicitly configured HTTPS origin with no credentials, and keep it
+outside the CDN media allowlist. It must not be used by the relay for media.

@@ -11,9 +11,9 @@
 </div>
 </div>
 <div class="flex items-center bg-surface-container-low/90 border border-surface-container-high/60 rounded-full p-1 shadow-xs" id="period-selector">
-<button class="px-3 py-1 rounded-full bg-primary text-on-primary font-label-sm text-[12px] font-semibold transition-all shadow-xs" onclick="setPeriod(this)">Week</button>
-<button class="px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all" onclick="setPeriod(this)">Month</button>
-<button class="px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all" onclick="setPeriod(this)">Year</button>
+<button data-period="week" aria-pressed="true" class="px-3 py-1 rounded-full bg-primary text-on-primary font-label-sm text-[12px] font-semibold transition-all shadow-xs">Week</button>
+<button data-period="month" aria-pressed="false" class="px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all">Month</button>
+<button data-period="year" aria-pressed="false" class="px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all">Year</button>
 </div>
 </div>
 <!-- Section 1: Monitored Listening Overview Card -->
@@ -35,6 +35,25 @@
 <span class="material-symbols-outlined text-[22px]">graphic_eq</span>
 </div>
 </div>
+</section>
+<section id="year-summary" data-year-summary class="hidden bg-surface-container-lowest/90 border border-surface-container/60 rounded-2xl p-space-md shadow-sm space-y-space-md" aria-labelledby="year-summary-title">
+<div class="flex items-center justify-between gap-3">
+  <div>
+    <span class="font-label-mono text-[11px] uppercase tracking-wider text-secondary font-medium">Listening history</span>
+    <h3 id="year-summary-title" class="font-headline-md text-headline-md text-on-surface font-semibold">Year in review</h3>
+  </div>
+  <label class="sr-only" for="year-summary-select">Choose year</label>
+  <select id="year-summary-select" class="max-w-28 rounded-xl border border-surface-container-high bg-surface px-3 py-2 text-on-surface font-label-md text-label-md"></select>
+</div>
+<div class="grid grid-cols-2 gap-2">
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Plays</span><strong data-year-plays class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Estimated playhead time</span><strong data-year-time class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Unique tracks</span><strong data-year-tracks class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Lead artists</span><strong data-year-artists class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+</div>
+<p data-year-empty class="hidden rounded-xl bg-surface-container-low p-3 text-body-sm text-secondary">No play events are recorded for this year on this device.</p>
+<p data-year-coverage class="text-body-sm text-secondary" role="status" aria-live="polite">Loading saved play history…</p>
+<p class="text-[11px] text-secondary">History is stored locally, capped at 3,000 recent events, and may not cover a full calendar year. Time is estimated from the saved playhead position; seeking can overstate listening.</p>
 </section>
 <!-- Section 2: Daily Listening Rhythm -->
 <section class="bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-2xl p-space-md shadow-sm space-y-space-md">

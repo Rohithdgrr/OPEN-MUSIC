@@ -497,3 +497,19 @@ zero-cost verification path from Windows.
 - [ ] Add performance benchmarks
 - [ ] Implement dependency scanning (Snyk, Dependabot)
 - [ ] Add code coverage reporting
+
+## Scheduled public API contract checks
+
+The scheduled checker exercises only the public catalog/lyrics contracts
+needed for playback and search, with bounded timeouts and no credentials. It
+must validate response shape as well as HTTP success, avoid retaining audio or
+user data, and create or update one clearly labeled GitHub issue when a
+contract fails. A successful run closes only the issue it created; it must
+not close unrelated reports. `workflow_dispatch` remains available for a
+manual run. Unit tests use local mocks and remain the blocking, deterministic
+CI gate; scheduled network checks are diagnostic and cannot make every pull
+request depend on third-party uptime.
+
+Release installers also publish a SHA-256 checksum manifest. These hashes
+detect accidental corruption but do not establish publisher identity; updater
+signatures remain the authenticity control while Authenticode is unavailable.

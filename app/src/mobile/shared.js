@@ -1151,6 +1151,7 @@ export async function shareCard({ title, subtitle, image, badge } = {}) {
   try {
     const t = String(title || "Track");
     const sub = String(subtitle || "");
+    const line = [t, sub].filter(Boolean).join(" — ");
     const bd = String(badge || "");
     const cv = document.createElement("canvas");
     cv.width = 1080;
@@ -1205,31 +1206,64 @@ export async function shareCard({ title, subtitle, image, badge } = {}) {
         });
       } catch {}
       if (blob) {
+        const native = typeof window !== "undefined" ? window.TMNative : null;
+        if (native && typeof native.shareImage === "function") {
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result === "string") resolve(reader.result);
+                else reject(new Error("Could not encode the share card"));
+              };
+              reader.onerror = () => reject(reader.error || new Error("Could not read the share card"));
+              reader.readAsDataURL(blob);
+            });
+            const result = native.shareImage(dataUrl, t, sub);
+            if (result === "ok") return;
+            console.error("Native share card was rejected:", result);
+          } catch (e) {
+            console.error("Native share card failed:", e);
+          }
+        }
         try {
           const file = new File([blob], "share-card.png", { type: "image/png" });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title: t, text: sub });
-            return;
-          }
-          if (navigator.share) {
+          if (navigator.share && navigator.canShare?.({ files: [file] })) {
             try {
-              await navigator.share({ title: t, text: [t, sub].filter(Boolean).join(" — ") });
+              await navigator.share({ files: [file], title: t, text: sub });
               return;
             } catch (e) {
               if (e && e.name === "AbortError") return;
+              console.error("Web Share could not send the card:", e);
             }
           }
-        } catch {}
+        } catch (e) {
+          console.error("Could not prepare the share card file:", e);
+        }
+        if (native && typeof native.share === "function") {
+          native.share(line);
+          return;
+        }
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: t, text: line });
+            return;
+          } catch (e) {
+            if (e && e.name === "AbortError") return;
+            console.error("Web Share could not send the track details:", e);
+          }
+        }
       }
     }
-    const line = [t, sub].filter(Boolean).join(" — ");
     try {
       await navigator.clipboard.writeText(line);
       toast("Share text copied");
     } catch {
       toast("Sharing is unavailable here");
     }
-  } catch {}
+  } catch (e) {
+    console.error("Could not create or share the card:", e);
+    toast("Couldn't create share card");
+  }
 }
 
 // ---------------------------------------------------------------- haptic -

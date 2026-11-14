@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +66,8 @@ const L4_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// the WebView already holds the decoded bitmaps; this layer only spares the
 /// disk read for the working set (~800 covers at saavncdn's 30-60 KB).
 const ART_MEM_BYTES: u64 = 32 * 1024 * 1024;
+const CDN_FAILURE_THRESHOLD: u8 = 3;
+const CDN_BREAKER_COOLDOWN: Duration = Duration::from_secs(30);
 
 /// Plain LRU, not moka's default TinyLFU: the design specifies eviction by
 /// last access, and every cache here is small, homogeneous and TTL-bounded,
@@ -125,6 +127,61 @@ impl CacheMeters {
             c.store(0, Ordering::Relaxed);
         }
     }
+}
+
+#[derive(Default)]
+struct CdnHostState {
+    consecutive_failures: u8,
+    opened_at: Option<Instant>,
+    probe_in_flight: bool,
+}
+
+#[derive(Default)]
+struct CdnCircuit {
+    hosts: Mutex<HashMap<String, CdnHostState>>,
+}
+
+impl CdnCircuit {
+    fn allows_request(&self, host: &str) -> bool {
+        let mut hosts = self
+            .hosts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = hosts.entry(host.to_string()).or_default();
+        let Some(opened_at) = state.opened_at else {
+            return true;
+        };
+        if opened_at.elapsed() < CDN_BREAKER_COOLDOWN || state.probe_in_flight {
+            return false;
+        }
+        state.probe_in_flight = true;
+        true
+    }
+
+    fn record_failure(&self, host: &str) {
+        let mut hosts = self
+            .hosts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = hosts.entry(host.to_string()).or_default();
+        state.consecutive_failures = state.consecutive_failures.saturating_add(1);
+        if state.consecutive_failures >= CDN_FAILURE_THRESHOLD {
+            state.opened_at = Some(Instant::now());
+            state.probe_in_flight = false;
+        }
+    }
+
+    fn record_success(&self, host: &str) {
+        let mut hosts = self
+            .hosts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        hosts.remove(host);
+    }
+}
+
+fn cdn_transient_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
 /// Read through a cache: check, fetch on miss, insert. `key` must carry
@@ -240,6 +297,8 @@ pub struct AppState {
     pub disk: crate::cache::DiskCache,
     /// Since-launch fetch/stale counters (`cache_stats().counters`).
     pub meters: CacheMeters,
+    /// Per-CDN-host transient-failure breaker, shared by stream requests.
+    cdn_circuit: CdnCircuit,
     /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
     /// transaction per mutation. `Err` means the vault is disabled — a
     /// read-only directory surfaces the error on every mutation and lists
@@ -311,6 +370,7 @@ impl AppState {
                 .build(),
             disk: crate::cache::DiskCache::new(cache_dir),
             meters: CacheMeters::default(),
+            cdn_circuit: CdnCircuit::default(),
             db,
             store,
             cancel: Mutex::new(HashSet::new()),
@@ -1488,14 +1548,34 @@ async fn open_upstream(
     target: &str,
     headers: &HeaderMap,
 ) -> Result<reqwest::Response, (StatusCode, String)> {
+    let parsed = url::Url::parse(target)
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("invalid upstream url: {e}")))?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| (StatusCode::BAD_GATEWAY, "upstream url has no host".into()))?
+        .to_ascii_lowercase();
+    if !state.cdn_circuit.allows_request(&host) {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            "upstream host temporarily unavailable".into(),
+        ));
+    }
     let mut req = state.media.get(target);
     if let Some(range) = headers.get("range").and_then(|v| v.to_str().ok()) {
         req = req.header(reqwest::header::RANGE, range);
     }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")))?;
+    let resp = match req.send().await {
+        Ok(resp) => resp,
+        Err(e) => {
+            state.cdn_circuit.record_failure(&host);
+            return Err((StatusCode::BAD_GATEWAY, format!("upstream failed: {e}")));
+        }
+    };
+    if cdn_transient_status(resp.status()) {
+        state.cdn_circuit.record_failure(&host);
+    } else {
+        state.cdn_circuit.record_success(&host);
+    }
     // Same rule as `/art`, but ONLY for redirect hops: a public CDN host must
     // not be able to bounce the relay into the LAN. A direct fetch is left
     // alone — the resolution chain already chose that URL.
@@ -1833,6 +1913,35 @@ pub fn proxy_url_for(port: u16, id: &str, token: &str, quality: Option<&str>) ->
 mod tests {
     use super::*;
     use crate::jiosaavn::{api_client, search_songs};
+
+    #[test]
+    fn cdn_breaker_opens_and_allows_one_half_open_probe() {
+        let breaker = CdnCircuit::default();
+        let host = "aac.saavncdn.com";
+        for _ in 0..CDN_FAILURE_THRESHOLD {
+            assert!(breaker.allows_request(host));
+            breaker.record_failure(host);
+        }
+        assert!(!breaker.allows_request(host), "open circuit fast-fails");
+
+        {
+            let mut hosts = breaker.hosts.lock().unwrap();
+            hosts.get_mut(host).unwrap().opened_at =
+                Some(Instant::now() - CDN_BREAKER_COOLDOWN - Duration::from_secs(1));
+        }
+        assert!(breaker.allows_request(host), "cooldown permits one probe");
+        assert!(!breaker.allows_request(host), "probe is single-flight");
+        breaker.record_success(host);
+        assert!(breaker.allows_request(host), "success closes the circuit");
+    }
+
+    #[test]
+    fn cdn_breaker_counts_only_transient_http_failures() {
+        assert!(cdn_transient_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(cdn_transient_status(StatusCode::BAD_GATEWAY));
+        assert!(!cdn_transient_status(StatusCode::FORBIDDEN));
+        assert!(!cdn_transient_status(StatusCode::NOT_FOUND));
+    }
 
     /// Both vault filename shapes must survive a rebuild: the id-prefixed one
     /// written today keeps its real song id, the older `artist - title` one

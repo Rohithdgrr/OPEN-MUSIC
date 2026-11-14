@@ -1,0 +1,1356 @@
+@font-face{font-family:"Geist";src:url("/fonts/geist-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url("/fonts/jetbrains-mono-latin.woff2") format("woff2");font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:"Material Symbols Outlined";src:url("/fonts/icons.woff2") format("woff2");font-weight:100 700;font-style:normal;font-display:block}
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+}
+
+
+@layer base {
+  html, body {
+    width: 100vw;
+    margin: 0;
+    padding: 0;
+    background-color: #f9f9fb;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    overscroll-behavior-y: none;
+    min-height: max(884px, 100dvh);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  input, textarea {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
+  main > :first-child { margin-top: 0 !important; }
+  main > :last-child { margin-bottom: 0 !important; }
+}
+
+/* Screens' fixed headers carry .pt-safe, so <main>'s top offset must add the
+   same status-bar inset — a bare pt-14/pt-16 left the first row (the search
+   field) sitting under the header on devices with a cutout. */
+main.pt-14 { padding-top: calc(3.5rem + env(safe-area-inset-top, 0px)); }
+main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
+::-webkit-scrollbar { display: none; }
+* { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Lyrics karaoke — port of the desktop's styles.css (mobile loads no
+   styles.css, so the .lyric-* rules live here). JS toggles lyric-active /
+   lyric-past and drives each word's fill through --progress. */
+.lyric-line {
+  border-left: 3px solid transparent;
+  padding-left: 6px;
+  border-radius: 4px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lyric-word {
+  background-image: linear-gradient(90deg, #18181b 0%, #18181b var(--progress, 0%), #71717a var(--progress, 0%), #71717a 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.lyric-text { transition: font-size 0.25s ease, font-weight 0.25s ease, color 0.25s ease; }
+.lyric-active {
+  border-left: 3px solid #18181b;
+  background: rgba(24, 24, 27, 0.05);
+}
+.lyric-active .lyric-text { font-size: 16px; font-weight: 700; line-height: 1.45; color: #18181b; }
+.lyric-past .lyric-text { font-size: 13px; color: #71717a; }
+.lyric-past .lyric-word { background-image: linear-gradient(90deg, #71717a, #71717a); }
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text { color: #52525b; }
+.lyric-line:not(.lyric-active):not(.lyric-past) .lyric-word { background-image: linear-gradient(90deg, #52525b, #52525b); }
+
+/* High contrast dark mode lyrics */
+html.dark .lyric-active,
+.dark .lyric-active {
+  border-left: 3px solid #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark .lyric-active .lyric-text,
+.dark .lyric-active .lyric-text {
+  color: #ffffff !important;
+  font-size: 16px;
+  font-weight: 700;
+}
+html.dark .lyric-past .lyric-text,
+.dark .lyric-past .lyric-text {
+  color: #71717a !important;
+}
+html.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text,
+.dark .lyric-line:not(.lyric-active):not(.lyric-past) .lyric-text {
+  color: #a1a1aa !important;
+}
+html.dark .lyric-word,
+.dark .lyric-word {
+  background-image: linear-gradient(90deg, #ffffff 0%, #ffffff var(--progress, 0%), #71717a var(--progress, 0%), #71717a 100%) !important;
+}
+
+/* Ensure circular buttons and pills are true circles/pills */
+.rounded-full {
+  border-radius: 9999px !important;
+}
+
+/* Smooth tab view transitions */
+@keyframes tm-tab-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tab-content.flex {
+  animation: tm-tab-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Lyrics full-view stage — true immersive fullscreen overlay */
+.tm-lyrics-full {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 95 !important;
+  margin: 0 !important;
+  padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.5rem calc(1.5rem + env(safe-area-inset-bottom, 0px)) 1.5rem !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  backdrop-filter: blur(32px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(32px) saturate(180%) !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+.tm-lyrics-full [data-lyrics] { flex: 1 1 auto; max-height: none !important; padding: 2rem 0; }
+.tm-lyrics-full .lyric-text { font-size: 22px !important; line-height: 1.5 !important; }
+.tm-lyrics-full .lyric-active { border-left-width: 4px !important; border-radius: 10px !important; padding: 6px 6px 6px 12px !important; }
+.tm-lyrics-full .lyric-active .lyric-text { font-size: 28px !important; font-weight: 700 !important; line-height: 1.4 !important; }
+.tm-lyrics-full .lyric-past .lyric-text { font-size: 18px !important; opacity: 0.55 !important; }
+
+/* Toast stack — mobile's own; the desktop's #toast-stack lives in styles.css,
+   which this shell never loads. Single toast at the bottom, click to dismiss. */
+#tm-toast-stack {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 16px) + 5.5rem);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+.tm-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 90%;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  color: #18181b;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+  padding: 0.6rem 1.15rem;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  animation: tm-toast-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+.dark .tm-toast,
+html.dark .tm-toast {
+  background: rgba(24, 24, 27, 0.96);
+  color: #f4f4f5;
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.3);
+}
+.tm-toast:active { transform: scale(0.97); }
+.tm-toast .tm-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  background: #71717a;
+}
+.tm-toast > span:not(.tm-dot) { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.tm-toast-action {
+  margin-left: 0.4rem;
+  flex-shrink: 0;
+  padding: 0.18rem 0.6rem;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.08);
+  color: #18181b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.dark .tm-toast-action,
+html.dark .tm-toast-action {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f4f4f5;
+}
+.tm-toast-action:active { opacity: 0.7; }
+.tm-toast[data-kind="success"] .tm-dot { background: #16a34a; box-shadow: 0 0 10px rgba(22, 163, 74, 0.7); }
+.tm-toast[data-kind="error"] .tm-dot { background: #dc2626; box-shadow: 0 0 10px rgba(220, 38, 38, 0.7); }
+.tm-toast[data-kind="warning"] .tm-dot { background: #d97706; box-shadow: 0 0 10px rgba(217, 119, 6, 0.7); }
+.tm-toast[data-kind="info"] .tm-dot { background: #4f46e5; box-shadow: 0 0 10px rgba(79, 70, 229, 0.7); }
+.tm-toast.tm-out { opacity: 0; transform: translateY(-8px) scale(0.94); transition: opacity 0.2s, transform 0.2s; }
+@keyframes tm-toast-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Skeleton Loading Shimmer — Spotify-style pulse and specular highlights */
+@keyframes tm-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.tm-skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(228, 228, 231, 0.55);
+}
+.tm-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.7) 50%, transparent 100%);
+  animation: tm-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Screen Transitions & Spring Micro-interactions */
+#screen {
+  animation: tm-screen-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes tm-screen-enter {
+  from { opacity: 0.9; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+button:active:not(:disabled), [role="button"]:active {
+  transform: scale(0.96);
+  transition: transform 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.tm-glow {
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.12), 0 2px 8px -2px rgba(0, 0, 0, 0.06);
+}
+
+/* Micro Loading Spinner */
+.tm-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  border-top-color: currentColor;
+  border-radius: 9999px;
+  animation: tm-spin 0.65s linear infinite;
+}
+@keyframes tm-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Mini-player marquee — overflowing widget titles scroll in an 8s loop. */
+@keyframes tm-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.tm-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  animation: tm-marquee 8s linear infinite;
+}
+
+/* Full queue sheet — 85vh bottom sheet (NOT the 40vh track sheet). */
+#tm-queue-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+#tm-queue-sheet [data-q-panel] { max-height: 85vh; border-radius: 1.5rem; }
+#tm-queue-sheet [data-q-list] { overscroll-behavior: contain; }
+
+/* First-run onboarding overlay. */
+#tm-onboard {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+/* Network status: the header profile avatar fills with the state colour
+   (mobile/net.js paints it), and breathes while reconnecting. */
+.net-pulse { animation: net-pulse 1.2s ease-in-out infinite; }
+@keyframes net-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* Home rails page instead of flinging: paced horizontal travel so every
+   card can be inspected mid-scroll. */
+#screen [data-shelf] .overflow-x-auto {
+  scroll-snap-type: x proximity;
+  scroll-padding: 1rem;
+}
+
+/* Loading skeleton: [data-skel] blocks (home.html) shimmer while home_feed
+   resolves; painters overwrite them, clearSkeletons() removes leftovers. */
+.skel {
+  background: linear-gradient(100deg, rgba(140, 144, 152, 0.12) 40%, rgba(140, 144, 152, 0.24) 50%, rgba(140, 144, 152, 0.12) 60%);
+  background-size: 200% 100%;
+  animation: skel-sweep 1.5s ease-in-out infinite;
+}
+@keyframes skel-sweep {
+  from { background-position: 120% 0; }
+  to { background-position: -20% 0; }
+}
+
+/* Screen transition: the router wraps each fragment in .screen-anim and
+   restarts .screen-enter. Opacity + a small rise — a plain wrapper keeps
+   fixed headers viewport-anchored at rest (transform: none creates no
+   containing block), and the tab bar lives outside the wrapper. */
+.screen-anim { min-height: 100%; }
+.screen-enter { animation: screen-enter 0.26s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+@keyframes screen-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Micro-interactions: every button answers a press — a short scale plus a
+   smooth colour/shadow ramp. The id selector layers over the Tailwind
+   active:scale-90/95 classes instead of fighting them; disabled stays inert. */
+#screen button:not(:disabled),
+#tm-onboard button:not(:disabled) {
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.3, 1), background-color 0.18s ease,
+    color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+}
+#screen button:not(:disabled):active,
+#tm-onboard button:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+  .screen-enter { animation: none; }
+  #screen button:not(:disabled):active,
+  #tm-onboard button:not(:disabled):active { transform: none; }
+}
+
+/* ==========================================================================
+   ELEVATED MOBILE LIGHT THEME (Matching Desktop Pure White & Monochrome Depth)
+   Micro-gradients, hairline borders, frosted translucent glass, and soft shadows
+   ========================================================================== */
+
+/* 1. App Background & Canvas */
+html:not(.dark),
+html:not(.dark) body {
+  background-color: #ffffff !important;
+  color: #1a1c1d;
+}
+
+html:not(.dark) main {
+  background-color: #ffffff !important;
+}
+
+/* 2. Frosted Header & Elevated Tab Bar Chrome */
+html:not(.dark) header {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.02) !important;
+}
+
+html:not(.dark) nav.fixed.bottom-0 {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(24px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(150%) !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.07) !important;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.04) !important;
+}
+
+html:not(.dark) nav.fixed.bottom-0 a[aria-current="page"] > div {
+  background: linear-gradient(180deg, #18181b 0%, #000000 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16) !important;
+}
+
+html:not(.dark) nav.fixed.bottom-0 a[aria-current="page"] > div span {
+  color: #ffffff !important;
+}
+
+/* 3. Cards & Surfaces with Micro-Gradients & Crisp Hairline Borders */
+html:not(.dark) .bg-surface-container-lowest,
+html:not(.dark) [data-shelf] > div,
+html:not(.dark) .rounded-2xl.border,
+html:not(.dark) .rounded-xl.border {
+  background: linear-gradient(180deg, #ffffff 0%, #fbfbfd 100%) !important;
+  border-color: rgba(0, 0, 0, 0.07) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+/* The Now Playing artwork (P35) is a media frame, not a list card: the rule
+   above must not repaint it or its frame. The metadata now lives in its own
+   card BELOW the art (`#np-meta`), which *does* want that rule.
+   Frameless since 2026-10-15f: no border, no 1px ring — a soft diffuse
+   shadow only, so the rounded corners blend into the page. */
+html:not(.dark) #np-art-card {
+  background: #1b1b1e !important;
+  box-shadow: 0 24px 48px -20px rgba(0, 0, 0, 0.35), 0 6px 18px -10px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Thin glass coating on the artwork (both themes): a soft diagonal light
+   sweep from the top-left plus a 1px specular line along the top edge.
+   Painted above the img; never intercepts touches. */
+#np-art-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(140deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.07) 18%, rgba(255, 255, 255, 0) 38%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+/* 4. Interactive List Rows (Playlists, Albums, Tracklists, History) */
+html:not(.dark) .divide-y > div:hover,
+html:not(.dark) [data-track-row]:hover,
+html:not(.dark) .recent-pill:hover,
+html:not(.dark) .genre-card:hover {
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.015) 0%, rgba(0, 0, 0, 0.038) 40%, rgba(0, 0, 0, 0.015) 100%) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html:not(.dark) .genre-card {
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+html:not(.dark) .genre-card:active {
+  transform: scale(0.97) !important;
+}
+
+/* 5. Buttons: High-Contrast Obsidian & Surface Gradients */
+html:not(.dark) button.bg-primary,
+html:not(.dark) .bg-primary:not(span) {
+  background: linear-gradient(180deg, #18181b 0%, #09090b 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  border: 1px solid #000000 !important;
+}
+
+html:not(.dark) button.bg-primary:hover,
+html:not(.dark) .bg-primary:hover:not(span) {
+  background: linear-gradient(180deg, #27272a 0%, #18181b 100%) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22) !important;
+}
+
+html:not(.dark) button.bg-surface-container-low,
+html:not(.dark) button.bg-surface-container,
+html:not(.dark) .bg-surface-container-low {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f4f6 100%) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Filter Chips in Light Mode */
+html:not(.dark) .filter-chip,
+html:not(.dark) .home-cat-chip {
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+html:not(.dark) .filter-chip.bg-primary,
+html:not(.dark) .home-cat-chip.bg-primary {
+  background: linear-gradient(180deg, #18181b 0%, #000000 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18) !important;
+  border: none !important;
+}
+
+html:not(.dark) .filter-chip:not(.bg-primary),
+html:not(.dark) .home-cat-chip:not(.bg-primary) {
+  background: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  color: #47464b !important;
+}
+
+/* 6. Form Inputs & Search Bays */
+html:not(.dark) input[type="text"],
+html:not(.dark) input[type="search"],
+html:not(.dark) input[type="password"],
+html:not(.dark) select {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+  transition: all 0.2s ease;
+}
+
+html:not(.dark) input[type="text"]:focus,
+html:not(.dark) input[type="search"]:focus,
+html:not(.dark) input[type="password"]:focus,
+html:not(.dark) select:focus {
+  border-color: #000000 !important;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06) !important;
+}
+
+/* The search bay carries its own pill chrome (container border +
+   focus-within ring); the global inset input border above would double it
+   into a sharp inner rectangle. The input itself stays chromeless.
+   .bay-input extends the same deal to the Downloads search, the queue-append
+   row and the room-chat row — their containers own the chrome. */
+html:not(.dark) #search-input,
+html:not(.dark) #search-input:focus,
+html:not(.dark) input.bay-input,
+html:not(.dark) input.bay-input:focus {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* 7. Image and Artwork Depth */
+/* `:not(#np-art)` — the Now Playing artwork is a frameless media tile since
+   2026-10-15f; this 1px border composites over its near-black backing
+   (#1b1b1e) and read as the black ring around the art. */
+html:not(.dark) .aspect-square img:not(#np-art),
+html:not(.dark) [data-shelf] img,
+html:not(.dark) .w-52 img,
+html:not(.dark) .w-56 img {
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 8. Scrubber Track & Sliders */
+html:not(.dark) #scrubber-container #scrubber-bar {
+  background: linear-gradient(90deg, #18181b 0%, #000000 100%) !important;
+}
+
+html:not(.dark) #scrubber-needle {
+  background: #000000 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28) !important;
+}
+
+/* ==========================================================================
+   GLOBAL MOBILE DARK THEME ENGINE (.dark & [data-theme="dark"])
+   Complete high-fidelity obsidian palette (#09090b / #121215), elevated
+   surface containers (#16161a / #202025), crisp white typography (#ffffff),
+   silver secondary metadata (#a1a1aa / #71717a), and luminous accents.
+   ========================================================================== */
+
+html.dark,
+body.dark,
+.dark {
+  color-scheme: dark !important;
+  --color-primary: #ffffff !important;
+  --color-on-primary: #000000 !important;
+  --color-surface: #09090b !important;
+  --color-on-surface: #ffffff !important;
+  --color-on-surface-variant: #a1a1aa !important;
+  --color-surface-container: #18181c !important;
+  --color-surface-container-high: #222228 !important;
+  --color-surface-container-highest: #2a2a32 !important;
+  --color-surface-container-low: #141417 !important;
+  --color-surface-container-lowest: #101013 !important;
+  --color-secondary: #a1a1aa !important;
+  --tm-text: #ffffff !important;
+  --tm-muted: #a1a1aa !important;
+}
+
+html.dark,
+html.dark body,
+body.dark {
+  background-color: #09090b !important;
+  color: #f4f4f5 !important;
+}
+
+.dark main {
+  background-color: #09090b !important;
+}
+
+/* Dark elevation. Tailwind's shadow-sm/md are BLACK shadows — invisible on a
+   #09090b surface, so cards read as flat smudges. On dark, elevation is a
+   hairline ring plus a soft ambient shadow (2026-11-12). */
+.dark .shadow-sm,
+.dark .shadow,
+.dark .shadow-md,
+html.dark .shadow-sm,
+html.dark .shadow,
+html.dark .shadow-md {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Play bubbles and small action discs. `bg-on-surface` is WHITE in dark
+   mode, so each one punched a solid hole in the page. A translucent "glass"
+   disc reads as a control instead of a lamp (2026-11-13). */
+.dark .bg-on-surface.text-surface,
+html.dark .bg-on-surface.text-surface {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.dark .bg-on-surface.text-surface span,
+html.dark .bg-on-surface.text-surface span {
+  color: #ffffff !important;
+}
+
+/* The play bubble on a shelf card is a LITERAL white disc (`bg-white
+   text-black`), not the theme token — so the rule above never matched it.
+   In dark mode it is glass, not a lamp (2026-11-13). */
+.dark .bg-white.text-black,
+html.dark .bg-white.text-black {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.dark .bg-white.text-black span,
+html.dark .bg-white.text-black span {
+  color: #ffffff !important;
+}
+
+/* The Now Playing backdrop is decorative; its two image layers cross-fade
+   without moving content, and the surface veil keeps controls legible. */
+#np-main {
+  isolation: isolate;
+  background-color: transparent !important;
+}
+
+#np-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #f9f9fb;
+}
+
+#np-backdrop .np-backdrop-art {
+  position: absolute;
+  inset: -6%;
+  width: 112%;
+  height: 112%;
+  object-fit: cover;
+  opacity: 0;
+  transform: scale(1.08);
+  filter: blur(32px) saturate(1.25);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #np-backdrop .np-backdrop-art {
+    transition: opacity 850ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+}
+
+#np-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(249, 249, 251, 0.48), rgba(249, 249, 251, 0.9) 72%, rgba(249, 249, 251, 0.97)),
+    radial-gradient(80% 56% at 50% 8%, var(--np-tint, rgba(249, 249, 251, 0)), transparent 100%);
+}
+
+html.dark #np-backdrop {
+  background: #09090b;
+}
+
+html.dark #np-backdrop::after {
+  background:
+    linear-gradient(180deg, rgba(9, 9, 11, 0.44), rgba(9, 9, 11, 0.82) 72%, rgba(9, 9, 11, 0.94)),
+    radial-gradient(80% 56% at 50% 8%, var(--np-tint, rgba(255, 255, 255, 0.12)), transparent 100%);
+}
+
+@media (max-height: 680px) {
+  #np-backdrop .np-backdrop-art {
+    filter: blur(24px) saturate(1.2);
+  }
+}
+
+/* Now Playing: the page follows the artwork. `--np-tint` is set by the
+   Now Playing painter (arttint.js) and cleared by the router when the user
+   leaves, so no other screen inherits it. Light theme only — in dark the
+   artwork already carries the colour and a wash would fight it. */
+html:not(.dark) body {
+  background-image: linear-gradient(180deg, var(--np-tint, rgba(249, 249, 251, 0)) 0%, rgba(249, 249, 251, 0) 62%) !important;
+  background-repeat: no-repeat !important;
+  background-attachment: fixed !important;
+}
+
+/* Background Utility Inversions */
+.dark .bg-surface,
+html.dark .bg-surface {
+  background-color: #09090b !important;
+}
+/* --- Opacity-modified theme colours (bg-surface-container-low/90, …) -------
+   Tailwind bakes the LIGHT Stitch palette into every "/NN" variant: an opacity
+   modifier cannot reference the runtime dark overrides, so the utility carries
+   the light value outright. The plain class rules above never matched either
+   (the class name carries the /NN suffix), so translucent surfaces stayed
+   near-white in dark mode — the options sheet, the header bands, the card
+   borders (2026-11-13). One rule per variant, alpha preserved; borders read
+   as hairlines. Generated from the utilities the shell actually uses. */
+.dark .bg-primary\/10,
+html.dark .bg-primary\/10 {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .bg-primary\/40,
+html.dark .bg-primary\/40 {
+  background-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.dark .bg-primary\/90,
+html.dark .bg-primary\/90 {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.dark .bg-surface-container\/60,
+html.dark .bg-surface-container\/60 {
+  background-color: rgba(24, 24, 28, 0.6) !important;
+}
+
+.dark .bg-surface-container\/70,
+html.dark .bg-surface-container\/70 {
+  background-color: rgba(24, 24, 28, 0.7) !important;
+}
+
+.dark .bg-surface-container-high\/60,
+html.dark .bg-surface-container-high\/60 {
+  background-color: rgba(34, 34, 40, 0.6) !important;
+}
+
+.dark .bg-surface-container-high\/70,
+html.dark .bg-surface-container-high\/70 {
+  background-color: rgba(34, 34, 40, 0.7) !important;
+}
+
+.dark .bg-surface-container-high\/80,
+html.dark .bg-surface-container-high\/80 {
+  background-color: rgba(34, 34, 40, 0.8) !important;
+}
+
+.dark .bg-surface-container-low\/40,
+html.dark .bg-surface-container-low\/40 {
+  background-color: rgba(20, 20, 23, 0.4) !important;
+}
+
+.dark .bg-surface-container-low\/50,
+html.dark .bg-surface-container-low\/50 {
+  background-color: rgba(20, 20, 23, 0.5) !important;
+}
+
+.dark .bg-surface-container-low\/60,
+html.dark .bg-surface-container-low\/60 {
+  background-color: rgba(20, 20, 23, 0.6) !important;
+}
+
+.dark .bg-surface-container-low\/70,
+html.dark .bg-surface-container-low\/70 {
+  background-color: rgba(20, 20, 23, 0.7) !important;
+}
+
+.dark .bg-surface-container-low\/80,
+html.dark .bg-surface-container-low\/80 {
+  background-color: rgba(20, 20, 23, 0.8) !important;
+}
+
+.dark .bg-surface-container-low\/90,
+html.dark .bg-surface-container-low\/90 {
+  background-color: rgba(20, 20, 23, 0.9) !important;
+}
+
+.dark .bg-surface-container-lowest\/15,
+html.dark .bg-surface-container-lowest\/15 {
+  background-color: rgba(16, 16, 19, 0.15) !important;
+}
+
+.dark .bg-surface-container-lowest\/80,
+html.dark .bg-surface-container-lowest\/80 {
+  background-color: rgba(16, 16, 19, 0.8) !important;
+}
+
+.dark .bg-surface-container-lowest\/90,
+html.dark .bg-surface-container-lowest\/90 {
+  background-color: rgba(16, 16, 19, 0.9) !important;
+}
+
+.dark .bg-surface-container-lowest\/95,
+html.dark .bg-surface-container-lowest\/95 {
+  background-color: rgba(16, 16, 19, 0.95) !important;
+}
+
+.dark .border-primary\/40,
+html.dark .border-primary\/40 {
+  border-color: rgba(255, 255, 255, 0.053) !important;
+}
+
+.dark .border-primary\/50,
+html.dark .border-primary\/50 {
+  border-color: rgba(255, 255, 255, 0.067) !important;
+}
+
+.dark .border-surface-container-high\/50,
+html.dark .border-surface-container-high\/50 {
+  border-color: rgba(255, 255, 255, 0.067) !important;
+}
+
+.dark .border-surface-container-highest\/60,
+html.dark .border-surface-container-highest\/60 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .divide-surface-container\/40 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container\/40 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.053) !important;
+}
+
+.dark .divide-surface-container-high\/40 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container-high\/40 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.053) !important;
+}
+
+.dark .divide-surface-container-high\/60 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container-high\/60 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .divide-surface-container-high\/70 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-surface-container-high\/70 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.093) !important;
+}
+
+.dark .ring-primary\/10,
+html.dark .ring-primary\/10 {
+  --tw-ring-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .ring-surface-container-high\/40,
+html.dark .ring-surface-container-high\/40 {
+  --tw-ring-color: rgba(34, 34, 40, 0.4) !important;
+}
+
+.dark .text-secondary\/80,
+html.dark .text-secondary\/80 {
+  color: rgba(161, 161, 170, 0.8) !important;
+}
+
+.dark .text-surface-container-lowest\/80,
+html.dark .text-surface-container-lowest\/80 {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.dark .text-surface-container-lowest\/90,
+html.dark .text-surface-container-lowest\/90 {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+
+.dark .bg-surface-container,
+html.dark .bg-surface-container {
+  background-color: #18181c !important;
+}
+
+.dark .bg-surface-container-low,
+html.dark .bg-surface-container-low {
+  background-color: #141417 !important;
+}
+
+.dark .bg-surface-container-lowest,
+html.dark .bg-surface-container-lowest {
+  background-color: #101013 !important;
+}
+
+.dark .bg-surface-container-high,
+html.dark .bg-surface-container-high {
+  background-color: #222228 !important;
+}
+
+.dark .bg-surface-container-highest,
+html.dark .bg-surface-container-highest {
+  background-color: #2a2a32 !important;
+}
+
+.dark .bg-surface\/85,
+html.dark .bg-surface\/85 {
+  background-color: rgba(9, 9, 11, 0.88) !important;
+}
+
+.dark .bg-surface\/90,
+html.dark .bg-surface\/90 {
+  background-color: rgba(9, 9, 11, 0.94) !important;
+}
+
+/* Header & Bottom Navigation Bar with Deep Frosted Glass */
+.dark header,
+html.dark header {
+  background-color: rgba(9, 9, 11, 0.9) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark nav.fixed.bottom-0,
+html.dark nav.fixed.bottom-0 {
+  background-color: rgba(12, 12, 16, 0.96) !important;
+  backdrop-filter: blur(24px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.7) !important;
+}
+
+.dark nav.fixed.bottom-0 a[aria-current="page"] > div,
+html.dark nav.fixed.bottom-0 a[aria-current="page"] > div {
+  background: #ffffff !important;
+  color: #000000 !important;
+  box-shadow: 0 2px 12px rgba(255, 255, 255, 0.28) !important;
+}
+
+.dark nav.fixed.bottom-0 a[aria-current="page"] > div span,
+html.dark nav.fixed.bottom-0 a[aria-current="page"] > div span {
+  color: #000000 !important;
+}
+
+.dark nav.fixed.bottom-0 a:not([aria-current="page"]) span,
+html.dark nav.fixed.bottom-0 a:not([aria-current="page"]) span {
+  color: #a1a1aa !important;
+}
+
+.dark nav.fixed.bottom-0 a:not([aria-current="page"]):hover span,
+html.dark nav.fixed.bottom-0 a:not([aria-current="page"]):hover span {
+  color: #ffffff !important;
+}
+
+/* Typography & Headings in Dark Mode */
+.dark .text-on-surface,
+html.dark .text-on-surface {
+  color: #ffffff !important;
+}
+
+.dark .text-on-surface-variant,
+html.dark .text-on-surface-variant {
+  color: #a1a1aa !important;
+}
+
+.dark .text-secondary,
+html.dark .text-secondary {
+  color: #a1a1aa !important;
+}
+
+.dark .text-zinc-400,
+.dark .text-zinc-500,
+.dark .text-neutral-400,
+.dark .text-neutral-500,
+html.dark .text-zinc-400,
+html.dark .text-zinc-500,
+html.dark .text-neutral-400,
+html.dark .text-neutral-500 {
+  color: #a1a1aa !important;
+}
+
+.dark .placeholder\:text-outline,
+.dark .placeholder-secondary,
+html.dark .placeholder\:text-outline,
+html.dark .placeholder-secondary {
+  color: #71717a !important;
+}
+
+.dark h1, .dark h2, .dark h3, .dark h4,
+html.dark h1, html.dark h2, html.dark h3, html.dark h4 {
+  color: #ffffff !important;
+}
+
+/* Universal Borders in Dark Mode */
+.dark .border-surface-container,
+.dark .border-surface-container-high,
+.dark .border-surface-container-highest,
+.dark .border-surface-container-high\/40,
+.dark .border-surface-container-high\/60,
+.dark .border-surface-container-high\/70,
+.dark .border-surface-container-high\/80,
+.dark .border-surface-container\/60,
+.dark .border-surface-container\/40,
+html.dark .border-surface-container,
+html.dark .border-surface-container-high,
+html.dark .border-surface-container-highest,
+html.dark .border-surface-container-high\/40,
+html.dark .border-surface-container-high\/60,
+html.dark .border-surface-container-high\/70,
+html.dark .border-surface-container-high\/80,
+html.dark .border-surface-container\/60,
+html.dark .border-surface-container\/40 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Interactive Cards, Grids & Shelves in Dark Mode */
+/* NOTE: the "first child div" selector of every shelf used to be in this
+   list. It matched each shelf's header row ("Jump Back In", "Monthly Mix")
+   and painted a card gradient behind the title, which read as a stray band
+   across the home screen (2026-11-13). The shelf cards carry their own
+   background class, so the rule is not needed. */
+.dark .bg-surface-container-lowest,
+.dark .rounded-2xl.border,
+.dark .rounded-xl.border,
+html.dark .bg-surface-container-lowest,
+html.dark .rounded-2xl.border,
+html.dark .rounded-xl.border {
+  background: linear-gradient(180deg, #161619 0%, #101013 100%) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Artwork shadow — frameless since 2026-10-15f; the old 1px specular ring
+   is gone, the glass coating lives on #np-art-card::after. */
+.dark #np-art-card,
+html.dark #np-art-card {
+  background: #101013 !important;
+  box-shadow: 0 24px 48px -18px rgba(0, 0, 0, 0.65), 0 8px 22px -12px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Fallback artwork = the platform logo. Since 2026-10-10 the file is the
+   pre-cropped mark on a transparent square canvas (the dark tile and its
+   caption were keyed out — branding guide, fallback-artwork contract v2),
+   so the only rule left is the black backing that lets the white mark read
+   on any theme. The old CSS zoom-crop is gone — the crop is baked into
+   the bytes. */
+img[src$="logo.png"] {
+  background: #000;
+}
+
+.dark .genre-card,
+html.dark .genre-card {
+  background: linear-gradient(135deg, #18181c 0%, #121215 100%) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35) !important;
+}
+
+.dark .genre-card .text-primary,
+html.dark .genre-card .text-primary {
+  color: #ffffff !important;
+}
+
+/* Track Rows, Suggestions & Dividers in Dark Mode */
+.dark .divide-y > div:hover,
+.dark [data-track-row]:hover,
+.dark .recent-pill:hover,
+html.dark .divide-y > div:hover,
+html.dark [data-track-row]:hover,
+html.dark .recent-pill:hover {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.09) 35%, rgba(255, 255, 255, 0.04) 100%) !important;
+}
+
+.dark .recent-pill,
+html.dark .recent-pill {
+  background: #141417 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* Primary Contrast Inversion (Black button -> Pure White in dark mode) */
+.dark button.bg-primary,
+.dark .bg-primary:not(span),
+html.dark button.bg-primary,
+html.dark .bg-primary:not(span) {
+  background: linear-gradient(180deg, #ffffff 0%, #ededed 100%) !important;
+  color: #000000 !important;
+  /* Neutral shadow: a white glow around a white button read as "lit from
+     behind" (2026-11-12). */
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45) !important;
+  border: 1px solid #ffffff !important;
+}
+
+.dark button.bg-primary span,
+.dark .bg-primary:not(span) span,
+html.dark button.bg-primary span,
+html.dark .bg-primary:not(span) span {
+  color: #000000 !important;
+}
+
+.dark .text-on-primary,
+html.dark .text-on-primary {
+  color: #000000 !important;
+}
+
+.dark button.bg-surface-container-low,
+.dark button.bg-surface-container,
+.dark .bg-surface-container-low,
+html.dark button.bg-surface-container-low,
+html.dark button.bg-surface-container,
+html.dark .bg-surface-container-low {
+  background: linear-gradient(180deg, #1c1c21 0%, #141418 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  color: #f4f4f5 !important;
+}
+
+.dark button.bg-surface-container-low:hover,
+.dark button.bg-surface-container:hover,
+html.dark button.bg-surface-container-low:hover,
+html.dark button.bg-surface-container:hover {
+  background: #24242a !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Filter Chips in Dark Mode */
+.dark .filter-chip.bg-primary,
+.dark .home-cat-chip.bg-primary,
+html.dark .filter-chip.bg-primary,
+html.dark .home-cat-chip.bg-primary {
+  background: linear-gradient(180deg, #ffffff 0%, #ededed 100%) !important;
+  color: #000000 !important;
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.25) !important;
+  border: 1px solid #ffffff !important;
+}
+
+.dark .filter-chip:not(.bg-primary),
+.dark .home-cat-chip:not(.bg-primary),
+html.dark .filter-chip:not(.bg-primary),
+html.dark .home-cat-chip:not(.bg-primary) {
+  background: linear-gradient(180deg, #18181c 0%, #121215 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #a1a1aa !important;
+}
+
+.dark .filter-chip:not(.bg-primary):hover,
+.dark .home-cat-chip:not(.bg-primary):hover,
+html.dark .filter-chip:not(.bg-primary):hover,
+html.dark .home-cat-chip:not(.bg-primary):hover {
+  background: #222228 !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* Form Inputs, Selects & Search Bays in Dark Mode */
+.dark input[type="text"],
+.dark input[type="search"],
+.dark input[type="password"],
+.dark select,
+html.dark input[type="text"],
+html.dark input[type="search"],
+html.dark input[type="password"],
+html.dark select {
+  background: #16161a !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+.dark input[type="text"]:focus,
+.dark input[type="search"]:focus,
+.dark input[type="password"]:focus,
+.dark select:focus,
+html.dark input[type="text"]:focus,
+html.dark input[type="search"]:focus,
+html.dark input[type="password"]:focus,
+html.dark select:focus {
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15), 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Same exemption as light mode: the search pill owns its chrome.
+   .bay-input extends it to the Downloads search, queue-append and chat rows. */
+.dark #search-input,
+.dark #search-input:focus,
+.dark input.bay-input,
+.dark input.bay-input:focus,
+html.dark #search-input,
+html.dark #search-input:focus,
+html.dark input.bay-input,
+html.dark input.bay-input:focus {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Scrubber in Dark Mode — flat, no glow. The container must stay
+   transparent: a translucent white wash over the whole 24px track turned the
+   seekbar into a glowing tube (2026-11-12). */
+.dark #scrubber-container,
+html.dark #scrubber-container {
+  background: transparent !important;
+}
+
+.dark #scrubber-container #scrubber-bar,
+html.dark #scrubber-container #scrubber-bar {
+  background: linear-gradient(90deg, #ffffff 0%, #e4e4e7 100%) !important;
+  box-shadow: none !important;
+}
+
+.dark #scrubber-needle,
+html.dark #scrubber-needle {
+  background: #ffffff !important;
+  /* A dark drop shadow reads as depth; a white one read as a lamp. */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.65) !important;
+  border: 2px solid #09090b !important;
+}
+
+/* Now Playing Metadata Card & Mode Switcher */
+.dark #np-meta-container,
+html.dark #np-meta-container {
+  background: linear-gradient(180deg, #16161a 0%, #101013 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+.dark #modeToggleBtn,
+html.dark #modeToggleBtn {
+  background: #141418 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .np-deck-tab.active,
+html.dark .np-deck-tab.active {
+  background: #ffffff !important;
+  color: #000000 !important;
+}
+
+.dark .np-deck-tab:not(.active),
+html.dark .np-deck-tab:not(.active) {
+  color: #a1a1aa !important;
+}
+
+.dark .np-deck-tab:not(.active):hover,
+html.dark .np-deck-tab:not(.active):hover {
+  color: #ffffff !important;
+}
+
+.dark .jam-rx-btn,
+html.dark .jam-rx-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.dark .jam-rx-btn:hover,
+html.dark .jam-rx-btn:hover {
+  background: rgba(255, 255, 255, 0.16) !important;
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.dark #jamSessionBanner,
+html.dark #jamSessionBanner {
+  background: linear-gradient(135deg, rgba(30, 27, 75, 0.92) 0%, rgba(15, 23, 42, 0.95) 100%) !important;
+  border: 1px solid rgba(129, 140, 248, 0.3) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6) !important;
+}
+
+.dark #jamChatMessages,
+html.dark #jamChatMessages {
+  background: #101013 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Docked Mini-Player Widget */
+.dark #tm-widget,
+html.dark #tm-widget {
+  background: rgba(16, 16, 20, 0.94) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.7) !important;
+}
+
+.dark #tm-widget h3,
+.dark #tm-widget [data-title],
+html.dark #tm-widget h3,
+html.dark #tm-widget [data-title] {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+.dark #tm-widget p,
+.dark #tm-widget [data-artist],
+html.dark #tm-widget p,
+html.dark #tm-widget [data-artist] {
+  color: #a1a1aa !important;
+}
+
+/* Lyrics Styling in Mobile Dark Mode */
+.dark .lyric-line,
+html.dark .lyric-line {
+  color: #71717a !important;
+  transition: color 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .lyric-active,
+html.dark .lyric-active {
+  border-left-color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+}
+
+.dark .lyric-active .lyric-text,
+html.dark .lyric-active .lyric-text {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.25) !important;
+}
+
+.dark .lyric-word,
+html.dark .lyric-word {
+  background-image: linear-gradient(
+    90deg,
+    #ffffff 0%,
+    #ffffff var(--progress, 0%),
+    rgba(255, 255, 255, 0.32) var(--progress, 0%),
+    rgba(255, 255, 255, 0.32) 100%
+  ) !important;
+}
+
+.dark .tm-lyrics-full,
+html.dark .tm-lyrics-full {
+  background: rgba(9, 9, 11, 0.98) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+}
+
+/* Full Queue Sheet & Onboarding in Dark Mode */
+.dark #tm-queue-sheet [data-q-panel],
+html.dark #tm-queue-sheet [data-q-panel] {
+  background: #141417 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.85) !important;
+}
+
+/* Network state on the header avatar (mobile/net.js paints data-net-state +
+   --tm-net-fill). Stylesheet !important beats an inline style, so the fill
+   rides an attribute + var — never an inline background (that measured
+   rgba(0,0,0,0) under the theme gradients). (0,2,3) beats both themes'
+   button rules (0,2,2); later in the file breaks any remaining tie. */
+html body button[data-nav="settings"][data-net-state] {
+  background: var(--tm-net-fill, #10b981) !important;
+  border-color: transparent !important;
+}
+html body button[data-nav="settings"][data-net-state] .material-symbols-outlined {
+  color: #ffffff !important;
+}

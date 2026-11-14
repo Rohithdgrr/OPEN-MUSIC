@@ -5,6 +5,7 @@
 // for 3s whenever the reader scrolls the card themselves) and the Full View
 // stage toggled by the card header.
 import { audio, onAudioSwap } from "./player.js";
+import { activeLyricIndex, normalizeSyncedLines } from "./lyric-timeline.js";
 
 // Enhanced LRC carries per-word stamps: `[00:12.34]<00:12.34>Kesariya <00:12.89>tera`.
 // Rust's LRC parser keeps the text after the line stamp, tags included, so the
@@ -15,6 +16,8 @@ const TEXT_CLASS = "lyric-text text-[13px] leading-relaxed transition-all durati
 
 let box = null;
 let lines = [];
+let timedLines = [];
+let lineTimes = [];
 let scrollTarget = null;
 let raf = null;
 // While the reader is dragging the list themselves, auto-scroll stands down
@@ -152,13 +155,16 @@ function addLine(seconds, text, endSeconds) {
 export function renderLyrics(target, data) {
   box = target;
   lines = [];
+  timedLines = [];
+  lineTimes = [];
   scrollTarget = null;
   // Load this track's stored nudge before the first sync (P1-1). Callers
   // that know the id pass it; standalone callers keep the current target.
   if (data && data.trackId !== undefined) setLyricTrack(data.trackId);
   const synced = Array.isArray(data && data.synced) ? data.synced : [];
   const plain = data && typeof data.plain === "string" ? data.plain : "";
-  if (!synced.length && !plain.trim()) {
+  const ordered = normalizeSyncedLines(synced);
+  if (!ordered.length && !plain.trim()) {
     box.innerHTML = '<span class="font-body-sm text-secondary italic">No lyrics found</span>';
     stop();
     return;
@@ -175,9 +181,9 @@ export function renderLyrics(target, data) {
     box.addEventListener("wheel", userScroll, { passive: true, capture: true });
     box.addEventListener("touchmove", userScroll, { passive: true, capture: true });
   }
-  if (synced.length) {
-    synced.forEach(([seconds, text], i) => {
-      const nextT = i + 1 < synced.length ? synced[i + 1][0] : seconds + 4;
+  if (ordered.length) {
+    ordered.forEach(([seconds, text], i) => {
+      const nextT = i + 1 < ordered.length ? ordered[i + 1][0] : seconds + 4;
       addLine(seconds, text, nextT);
     });
   } else {
@@ -190,6 +196,8 @@ export function renderLyrics(target, data) {
     box.appendChild(cr);
   }
   lines = [...box.querySelectorAll(".lyric-line")];
+  timedLines = lines.filter((line) => Number.isFinite(Number(line.dataset.seconds)));
+  lineTimes = timedLines.map((line) => Number(line.dataset.seconds));
   syncLyrics();
   if (!audio.paused) start();
 }
@@ -200,6 +208,8 @@ export function resetLyrics() {
   stop();
   box = null;
   lines = [];
+  timedLines = [];
+  lineTimes = [];
   scrollTarget = null;
   currentTrackId = null;
 }
@@ -207,12 +217,8 @@ export function resetLyrics() {
 export function syncLyrics() {
   if (!lines.length || !box || !box.isConnected) return;
   const t = audio.currentTime + offsetMs / 1000;
-  let active = null;
-  for (const line of lines) {
-    const raw = line.dataset.seconds;
-    if (raw == null) continue;
-    if (parseFloat(raw) <= t) active = line;
-  }
+  const activeIndex = activeLyricIndex(lineTimes, t);
+  const active = activeIndex < 0 ? null : timedLines[activeIndex];
   for (const line of lines) {
     const on = line === active;
     const past = line.dataset.seconds != null && parseFloat(line.dataset.seconds) < t && !on;

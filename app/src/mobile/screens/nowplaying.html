@@ -30,8 +30,12 @@ Solo
 </div>
 </div>
 </header>
-<main class="flex flex-col relative w-full pt-14 bg-surface min-h-screen">
-<div class="flex flex-col w-full pb-safe max-w-md mx-auto" id="np-top">
+<main class="flex flex-col relative w-full pt-14 bg-transparent min-h-screen" id="np-main">
+<div aria-hidden="true" id="np-backdrop">
+<img alt="" aria-hidden="true" class="np-backdrop-art" id="np-backdrop-a"/>
+<img alt="" aria-hidden="true" class="np-backdrop-art" id="np-backdrop-b"/>
+</div>
+<div class="relative z-10 flex flex-col w-full pb-safe max-w-md mx-auto" id="np-top">
 <section class="hidden px-margin pt-2.5 pb-1 flex-col gap-2 transition-all duration-300" id="jamSessionBanner">
 <div class="flex items-center justify-between bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 px-3 py-1.5 rounded-2xl shadow-xs gap-2">
 <div class="flex items-center gap-2 min-w-0">
@@ -76,6 +80,10 @@ Solo
 <div class="relative w-full aspect-square rounded-3xl overflow-hidden bg-surface-container-high group transition-all duration-300" id="np-art-card">
 <img alt="" class="absolute inset-0 w-full h-full object-cover" id="np-art" src="logo.png"/>
 </div>
+</section>
+<section class="px-margin pt-1" aria-label="Audio visualization">
+<canvas id="np-visualizer" class="block h-8 w-full text-on-surface-variant" aria-hidden="true"></canvas>
+<span class="sr-only">Decorative audio visualization of current playback.</span>
 </section>
 <!-- Title / artist -->
 <section class="px-margin pt-2">

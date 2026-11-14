@@ -17,16 +17,18 @@ test("font files ship in app/src/fonts", () => {
   }
 });
 
-test("mobile head: local @font-faces, no Google font links", () => {
+test("mobile shell: local stylesheet/fonts, no Google font links", () => {
   const html = readFileSync(join(root, "mobile", "index.html"), "utf8");
-  assert.ok(html.includes('url("/fonts/icons.woff2")'), "icons @font-face");
-  assert.ok(html.includes('url("/fonts/geist-latin.woff2")'), "geist @font-face");
-  assert.ok(html.includes('url("/fonts/jetbrains-mono-latin.woff2")'), "mono @font-face");
+  const shell = readFileSync(join(root, "mobile", "shell.css"), "utf8");
+  assert.ok(html.includes('<link rel="stylesheet" href="shell.css">'), "local shell stylesheet");
+  assert.ok(!/<style\b/i.test(html), "mobile inline style blocks removed");
+  assert.ok(shell.includes('url("/fonts/icons.woff2")'), "icons @font-face");
+  assert.ok(shell.includes('url("/fonts/geist-latin.woff2")'), "geist @font-face");
+  assert.ok(shell.includes('url("/fonts/jetbrains-mono-latin.woff2")'), "mono @font-face");
   assert.ok(!html.includes("fonts.googleapis.com"), "googleapis link gone");
   assert.ok(!html.includes("fonts.gstatic.com"), "gstatic link gone");
-  // the class definition that only Google's stylesheet carried must stay
-  assert.ok(html.includes(".material-symbols-outlined {"), "icon class rule");
-  assert.ok(html.includes("-webkit-font-feature-settings: 'liga'"), "liga rule");
+  assert.ok(shell.includes(".material-symbols-outlined {"), "icon class rule");
+  assert.ok(shell.includes("-webkit-font-feature-settings: 'liga'"), "liga rule");
 });
 
 test("desktop head: local @font-faces, no Google font links", () => {
@@ -43,4 +45,17 @@ test("CSPs no longer allow the Google font domains", () => {
     assert.ok(!raw.includes("fonts.googleapis.com"), `${name} style-src`);
     assert.ok(!raw.includes("fonts.gstatic.com"), `${name} font-src`);
   }
+});
+
+test("Android CSP blocks inline style elements but permits runtime style attributes", () => {
+  const config = JSON.parse(androidRoot);
+  const directives = Object.fromEntries(
+    config.app.security.csp.split(";").map((part) => {
+      const [name, ...values] = part.trim().split(/\s+/);
+      return [name, values];
+    }),
+  );
+  assert.deepEqual(directives["style-src-elem"], ["'self'"]);
+  assert.deepEqual(directives["style-src-attr"], ["'unsafe-inline'"]);
+  assert.deepEqual(directives["style-src"], ["'self'", "'unsafe-inline'"]);
 });

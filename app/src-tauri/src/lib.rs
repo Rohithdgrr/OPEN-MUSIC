@@ -340,6 +340,93 @@ fn store_favs(
         .favs(limit.unwrap_or(100) as i64)
 }
 
+#[tauri::command]
+fn store_track_tag_set(
+    track: serde_json::Value,
+    tag: String,
+    enabled: bool,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .set_track_tag(&track, &tag, enabled)
+}
+
+#[tauri::command]
+fn store_track_tags(id: String, state: State<'_, Arc<AppState>>) -> Result<Vec<String>, String> {
+    check_id(&id)?;
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .track_tags(&id)
+}
+
+#[tauri::command]
+fn store_track_tags_replace(
+    track: serde_json::Value,
+    tags: Vec<String>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .replace_track_tags(&track, &tags)
+}
+
+#[tauri::command]
+fn store_smart_playlist_put(
+    id: String,
+    name: String,
+    rule: store::SmartRule,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .put_smart_playlist(&id, &name, &rule)
+}
+
+#[tauri::command]
+fn store_smart_playlists(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::SmartPlaylist>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .smart_playlists()
+}
+
+#[tauri::command]
+fn store_smart_playlist_delete(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .delete_smart_playlist(&id)
+}
+
+#[tauri::command]
+fn store_smart_playlist_tracks(
+    id: String,
+    limit: Option<u32>,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<store::SongRow>, String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .smart_playlist_tracks(&id, limit.unwrap_or(100) as i64)
+}
+
 /// Most-played songs by counter.
 #[tauri::command]
 fn store_most_played(
@@ -1844,6 +1931,13 @@ pub fn run() {
             store_song_get,
             store_recent,
             store_favs,
+            store_track_tag_set,
+            store_track_tags,
+            store_track_tags_replace,
+            store_smart_playlist_put,
+            store_smart_playlists,
+            store_smart_playlist_delete,
+            store_smart_playlist_tracks,
             store_most_played,
             store_play,
             store_play_event,

@@ -8,7 +8,7 @@ import path from "node:path";
 
 const SRC = path.resolve(import.meta.dirname, "../src/mobile");
 const read = (f) => fs.readFileSync(path.join(SRC, f), "utf8");
-const shell = read("index.html");
+const shell = read("shell.css");
 const app = read("app.js");
 const binders = read("binders.js");
 

@@ -2825,3 +2825,61 @@ all REJECTED; `cache_stats` has no canvas fields.
 
 Status: ✅ removed + gated + built + device-verified ⏳ **nothing committed or
 pushed (rule 1)**. `.build_lf.sh` removed from the tree. Emulator left running.
+
+## 2026-11-14d — Remaining provider/mobile proposal items implemented locally
+
+Completed the implementable remainder of the pasted proposal. The catalog
+integration remains blocked until its HTTPS base URL and API contract are
+provided; no endpoint was guessed or added to the media relay allowlist.
+
+| Area | Work and evidence |
+|---|---|
+| Provider/release checks | Bounded LRCLIB retries, CDN-host circuit breaker, scheduled upstream API-contract checks, and SHA-256 release checksums are recorded in `docs/cache-architecture.md`, `docs/cross-platform-ci.md`, and `CHANGELOG.md` |
+| Mobile features | Local-calendar yearly listening summary + tests; active-room Jam roster; Now Playing audio visualizer on the existing graph; recorded in `docs/mobile/06-features.md` |
+| Android-only bundling/CSP | Extracted the mobile shell styles to `shell.css`; added split esbuild output and a source fallback entry; Android build paths bundle while desktop/source builds clear generated mobile output; Android CSP blocks inline style elements while retaining runtime style attributes and a legacy fallback |
+| Gates | Focused mobile suites **43/43**; `npm run lint` clean; `npm run build:mobile` successful; generated JS `node --check` clean; exact CSS extraction comparison passed |
+| Full suite limit | Sequential full run reached `sidecar.test.mjs`: “probe hits a real socket on 127.0.0.1” failed after ~1.5 s, then the test process retained its server handle and made no further progress; stopped it. Detailed failure summary was not emitted before stopping, so cause is unresolved and the full suite is **not claimed green** |
+| Not verified | No Android build/device run. `bash -n app/build.sh` was denied in the sandbox; Rust validation was not retried. npm install reported **4 moderate** advisories; not remediated in this scoped change |
+
+Status: ✅ implementation, docs, focused tests, lint, and mobile bundle build
+⏳ full-suite/device verification incomplete ⏳ **nothing committed or pushed
+(rule 1)**.
+
+## 2026-11-14e — Android Now Playing polish + native share cards (uncommitted)
+
+Continued the Android-only feature phases. Phase 1 adds a two-layer artwork
+backdrop that changes only when the image URL changes, reduced-motion-aware
+opacity fades, and binary-search lyric timing over normalized lines. Phase 2
+completes the existing PNG card route for Android: `shareCard` tries the native
+image bridge, then Web Share files, native text, and clipboard; Kotlin validates
+the bounded PNG, stores it in app-private cache, and grants a non-exported
+read-only content URI to the chooser. `build.sh` injects the provider
+idempotently; no broad storage permission or dependency was added.
+
+**Evidence:** focused mobile/player/share tests **12/12**; `npm run lint` clean;
+`npm run build:mobile` exit 0; `node --check` and `git diff --check` clean.
+The full test suite is not claimed green: its run was stopped without a summary
+after stalling, and the 2026-11-14d local-socket failure remains unresolved.
+APK/device verification is **blocked by the sandbox**: Git Bash exited before
+the build with `NtCreateDirectoryObject(...): 0xC0000022`; ADB also could not
+start its daemon, so no chooser/device claim is made. Nothing committed or
+pushed (rule 1).
+
+## 2026-11-14f — Mobile smart playlists + track tags wired (uncommitted)
+
+Completed the mobile UI slice for the SQLite smart-playlist/tag backend:
+Playlists now has Smart/Create controls, the four bounded rules (liked,
+minimum plays, tag, language), delete confirmation, and a detail route that
+queries up to 200 current local song rows. Track menus can edit comma-separated
+tags through the existing input sheet. Docs: `docs/mobile/06-features.md` and
+the Unreleased section in `CHANGELOG.md`.
+
+**Evidence:** focused mobile graph + smart-playlist JS tests **7/7**; ESLint,
+JavaScript syntax checks, in-memory esbuild, generated CSS selector checks,
+and `git diff --check` passed. `npm.cmd test` stalled without a summary after
+more than five minutes and was stopped; the full suite is not claimed green.
+Rust tests could not run: rust-lld lacks Windows SDK libraries, `link.exe` is
+not installed, and direct `rustfmt.exe` access to
+`C:\Users\rohit\.rustup\settings.toml` was denied by the sandbox. The prior
+`cargo fmt --check` also reported an unrelated existing `proxy.rs` diff.
+No Android build/device run. Nothing committed or pushed (rule 1).

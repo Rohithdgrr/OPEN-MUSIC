@@ -22,6 +22,7 @@
 import { art, FAVS_KEY, invoke, load, PLAYS_KEY, toast } from "./shared.js";
 import { paintQr } from "../qrview.js";
 import { onPaint, playerState, playList, queueHistory, queueUpNext, repaint, seek, toggle, insertNext, enqueue } from "./player.js";
+import { visibleRoomMembers } from "./jam-roster.js";
 import {
   createRoomState,
   inviteText,
@@ -873,9 +874,69 @@ function paintQrSurface(share) {
   } catch {}
 }
 
+function paintHomeRoster() {
+  const section = document.querySelector("[data-jam-roster]");
+  if (!section) return;
+  const list = section.querySelector("[data-jam-roster-list]");
+  const roomLabel = section.querySelector("[data-jam-roster-room]");
+  const count = section.querySelector("[data-jam-roster-count]");
+  const active = room.role === "host" || room.role === "guest";
+
+  if (!active) {
+    section.hidden = true;
+    section.classList.add("hidden");
+    if (list) {
+      list.replaceChildren();
+      delete list.dataset.signature;
+    }
+    if (roomLabel) roomLabel.textContent = "";
+    if (count) count.textContent = "";
+    return;
+  }
+
+  section.hidden = false;
+  section.classList.remove("hidden");
+  if (roomLabel) roomLabel.textContent = room.code ? `Jam Room #${room.code}` : "Active Jam room";
+  if (count) count.textContent = `${memberCount(room)} listening`;
+  if (!list) return;
+
+  const members = visibleRoomMembers(room.role, room.members);
+  const signature = members.map((member) => `${member.id || ""}|${member.name}|${member.host ? "host" : "guest"}`).join(";");
+  if (list.dataset.signature === signature) return;
+  list.dataset.signature = signature;
+  list.replaceChildren();
+
+  if (!members.length) {
+    const waiting = document.createElement("span");
+    waiting.className = "font-body-sm text-[12px] text-secondary";
+    waiting.textContent = "Waiting for room members…";
+    list.append(waiting);
+    return;
+  }
+
+  for (const member of members) {
+    const chip = document.createElement("span");
+    chip.className = "inline-flex max-w-full items-center gap-1.5 rounded-full border border-surface-container-high/70 bg-surface-container-low px-2.5 py-1 font-body-sm text-[11px] text-on-surface";
+    const avatar = document.createElement("span");
+    avatar.className = "flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-container-high font-label-sm text-[9px] font-semibold";
+    avatar.textContent = initialsOf(member.name);
+    const name = document.createElement("span");
+    name.className = "max-w-32 truncate";
+    name.textContent = member.name;
+    chip.append(avatar, name);
+    if (member.host) {
+      const role = document.createElement("span");
+      role.className = "font-label-sm text-[8px] font-semibold text-secondary";
+      role.textContent = "HOST";
+      chip.append(role);
+    }
+    list.append(chip);
+  }
+}
+
 /// Paint everything the mobile screen shows. Null-safe: a room can stay open
 /// while the user is on another screen, and then there is nothing to paint.
-function paintJam() {
+export function paintJam() {
   const st = playerState();
   const inRoom = room.role !== "idle";
   const social = inRoom || socialChrome;
@@ -939,6 +1000,7 @@ function paintJam() {
   // Chat and Jam Data are social-only; a Solo deck must not offer them.
   show(el("chatTabBtn"), social, "flex");
   show(el("jamDataTabBtn"), social, "flex");
+  paintHomeRoster();
   setText("jamChatState", inRoom ? `${memberCount(room)} in room` : "No room");
   if (!social) {
     const active = document.querySelector(".tab-btn.bg-primary");

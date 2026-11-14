@@ -17,7 +17,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::jiosaavn::{check_id, html_unescape};
+use crate::jiosaavn::{backoff_ms, check_id, html_unescape, retry_after_delay};
+use std::time::Duration;
 
 /// Base url of the community lyrics database.
 const LRCLIB: &str = "https://lrclib.net/api";
@@ -29,6 +30,7 @@ const BETTER: &str = "https://api.betterlyrics.org/getLyrics";
 /// it is treated as a different song, in seconds. Single source for the module
 /// comment above and the check in [`Hit::duration_ok`].
 const DURATION_TOLERANCE_SECS: f64 = 3.0;
+const LRCLIB_MAX_RETRIES: u32 = 2;
 
 /// One answer for the lyrics stage. `Deserialize` carries the L4 disk tier:
 /// entries are written as JSON and read back by `proxy::cached_lyrics`.
@@ -321,21 +323,54 @@ async fn lrclib_search(
         .find(|h| !h.is_empty()))
 }
 
-/// GET with the two statuses LRCLIB uses for "not here": `200` and `404`.
+/// GET with bounded retries for transient transport errors, 429, and 5xx.
+/// LRCLIB's 404 is a final "not found"; malformed JSON and other 4xx are
+/// final too, so a bad contract never becomes a retry loop.
 async fn get_json(client: &reqwest::Client, url: &str) -> Result<Option<Value>, String> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("GET {url}: {e}"))?;
-    if resp.status().as_u16() == 404 {
-        return Ok(None);
+    for attempt in 0..=LRCLIB_MAX_RETRIES {
+        let resp = match client.get(url).send().await {
+            Ok(resp) => resp,
+            Err(_) if attempt < LRCLIB_MAX_RETRIES => {
+                tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
+                continue;
+            }
+            Err(error) => return Err(format!("GET {url}: {error}")),
+        };
+        let status = resp.status();
+        if status.as_u16() == 404 {
+            return Ok(None);
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
+            if attempt < LRCLIB_MAX_RETRIES {
+                let delay = retry_after_delay(&resp)
+                    .unwrap_or_else(|| Duration::from_millis(backoff_ms(attempt)));
+                tokio::time::sleep(delay).await;
+                continue;
+            }
+            return Err(format!(
+                "{url} -> HTTP {status} after {} attempts",
+                attempt + 1
+            ));
+        }
+        if !status.is_success() {
+            return Err(format!("{url} -> HTTP {status}"));
+        }
+        let body = match resp.text().await {
+            Ok(body) => body,
+            Err(_) if attempt < LRCLIB_MAX_RETRIES => {
+                tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
+                continue;
+            }
+            Err(error) => return Err(format!("read {url}: {error}")),
+        };
+        return serde_json::from_str(&body)
+            .map(Some)
+            .map_err(|e| format!("decode {url}: {e}"));
     }
-    if !resp.status().is_success() {
-        return Err(format!("{url} -> HTTP {}", resp.status()));
-    }
-    let body = resp.text().await.map_err(|e| format!("read {url}: {e}"))?;
-    serde_json::from_str(&body).map_err(|e| format!("decode {url}: {e}"))
+    Err(format!(
+        "GET {url}: exhausted {} attempts",
+        LRCLIB_MAX_RETRIES + 1
+    ))
 }
 
 fn record(v: &Value) -> Hit {
@@ -436,6 +471,8 @@ fn parse_stamp(stamp: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{method, path as url_path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn parse_lrc_reads_stamps_and_drops_metadata() {
@@ -537,6 +574,67 @@ mod tests {
             stale: false,
         };
         assert!(!l.has_content());
+    }
+
+    #[tokio::test]
+    async fn lrclib_retries_transient_status_and_succeeds() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(url_path("/api/get"))
+            .respond_with(ResponseTemplate::new(503).insert_header("Retry-After", "0"))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(url_path("/api/get"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .mount(&server)
+            .await;
+
+        let url = format!("{}/api/get", server.uri());
+        let value = get_json(&crate::jiosaavn::api_client(), &url)
+            .await
+            .expect("transient 503 then 200");
+        assert_eq!(value, Some(serde_json::json!({"ok": true})));
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn lrclib_retry_budget_is_bounded() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(url_path("/api/get"))
+            .respond_with(ResponseTemplate::new(503).insert_header("Retry-After", "0"))
+            .mount(&server)
+            .await;
+
+        let url = format!("{}/api/get", server.uri());
+        assert!(get_json(&crate::jiosaavn::api_client(), &url)
+            .await
+            .is_err());
+        assert_eq!(
+            server.received_requests().await.unwrap().len(),
+            (LRCLIB_MAX_RETRIES + 1) as usize
+        );
+    }
+
+    #[tokio::test]
+    async fn lrclib_not_found_is_not_retried() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(url_path("/api/get"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+
+        let url = format!("{}/api/get", server.uri());
+        assert_eq!(
+            get_json(&crate::jiosaavn::api_client(), &url)
+                .await
+                .expect("404 is a provider miss"),
+            None
+        );
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     // ---- Live contract tests (require network) ----

@@ -50,6 +50,10 @@ class TmBridge(private val hub: MediaHub) {
     hub.share(text)
   }
 
+  @JavascriptInterface
+  fun shareImage(dataUrl: String, title: String, text: String): String =
+    hub.shareImage(dataUrl, title, text)
+
   /// "Save to local" (menus.js trackMenu): copy one vaulted song file into the
   /// device's MediaStore (Music/OpenMusic/) so other players see it. Distinct
   /// from "Download", which vaults into the app-private folder only OpenMusic

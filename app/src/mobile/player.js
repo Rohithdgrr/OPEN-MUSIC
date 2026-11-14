@@ -593,6 +593,7 @@ function skipExplicit(track) {
 let eqCtx = null;
 const eqChains = new Map(); // element -> { low, mid, high, comp, gain }
 let eqNodes = null; // legacy alias: the audible element's chain
+let visualizerRoute = null;
 
 export function ensureEqChain(el) {
   const target = el || audio;
@@ -622,6 +623,64 @@ export function ensureEqChain(el) {
     return chain;
   } catch {
     return null;
+  }
+}
+
+export function mobileVisualizerAnalyser() {
+  const chain = ensureEqChain(audio);
+  if (!chain || !eqCtx) return null;
+  if (visualizerRoute && visualizerRoute.chain === chain) return visualizerRoute.analyser;
+
+  releaseMobileVisualizer();
+  let analyser = null;
+  let silentGain = null;
+  try {
+    analyser = eqCtx.createAnalyser();
+    silentGain = eqCtx.createGain();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.78;
+    silentGain.gain.value = 0;
+    chain.out.connect(analyser);
+    analyser.connect(silentGain);
+    silentGain.connect(eqCtx.destination);
+    visualizerRoute = { chain, analyser, silentGain };
+    return analyser;
+  } catch (error) {
+    const cleanup = (label, action) => {
+      try {
+        action();
+      } catch (cleanupError) {
+        console.error(`Visualizer cleanup failed: ${label}`, cleanupError);
+      }
+    };
+    if (analyser) {
+      cleanup("source", () => chain.out.disconnect(analyser));
+      cleanup("node", () => analyser.disconnect());
+    }
+    if (silentGain) cleanup("gain", () => silentGain.disconnect());
+    console.error("Could not attach the mobile visualizer analyser", error);
+    return null;
+  }
+}
+
+export function releaseMobileVisualizer() {
+  const route = visualizerRoute;
+  visualizerRoute = null;
+  if (!route) return;
+  try {
+    route.chain.out.disconnect(route.analyser);
+  } catch (error) {
+    console.error("Could not detach the mobile visualizer source", error);
+  }
+  try {
+    route.analyser.disconnect();
+  } catch (error) {
+    console.error("Could not detach the mobile visualizer node", error);
+  }
+  try {
+    route.silentGain.disconnect();
+  } catch (error) {
+    console.error("Could not detach the mobile visualizer gain", error);
   }
 }
 

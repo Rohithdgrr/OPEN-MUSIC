@@ -4,17 +4,20 @@
   "version": "0.5.1",
   "type": "module",
   "scripts": {
-    "tauri": "tauri",
+    "tauri": "node scripts/build-mobile.mjs --clean && tauri",
+    "tauri:android": "npm run build:mobile && tauri android",
+    "build:mobile": "node scripts/build-mobile.mjs",
     "css": "tailwindcss -i tailwind.input.css -o src/tailwind.css --minify",
     "css:watch": "tailwindcss -i tailwind.input.css -o src/tailwind.css --watch",
-    "lint": "eslint src",
-    "dist:windows": "npm run css && tauri build --bundles nsis",
+    "lint": "eslint src --ignore-pattern src/mobile/dist/**",
+    "dist:windows": "node scripts/build-mobile.mjs --clean && npm run css && tauri build --bundles nsis",
     "test": "node --test \"tests/**/*.test.mjs\"",
     "test:smoke": "node ../tests/smoke-test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
+    "esbuild": "^0.25.0",
     "eslint": "^10.11.0",
     "globals": "^17.12.0",
     "tailwindcss": "^3.4.19"

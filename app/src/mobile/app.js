@@ -6,7 +6,7 @@ import { parseDeepUri } from "../sharelink.js";
 import { startNet, netMode } from "./net.js";
 import { PRESETS, arm as armSleep } from "../sleep.js";
 import { MOUNT, openLib, entityNav } from "./binders.js";
-import { initJam } from "./jam.js"; // Listen Together: Solo ↔ Social Jam, room chrome, chat
+import { initJam, paintJam } from "./jam.js"; // Listen Together: Solo ↔ Social Jam, room chrome, chat
 import { isMenuTrigger, handleMenuTrigger, trackMenu } from "./menus.js";
 import "./native.js"; // Android media surfaces: notification, lockscreen, widget, headset/car
 import "./ux.js"; // Spotify-feel gestures: tab swipe, queue drag, mini-art tap, transitions
@@ -20,6 +20,7 @@ const onSmount = async (e) => {
   if (!fn) return;
   try {
     await fn(e.detail.query);
+    paintJam();
   } catch (err) {
     console.error(err);
     toast(String(err).slice(0, 120), 5000, "error");

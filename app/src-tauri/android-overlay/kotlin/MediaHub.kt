@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
+import android.content.ClipData
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
@@ -22,11 +23,15 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.webkit.WebView
 import org.json.JSONObject
 import android.widget.RemoteViews
+import android.widget.Toast
 import java.net.HttpURLConnection
 import java.net.URL
+import java.io.FileOutputStream
+import java.util.UUID
 
 /// Owns the Android media surfaces: MediaSession (lockscreen, BT/car,
 /// headset), the MediaStyle notification (notification panel + lockscreen
@@ -50,6 +55,9 @@ object MediaHub {
 
   private const val NOTIF_ID = 4201
   private const val CHANNEL = "tm_media"
+  private const val MAX_SHARE_CARD_DATA_URL_CHARS = 12 * 1024 * 1024
+  private const val MAX_SHARE_CARD_BYTES = 9 * 1024 * 1024
+  private const val SHARE_CARD_MAX_AGE_MS = 24 * 60 * 60 * 1000L
 
   private lateinit var app: Context
   private val main = Handler(Looper.getMainLooper())
@@ -199,6 +207,72 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
       } catch (_: Exception) {
       }
     }
+  }
+
+  fun shareImage(dataUrl: String, title: String, text: String): String {
+    if (!this::app.isInitialized) return "err: app not ready"
+    if (dataUrl.length > MAX_SHARE_CARD_DATA_URL_CHARS) return "err: share image too large"
+    val prefix = "data:image/png;base64,"
+    if (!dataUrl.startsWith(prefix)) return "err: invalid share image"
+
+    val bytes = try {
+      Base64.decode(dataUrl.substring(prefix.length), Base64.NO_WRAP)
+    } catch (e: IllegalArgumentException) {
+      android.util.Log.w("OpenMusic", "[TM] shareImage: invalid base64", e)
+      return "err: invalid share image"
+    }
+    val signature = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+    if (bytes.size < signature.size || bytes.size > MAX_SHARE_CARD_BYTES ||
+      !signature.indices.all { bytes[it] == signature[it] }
+    ) {
+      return "err: invalid share image"
+    }
+
+    val directory = File(app.cacheDir, "share-cards")
+    val file = try {
+      if (!directory.exists() && !directory.mkdirs()) return "err: share cache unavailable"
+      val cutoff = System.currentTimeMillis() - SHARE_CARD_MAX_AGE_MS
+      directory.listFiles()?.forEach { old ->
+        if (old.isFile && old.lastModified() < cutoff) old.delete()
+      }
+      File(directory, "share-${UUID.randomUUID()}.png").also { output ->
+        FileOutputStream(output).use { it.write(bytes) }
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("OpenMusic", "[TM] shareImage: could not cache card", e)
+      return "err: share card could not be prepared"
+    }
+
+    val uri = Uri.parse("content://${app.packageName}.sharecards/${Uri.encode(file.name)}")
+    val shareTitle = title.trim().take(120).ifBlank { "OpenMusic" }
+    val shareText = listOf(shareTitle, text.trim().take(2000))
+      .filter { it.isNotBlank() }
+      .joinToString(" — ")
+      .take(2000)
+    if (!main.post {
+        try {
+          val send = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            if (shareText.isNotEmpty()) putExtra(Intent.EXTRA_TEXT, shareText)
+            clipData = ClipData.newUri(app.contentResolver, "OpenMusic share card", uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+          val chooser = Intent.createChooser(send, shareTitle).apply {
+            clipData = send.clipData
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+          }
+          app.startActivity(chooser)
+        } catch (e: Exception) {
+          android.util.Log.e("OpenMusic", "[TM] shareImage: could not open chooser", e)
+          Toast.makeText(app, "Could not open the share sheet", Toast.LENGTH_SHORT).show()
+        }
+      }
+    ) {
+      file.delete()
+      return "err: share sheet unavailable"
+    }
+    return "ok"
   }
 
   fun saveLocal(json: String): String {

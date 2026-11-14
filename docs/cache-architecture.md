@@ -114,3 +114,31 @@ calls (deferred to the C9 harness).
 
 No negative/error caching, no service worker, no audio byte cache beyond the
 vault, no change to vault or budget semantics, no custom eviction engine.
+
+## 9. Provider recovery and optional catalog endpoint
+
+- LRCLIB transport errors, HTTP 429, and HTTP 5xx are transient: retry at most
+  twice after the first attempt, honor only a short `Retry-After`, and use
+  bounded jittered backoff otherwise. A 404 remains a final cacheable
+  no-result; other 4xx responses and malformed JSON are not retried.
+- The CDN relay may retry a failed request only by obtaining a fresh
+  resolution for the same validated song id. It must not retry 4xx responses
+  other than the existing expired-link recovery (403/410), and must preserve
+  range headers and response semantics.
+- Repeated CDN transport/429/5xx failures trip a per-host circuit after three
+  consecutive transient failures. It fast-fails for 30 seconds, then permits
+  one half-open probe; a reachable response resets the breaker. Expired-link
+  403/410 responses do not trip it because those are resolution failures, not
+  evidence that the CDN host is down.
+- A self-hosted catalog adapter must use the existing mirror contract
+  (`/api/search/songs` and `/api/songs/{id}`) and stay disabled until a base
+  URL is configured. No URL was supplied for this implementation, so there is
+  no production default and no claim of live verification. Configured URLs
+  must be validated before any request; secrets must not be embedded in the
+  app or logged.
+
+Acceptance: a wiremock test proves transient LRCLIB recovery and bounded
+attempts; a sustained failure remains a normal provider miss so the existing
+lyrics fallback/stale-if-error path can run. CDN recovery is covered with
+range and status assertions. The optional catalog path is tested against a
+local mock and never changes the current JioSaavn-first ordering by default.

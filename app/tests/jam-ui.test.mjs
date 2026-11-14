@@ -203,7 +203,7 @@ test("the generated screen script keeps only the tab switcher", () => {
 });
 
 test("app.js boots the jam layer before the queued first mount", () => {
-  assert.match(app, /import \{ initJam \} from "\.\/jam\.js";/);
+  assert.match(app, /import \{ initJam(?:, paintJam)? \} from "\.\/jam\.js";/);
   const call = app.indexOf("initJam();");
   const flush = app.indexOf("onSmount({ detail: pendingSmount })");
   assert.ok(call > 0, "initJam is never called");
@@ -248,7 +248,7 @@ test("scan-to-join: one button, real overlay ids, decoder loaded, same join path
   );
   assert.match(idx, /<script src="\.\.\/vendor\/jsQR\.js"><\/script>/, "mobile/index.html must load the vendored decoder");
   assert.ok(
-    idx.indexOf("vendor/jsQR.js") < idx.indexOf('type="module" src="app.js"'),
+    idx.indexOf("vendor/jsQR.js") < idx.indexOf('type="module" src="entry.js"'),
     "the decoder must be a classic script before the module graph runs",
   );
 });

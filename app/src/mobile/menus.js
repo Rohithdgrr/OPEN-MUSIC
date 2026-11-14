@@ -580,6 +580,36 @@ export function trackMenu(track, ctx, idx) {
       action: () => addToPlaylist(track),
     });
     items.push({
+      icon: "label",
+      label: "Edit Tags",
+      action: async () => {
+        try {
+          const current = await invoke("store_track_tags", { id: String(track.id) });
+          openInputSheet({
+            title: "Edit track tags",
+            sub: "Separate tags with commas. Leave empty to clear them.",
+            placeholder: "road trip, hindi",
+            value: (current || []).join(", "),
+            cta: "Save tags",
+            allowEmpty: true,
+            onSubmit: (value) => {
+              const tags = value.split(",").map((tag) => tag.trim()).filter(Boolean);
+              void invoke("store_track_tags_replace", { track, tags }).then(
+                () => toast(tags.length ? "Track tags saved" : "Track tags cleared", 3000, "success"),
+                (e) => {
+                  console.error("Could not save track tags:", e);
+                  toast(String(e).slice(0, 100), 5000, "error");
+                },
+              );
+            },
+          });
+        } catch (e) {
+          console.error("Could not load track tags:", e);
+          toast(String(e).slice(0, 100), 5000, "error");
+        }
+      },
+    });
+    items.push({
       icon: "download",
       label: "Download",
       action: () => downloadTrack(track),

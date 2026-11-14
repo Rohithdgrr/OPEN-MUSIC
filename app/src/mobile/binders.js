@@ -77,6 +77,7 @@ import {
 } from "./shared.js";
 import { buildBackup, parseBackupFile, applyBackup, readSettings, writeSettings, backupFilename } from "../sync.js";
 import { playList, playerState, onPaint, toggle, next, prev, seek, toggleShuffle, cycleRepeat, repaint, insertNext, audio as mAudio } from "./player.js";
+import { mountVisualizer } from "./visualizer.js";
 import { ensureReco, isRadioOn, setRadioOn } from "./radio.js";
 import { renderLyrics, resetLyrics, syncLyrics, setLyricOffset, setLyricTrack, lyricOffsetMs } from "./lyrics.js";
 import { getGeminiKey, setGeminiKey, hasGeminiKey, fetchAiLyrics, aiCopyright } from "./ai-lyrics.js";
@@ -90,6 +91,7 @@ import { buildProfile, explain, shelfPlan, trackLangs, artistInsights, filterArt
 import { applyArtTint } from "./arttint.js";
 import { hydrateArtistArt } from "./artresolve.js";
 import { similarShelf } from "../taste.js";
+import { availableYears, PLAY_EVENT_READ_LIMIT, PLAY_EVENT_STORE_CAP, summarizeYear } from "./year-summary.js";
 import { groupLangAlbums, variantsFor } from "../albumgroup.js";
 import { matchTrackToCatalog } from "../spotmatch.js";
 const main = () => document.querySelector("#screen main");
@@ -2129,6 +2131,31 @@ async function mountPlaylists() {
   // (2026-11-12).
   const count = document.querySelector("[data-playlists-count]");
   let tab = "yours";
+  let smart = [];
+  let smartLoadError = "";
+  const tabs = m.querySelector("[data-playlists-tabs]");
+  if (tabs && !tabs.querySelector('[data-playlists-tab="smart"]')) {
+    const smartTab = document.createElement("button");
+    smartTab.type = "button";
+    smartTab.dataset.playlistsTab = "smart";
+    smartTab.textContent = "Smart";
+    smartTab.className = "px-3.5 py-1 rounded-full bg-surface-container-low border border-surface-container-high/60 text-secondary font-label-sm text-label-sm whitespace-nowrap active:scale-95 transition-all";
+    tabs.append(smartTab);
+  }
+  let createPanel = m.querySelector("[data-smart-playlist-create]");
+  if (!createPanel && tabs) {
+    createPanel = document.createElement("section");
+    createPanel.dataset.smartPlaylistCreate = "";
+    createPanel.className = "hidden rounded-2xl border border-surface-container-high/60 bg-surface-container-low p-3 space-y-3";
+    createPanel.innerHTML =
+      `<div class="flex items-center justify-between"><h2 class="font-body-md text-on-surface font-semibold">Create a smart playlist</h2><button type="button" data-smart-create-close aria-label="Close form" class="w-8 h-8 rounded-full text-secondary hover:bg-surface-container">×</button></div>` +
+      `<form data-smart-playlist-form class="space-y-3">` +
+      `<label class="block font-label-sm text-secondary">Name<input data-smart-name required maxlength="80" autocomplete="off" class="mt-1 w-full h-10 rounded-xl border border-surface-container-high/60 bg-surface px-3 text-on-surface" placeholder="Road trip"></label>` +
+      `<label class="block font-label-sm text-secondary">Include tracks where<select data-smart-kind class="mt-1 w-full h-10 rounded-xl border border-surface-container-high/60 bg-surface px-3 text-on-surface"><option value="favorite">Track is liked</option><option value="min_plays">Play count is at least</option><option value="tag">Track has this tag</option><option value="language">Language matches</option></select></label>` +
+      `<label data-smart-value-wrap class="block font-label-sm text-secondary"><span data-smart-value-label>Value</span><input data-smart-value class="mt-1 w-full h-10 rounded-xl border border-surface-container-high/60 bg-surface px-3 text-on-surface" autocomplete="off"></label>` +
+      `<button type="submit" class="w-full h-10 rounded-xl bg-primary text-on-primary font-label-md font-semibold active:scale-[0.98]">Save smart playlist</button></form>`;
+    tabs.insertAdjacentElement("afterend", createPanel);
+  }
   const lib = load(LIBRARY_KEY, []).filter((e) => e && (e.kind || (e.token ? "album" : "playlist")) === "playlist");
   const yours = lib.map((e) => {
     const n = e.local ? (e.tracks || []).length : Number(e.count) || (e.tracks || []).length;
@@ -2144,6 +2171,17 @@ async function mountPlaylists() {
     };
   });
   let featured = [];
+  if (invoke) {
+    try {
+      smart = await invoke("store_smart_playlists");
+      if (!Array.isArray(smart)) smart = [];
+    } catch (e) {
+      console.error("Could not load smart playlists:", e);
+      smartLoadError = "Smart playlists could not be loaded. Check the app database.";
+    }
+  } else {
+    smartLoadError = "Smart playlists need the app database.";
+  }
   if (invoke && netMode() !== "offline") {
     try {
       const feed = await invoke("home_feed");
@@ -2166,9 +2204,18 @@ async function mountPlaylists() {
     let rows = tab === "featured" ? featured : yours;
     if (tab === "downloaded") rows = yours.filter((p) => p.downloaded);
     if (tab === "yours") rows = [...yours].sort((a, b) => (b.local - a.local) || b.ts - a.ts);
+    if (tab === "smart") rows = smart;
+    if (tab !== "smart") createPanel?.classList.add("hidden");
+    const createToggle = tabs?.querySelector("[data-smart-create-toggle]");
+    createToggle?.classList.toggle("hidden", tab !== "smart" || !invoke);
     if (count) count.textContent = `${rows.length}`;
     if (!rows.length) {
       if (box) box.innerHTML = "";
+      if (empty) {
+        empty.textContent = tab === "smart"
+          ? smartLoadError || "No smart playlists yet. Create one to collect tracks by tag, play count, language, or likes."
+          : "Nothing here yet — save or create a playlist and it lands here.";
+      }
       empty?.classList.remove("hidden");
       return;
     }
@@ -2176,16 +2223,110 @@ async function mountPlaylists() {
     if (!box) return;
     const isGrid = layoutMode() === "grid";
     box.className = isGrid ? layoutGridClass : "flex flex-col gap-2.5";
-    box.innerHTML = isGrid
-      ? rows.map((p) => artTileHTML({ image: p.image, title: p.title, sub: p.sub, nav: p.nav, playId: p.playId })).join("")
-      : rows.map(playlistRow).join("");
+    if (tab === "smart") {
+      box.className = "flex flex-col gap-2.5";
+      box.innerHTML = rows.map((p) => {
+        const rule = p.rule || {};
+        const descriptions = {
+          favorite: "Liked tracks",
+          min_plays: `Played at least ${Number(rule.min) || 0} times`,
+          tag: `Tag: ${rule.tag || ""}`,
+          language: `Language: ${rule.language || ""}`,
+        };
+        return `<article class="rounded-2xl border border-surface-container-high/60 bg-surface-container-low p-3 flex items-center gap-3"><span class="w-10 h-10 shrink-0 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><span class="material-symbols-outlined">auto_awesome</span></span><div class="min-w-0 flex-1"><h3 class="font-body-md text-on-surface font-semibold truncate">${esc(p.name)}</h3><p class="font-body-sm text-secondary truncate">${esc(descriptions[rule.kind] || "Smart playlist")}</p></div><button type="button" data-smart-play="${esc(p.id)}" aria-label="Open ${esc(p.name)}" class="h-9 px-3 rounded-full bg-primary text-on-primary font-label-sm font-semibold">Open</button><button type="button" data-smart-delete="${esc(p.id)}" aria-label="Delete ${esc(p.name)}" class="w-9 h-9 rounded-full text-secondary hover:bg-surface-container"><span class="material-symbols-outlined text-[18px]">delete</span></button></article>`;
+      }).join("");
+    } else {
+      box.innerHTML = isGrid
+        ? rows.map((p) => artTileHTML({ image: p.image, title: p.title, sub: p.sub, nav: p.nav, playId: p.playId })).join("")
+        : rows.map(playlistRow).join("");
+    }
   };
+  if (tabs && !tabs.querySelector("[data-smart-create-toggle]")) {
+    tabs.insertAdjacentHTML("beforeend", `<button type="button" data-smart-create-toggle class="hidden px-3.5 py-1 rounded-full border border-primary/40 text-primary font-label-sm text-label-sm whitespace-nowrap">Create</button>`);
+  }
   m.querySelectorAll("[data-playlists-tab]").forEach((b) => {
     b.addEventListener("click", () => {
       tab = b.dataset.playlistsTab || "yours";
       paintTabPills(m, "data-playlists-tab", "playlistsTab", tab);
       paint();
     });
+  });
+  const createToggle = tabs?.querySelector("[data-smart-create-toggle]");
+  createToggle?.addEventListener("click", () => {
+    createPanel?.classList.toggle("hidden");
+    if (!createPanel?.classList.contains("hidden")) createPanel.querySelector("[data-smart-name]")?.focus();
+  });
+  createPanel?.querySelector("[data-smart-create-close]")?.addEventListener("click", () => createPanel.classList.add("hidden"));
+  const ruleKind = createPanel?.querySelector("[data-smart-kind]");
+  const valueWrap = createPanel?.querySelector("[data-smart-value-wrap]");
+  const valueField = createPanel?.querySelector("[data-smart-value]");
+  const valueLabel = createPanel?.querySelector("[data-smart-value-label]");
+  const paintRuleInput = () => {
+    const kind = ruleKind?.value;
+    const needsValue = kind !== "favorite";
+    valueWrap?.classList.toggle("hidden", !needsValue);
+    if (valueField) {
+      valueField.required = needsValue;
+      valueField.type = kind === "min_plays" ? "number" : "text";
+      valueField.min = kind === "min_plays" ? "1" : "";
+      valueField.max = kind === "min_plays" ? "1000000" : "";
+      valueField.maxLength = kind === "tag" ? 32 : 24;
+      valueField.placeholder = kind === "min_plays" ? "10" : kind === "tag" ? "road trip" : "hindi";
+    }
+    if (valueLabel) valueLabel.textContent = kind === "min_plays" ? "Minimum plays" : kind === "tag" ? "Tag" : "Language";
+  };
+  ruleKind?.addEventListener("change", paintRuleInput);
+  paintRuleInput();
+  createPanel?.querySelector("[data-smart-playlist-form]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!invoke) return toast("Smart playlists need the app database", 4000, "error");
+    const name = createPanel.querySelector("[data-smart-name]")?.value.trim();
+    const value = createPanel.querySelector("[data-smart-value]")?.value.trim() || "";
+    const kind = ruleKind?.value;
+    const rule = kind === "favorite" ? { kind: "favorite" }
+      : kind === "min_plays" ? { kind, min: Number(value) }
+        : kind === "tag" ? { kind, tag: value }
+          : { kind: "language", language: value };
+    const randomId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    try {
+      await invoke("store_smart_playlist_put", { id: `sp-${randomId}`, name, rule });
+      smart = await invoke("store_smart_playlists");
+      if (!Array.isArray(smart)) smart = [];
+      smartLoadError = "";
+      createPanel.querySelector("[data-smart-playlist-form]")?.reset();
+      paintRuleInput();
+      createPanel.classList.add("hidden");
+      tab = "smart";
+      paintTabPills(m, "data-playlists-tab", "playlistsTab", tab);
+      paint();
+      toast("Smart playlist saved", 3000, "success");
+    } catch (e) {
+      console.error("Could not save smart playlist:", e);
+      toast(String(e).slice(0, 100), 5000, "error");
+    }
+  });
+  box?.addEventListener("click", async (event) => {
+    const target = event.target;
+    const remove = target?.closest?.("[data-smart-delete]");
+    if (remove) {
+      const item = smart.find((p) => p.id === remove.dataset.smartDelete);
+      if (!item || !window.confirm(`Delete “${item.name}”?`)) return;
+      try {
+        await invoke("store_smart_playlist_delete", { id: item.id });
+        smart = await invoke("store_smart_playlists");
+        if (!Array.isArray(smart)) smart = [];
+        paint();
+      } catch (e) {
+        console.error("Could not delete smart playlist:", e);
+        toast(String(e).slice(0, 100), 5000, "error");
+      }
+      return;
+    }
+    const open = target?.closest?.("[data-smart-play]");
+    if (!open) return;
+    const item = smart.find((p) => p.id === open.dataset.smartPlay);
+    if (!item) return;
+    go(`playlist?smart=1&id=${encodeURIComponent(item.id)}&title=${encodeURIComponent(item.name)}`);
   });
   paint();
 }
@@ -3426,6 +3567,25 @@ async function mountDetail(kind, query) {
       );
       wireHeaderDownload(m, "playlist tracks");
       wireLocalPlaylistTools(m, kind, query, rec.id);
+    } else if (kind === "playlist" && q.get("smart") === "1") {
+      const rows = await invoke("store_smart_playlist_tracks", { id, limit: 200 });
+      const tracks = (Array.isArray(rows) ? rows : [])
+        .filter((row) => row && typeof row === "object")
+        .map((row) => {
+          const data = row.data && typeof row.data === "object" && !Array.isArray(row.data) ? row.data : {};
+          return {
+            ...data,
+            id: data.id || row.id,
+            title: data.title || row.title || "",
+            artist: data.artist || row.artist || "",
+            album: data.album || row.album || "",
+            image: data.image || row.image || "",
+            duration: data.duration || row.duration_secs || 0,
+            language: data.language || row.language || "",
+          };
+        });
+      paintDetailLang(m, kind, tracks, { ...meta, count: String(tracks.length) });
+      wireHeaderDownload(m, "smart playlist tracks");
     } else if (kind === "playlist") {
       paintDetailLang(m, kind, asTracks(await withSnap(`playlist:${id}`, () => invoke("playlist_tracks", { id }))), meta);
       wireHeaderDownload(m, "playlist tracks");
@@ -3695,6 +3855,43 @@ function sharedSig() {
   }
 }
 
+function paintNowPlayingBackdrop(artImg) {
+  const backdrop = document.getElementById("np-backdrop");
+  if (!backdrop || !artImg) return;
+  const src = artImg.currentSrc || artImg.src;
+  if (!src || backdrop.dataset.artSrc === src) return;
+
+  backdrop.dataset.artSrc = src;
+  document.documentElement.style.removeProperty("--np-tint");
+  const layers = [
+    document.getElementById("np-backdrop-a"),
+    document.getElementById("np-backdrop-b"),
+  ];
+  const active = backdrop.dataset.active === "1" ? 1 : 0;
+  const next = 1 - active;
+  const incoming = layers[next];
+  if (!incoming) return;
+  const outgoing = layers[active];
+
+  incoming.style.opacity = "0";
+  incoming.onload = () => {
+    if (!backdrop.isConnected || backdrop.dataset.artSrc !== src) return;
+    incoming.style.opacity = "1";
+    if (outgoing) outgoing.style.opacity = "0";
+    backdrop.dataset.active = String(next);
+  };
+  incoming.onerror = () => {
+    if (backdrop.dataset.artSrc === src) incoming.style.opacity = "0";
+  };
+  incoming.src = src;
+  if (incoming.complete && incoming.naturalWidth) incoming.onload();
+  applyArtTint(artImg, (css) => {
+    if (backdrop.isConnected && backdrop.dataset.artSrc === src) {
+      document.documentElement.style.setProperty("--np-tint", css);
+    }
+  });
+}
+
 function paintNowplaying(st) {
   const m = main();
   if (!m || !m.querySelector("#scrubber-bar")) {
@@ -3743,18 +3940,11 @@ function paintNowplaying(st) {
       headerArtist.dataset.entityName = "";
       headerArtist.dataset.entityKind = "artist";
     }
-    const artImg = m.querySelector("img");
+    const artImg = document.getElementById("np-art") || m.querySelector("img");
     // Always paint — see the widget: an artless track must fall back to the
     // brand mark instead of keeping the last cover (06-features batch).
     if (artImg) paintArt(artImg, t.image || "");
-    // Now Playing follows the artwork in the light theme: the page tint is
-    // the cover's own colour (arttint.js). Dark mode keeps its flat
-    // surface — a coloured wash there fights the artwork.
-    if (artImg) {
-      applyArtTint(document.getElementById("np-art") || artImg, (css) => {
-        document.documentElement.style.setProperty("--np-tint", css);
-      });
-    }
+    if (artImg) paintNowPlayingBackdrop(artImg);
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
     // The action-row Like icon mirrors the same state (paintFavs covers every
@@ -3762,6 +3952,12 @@ function paintNowplaying(st) {
     const ali = document.querySelector("#np-action-like [data-fav-icon]");
     if (ali) ali.dataset.favIcon = t.id || "";
     paintFavs();
+  } else {
+    const artImg = document.getElementById("np-art");
+    if (artImg) {
+      paintArt(artImg, "");
+      paintNowPlayingBackdrop(artImg);
+    }
   }
   // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity). TRACK nn
   // and the length are real player state; STEREO DIRECT is desktop's exact
@@ -4267,6 +4463,7 @@ function mountNowplaying() {
   }
   ensureNpExtras(m);
   upNextKey = "";
+  mountVisualizer(m.querySelector("#np-visualizer"));
   paintNowplaying(playerState());
 }
 
@@ -4282,26 +4479,123 @@ function hideNear(root, re, selector) {
   if (target) target.remove();
 }
 
-function mountAnalytics() {
+function formatYearPlayhead(ms) {
+  const minutes = Math.floor(ms / 60_000);
+  const hours = Math.floor(minutes / 60);
+  return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
+}
+
+async function mountAnalytics() {
   const m = main();
   if (!m) return;
   wireBack(m);
 
-  // The fragment's inline onclick calls setPeriod, but the generated
-  // analytics.js keeps its copy inside an IIFE (never reachable from the
-  // fragment) — publish the shim so the pills resolve instead of throwing.
-  // The shelves below are last-7-days regardless of period, so this only
-  // swaps the selected pill.
-  window.setPeriod = (btn) => {
-    const row = m.querySelector("#period-selector");
-    if (!row) return;
-    row.querySelectorAll("button").forEach((b) => {
-      const on = b === btn;
-      b.className = on
-        ? "px-3 py-1 rounded-full bg-primary text-on-primary font-label-sm text-[12px] font-semibold transition-all shadow-xs"
-        : "px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all";
-    });
+  const yearPanel = m.querySelector("[data-year-summary]");
+  const yearSelect = m.querySelector("#year-summary-select");
+  const yearFields = {
+    plays: m.querySelector("[data-year-plays]"),
+    time: m.querySelector("[data-year-time]"),
+    tracks: m.querySelector("[data-year-tracks]"),
+    artists: m.querySelector("[data-year-artists]"),
+    empty: m.querySelector("[data-year-empty]"),
+    coverage: m.querySelector("[data-year-coverage]"),
   };
+  let yearHistory = null;
+  let yearHistoryRequest = null;
+
+  const loadYearHistory = async () => {
+    if (yearHistory) return yearHistory;
+    if (!yearHistoryRequest) {
+      yearHistoryRequest = import("../store_db.js")
+        .then(async (db) => {
+          const [events, stats] = await Promise.all([
+            db.getPlayEvents(PLAY_EVENT_READ_LIMIT),
+            db.storeStats(),
+          ]);
+          if (!Array.isArray(events) || !stats || !Number.isInteger(Number(stats.events))) {
+            throw new Error("Local play history is unavailable");
+          }
+          yearHistory = { events, storedCount: Number(stats.events) };
+          return yearHistory;
+        })
+        .catch((error) => {
+          console.error("Could not load yearly play history", error);
+          return null;
+        });
+    }
+    return yearHistoryRequest;
+  };
+
+  const paintYearSummary = async (requestedYear) => {
+    if (!yearPanel || !yearSelect) return;
+    if (yearFields.coverage) yearFields.coverage.textContent = "Loading saved play history…";
+    const history = await loadYearHistory();
+    if (!history) {
+      for (const field of [yearFields.plays, yearFields.time, yearFields.tracks, yearFields.artists]) {
+        if (field) field.textContent = "—";
+      }
+      if (yearFields.empty) yearFields.empty.classList.add("hidden");
+      if (yearFields.coverage) yearFields.coverage.textContent = "Saved play history could not be read on this device.";
+      return;
+    }
+
+    const years = availableYears(history.events);
+    if (yearSelect.options.length !== years.length) {
+      yearSelect.replaceChildren();
+      for (const year of years) {
+        const option = document.createElement("option");
+        option.value = String(year);
+        option.textContent = String(year);
+        yearSelect.append(option);
+      }
+    }
+    const year = years.includes(Number(requestedYear)) ? Number(requestedYear) : years[0];
+    yearSelect.value = String(year);
+    const summary = summarizeYear(history.events, year, history.storedCount);
+    if (yearFields.plays) yearFields.plays.textContent = String(summary.playCount);
+    if (yearFields.time) yearFields.time.textContent = formatYearPlayhead(summary.playheadMs);
+    if (yearFields.tracks) yearFields.tracks.textContent = String(summary.uniqueTracks);
+    if (yearFields.artists) yearFields.artists.textContent = String(summary.uniqueArtists);
+    if (yearFields.empty) yearFields.empty.classList.toggle("hidden", summary.playCount !== 0);
+
+    if (yearFields.coverage) {
+      if (history.storedCount === 0) {
+        yearFields.coverage.textContent = "No saved play events are available yet.";
+      } else if (summary.truncated) {
+        yearFields.coverage.textContent =
+          `Using the newest ${summary.returnedCount.toLocaleString()} of ${history.storedCount.toLocaleString()} retained events. Earlier events may have been pruned by the ${PLAY_EVENT_STORE_CAP.toLocaleString()}-event cap.`;
+      } else {
+        yearFields.coverage.textContent =
+          `Based on ${history.storedCount.toLocaleString()} events currently stored on this device; older listening may not be recorded.`;
+      }
+      if (summary.playCount === 0 && history.storedCount > 0) {
+        yearFields.coverage.textContent += ` No ${year} events appear in the loaded recent history.`;
+      }
+    }
+  };
+
+  const periodRow = m.querySelector("#period-selector");
+  if (periodRow && yearPanel) {
+    periodRow.querySelectorAll("[data-period]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const period = button.dataset.period;
+        for (const item of periodRow.querySelectorAll("[data-period]")) {
+          const active = item === button;
+          item.setAttribute("aria-pressed", String(active));
+          item.className = active
+            ? "px-3 py-1 rounded-full bg-primary text-on-primary font-label-sm text-[12px] font-semibold transition-all shadow-xs"
+            : "px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all";
+        }
+        const showYear = period === "year";
+        yearPanel.hidden = !showYear;
+        yearPanel.classList.toggle("hidden", !showYear);
+        if (showYear) void paintYearSummary(yearSelect.value || new Date().getFullYear());
+      });
+    });
+  }
+  if (yearSelect) {
+    yearSelect.addEventListener("change", () => void paintYearSummary(yearSelect.value));
+  }
 
   const plays = load(PLAYS_KEY, []);
   const totalSec = plays.reduce((s, t) => s + (Number(t.duration_secs) || 0) * (Number(t.count) || 1), 0);

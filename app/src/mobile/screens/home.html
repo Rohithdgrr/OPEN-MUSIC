@@ -43,6 +43,16 @@
     <button data-home-cat="jump" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Heavy Rotation</button>
   </div>
 </section>
+<section data-jam-roster hidden class="hidden flex-col space-y-2 rounded-2xl border border-surface-container-high/60 bg-surface-container-lowest/80 p-3 shadow-xs" aria-labelledby="jam-roster-title">
+  <div class="flex items-center justify-between gap-3">
+    <div class="min-w-0">
+      <h2 id="jam-roster-title" class="font-headline-md text-[16px] font-semibold text-on-surface">Listening now</h2>
+      <p data-jam-roster-room class="font-label-sm text-[10px] text-secondary truncate"></p>
+    </div>
+    <span data-jam-roster-count class="shrink-0 rounded-full bg-surface-container-high px-2.5 py-1 font-label-sm text-[10px] font-semibold text-on-surface"></span>
+  </div>
+  <div data-jam-roster-list class="flex flex-wrap gap-2" aria-live="polite"></div>
+</section>
 <!-- 1. Featured Spotlight Hero -->
 <section class="relative overflow-hidden rounded-3xl bg-surface-container-lowest dark:bg-surface-container-low shadow-sm p-4 border border-surface-container-high/70 hover:shadow-md transition-all group" data-shelf="spotlight">
   <div class="relative w-full aspect-[16/10] rounded-2xl overflow-hidden mb-3.5 group cursor-pointer shadow-sm ring-1 ring-black/5">

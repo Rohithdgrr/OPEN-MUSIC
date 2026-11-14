@@ -72,6 +72,14 @@ instead of failing oddly.
 - Local state: favorites, plays, history, library, download quality, language/
   region prefs (`mobile/shared.js` keys); artist/album name taps resolve via
   `search_entities` (`app.js:resolveEntity`).
+- Smart playlists and tags: the SQLite store keeps bounded per-track tags and
+  named, rule-based playlists (`favorite`, `min_plays`, `tag`, `language`).
+  The Playlists screen exposes create/open/delete; Open queries the current
+  cached song rows at playback time, so results update as the local catalog
+  changes. Track-menu **Edit Tags** replaces a comma-separated tag set (up to
+  20 tags, 32 characters each). These are user data, so `cache_clear` leaves
+  them intact. Rules are a closed enum and are bound as SQL parameters; the
+  UI never accepts or executes SQL.
 - Notifications feed seeded once with a welcome event (`app.js` bottom);
   update checks via `checkForUpdates` (desktop updater; on mobile it only
   notifies — no in-app install).
@@ -1099,3 +1107,103 @@ The "Save to local" MediaStore name was `Artist - Title.ext` built from the
 whole married artist string — a six-way collaboration minted a 100+ char stem
 (observed live: "Dan Reynolds, Wayne Sermon, Ben Mckee, ...m4a"). The stem now
 uses the lead (first) artist only.
+
+## Audio visualization, Jam roster, and yearly listening summary
+
+These are presentation surfaces over existing app state, not new tracking:
+
+- The visualizer reads the existing playback `AudioContext` through an
+  `AnalyserNode`, draws at most once per animation frame while Now Playing is
+  visible, and stops on pause, route exit, or teardown. It must not create a
+  second audio graph or alter the sound.
+- The Home "Listening now" section shows only members of the user's currently
+  active Jam room. It is absent in Solo mode and must not discover, persist, or
+  expose people outside that room.
+- Yearly listening summaries use locally stored play events, count listening
+  time and unique tracks/artists, and label incomplete history honestly. A
+  retention-limited recent-event list must not be presented as a complete
+  calendar year.
+
+Acceptance: audio output is unchanged with the visualizer on/off; animation
+work is bounded by the visible screen and playback state; no roster appears
+without an active room; yearly summaries handle empty, partial, leap-year,
+and timezone-boundary data without inventing totals.
+
+Implementation contract:
+
+- The visualizer is a decorative Now Playing canvas connected as an analyser
+  tap on the existing mobile studio chain. It draws only while the canvas is
+  connected, visible, and the player is not paused; teardown restores the
+  chain's direct output connection.
+- The Home roster is derived only from the active room's current member list.
+  Solo mode clears and hides it; no member data is copied into storage.
+- The Year period uses the newest locally retained play events. Counts and
+  estimated playhead time are calendar-year filtered in local time; the UI
+  states that the event log is capped and that seeking can overstate time.
+  Empty or unavailable local history is not reported as zero listening.
+- `build.sh android`, `android-debug`, and `android-universal` run the
+  mobile-only esbuild target before Tauri packages the Android frontend.
+  `npm run tauri` clears the generated bundle and keeps the normal desktop
+  source path; `npm run tauri:android` is the direct bundled Android command.
+- The mobile shell's extracted `shell.css` is same-origin. Android CSP uses
+  `style-src-elem 'self'` to block inline style elements, while
+  `style-src-attr 'unsafe-inline'` preserves the runtime style attributes the
+  app still uses; the legacy `style-src` fallback remains for older WebViews.
+  This does not claim that runtime style attributes are blocked.
+
+## Android feature-gap implementation phases (2026-11-14)
+
+The feature proposal was checked against the Android shell before adding
+duplicates. Synced karaoke lyrics (including seek, auto-scroll, and per-track
+offset), crossfade, queue reorder/history, the Year Summary, Jam-room roster,
+and PNG share cards already exist. The remaining work is split into these
+phases:
+
+1. **Now Playing polish:** add a blurred, artwork-derived backdrop behind the
+   existing full-screen player, transition only when the artwork changes, and
+   keep the current compact player on other screens. Reuse the relay-backed
+   artwork sampler; do not fetch or decode on every playback paint. Keep text
+   contrast in both themes and disable the backdrop fade for reduced-motion
+   users. Use binary search for the active synced lyric line; plain lyrics and
+   the existing offset/seek behavior remain unchanged.
+2. **Stats and share polish:** build on the existing Year Summary and
+   `shareCard` Canvas 2D renderer. Add only metrics supported by retained local
+   events, label incomplete history, and use the Android native share path
+   when Web Share file sharing is unavailable.
+   **Android share-card contract:** send the rendered PNG through the native
+   bridge as a bounded data URL, write it only to app-private cache, and expose
+   it to the chooser through a read-only content URI with a temporary
+   permission grant. Include the track text with the image, clean up expired
+   cached cards, and request no broad storage permission. Keep Web Share file
+   sharing on platforms that support it; if image sharing fails, report the
+   failure and retain the existing text/clipboard fallback.
+   **Implementation status (2026-11-14):** `shareCard` tries the Android
+   `TMNative.shareImage` bridge before Web Share, and falls back to native text
+   sharing or clipboard. The bridge validates bounded PNG data, writes it to
+   app-private cache, and shares it through a non-exported, read-only content
+   provider with a temporary URI grant. Focused JavaScript tests, lint, and the
+   mobile bundle pass. APK compilation and chooser verification remain pending:
+   the sandbox blocked Git Bash before the Android build could start.
+3. **Smart playlists and tags:** persist user-defined tags and a bounded set
+   of validated playlist rules in SQLite; never evaluate arbitrary user SQL.
+   The mobile manager should support favorite tracks, minimum play count,
+   language, and user-tag rules. Tag names are normalized for matching and
+   bounded in length/count. The existing top-played and catch-up shelves are
+   recommendations, not a rule-based playlist manager.
+    **Implemented (2026-11-14):** the Playlists screen creates, lists, opens,
+    and deletes these four rule types; opening resolves up to 200 current rows
+    from the local song store. Track menus can add, replace, or clear tags.
+    Data remains outside the disposable cache-clear path. Device verification
+    and Rust compilation are pending in this sandbox.
+4. **Loading and recovery states:** fill only verified blank/silent mobile
+   states with skeletons, actionable empty states, retry affordances, and
+   offline explanations; preserve valid empty search results as distinct from
+   failures.
+5. **Android local library:** use the Storage Access Framework to import and
+   play user-selected audio without broad storage permissions; preserve the
+   source URI grant and keep streaming/vault behavior intact.
+
+Global "friends listening now" remains out of scope until the app has an
+identity and opt-in presence service contract. The existing roster is limited
+to the active Jam room and must stay that way; no account or presence backend
+is inferred from it.

@@ -84,6 +84,21 @@ CREATE TABLE IF NOT EXISTS play_events (
     image         TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_play_events_ts ON play_events(ts DESC);
+CREATE TABLE IF NOT EXISTS track_tags (
+    song_id   TEXT NOT NULL,
+    tag_norm  TEXT NOT NULL,
+    tag       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (song_id, tag_norm)
+);
+CREATE INDEX IF NOT EXISTS idx_track_tags_norm ON track_tags(tag_norm, song_id);
+CREATE TABLE IF NOT EXISTS smart_playlists (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    rule_json  TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 ";
 
 /// Search rows older than this are deleted on read. Deliberately long (was
@@ -111,6 +126,10 @@ const SONGS_CAP: i64 = 5000;
 /// Play-event log cap: the newest 3000 rows survive; older pruned on write.
 /// The similarity miners only ever read the recent tail.
 const PLAY_EVENTS_CAP: i64 = 3000;
+const TAGS_PER_TRACK_CAP: i64 = 20;
+const TRACK_TAGS_CAP: i64 = 20_000;
+const SMART_PLAYLISTS_CAP: i64 = 100;
+const SMART_RULE_MAX_BYTES: usize = 2048;
 /// KV value size guard: prefs, not playlists (those live in localStorage +
 /// backup files). 64 KB is generous for a queue snapshot.
 pub const KV_MAX_BYTES: usize = 64 * 1024;
@@ -152,6 +171,27 @@ pub struct PlayEventRow {
     pub image: String,
 }
 
+/// Supported smart-playlist predicates. This is deliberately a closed set:
+/// caller input is deserialized into these variants, never interpolated into
+/// SQL.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SmartRule {
+    Favorite,
+    MinPlays { min: u64 },
+    Tag { tag: String },
+    Language { language: String },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SmartPlaylist {
+    pub id: String,
+    pub name: String,
+    pub rule: SmartRule,
+    pub created_at: u64,
+    pub updated_at: u64,
+}
+
 pub struct AppStore {
     conn: Mutex<Connection>,
     #[allow(dead_code)]
@@ -177,6 +217,37 @@ fn u64_field(v: &serde_json::Value, key: &str) -> i64 {
         .and_then(|x| x.as_u64())
         .map(|n| n as i64)
         .unwrap_or(0)
+}
+
+fn normalize_tag(input: &str) -> Result<(String, String), String> {
+    let tag: String = input.trim().chars().take(33).collect();
+    if tag.is_empty() || tag.chars().count() > 32 || tag.chars().any(char::is_control) {
+        return Err("tag must be 1..32 visible characters".into());
+    }
+    Ok((tag.clone(), tag.to_lowercase()))
+}
+
+fn normalize_language(input: &str) -> Result<String, String> {
+    let language = input.trim().to_ascii_lowercase();
+    if language.is_empty()
+        || language.len() > 24
+        || !language
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return Err("language must be 1..24 ASCII letters, numbers or -".into());
+    }
+    Ok(language)
+}
+
+fn validate_smart_rule(rule: &SmartRule) -> Result<(), String> {
+    match rule {
+        SmartRule::Favorite => Ok(()),
+        SmartRule::MinPlays { min } if (1..=1_000_000).contains(min) => Ok(()),
+        SmartRule::MinPlays { .. } => Err("minimum plays must be between 1 and 1000000".into()),
+        SmartRule::Tag { tag } => normalize_tag(tag).map(|_| ()),
+        SmartRule::Language { language } => normalize_language(language).map(|_| ()),
+    }
 }
 
 impl AppStore {
@@ -405,12 +476,20 @@ impl AppStore {
     }
 
     fn list_songs(&self, sql: &str, limit: i64) -> Result<Vec<SongRow>, String> {
+        self.list_songs_with(sql, params![limit.clamp(1, 200)])
+    }
+
+    fn list_songs_with<P: rusqlite::Params>(
+        &self,
+        sql: &str,
+        params: P,
+    ) -> Result<Vec<SongRow>, String> {
         let conn = self.lock()?;
         let mut stmt = conn
             .prepare_cached(sql)
             .map_err(|e| format!("songs list: {e}"))?;
         let rows = stmt
-            .query_map(params![limit.clamp(1, 200)], row_to_song)
+            .query_map(params, row_to_song)
             .map_err(|e| format!("songs list: {e}"))?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|e| format!("songs list: {e}"))
@@ -435,6 +514,258 @@ impl AppStore {
             "SELECT id, title, artist, album, image, duration_secs, language, year, data, play_count, last_played, is_fav, updated_at FROM songs ORDER BY play_count DESC, last_played DESC LIMIT ?1",
             limit,
         )
+    }
+
+    /// Add or remove one bounded user tag from a cached track. User tags are
+    /// independent of the disposable search/cache rows and survive cache clear.
+    pub fn set_track_tag(
+        &self,
+        track: &serde_json::Value,
+        tag: &str,
+        enabled: bool,
+    ) -> Result<(), String> {
+        let id = str_field(track, "id");
+        if id.is_empty() || id.len() > 64 {
+            return Err("track tag needs a valid song id".into());
+        }
+        let (tag, tag_norm) = normalize_tag(tag)?;
+        if enabled {
+            self.put_song(track)?;
+        }
+        let conn = self.lock()?;
+        if enabled {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM track_tags WHERE song_id = ?1 AND tag_norm = ?2)",
+                    params![id, tag_norm],
+                    |row| row.get(0),
+                )
+                .map_err(|e| format!("tag lookup: {e}"))?;
+            if !exists {
+                let count: i64 = conn
+                    .query_row(
+                        "SELECT count(*) FROM track_tags WHERE song_id = ?1",
+                        params![id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| format!("tag count: {e}"))?;
+                if count >= TAGS_PER_TRACK_CAP {
+                        return Err(format!(
+                            "a track can have at most {TAGS_PER_TRACK_CAP} tags"
+                        ));
+                }
+            }
+            conn.execute(
+                "INSERT INTO track_tags (song_id, tag_norm, tag, created_at)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(song_id, tag_norm) DO UPDATE SET tag = excluded.tag",
+                params![id, tag_norm, tag, now_secs()],
+            )
+            .map_err(|e| format!("tag save: {e}"))?;
+            let _ = conn.execute(
+                "DELETE FROM track_tags WHERE rowid NOT IN (
+                   SELECT rowid FROM track_tags ORDER BY created_at DESC, rowid DESC LIMIT ?1
+                 )",
+                params![TRACK_TAGS_CAP],
+            );
+        } else {
+            conn.execute(
+                "DELETE FROM track_tags WHERE song_id = ?1 AND tag_norm = ?2",
+                params![id, tag_norm],
+            )
+            .map_err(|e| format!("tag remove: {e}"))?;
+        }
+        Ok(())
+    }
+
+    pub fn track_tags(&self, id: &str) -> Result<Vec<String>, String> {
+        if id.is_empty() || id.len() > 64 {
+            return Err("track tags need a valid song id".into());
+        }
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT tag FROM track_tags WHERE song_id = ?1 ORDER BY tag_norm ASC LIMIT ?2",
+            )
+            .map_err(|e| format!("tag list: {e}"))?;
+        let rows = stmt
+            .query_map(params![id, TAGS_PER_TRACK_CAP], |row| row.get(0))
+            .map_err(|e| format!("tag list: {e}"))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| format!("tag list: {e}"))
+    }
+
+    pub fn replace_track_tags(
+        &self,
+        track: &serde_json::Value,
+        tags: &[String],
+    ) -> Result<(), String> {
+        let id = str_field(track, "id");
+        if id.is_empty() || id.len() > 64 {
+            return Err("track tags need a valid song id".into());
+        }
+        if tags.len() > TAGS_PER_TRACK_CAP as usize {
+            return Err(format!(
+                "a track can have at most {TAGS_PER_TRACK_CAP} tags"
+            ));
+        }
+        let mut normalized = Vec::with_capacity(tags.len());
+        for tag in tags {
+            let (display, key) = normalize_tag(tag)?;
+            if !normalized.iter().any(|(_, existing)| existing == &key) {
+                normalized.push((display, key));
+            }
+        }
+        self.put_song(track)?;
+        let mut conn = self.lock()?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| format!("tag transaction: {e}"))?;
+        tx.execute("DELETE FROM track_tags WHERE song_id = ?1", params![id])
+            .map_err(|e| format!("tag replace: {e}"))?;
+        for (display, key) in normalized {
+            tx.execute(
+                "INSERT INTO track_tags (song_id, tag_norm, tag, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![id, key, display, now_secs()],
+            )
+            .map_err(|e| format!("tag replace: {e}"))?;
+        }
+        let _ = tx.execute(
+            "DELETE FROM track_tags WHERE rowid NOT IN (
+               SELECT rowid FROM track_tags ORDER BY created_at DESC, rowid DESC LIMIT ?1
+             )",
+            params![TRACK_TAGS_CAP],
+        );
+        tx.commit().map_err(|e| format!("tag commit: {e}"))
+    }
+
+    pub fn put_smart_playlist(&self, id: &str, name: &str, rule: &SmartRule) -> Result<(), String> {
+        let id = id.trim();
+        if id.is_empty()
+            || id.len() > 64
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err("smart playlist id must be 1..64 ASCII letters, numbers, - or _".into());
+        }
+        let name: String = name.trim().chars().take(80).collect();
+        if name.is_empty() {
+            return Err("smart playlist name is required".into());
+        }
+        validate_smart_rule(rule)?;
+        let raw = serde_json::to_string(rule).map_err(|e| format!("smart rule encode: {e}"))?;
+        if raw.len() > SMART_RULE_MAX_BYTES {
+            return Err("smart playlist rule is too large".into());
+        }
+        let now = now_secs();
+        let conn = self.lock()?;
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM smart_playlists WHERE id = ?1)",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("smart playlist lookup: {e}"))?;
+        if !exists {
+            let count: i64 = conn
+                .query_row("SELECT count(*) FROM smart_playlists", [], |row| row.get(0))
+                .map_err(|e| format!("smart playlist count: {e}"))?;
+            if count >= SMART_PLAYLISTS_CAP {
+                return Err(format!(
+                    "you can create at most {SMART_PLAYLISTS_CAP} smart playlists"
+                ));
+            }
+        }
+        conn.execute(
+            "INSERT INTO smart_playlists (id, name, rule_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(id) DO UPDATE SET
+               name = excluded.name, rule_json = excluded.rule_json, updated_at = excluded.updated_at",
+            params![id, name, raw, now],
+        )
+        .map_err(|e| format!("smart playlist save: {e}"))?;
+        Ok(())
+    }
+
+    pub fn smart_playlists(&self) -> Result<Vec<SmartPlaylist>, String> {
+        let conn = self.lock()?;
+        let mut stmt = conn
+            .prepare_cached(
+                "SELECT id, name, rule_json, created_at, updated_at
+                 FROM smart_playlists ORDER BY updated_at DESC, id ASC LIMIT ?1",
+            )
+            .map_err(|e| format!("smart playlist list: {e}"))?;
+        let rows = stmt
+            .query_map(params![SMART_PLAYLISTS_CAP], |row| {
+                let raw: String = row.get(2)?;
+                let rule = serde_json::from_str(&raw).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        raw.len(),
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                Ok(SmartPlaylist {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    rule,
+                    created_at: row.get::<_, i64>(3)?.max(0) as u64,
+                    updated_at: row.get::<_, i64>(4)?.max(0) as u64,
+                })
+            })
+            .map_err(|e| format!("smart playlist list: {e}"))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(|e| format!("smart playlist list: {e}"))
+    }
+
+    pub fn delete_smart_playlist(&self, id: &str) -> Result<bool, String> {
+        if id.is_empty() || id.len() > 64 {
+            return Err("smart playlist id 1..64 chars".into());
+        }
+        let conn = self.lock()?;
+        conn.execute("DELETE FROM smart_playlists WHERE id = ?1", params![id])
+            .map(|n| n > 0)
+            .map_err(|e| format!("smart playlist delete: {e}"))
+    }
+
+    pub fn smart_playlist_tracks(&self, id: &str, limit: i64) -> Result<Vec<SongRow>, String> {
+        if id.is_empty() || id.len() > 64 {
+            return Err("smart playlist id 1..64 chars".into());
+        }
+        let playlist = self
+            .smart_playlists()?
+            .into_iter()
+            .find(|playlist| playlist.id == id)
+            .ok_or_else(|| "smart playlist not found".to_string())?;
+        let columns = "SELECT id, title, artist, album, image, duration_secs, language, year, data, play_count, last_played, is_fav, updated_at FROM songs";
+        match playlist.rule {
+            SmartRule::Favorite => self.list_songs(
+                "SELECT id, title, artist, album, image, duration_secs, language, year, data, play_count, last_played, is_fav, updated_at FROM songs WHERE is_fav = 1 ORDER BY last_played DESC LIMIT ?1",
+                limit,
+            ),
+            SmartRule::MinPlays { min } => self.list_songs_with(
+                &format!("{columns} WHERE play_count >= ?1 ORDER BY play_count DESC, last_played DESC LIMIT ?2"),
+                params![min.min(i64::MAX as u64) as i64, limit.clamp(1, 200)],
+            ),
+            SmartRule::Tag { tag } => {
+                let (_, tag_norm) = normalize_tag(&tag)?;
+                self.list_songs_with(
+                    &format!("{columns} WHERE EXISTS (
+                       SELECT 1 FROM track_tags t WHERE t.song_id = songs.id AND t.tag_norm = ?1
+                     ) ORDER BY songs.last_played DESC LIMIT ?2"),
+                    params![tag_norm, limit.clamp(1, 200)],
+                )
+            }
+            SmartRule::Language { language } => {
+                let language = normalize_language(&language)?;
+                self.list_songs_with(
+                    &format!("{columns} WHERE lower(language) = ?1 ORDER BY last_played DESC LIMIT ?2"),
+                    params![language, limit.clamp(1, 200)],
+                )
+            }
+        }
     }
 
     pub fn stats(&self) -> Result<StoreStats, String> {
@@ -878,6 +1209,86 @@ mod tests {
         assert_eq!(s.favs(10).unwrap().len(), 1);
         s.set_fav(&track("f1"), false).unwrap();
         assert_eq!(s.favs(10).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn smart_playlist_tags_are_case_insensitive_and_survive_cache_clear() {
+        let (s, _g) = scratch();
+        s.record_play(&track("a1")).unwrap();
+        s.record_play(&track("a1")).unwrap();
+        s.put_song(&track("b2")).unwrap();
+        s.set_track_tag(&track("a1"), "Road Trip", true).unwrap();
+        s.set_track_tag(&track("a1"), "road trip", true).unwrap();
+        assert_eq!(s.track_tags("a1").unwrap(), vec!["road trip"]);
+
+        s.put_smart_playlist(
+            "sp-road-trip",
+            "Road Trip",
+            &SmartRule::Tag {
+                tag: "ROAD TRIP".into(),
+            },
+        )
+        .unwrap();
+        s.put_smart_playlist("sp-favorites", "Favorites", &SmartRule::Favorite)
+            .unwrap();
+        s.put_smart_playlist(
+            "sp-min-plays",
+            "Frequently played",
+            &SmartRule::MinPlays { min: 2 },
+        )
+        .unwrap();
+        s.put_smart_playlist(
+            "sp-hindi",
+            "Hindi tracks",
+            &SmartRule::Language {
+                language: "HINDI".into(),
+            },
+        )
+        .unwrap();
+        s.set_fav(&track("b2"), true).unwrap();
+        assert_eq!(
+            s.smart_playlist_tracks("sp-road-trip", 20).unwrap()[0].id,
+            "a1"
+        );
+        assert_eq!(
+            s.smart_playlist_tracks("sp-favorites", 20).unwrap()[0].id,
+            "b2"
+        );
+        assert_eq!(
+            s.smart_playlist_tracks("sp-min-plays", 20).unwrap()[0].id,
+            "a1"
+        );
+        assert_eq!(s.smart_playlist_tracks("sp-hindi", 20).unwrap().len(), 2);
+        assert_eq!(s.smart_playlists().unwrap().len(), 4);
+
+        s.clear_cache().unwrap();
+        assert_eq!(s.smart_playlists().unwrap().len(), 4);
+        s.put_song(&track("a1")).unwrap();
+        assert_eq!(s.track_tags("a1").unwrap(), vec!["road trip"]);
+    }
+
+    #[test]
+    fn smart_playlist_rules_and_ids_are_bounded() {
+        let (s, _g) = scratch();
+        assert!(s
+            .put_smart_playlist("sp-injection'--", "Bad", &SmartRule::Favorite,)
+            .is_err());
+        assert!(s
+            .put_smart_playlist("sp-plays", "Too many", &SmartRule::MinPlays { min: 0 },)
+            .is_err());
+        assert!(s
+            .put_smart_playlist(
+                "sp-language",
+                "Bad language",
+                &SmartRule::Language {
+                    language: "hindi' OR 1=1 --".into(),
+                },
+            )
+            .is_err());
+        assert!(s
+            .set_track_tag(&track("a1"), &"x".repeat(33), true)
+            .is_err());
+        assert!(s.smart_playlist_tracks("missing", 20).is_err());
     }
 
     #[test]

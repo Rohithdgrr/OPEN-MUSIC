@@ -313,12 +313,22 @@ inject_android_mediahub() {
   else
     echo "✓ MediaService + widget receiver already present"
   fi
+
+  # Temporary PNGs are kept in app-private cache and granted read-only through
+  # this provider; sharing never writes to the public media library.
+  if ! grep -q 'TM-SHARE-CARDS' "$manifest"; then
+    sed -i 's|^    </application>|        <!-- TM-SHARE-CARDS: app-private PNG sharing -->\n        <provider android:name=".ShareCardProvider" android:authorities="${applicationId}.sharecards" android:exported="false" android:grantUriPermissions="true" />\n    </application>|' "$manifest"
+    echo "✓ Injected app-private share-card provider"
+  else
+    echo "✓ Share-card provider already present"
+  fi
   return 0
 }
 
 cmd_android() {
   # Release only, split per ABI: one APK per architecture instead of a fat
   # APK carrying every target's .so.
+  npm_run build:mobile
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
   tune_android_build || die "Failed to tune the Android build"
@@ -331,6 +341,7 @@ cmd_android_debug() {
   # emulator. One Rust target instead of three is the single biggest build
   # speed lever, and the debug profile keeps the APK small
   # (docs/dev-loop-speed.md BUILD D1: 18.98 MiB with legacy packaging).
+  npm_run build:mobile
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
   tune_android_build || die "Failed to tune the Android build"
@@ -351,6 +362,7 @@ cmd_android_universal() {
   # Release, universal: one signed APK carrying arm64-v8a + armeabi-v7a +
   # x86_64 — installs on every real phone (ARM) and the x86_64 emulator,
   # no per-architecture choice at download time.
+  npm_run build:mobile
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
   tune_android_build || die "Failed to tune the Android build"
