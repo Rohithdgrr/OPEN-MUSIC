@@ -6,6 +6,12 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Removed (mobile: Now Playing Canvas — 2026-11-14)
+- **The Canvas feature is removed completely.** The renderer (`mobile/canvas.js`, `canvasmath.js`), its three Settings rows and wiring, the cinematic CSS, the `fetch_canvas` / `set_canvas_cookie` / `canvas_configured` commands, the `/canvas` relay route and its cache tier are gone. Now Playing shows album artwork only.
+
+### Fixed (Android build — 2026-11-14)
+- **The Android app could not compile.** `TmBridge.kt` carried two identical `saveLocal(json: String)` declarations (both committed), so Kotlin failed with `Conflicting overloads` and Gradle never produced an APK. The duplicate is removed; one declaration remains with the merged documentation (`docs/mobile/09-problems-solutions.md` P59).
+
 ### Fixed (mobile: the shell rendered with no connectivity — 2026-11-13)
 - **Offline, the app showed raw icon names** (`chevron_right`, `favorite_border`, `more_vert`…) because the Material Symbols font came from a Google Fonts stylesheet that never loaded. The fonts are now **bundled** (`app/src/fonts/`) and loaded same-origin, and the mobile CSP drops the two Google Fonts origins. The shell boots and renders with the radio off.
 - **"Share" now opens the real Android share sheet.** The action used `navigator.share`, which the Android WebView does not implement — so a tap silently degraded to "copied to clipboard". A native bridge (`TmBridge.share` → `ACTION_SEND` chooser) opens the system sheet instead.

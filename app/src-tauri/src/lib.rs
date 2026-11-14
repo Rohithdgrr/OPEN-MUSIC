@@ -5,9 +5,6 @@
 //! (catalog) and `proxy.rs` (media relay) territory.
 
 mod cache;
-// Spotify Canvas (undocumented endpoint) — its own module so the ToS-exposed
-// query surface stays in one file. docs/spotify-android-canvas.md §3B.
-mod canvas;
 mod db;
 mod gdrive;
 mod jiosaavn;
@@ -1734,9 +1731,6 @@ pub fn run() {
             app.manage(crate::gdrive::GDriveState::new());
             // Optional Spotify integration: dormant until sign-in.
             app.manage(crate::spotify::SpotifyState::new());
-            // Now Playing Canvas: Apple animated-artwork route, no account —
-            // docs/spotify-android-canvas.md §14.
-            app.manage(crate::canvas::CanvasState::new());
             // Listen Together room server/client state (docs/listen-together.md).
             app.manage(crate::room::RoomState::new());
 
@@ -1831,9 +1825,6 @@ pub fn run() {
             spotify::spotify_signout,
             spotify::spotify_is_signedin,
             spotify::spotify_import_top,
-            canvas::fetch_canvas,
-            canvas::set_canvas_cookie,
-            canvas::canvas_configured,
             widget_show,
             widget_embed,
             widget_set_position,

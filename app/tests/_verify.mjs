@@ -181,12 +181,6 @@ async function main() {
   check("streaming: readyState>=3, no media error (jiosaavn dedup path)", gotAudio && !A2.err, `start=${a1} end=${a2}`);
   check("playhead advances", Number(A2.t) > Number(A1.t || 0), `${A1.t} -> ${A2.t}`);
 
-  // ------------------------------------------------- canvas.rs (dormant) ---
-  const cfg = await js('window.__TAURI__?.core?.invoke("canvas_configured")');
-  check("canvas_configured wired (dormant=false)", cfg === false, `value=${JSON.stringify(cfg)}`);
-  const fc = await js('(async()=>{try{const r=await window.__TAURI__.core.invoke("fetch_canvas",{title:"x",artist:"y"});return "OK:"+JSON.stringify(r)}catch(e){return "ERR:"+String(e)}})()');
-  check("fetch_canvas fails gracefully when unconfigured", String(fc).startsWith("ERR:") && /Canvas not configured/.test(String(fc)), String(fc).slice(0, 110));
-
   // ------------------------------------------- settings storage controls ---
   await js('location.hash = "#/settings"');
   const setOk = await waitFor('!!document.getElementById("m-quota") && !!document.getElementById("m-prefetch")', 15000);

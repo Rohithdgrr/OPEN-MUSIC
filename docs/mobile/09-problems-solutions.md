@@ -168,3 +168,20 @@ Driver record: `verify-artists-save.mjs` D7 round (v7) reproduced the
 duplicate; the fixed build re-proves D5–D7 (file exists exactly once, second
 tap = `same`). Static gate: `savelocal.test.mjs` "Kotlin bridge dedupes on
 the display name, not the bytes".
+
+## 2026-11-14 — TmBridge.kt declared `saveLocal` twice: every Android build failed
+
+| # | Symptom | Cause | Fix |
+| --- | --- | --- | --- |
+| P59 | `./build.sh android-debug` failed in `:app:compileUniversalDebugKotlin` with `TmBridge.kt:57:3 Conflicting overloads: fun saveLocal(json: String): String` (and the same at `:71:3`). Rust compiled fine first (`Finished dev profile in 5m 09s`), so the APK never got packaged and no Canvas change could reach a device | The 2026-10-24 batch and the 2026-11-13 extractive restore each added the same `@JavascriptInterface fun saveLocal(json: String) = hub.saveLocal(json)` to the overlay, leaving **two identical declarations** in the file. Kotlin has no overloading by identical signature, so the module could not compile. `git show HEAD:` confirms both copies are committed — the breakage is in `main`, not local dirt | one declaration kept with the merged doc comment; the duplicate removed. Kotlin cannot be type-checked without gradle here, so the rebuild is the gate |
+
+Nothing calls `saveLocal` by overload resolution (the JS bridge binds by name),
+so removing the duplicate changes no behaviour — it only makes the module
+compilable again.
+
+## 2026-11-14 — Now Playing Canvas removed
+
+The Canvas feature was removed at the user's request. **P54–P57 above are historical**
+(they describe code that no longer exists); P59 (the duplicate `TmBridge.saveLocal`
+overload that broke every Android build) stays live because that fix still ships.
+The spec of record (`docs/spotify-android-canvas.md`) was deleted with the feature.

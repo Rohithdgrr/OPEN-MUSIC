@@ -2535,6 +2535,44 @@ font is bundled, hence larger than the 17.11 MiB build without it).
 Status: ✅ six asks implemented and verified on the device ✅ 528 tests ✅ docs
 ⏳ **uncommitted, unpushed** (rule 1).
 
+## 2026-11-13e — Canvas revived on Android: the §18.3 checklist executed (uncommitted)
+
+User: *"CONTINUE COMPLETE NOW"* on the revive offer after a pasted plan that
+proposed adding `wolframe-spotify-canvas`. **The plan was declined on evidence,
+not taste**: §13 already proved Spotify's Pathfinder rejects our client id
+(`clienttoken` 400 / Pathfinder 403), so a Bearer-based crate cannot open a door
+that is shut at the client level; the shipped Apple route needs no account at
+all and was live-verified 6/6 (§14.4). What ran instead is the documented
+revival — **no new dependency, no new Canvas logic**.
+
+| Site | Change |
+|---|---|
+| `mobile/binders.js` import | un-commented — the renderer is back in the module graph |
+| `mobile/binders.js` `paintNowplaying` | `paintCanvasForTrack(t)` live again |
+| `mobile/binders.js` `ensureMobilePrefs` | the three Canvas rows re-joined the Spotify `sec()` chain (`) +` after the import row) |
+| `mobile/binders.js` §3C wiring | the `/* paintSpdc … flipCanvas */` block un-commented verbatim |
+| `mobile/binders.js` `paintMobilePrefs` | `["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]` back in the switch-state array |
+| `mobile/canvas.js` | `import { onPaint, playerState }` + the live `onPaint` subscription (the every-screen hook, §16) |
+
+**Gates re-pointed, not weakened.** `mobile-spotify.test.mjs`'s parked test
+became a live-wiring test, every assertion **line-anchored** (`^import …`,
+`^\s*paintCanvasForTrack\(t\);$`, `^\s*flipCanvas\("m-canvas"…`) because
+§18.2's lesson was that raw `includes()` matches the comment text and stayed
+green for a parked month. It also asserts **no `PARKED 2026-10-24` marker
+survives** — half-revived is the one state that races. `tests/live-canvas.mjs`
+lost its parked warning.
+
+**Evidence:** `node --check` ×4 exit 0 · eslint clean (3 touched files) ·
+focused `mobile-spotify` + `mobile-boot` **12/12** (the boot gate executes the
+real module graph, so canvas.js evaluating at import is proven, not assumed) ·
+`npm test` **555/555**. **Not run: on-device verification** — no emulator was
+attached this session, and the change is JS the existing debug APK does not
+contain (a rebuild is needed to see it on a phone). Docs: `spotify-android-canvas.md`
+**§19** (as-built + the declined-plan rationale), CHANGELOG Unreleased.
+
+Status: ✅ wired + gated ✅ docs ⏳ **uncommitted, unpushed** (rule 1) —
+`./build.sh android-debug` is the next step for device proof.
+
 ## 2026-11-13c — Push record: `mobile-dark-theme` @ `c4d4069` on GitHub (main UNTOUCHED)
 
 User: *"push code to github using gmail: Rohithdgrr <rohit93dgrr@gmail.com> .
@@ -2567,6 +2605,29 @@ GitHub; a local `backup/android-device-batch` ref also still exists.
 
 Working tree clean after the commit. Nothing pushed to `main`; the user can
 open the PR from the branch, or retarget later.
+
+## 2026-11-13d — Push record: merge `85a8c49` pushed to `main` (fast-forward, in sync)
+
+User: *"PUSH TO MAIN"* (after choosing the side branch for the earlier push).
+Restated (rule 5): *"put the current history on GitHub's main."* The blocker
+was that GitHub's `main` held `f2bf828` and local had diverged; a straight
+push would be rejected (non-fast-forward) and the alternatives were a
+force-push (forbidden by rule 2 — it would delete `f2bf828`) or a merge that
+re-introduced everything the user rolled back.
+
+| Item | Evidence |
+|---|---|
+| Route chosen | **merge `origin/main` into local**, then push — keeps `f2bf828` on GitHub, no rewrite, no force |
+| Conflicts (7 files) | `AGENTS.md`, `CHANGELOG.md`, `docs/mobile/06-features.md`, `docs/mobile/09-problems-solutions.md`, `app/src/tailwind.css` (re-resolved by re-running `npm run css`), `MediaHub.kt` (both sides kept: origin's `publishPlayback`/`startTick` ticker + mine `share`/`saveLocal`/`sanitizeName`/`fail`), `binders.js` (3 hunks) |
+| `binders.js` resolutions | both import sets kept (`arttint.js` + `artresolve.js`), both helper blocks kept (my layout/artist-art/tile helpers + origin's `withArtistArt`), and the Canvas call stays **PARKED** per origin (its import is commented out, so calling it would throw) while my art-tint block stays live |
+| Real defects the merge surfaced | (1) `entityRowHTML`'s closing brace was swallowed by the conflict boundary → `node --check` failed at `export const MOUNT`; restored. (2) `menus.js` ended up with the **same savelocal import twice** (both sides added it) → duplicate-identifier lint error; deduped. (3) `tailwind.css` recompiled rather than hand-merged |
+| Gates after resolving | `npm test` **555/555** · `npm run lint` clean · merge commit `85a8c49` authored `Rohithdgrr <rohit93dgrr@gmail.com>` |
+| Push | `git push origin main` → **`f2bf828..85a8c49  main -> main`** (a genuine fast-forward: `f2bf828` is a parent of the merge). Post-push: `ls-remote origin main` = `85a8c49…` = local HEAD ✓; `rev-list --left-right --count origin/main...HEAD` = `0 0` (in sync); range was 4 commits, all one author |
+| Rule 8 | `log origin/main..HEAD` read first, push issued as its own command, output read before anything else |
+| **Not re-verified**: the APK build after the merge | the merged `MediaHub.kt` (ticker + saveLocal/share) is Kotlin; both halves compiled before (`f2bf828`, `c4d4069`) but the **combined file has not been gradle-built**. The verification sleep was interrupted by the user asking to complete the push. Node gates are green; a `./build.sh android-debug` should be run before claiming an artifact |
+
+Status: ✅ pushed to `main`, in sync, no history rewrite ⏳ tree clean (the
+temp `.build_lf.sh` was removed).
 ## 2026-10-24 — Android Now Playing Canvas parked (commented out, invisible; live-verified 5/5, uncommitted)
 
 User: *"let's keep the canvas aside — comment out canvas related and make it
@@ -2701,3 +2762,66 @@ debug APK **37,473,163 B**, `adb install -r` Success, monkey-launched (pid 6972)
 (`docs/android-media-widget.md` ticker section, `docs/mobile/06-features.md` fonts/X/lyrics/lead-artist,
 P58, CHANGELOG Unreleased) ⏳ **nothing committed or pushed (rule 1)** — awaiting go-ahead.
 Emulator left running with the fixed build installed.
+
+## 2026-11-14 — Canvas revive completed + device-verified 12/12; Android build unbroken (P59)
+
+User: *"continue complete the canvas work and verify it is working properly in all
+cases"*, then *"still only after hours only playing properly with canvas no other
+working properly"*. Spec/record: `docs/spotify-android-canvas.md` **§20** (coverage
+measurement + as-built verification); build defect `docs/mobile/09-problems-solutions.md`
+**P59**. **Nothing committed, nothing pushed (rule 1).**
+
+| Item | Evidence |
+|---|---|
+| **Build was impossible before this session** | `./build.sh android-debug` failed at `:app:compileUniversalDebugKotlin` with `TmBridge.kt:57:3 / :71:3 Conflicting overloads: fun saveLocal(json: String)` — two identical `@JavascriptInterface` declarations, both committed in `85a8c49`. One removed (merged docs kept). P59 written before the fix. |
+| Rebuild | `BUILD_EXIT=0`; APK **22,099,817 B** at `gen/android/app/build/outputs/apk/universal/debug/`; installed `adb install -r` Success, `versionName 0.5.1`, app launched from the launcher (pid 4505), CDP `:9223` |
+| **Device probe 12/12** | `node tests/live-canvas.mjs`: M1 cold resolve 17.1 s → relay URL; M2 200/`video/mp4`/9.74 MB/**206** range, real `<video>` 1078×1438 → crop 808×1438; M3 honest null; M3b Kesariya miss; M4 UI search → trusted touch → canvas base 10.13 s, `data-loop=6`, `data-floor=ok`, layer full-bleed, page+card transparent; M9 loops `np-canvas-alt → np-canvas` at 11.00 s; M7 fallback (mode art, drift/wash); M8 off restores theme; **M8b real Settings switch** |
+| **New M8b (the real user path)** | Settings → Spotify → **Now Playing Canvas** switch: OFF writes `tm-canvas=0`, clears live/focus/motion classes, hides the layer, drops the video src, and stays off through the player's ~4×/s repaints; ON writes `1` and repaints in place. The old probe drove `localStorage` directly and never exercised the switch. |
+| Two probe bugs fixed (not renderer bugs) | (a) M8's theme baseline was read **after** the canvas forced dark, so it expected dark on a light-theme device — now uses the user's real `tm-theme`, captured at M0; (b) M9 assumed a stable track, but the device remembered *After Hours* near its end, the queue advanced mid-window and the canvas correctly repainted the new song — the check now tolerates a track change and retries. |
+| **Coverage measured, not guessed** | Direct Apple probe over 9 tracks × US/IN/GB: After Hours 2 vidAlbums, Blinding Lights 2, Tum Kya Mile 3; **Hurt You 0/0/0** (the IN "2" were After Hours results), **Starboy 0 valid**, **Kesariya / Tum Hi Ho / Gaali Vaaluga / Vaathi Coming 0 everywhere**. Song objects carry no `editorialVideo` of their own. Multi-storefront is **not** a coverage lever → resolver keeps US; real footage cannot be fabricated for those tracks. |
+| Every-song canvas verified (miss path) | Real miss track (Kesariya/Brahmastra) on the emulator: `mode=art`, `motion=true`, art transform `1.0737→1.1416` over 2 s, backdrop `1.1536→1.2059`, wash `0.651→0.808`, sheen animation present — the generated 6 s canvas is genuinely running, so "only After Hours" = footage vs. generated, not a dead layer. Screenshots: Now Playing fallback + Home ambient looked correct. |
+
+**Gates:** `node --check tests/live-canvas.mjs` clean; device probe **12/12**; `npm test` run in this session (see below).
+No Rust/JS product code changed (only Kotlin overlay + tests/docs): the renderer, `canvasmath.js`, `canvas.rs`, relay and CSS were already correct.
+
+Status: ✅ build fixed ✅ Canvas device-verified 12/12 ✅ coverage measured + documented
+✅ docs (canvas §20, P59, CHANGELOG) ⏳ **nothing committed or pushed (rule 1)**.
+Emulator left running with the new APK installed (canvas pref restored to off).
+
+## 2026-11-14c — Now Playing Canvas removed completely (user request)
+
+User: *"completly remove the canvas feature and code ."* — supersedes the
+2026-11-14 revive entry above. **No parking**: every Canvas reference is gone.
+
+**Deleted:** `app/src/mobile/canvas.js`, `canvasmath.js`, `app/src-tauri/src/canvas.rs`,
+`app/tests/live-canvas.mjs`, `canvasmath.test.mjs`, `docs/spotify-android-canvas.md`.
+
+**Removed:** binders import + `paintCanvasForTrack(t)` + the three Settings rows +
+the `paintSpdc`/`m-spdc-save`/`flipCanvas` block + pref entries; the ~260-line
+cinematic CSS block in `mobile/index.html`; `mod canvas`/`app.manage(CanvasState)`/3
+command registrations in `lib.rs`; the `/canvas` route + `canvas_video` fn in
+`proxy.rs` (serve_media_file kept — the vault still uses it); the canvas tier in
+`cache.rs` (`canvas_dir`, `canvas_bytes`/`canvas_count`, `canvas_path`, walk/clear/
+probe args, stats branch); `https://canvaz.scdn.co` from both Android CSPs;
+`_verify` canvas checks; three 06-features sections; the feature-list ref;
+the CHANGELOG "Added" entry (replaced with a "Removed" one).
+
+**Guard:** `mobile-spotify.test.mjs` now asserts no `m-canvas`/`m-spdc`/`Now Playing Canvas`
+and that `fetch_canvas`/`set_canvas_cookie`/`canvas_configured` are gone from both
+halves (line-anchored active-code view).
+
+**Evidence:** `npm test` **545/545** pass · `npm run lint` clean · `node --check`
+binders/_verify/mobile-spotify clean · `cargo fmt --check` clean ·
+`cargo check --all-targets` exit 0 · residual-symbol grep in `app/src`,`app/src-tauri/src`,
+`app/tests` = 0 · debug APK **21,889,321 B** built (`REAL_BUILD_EXIT=0`) and
+installed on `Pixel6_API36` · device probe `canvas-gone.mjs` **5/6** +
+`playback-check.mjs`: audio playing and advancing (t 126.26→128.80, rs=4,
+err=null), `#np-canvas-layer` absent, `np-canvas*` nodes = 0, html classes
+contain no `np-canvas` — with a track playing for 2.5 s. The probe's only FAIL
+was a `#np-title` selector mismatch (probe-only; the Now Playing screen uses a
+different title id), not a feature regression. Settings: Spotify rows present,
+zero Canvas rows/mentions; `fetch_canvas`/`set_canvas_cookie`/`canvas_configured`
+all REJECTED; `cache_stats` has no canvas fields.
+
+Status: ✅ removed + gated + built + device-verified ⏳ **nothing committed or
+pushed (rule 1)**. `.build_lf.sh` removed from the tree. Emulator left running.

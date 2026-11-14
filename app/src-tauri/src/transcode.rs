@@ -213,7 +213,7 @@ pub fn content_type(ext: Option<&str>) -> &'static str {
     match ext.map(str::to_ascii_lowercase).as_deref() {
         Some("mp3") => "audio/mpeg",
         Some("opus") | Some("ogg") => "audio/ogg",
-        // Canvas videos (and any stray video in the vault): the container is
+        // Videos in the vault: the container is
         // still MP4, but `<video>` wants the video/* flavour to pick the
         // demuxer without sniffing.
         Some("mp4") | Some("m4v") => "video/mp4",

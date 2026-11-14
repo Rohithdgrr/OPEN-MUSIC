@@ -126,13 +126,11 @@ fn keyring_delete() -> Result<(), String> {
 // Err), so the refresh token lands in the app's own sandboxed `store.db` kv
 // table instead. `store` is ignored on desktop and required on mobile.
 //
-// Accepted tradeoff (docs/spotify-android-canvas.md §3A): app-private SQLite,
-// not Android Keystore. Because every caller goes through these three fns, a
+// Accepted tradeoff: app-private SQLite, not Android Keystore. Because every caller goes through these three fns, a
 // later Keystore migration is a one-function change.
 
 // Desktop reads/writes these through the OS credential store, so the kv keys
-// exist only where the store-backed seam is compiled in. (The Canvas `sp_dc`
-// key lives with its own module — see canvas.rs::SPDC_KEY.)
+// exist only where the store-backed seam is compiled in.
 #[cfg(mobile)]
 const TOKEN_KEY: &str = "spotify:refresh-token";
 

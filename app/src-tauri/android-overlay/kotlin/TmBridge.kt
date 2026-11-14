@@ -50,9 +50,14 @@ class TmBridge(private val hub: MediaHub) {
     hub.share(text)
   }
 
-  /// "Save to local": put the file in the device's own storage (MediaStore)
-  /// so other players see it. Distinct from "Download", which vaults into the
-  /// app-private folder only OpenMusic can read.
+  /// "Save to local" (menus.js trackMenu): copy one vaulted song file into the
+  /// device's MediaStore (Music/OpenMusic/) so other players see it. Distinct
+  /// from "Download", which vaults into the app-private folder only OpenMusic
+  /// can read. Returns a line protocol consumed by savelocal.js bridgeResult():
+  /// `ok <name>` / `same <name>` / `err: …` — `same` makes the menu item
+  /// idempotent (docs/mobile/06-features.md, 2026-10-24).
+  /// ONE declaration only: a second identical overload fails the Kotlin build
+  /// (docs/mobile/09-problems-solutions.md P59).
   @JavascriptInterface
   fun saveLocal(json: String): String = hub.saveLocal(json)
 
@@ -62,11 +67,4 @@ class TmBridge(private val hub: MediaHub) {
   @JavascriptInterface
   fun consumeRoute(): String = hub.takeRoute()
 
-  /// "Save to local" (menus.js trackMenu): copy one vaulted song file into
-  /// the device's MediaStore (Music/OpenMusic/) so other players see it.
-  /// Returns a line protocol consumed by savelocal.js bridgeResult():
-  /// `ok <name>` / `same <name>` / `err: …` — `same` makes the menu item
-  /// idempotent (docs/mobile/06-features.md, 2026-10-24).
-  @JavascriptInterface
-  fun saveLocal(json: String): String = hub.saveLocal(json)
 }

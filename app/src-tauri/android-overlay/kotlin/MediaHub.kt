@@ -9,11 +9,9 @@ import android.content.ComponentName
 import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
-import android.content.ContentValues
 import android.provider.MediaStore
 import java.io.File
 import android.net.Uri
-import android.content.ContentResolver
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -21,16 +19,12 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.MediaStore
 import android.webkit.WebView
 import org.json.JSONObject
 import android.widget.RemoteViews
-import java.io.File
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -297,6 +291,8 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
     } catch (e: Exception) {
       return "err: ${e.message ?: "save error"}"
     }
+  }
+
   /// Cheap per-tick publish: position + transport state only — no metadata
   /// churn, cheap enough to run every second. Speed is 1.0 while playing so
   /// the system extrapolates between ticks, and 0.0 while paused so nothing
@@ -652,130 +648,4 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
     }
   }
 
-  // ------------------------------------------------------------ save local -
-
-  /// Copy one vaulted song file into MediaStore (Music/OpenMusic/) — the
-  /// "Save to local" menu item (savelocal.js). Scoped storage makes this a
-  /// plain insert, no storage permission on API 29+; older versions answer
-  /// honestly instead of failing oddly. Runs on the caller's (WebView)
-  /// thread; a few MB copy is milliseconds-to-seconds of work.
-  fun saveLocal(json: String): String {
-    if (!this::app.isInitialized) return "err: app not ready"
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-      return "err: save to local needs Android 10 or newer"
-    }
-    try {
-      val o = JSONObject(json)
-      val src = File(o.optString("path", ""))
-      if (!src.isFile) return "err: saved file not found — download it again"
-      val bytes = src.length()
-      if (bytes <= 0L) return "err: saved file is empty"
-
-      // The display name from savelocal.js localFileName(), re-sanitized here
-      // as defense in depth: same strip rule, so dedupe compares the same
-      // final string the JS side computed.
-      val display = sanitizeName(o.optString("display", "")) ?: "song.m4a"
-      val ext = display.substringAfterLast('.', "m4a")
-      val mime = if (ext.equals("opus", ignoreCase = true)) "audio/ogg" else "audio/mp4"
-      val sanitized = sanitizeName(o.optString("title", "")) ?: display.substringBeforeLast('.')
-      val artistName = sanitizeName(o.optString("artist", "")) ?: "Unknown artist"
-      val albumName = sanitizeName(o.optString("album", "")) ?: "Unknown album"
-
-      val cr = app.contentResolver
-      // Idempotent subject = the name, not the bytes: a re-downloaded vault
-      // copy can differ byte-for-byte (CDN encode drift) while being the same
-      // song; treating that as new made MediaStore auto-rename the second
-      // insert to " <n>.m4a" and the device filled with duplicates.
-      val media = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-      cr.query(
-        media,
-        arrayOf(MediaStore.MediaColumns._ID),
-        "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
-        arrayOf(display),
-        null,
-      )?.use { c ->
-        if (c.moveToFirst()) {
-          return "same $display"
-        }
-      }
-
-      val values = ContentValues().apply {
-        put(MediaStore.MediaColumns.DISPLAY_NAME, display)
-        put(MediaStore.MediaColumns.MIME_TYPE, mime)
-        put(MediaStore.MediaColumns.RELATIVE_PATH, "Music/OpenMusic/")
-        put(MediaStore.Audio.AudioColumns.TITLE, sanitized)
-        put(MediaStore.Audio.AudioColumns.ARTIST, artistName.ifEmpty { "Unknown artist" })
-        put(MediaStore.Audio.AudioColumns.ALBUM, albumName.ifEmpty { "Unknown album" })
-        put(MediaStore.Audio.AudioColumns.IS_MUSIC, 1)
-        put(MediaStore.Audio.AudioColumns.IS_RINGTONE, 0)
-        put(MediaStore.Audio.AudioColumns.IS_NOTIFICATION, 0)
-        put(MediaStore.Audio.AudioColumns.IS_ALARM, 0)
-        put(MediaStore.Audio.AudioColumns.IS_PODCAST, 0)
-        put(MediaStore.MediaColumns.IS_PENDING, 1)
-      }
-      val uri = cr.insert(media, values) ?: return "err: media library rejected the insert"
-      try {
-        cr.openOutputStream(uri)?.use { outs ->
-          src.inputStream().use { ins ->
-            ins.copyTo(outs, 64 * 1024)
-          }
-          outs.flush()
-        } ?: run {
-          fail(uri, cr, display)
-          return "err: could not open storage stream"
-        }
-        val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-        cr.update(uri, done, null, null)
-        // MediaProvider can rename on a display-name race ("song (1).m4a") —
-        // the honest result is the name the row actually carries now.
-        var actual = display
-        try {
-          cr.query(
-            uri,
-            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
-            null,
-            null,
-            null,
-          )?.use { c ->
-            if (c.moveToFirst()) actual = c.getString(0) ?: display
-          }
-        } catch (_: Exception) {
-        }
-        return "ok $actual"
-      } catch (e: Exception) {
-        fail(uri, cr, display)
-        return "err: save failed — ${e.message ?: "copy error"}"
-      }
-    } catch (e: Exception) {
-      return "err: ${e.message ?: "save error"}"
-    }
-  }
-
-  private fun fail(uri: Uri, cr: ContentResolver, name: String) {
-    try {
-      cr.delete(uri, null, null)
-    } catch (_: Exception) {
-      logW("[TM] saveLocal: could not discard pending row ($name)")
-    }
-  }
-
-  private fun logW(msg: String) {
-    try {
-      android.util.Log.w("OpenMusic", msg)
-    } catch (_: Exception) {
-    }
-  }
-
-  /// Same strip rule as savelocal.js localFileName: Android-hostile
-  /// separators + control chars → space, spacing collapsed, trimmed.
-  private fun sanitizeName(raw: String): String? {
-    val s = raw
-      .replace(Regex("[/:*?\"<>|\\\\]"), " ")
-      .replace(Regex("[\\x00-\\x1f]"), " ")
-      .replace(Regex("\\s+"), " ")
-      .trim()
-      .trimEnd('-', '.', ' ')
-      .take(96)
-    return if (s.isEmpty()) null else s
-  }
 }

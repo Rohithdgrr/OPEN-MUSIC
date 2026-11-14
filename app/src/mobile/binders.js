@@ -92,11 +92,6 @@ import { hydrateArtistArt } from "./artresolve.js";
 import { similarShelf } from "../taste.js";
 import { groupLangAlbums, variantsFor } from "../albumgroup.js";
 import { matchTrackToCatalog } from "../spotmatch.js";
-// PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the Canvas renderer
-// is unwired — binders is canvas.js's only importer, so the whole ambient
-// layer never evaluates. Un-comment to revive (see §18.3).
-// import { canvasEnabled, canvasCellularAllowed, setCanvasEnabled, setCanvasCellular, stopCanvas, paintCanvasForTrack } from "./canvas.js";
-
 const main = () => document.querySelector("#screen main");
 
 // ------------------------------------------------- search rank + recovery -
@@ -3760,11 +3755,6 @@ function paintNowplaying(st) {
         document.documentElement.style.setProperty("--np-tint", css);
       });
     }
-    // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the Canvas
-    // per-track hookup is off. Previously (§3B): a no-op unless the screen,
-    // the toggle and a configured cookie all lined up — the art above was
-    // the fallback by construction.
-    // paintCanvasForTrack(t);
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
     // The action-row Like icon mirrors the same state (paintFavs covers every
@@ -4873,17 +4863,6 @@ function ensureMobilePrefs(m) {
           "Match your top 20 to the catalog",
           `<button type="button" id="m-spotify-top" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button>`,
         ),
-        // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the three
-        // Canvas rows are commented out, not re-run. Un-comment them (and the
-        // flip wiring below) to bring the Canvas settings UI back.
-        // row("smart_display", "Now Playing Canvas", "Full-screen artwork on every screen - animated when available", sw("m-canvas")) +
-        // row("signal_cellular_alt", "Canvas on mobile data", "Off = Wi-Fi only (artwork still shows)", sw("m-canvas-cell")) +
-        // row(
-        //   "key",
-        //   "Canvas session cookie",
-        //   `Browser sp_dc — <span id="m-spdc-status">checking…</span>`,
-        //   `<input type="password" id="m-spdc" autocomplete="off" spellcheck="false" placeholder="sp_dc" class="w-24 shrink-0 rounded-xl border border-surface-container-high bg-surface-container-low px-3 py-1.5 font-body-sm text-body-sm text-on-surface focus:outline-none" /><button type="button" id="m-spdc-save" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Save</button>`,
-        // ),
     );
   const wrap = m.querySelector("div.space-y-6") || m.firstElementChild || m;
   // Before the Legal block when it exists so prefs stay together.
@@ -5036,8 +5015,8 @@ function ensureMobilePrefs(m) {
     }
   });
   // ------------------------------------------- Spotify (new 2026-10-15)
-  // §3C of docs/spotify-android-canvas.md: account, top-tracks import and the
-  // Canvas controls, over the already-registered commands. Status copy mirrors
+  // Spotify account + top-tracks import over the already-registered commands.
+  // Status copy mirrors
   // the desktop panel (settings.js fillSpotifyStatus).
   const spotifyStatus = async () => {
     const st = q("m-spotify-status");
@@ -5110,53 +5089,6 @@ function ensureMobilePrefs(m) {
       toast(String(err).slice(0, 160), 6000, "error");
     }
   });
-  // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the Canvas
-  // session-cookie status/save and both flip switches below are off with the
-  // renderer. The whole block is commented verbatim; un-comment it (plus the
-  // three Settings rows) to revive.
-  /*
-  const paintSpdc = async () => {
-    const st = q("m-spdc-status");
-    if (!st) return;
-    if (!invoke) {
-      st.textContent = "unavailable";
-      return;
-    }
-    try {
-      st.textContent = (await invoke("canvas_configured")) ? "configured" : "not configured";
-    } catch {
-      st.textContent = "unavailable";
-    }
-  };
-  if (invoke) paintSpdc();
-  q("m-spdc-save")?.addEventListener("click", async () => {
-    if (!invoke) return toast("Backend unavailable", 4000, "error");
-    const input = q("m-spdc");
-    const val = input ? input.value.trim() : "";
-    try {
-      await invoke("set_canvas_cookie", { cookie: val });
-      if (input) input.value = "";
-      toast(val ? "Canvas cookie saved" : "Canvas cookie cleared", 3500, "success");
-    } catch (err) {
-      toast(String(err).slice(0, 140), 5000, "error");
-    }
-    paintSpdc();
-  });
-  const flipCanvas = (id, get, set, msg) => {
-    q(id)?.addEventListener("click", () => {
-      const on = !get();
-      set(on);
-      paintMobilePrefs(m);
-      // Apply now, not at the next track change: stopCanvas clears the
-      // per-track guard and the repaint refetches (Rust-side cached).
-      stopCanvas();
-      paintCanvasForTrack(playerState().track || null);
-      toast(msg(on), 3000, "success");
-    });
-  };
-  flipCanvas("m-canvas", canvasEnabled, setCanvasEnabled, (on) => (on ? "Canvas on - full-screen artwork" : "Canvas off"));
-  flipCanvas("m-canvas-cell", canvasCellularAllowed, setCanvasCellular, (on) => (on ? "Canvas allowed on mobile data" : "Canvas Wi-Fi only"));
-  */
   if (invoke) invoke("cache_stats").then((s) => paintCache(s)).catch(() => {});
   applyMobileTheme();
 }
@@ -5200,9 +5132,6 @@ function paintMobilePrefs(m) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
   }
-  // PARKED 2026-10-24 (docs/spotify-android-canvas.md §18): the canvas
-  // switch-state entries were (put them back when reviving):
-  // ["m-canvas", canvasEnabled()], ["m-canvas-cell", canvasCellularAllowed()]
   for (const [id, on] of [["m-datasaver", dataSaver()], ["m-explicit", explicitHidden()], ["m-smart", smartDlOn()], ["m-prefetch", prefetchOn()]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, !!on);
