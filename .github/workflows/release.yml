@@ -146,7 +146,7 @@ jobs:
           cd app/src-tauri/target/release/bundle
           find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
       - name: Publish installers
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: OPEN MUSIC ${{ github.ref_name }}
           generate_release_notes: true
@@ -162,7 +162,7 @@ jobs:
         # Optional by nature: .zip/.sig naming changed across Tauri versions
         # and the sigs only exist when the build was signed. Includes
         # .app.tar.gz because the manifest points at it.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: false
           files: |
@@ -181,7 +181,7 @@ jobs:
       - name: Publish manifests
         # Attached last so a manifest whose URLs do not resolve never ships.
         # Unmatched is fine: unsigned builds produce no manifests.
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           fail_on_unmatched_files: false
           files: |
