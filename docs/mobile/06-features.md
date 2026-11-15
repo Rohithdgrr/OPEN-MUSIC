@@ -59,6 +59,11 @@ instead of failing oddly.
   registered on mobile, `lib.rs:1648`). There is **no in-app volume slider** (removed
   2026-10-06: system volume keys own it; `tm-mobile-vol` still seeds the level
   in `player.js`).
+- Five-band equalizer: the Now Playing Equalizer action opens an accessible
+  dialog with five labeled bands from −12 to +12 dB and a reset-to-flat
+  action. Values persist in `tm-eq-bands` and apply to active and standby
+  audio chains; automatic normalization and spatial processing stay enabled.
+  This is not a Settings toggle and does not affect desktop playback.
 
 ## Library & discovery
 
@@ -103,6 +108,11 @@ instead of failing oddly.
 - Exportify CSV import (`importer.js:parseExportifyCsv`, core.js-free):
   `Import playlist CSV` row in Settings → Storage behind a hidden file
   input; parsed rows become a local playlist, bad rows are reported.
+- M3U/M3U8 and PLS import (`playlist-file.js`): Settings → Storage accepts
+  local playlist files up to 2 MB, extracts display metadata only, matches
+  the first 100 entries against the supported catalog, and saves successful
+  matches as a local playlist. Imported paths/URLs are never opened; misses
+  are reported rather than silently turned into playable URLs.
 - Backup/restore + Drive sync commands exist (`gdrive_*`), but native
   file pickers are desktop-only (see below).
 
@@ -1207,3 +1217,134 @@ Global "friends listening now" remains out of scope until the app has an
 identity and opt-in presence service contract. The existing roster is limited
 to the active Jam room and must stay that way; no account or presence backend
 is inferred from it.
+
+## Android visual system and safe-area polish (2026-11-14)
+
+Design direction: a restrained studio/editorial player. Preserve OpenMusic's
+neutral light/dark palettes and let real artwork provide color; reduce chrome
+and glow rather than introducing a new brand palette or decorative gradients.
+Use semantic CSS custom properties for shared surfaces, borders, motion,
+focus, and fixed-player/navigation geometry.
+
+Scope is the Android mobile shell only: responsive viewport sizing, system
+safe-area clearance for the fixed mini-player and bottom navigation, visible
+keyboard focus, touch-sized controls, and reduced-motion behavior. The home
+spotlight must describe the real playlist action and must not claim a codec or
+quality that the feed did not verify. Desktop files and behavior stay
+untouched.
+
+Acceptance:
+- Android zoom is not disabled; the shell uses the dynamic viewport height and
+  has no hard-coded minimum that forces short screens to overflow.
+- The fixed player sits above the bottom navigation, both respect Android
+  system insets, and scroll content keeps enough clearance for both.
+- Interactive shell controls have at least a 44px coarse-pointer target and
+  keyboard users receive a visible focus indicator; the mini-player seek
+  slider supports arrow, page, Home, and End keys. Home shelf filters expose
+  their selected state to assistive technology as well as color.
+- Existing theme colors and dark-mode contrast remain intact; tab/lyric
+  movement stops when reduced motion is requested while color feedback remains.
+- Home's spotlight uses accurate playlist wording and makes no unverified
+  lossless/bit-depth claim.
+
+As built (2026-11-14): the shell uses shared chrome/focus/touch tokens, a
+dynamic viewport, accessible bottom-navigation naming, and matched safe-area
+offsets for navigation, the always-on player, content clearance, and toasts.
+The player seek rail has a 44px hit area while its visual track stays compact.
+Home now reveals the spotlight only when the feed provides a playable playlist;
+unknown track counts stay hidden. The hero lookup uses its shelf identifier
+rather than a positional section index.
+
+Validation: the focused mobile visual-system, dark-layout, and boot-graph
+tests pass (20/20); the mobile frontend bundle builds and ESLint is clean.
+Device verification was unavailable because the ADB server could not start in
+this environment.
+
+## M3U/PLS import and skip silence (2026-11-14)
+
+Settings → Storage accepts M3U, M3U8 and PLS files up to 2 MB. The importer
+extracts display metadata and matches at most 100 entries against the
+supported catalog, preserving file order and reporting unmatched rows. File
+paths and remote URLs are never opened as media. `playlist-file.js` owns the
+bounded parser and matcher; the file chooser is the Android WebView's local
+file input.
+
+Settings → Playback & Audio adds an opt-in Skip silence switch that is off by
+default. While the active audio element is ready and playing, the player
+samples RMS from its
+existing post-DSP analyser; at least 1.1 seconds below the fixed -44 dBFS
+threshold seeks forward by 1.5 seconds. Pause, seek, buffering and track
+changes reset the detector. It does not affect desktop playback or audio
+quality settings.
+
+As built: the M3U/PLS parser, bounded catalog import, silence threshold
+state-machine, and mobile boot graph pass focused tests. On Pixel6_API36, a
+real M3U file matched and saved one catalog track; the Skip silence switch
+rendered off by default and persisted both on/off taps. The APK built and
+launched successfully; the full JS suite passed 587/587 and ESLint was clean.
+The audio-level silence-seek path still needs a controlled silent-audio
+device test. Independent pitch shifting is not implemented; the existing
+speed control changes tempo only.
+
+## Now Playing video backdrop (2026-11-14)
+
+Settings → Playback & Audio → **Now Playing video** (off by default) plays the
+track's own video muted and looping inside the existing square art card, under
+the cover. Spec: `docs/song-video.md` §17; the matcher is the P0 module.
+
+- **Never a wrong picture.** `videomatch.js` ranks candidates (title gate 0.70,
+  accept 0.62, version penalty for karaoke/cover/remix/sped-up); below the bar
+  the backdrop stays artwork, and that miss is negative-cached for 24 h so it
+  costs one search, not one per paint.
+- **Never the CDN directly.** Rust `video_search` / `video_player` /
+  `video_relay` mint a loopback `GET /video?id&itag&token` URL; the relay
+  allow-lists `*.googlevideo.com`, forwards byte ranges (seek/loop) and
+  re-resolves once when a URL ages out.
+- **Data is respected.** Cellular or Data Saver refuses the feature outright
+  (`metered`), reduced motion refuses it, and the layer only fades in on
+  `loadeddata` — a slow stream shows the artwork, never a black box.
+- **Bounded memory.** One `<video>`; track change swaps `src`, leaving the
+  screen / clearing the track / switching the feature off releases the decoder,
+  a hidden app pauses it, and it follows the catalog audio's play/pause.
+
+Limits: Android only (desktop has no backdrop yet), no offline video, no A/V
+sync (the video is decorative; audio is the catalog stream), no 1080p opt-in.
+
+## Now Playing full telemetry, Miniplayer, & Home Screen redesign (2026-11-15)
+
+Complete UI/UX overhaul of the three central mobile surfaces:
+
+1. **Now Playing Screen (All Fields Surface)**:
+   - Surfaced the previously hidden track telemetry fields (`#np-trackline`,
+     `#np-album`, `#np-length`, `#np-room-members`) into an integrated, elegant
+     information architecture.
+   - Eyebrow telemetry strip displays `#np-trackline` (track queue position and audio format)
+     paired with a live audio quality indicator chip (`LOSSLESS / 320 KBPS / STEREO`).
+   - Title (`#np-title`) and Artist (`#np-artist`) enhanced with album metadata
+     (`#np-album`) and dedicated duration (`#np-length`) / active listeners (`#np-room-members`)
+     telemetry chips.
+   - Preserves all contract IDs (C-6, ADDED, LEGACY) and media layers (`#np-art-card`,
+     `#np-art`, `#np-video`, `#np-backdrop`, `#np-visualizer`).
+   - Upgraded scrubber with smooth gradient progress fill, buffered indicator,
+     and tabular monospace timestamps (`#elapsed-time`, `#remaining-time`).
+   - Polished transport controls with active state indicators and tactility.
+   - Action row (`#np-action-like`, `#np-action-lyrics`, `#np-action-eq`, `#np-action-queue`,
+     `#np-action-chat`, `#np-action-jam`) refined with ergonomic circular bubbles and badges.
+
+2. **Docked Miniplayer Enhancement**:
+   - Elevated glassmorphic floating pill (`#tm-widget`) with acrylic blur, subtle borders,
+     and ambient depth shadow.
+   - Integrated subtle top drag-handle indicator to communicate sheet pull-up affordance.
+   - High-contrast typography for `#tm-w-title` and `#tm-w-artist` with streaming fidelity indicator.
+   - Preserves 44px touch targets, full keyboard slider navigation, and swipe gesture controls
+     (swipe up to open Now Playing, swipe left/right to skip).
+
+3. **Home Screen Redesign**:
+   - Translucent frosted glass sticky topbar with brand identity, live audio equalizer mark,
+     and instant navigation pills (Search, History, Profile/Settings).
+   - Category filter chip strip (`data-home-cat="all"`, `charts`, `playlists`, `albums`,
+     `artists`, `genres`, `jump`) with accessible `aria-pressed` states.
+   - 2x2 Favorites Quick Hub (Liked Songs, Offline Downloads/Vault, Recently Played, My Playlists)
+     with distinct vibrant icon badges and live count labels.
+   - Enhanced horizontal discovery rails with rounded squircle artwork cards,
+     skeletons (`data-skel`), and smooth carousel scrolling.

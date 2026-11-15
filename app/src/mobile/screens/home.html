@@ -5,8 +5,9 @@
   <div class="relative w-9 h-9 rounded-2xl bg-primary flex items-center justify-center shadow-md ring-1 ring-black/10 active:scale-95 transition-transform">
     <span class="material-symbols-outlined text-on-primary text-[20px] font-bold">graphic_eq</span>
   </div>
-  <div class="flex items-center gap-1.5">
-    <span class="font-headline-md text-[16px] font-extrabold tracking-tight text-on-surface uppercase">OpenMusic</span>
+  <div class="flex flex-col">
+    <span class="font-headline-md text-[16px] font-extrabold tracking-tight text-on-surface uppercase leading-none">OpenMusic</span>
+    <span class="font-label-mono text-[8.5px] text-secondary tracking-widest uppercase mt-0.5">STUDIO AUDIO</span>
   </div>
 </div>
 <!-- Right: Quick Actions -->
@@ -29,18 +30,18 @@
 <section class="flex flex-col pt-2">
   <span class="font-label-mono text-[10px] text-secondary tracking-[0.2em] uppercase font-semibold">Vault audiophile feed</span>
   <h1 class="font-headline-xl text-[30px] sm:text-[34px] leading-[1.05] tracking-tight text-on-surface font-bold mt-1">Good evening</h1>
-  <p class="font-body-sm text-body-sm text-secondary mt-1">Lossless bitstream discovery</p>
+  <p class="font-body-sm text-body-sm text-secondary mt-1">Find something you'll love</p>
   <!-- Category Filters: All/Genres/Heavy Rotation filter the shelves in
        place; Charts/Playlists/Albums/Artists open their mined browsers
        (binders.js wires both verbs onto the one strip). -->
   <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pt-3 -mx-gutter px-gutter" id="home-category-chips">
-    <button data-home-cat="all" class="home-cat-chip px-4 py-2 bg-primary text-on-primary rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all">All</button>
+    <button data-home-cat="all" aria-pressed="true" class="home-cat-chip px-4 py-2 bg-primary text-on-primary rounded-full font-label-sm text-[12px] whitespace-nowrap font-semibold active:scale-95 transition-all">All</button>
     <button data-home-cat="charts" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Charts</button>
     <button data-home-cat="playlists" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Playlists</button>
     <button data-home-cat="albums" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Albums</button>
     <button data-home-cat="artists" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Artists</button>
-    <button data-home-cat="genres" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Genres</button>
-    <button data-home-cat="jump" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Heavy Rotation</button>
+    <button data-home-cat="genres" aria-pressed="false" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Genres</button>
+    <button data-home-cat="jump" aria-pressed="false" class="home-cat-chip px-4 py-2 rounded-full font-label-sm text-[12px] whitespace-nowrap font-medium active:scale-95 transition-all">Heavy Rotation</button>
   </div>
 </section>
 <section data-jam-roster hidden class="hidden flex-col space-y-2 rounded-2xl border border-surface-container-high/60 bg-surface-container-lowest/80 p-3 shadow-xs" aria-labelledby="jam-roster-title">
@@ -54,34 +55,26 @@
   <div data-jam-roster-list class="flex flex-wrap gap-2" aria-live="polite"></div>
 </section>
 <!-- 1. Featured Spotlight Hero -->
-<section class="relative overflow-hidden rounded-3xl bg-surface-container-lowest dark:bg-surface-container-low shadow-sm p-4 border border-surface-container-high/70 hover:shadow-md transition-all group" data-shelf="spotlight">
+<section class="hidden relative overflow-hidden rounded-3xl bg-surface-container-lowest dark:bg-surface-container-low shadow-sm p-4 border border-surface-container-high/70 transition-all group" data-shelf="spotlight">
   <div class="relative w-full aspect-[16/10] rounded-2xl overflow-hidden mb-3.5 group cursor-pointer shadow-sm ring-1 ring-black/5">
     <img class="w-full h-full object-cover contrast-125 group-hover:scale-105 transition-transform duration-700" data-alt="Featured spotlight artwork" src="logo.png"/>
     <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/45 to-transparent"></div>
-    <div class="absolute top-3 left-3 inline-flex items-center gap-1.5 px-3 py-1 bg-surface-container-lowest/90 backdrop-blur-md rounded-full text-primary shadow-xs border border-white/60">
-      <span class="material-symbols-outlined text-[15px]">album</span>
-      <span class="font-label-mono text-[9.5px] uppercase tracking-wider font-semibold">FEATURED SPOTLIGHT</span>
-    </div>
-    <div class="absolute top-3 right-3 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white font-label-mono text-[9px] font-semibold border border-white/20">
-      <span class="material-symbols-outlined text-[12px] text-emerald-400">verified</span>
-      <span>FLAC 24-BIT</span>
-    </div>
     <div class="absolute bottom-3 inset-x-3.5 flex flex-col text-on-primary">
-      <span class="font-label-mono text-[10px] text-white/70 tracking-widest uppercase font-semibold">DAILY MASTERPIECE</span>
-      <h3 class="font-headline-lg text-[21px] text-white font-bold tracking-tight mt-0.5">Nocturne Sessions Vol. IV</h3>
-      <p class="font-body-sm text-[13px] text-white/85 line-clamp-1 mt-0.5">Solaris &amp; Kaelen</p>
+      <span class="font-label-mono text-[10px] text-white/75 tracking-widest uppercase font-semibold">FEATURED PLAYLIST</span>
+      <h3 class="font-headline-lg text-[21px] text-white font-bold tracking-tight mt-0.5">Featured playlist</h3>
+      <p class="font-body-sm text-[13px] text-white/85 line-clamp-1 mt-0.5">Ready when you are</p>
     </div>
   </div>
   <div class="flex items-center justify-between pt-1">
     <div class="flex items-center gap-2">
       <button class="h-10 px-5 bg-primary text-on-primary rounded-full font-label-md text-label-md flex items-center gap-2 transition-all active:scale-95 shadow-xs font-semibold hover:shadow" type="button">
         <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
-        <span>Play Album</span>
+        <span>Play playlist</span>
       </button>
     </div>
     <div class="flex flex-col items-end">
-      <span class="font-label-mono text-[10px] text-secondary uppercase font-medium">Acoustic Audio</span>
-      <span class="font-label-mono text-[11.5px] text-on-surface font-semibold">9 Tracks • Lossless</span>
+      <span class="font-label-mono text-[10px] text-secondary uppercase font-medium">Playlist</span>
+      <span data-spot-count hidden class="font-label-mono text-[11.5px] text-on-surface font-semibold"></span>
     </div>
   </div>
 </section>
@@ -124,29 +117,29 @@
     <h2 class="font-headline-md text-[19px] tracking-tight text-on-surface font-bold">Genres &amp; Moods</h2>
   </div>
   <div class="flex gap-2.5 overflow-x-auto no-scrollbar -mx-gutter px-gutter py-1" id="home-genres-grid">
-    <div data-genre-q="progressive trance" class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all">
+    <div data-genre-q="progressive trance" class="genre-card w-[110px] flex-shrink-0 h-28 rounded-2xl bg-gradient-to-br from-[#1a237e] to-[#0d47a1] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all ring-1 ring-white/10">
       <span class="material-symbols-outlined text-[24px] text-white/90">waves</span>
-      <span class="font-body-sm font-semibold text-white text-[12px] leading-tight">Progressive Trance</span>
+      <span class="font-body-sm font-bold text-white text-[12px] leading-tight">Progressive Trance</span>
     </div>
-    <div data-genre-q="uplifting trance" class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all">
+    <div data-genre-q="uplifting trance" class="genre-card w-[110px] flex-shrink-0 h-28 rounded-2xl bg-gradient-to-br from-[#e65100] to-[#f57f17] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all ring-1 ring-white/10">
       <span class="material-symbols-outlined text-[24px] text-white/90">light_mode</span>
-      <span class="font-body-sm font-semibold text-white text-[12px] leading-tight">Uplifting Trance</span>
+      <span class="font-body-sm font-bold text-white text-[12px] leading-tight">Uplifting Trance</span>
     </div>
-    <div data-genre-q="tech trance" class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all">
+    <div data-genre-q="tech trance" class="genre-card w-[110px] flex-shrink-0 h-28 rounded-2xl bg-gradient-to-br from-[#263238] to-[#102027] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all ring-1 ring-white/10">
       <span class="material-symbols-outlined text-[24px] text-white/90">hexagon</span>
-      <span class="font-body-sm font-semibold text-white text-[12px] leading-tight">Tech Trance</span>
+      <span class="font-body-sm font-bold text-white text-[12px] leading-tight">Tech Trance</span>
     </div>
-    <div data-genre-q="ambient" class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all">
+    <div data-genre-q="ambient" class="genre-card w-[110px] flex-shrink-0 h-28 rounded-2xl bg-gradient-to-br from-[#004d40] to-[#00796b] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all ring-1 ring-white/10">
       <span class="material-symbols-outlined text-[24px] text-white/90">all_inclusive</span>
-      <span class="font-body-sm font-semibold text-white text-[12px] leading-tight">Ambient</span>
+      <span class="font-body-sm font-bold text-white text-[12px] leading-tight">Ambient</span>
     </div>
-    <div data-genre-q="vocal trance" class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all">
+    <div data-genre-q="vocal trance" class="genre-card w-[110px] flex-shrink-0 h-28 rounded-2xl bg-gradient-to-br from-[#4a148c] to-[#7b1fa2] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all ring-1 ring-white/10">
       <span class="material-symbols-outlined text-[24px] text-white/90">bar_chart</span>
-      <span class="font-body-sm font-semibold text-white text-[12px] leading-tight">Vocal Trance</span>
+      <span class="font-body-sm font-bold text-white text-[12px] leading-tight">Vocal Trance</span>
     </div>
-    <div data-genre-q="psy trance" class="genre-card w-[104px] flex-shrink-0 h-28 rounded-2xl bg-[#1b1b1e] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all">
+    <div data-genre-q="psy trance" class="genre-card w-[110px] flex-shrink-0 h-28 rounded-2xl bg-gradient-to-br from-[#880e4f] to-[#ad1457] shadow-sm flex flex-col justify-between p-3 cursor-pointer active:scale-95 transition-all ring-1 ring-white/10">
       <span class="material-symbols-outlined text-[24px] text-white/90">album</span>
-      <span class="font-body-sm font-semibold text-white text-[12px] leading-tight">Psy Trance</span>
+      <span class="font-body-sm font-bold text-white text-[12px] leading-tight">Psy Trance</span>
     </div>
   </div>
 </section>
@@ -157,25 +150,25 @@
     <button data-nav="library" class="font-label-sm text-[12px] text-secondary hover:text-on-surface transition-colors font-semibold flex items-center gap-1" type="button">See All<span class="material-symbols-outlined text-[15px]">chevron_right</span></button>
   </div>
   <div class="grid grid-cols-2 gap-2.5">
-    <div data-nav="liked-songs" class="min-h-[68px] border border-surface-container-high/60 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs">
-      <span class="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center flex-none"><span class="material-symbols-outlined text-[19px] text-on-surface" style="font-variation-settings: 'FILL' 1;">favorite</span></span>
-      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11px] text-on-surface font-semibold truncate tracking-tight">Liked Songs</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="liked">0 Tracks</span></span>
-      <span class="material-symbols-outlined text-[16px] text-secondary ml-auto flex-none">chevron_right</span>
+    <div data-nav="liked-songs" class="min-h-[70px] border border-surface-container-high/70 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs hover:border-outline-variant/60 group">
+      <span class="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center flex-none ring-1 ring-rose-500/20 group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">favorite</span></span>
+      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11.5px] text-on-surface font-bold truncate tracking-tight">Liked Songs</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="liked">0 Tracks</span></span>
+      <span class="material-symbols-outlined text-[16px] text-secondary opacity-60 group-hover:opacity-100 group-hover:text-on-surface ml-auto flex-none transition-colors">chevron_right</span>
     </div>
-    <div data-nav="downloads" class="min-h-[68px] border border-surface-container-high/60 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs">
-      <span class="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center flex-none"><span class="material-symbols-outlined text-[19px] text-on-surface">download</span></span>
-      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11px] text-on-surface font-semibold truncate tracking-tight">Downloads</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="downloads">0 Tracks</span></span>
-      <span class="material-symbols-outlined text-[16px] text-secondary ml-auto flex-none">chevron_right</span>
+    <div data-nav="downloads" class="min-h-[70px] border border-surface-container-high/70 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs hover:border-outline-variant/60 group">
+      <span class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center flex-none ring-1 ring-emerald-500/20 group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">download</span></span>
+      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11.5px] text-on-surface font-bold truncate tracking-tight">Downloads</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="downloads">0 Tracks</span></span>
+      <span class="material-symbols-outlined text-[16px] text-secondary opacity-60 group-hover:opacity-100 group-hover:text-on-surface ml-auto flex-none transition-colors">chevron_right</span>
     </div>
-    <div data-nav="history" class="min-h-[68px] border border-surface-container-high/60 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs">
-      <span class="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center flex-none"><span class="material-symbols-outlined text-[19px] text-on-surface">schedule</span></span>
-      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11px] text-on-surface font-semibold truncate tracking-tight">Recently Played</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="recent">0 Tracks</span></span>
-      <span class="material-symbols-outlined text-[16px] text-secondary ml-auto flex-none">chevron_right</span>
+    <div data-nav="history" class="min-h-[70px] border border-surface-container-high/70 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs hover:border-outline-variant/60 group">
+      <span class="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-none ring-1 ring-amber-500/20 group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">schedule</span></span>
+      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11.5px] text-on-surface font-bold truncate tracking-tight">Recently Played</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="recent">0 Tracks</span></span>
+      <span class="material-symbols-outlined text-[16px] text-secondary opacity-60 group-hover:opacity-100 group-hover:text-on-surface ml-auto flex-none transition-colors">chevron_right</span>
     </div>
-    <div data-nav="library" class="min-h-[68px] border border-surface-container-high/60 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs">
-      <span class="w-9 h-9 rounded-xl bg-surface-container-high flex items-center justify-center flex-none"><span class="material-symbols-outlined text-[19px] text-on-surface">library_music</span></span>
-      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11px] text-on-surface font-semibold truncate tracking-tight">My Playlists</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="playlists">0 Playlists</span></span>
-      <span class="material-symbols-outlined text-[16px] text-secondary ml-auto flex-none">chevron_right</span>
+    <div data-nav="library" class="min-h-[70px] border border-surface-container-high/70 rounded-2xl bg-surface-container-lowest dark:bg-surface-container-low p-3 flex items-center gap-2.5 cursor-pointer active:scale-[0.98] transition-all shadow-xs hover:border-outline-variant/60 group">
+      <span class="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center flex-none ring-1 ring-indigo-500/20 group-hover:scale-105 transition-transform"><span class="material-symbols-outlined text-[20px]">library_music</span></span>
+      <span class="flex flex-col min-w-0"><span class="font-label-md text-[11.5px] text-on-surface font-bold truncate tracking-tight">My Playlists</span><span class="font-body-sm text-[10.5px] text-secondary" data-fav-count="playlists">0 Playlists</span></span>
+      <span class="material-symbols-outlined text-[16px] text-secondary opacity-60 group-hover:opacity-100 group-hover:text-on-surface ml-auto flex-none transition-colors">chevron_right</span>
     </div>
   </div>
 </section>
