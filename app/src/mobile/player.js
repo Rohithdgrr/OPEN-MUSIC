@@ -21,6 +21,8 @@ import { ensureReco } from "./radio.js";
 import { localRole } from "../room.js";
 import { classifyPlay } from "../taste.js";
 import { queueSnapshot, parseQueueSnapshot } from "./queue-persistence.js";
+import { applyEqBands, MOBILE_EQ_DEFAULT, MOBILE_EQ_KEY, normalizeEqBands, parseEqBands } from "./eqstate.js";
+import { silenceStep } from "./silence-skip.js";
 
 // Every transport element loads media from the relay (`http://127.0.0.1:port`) —
 // a different origin from the page (`http://tauri.localhost`). Before the EQ
@@ -63,6 +65,8 @@ let badge = "IDLE";
 // the copy is on disk) — painted as the Now Playing source proof (§5.5).
 let srcHost = "";
 let seq = 0;
+let silenceSince = 0;
+let lastSilenceSkipAt = 0;
 
 const painters = [];
 
@@ -361,9 +365,41 @@ function onAudioEvent(e) {
   if (e.type === "timeupdate") {
     xfadeTick();
     savePos();
+    maybeSkipSilence();
   }
+  if (["pause", "seeking", "waiting", "loadedmetadata", "seeked"].includes(e.type)) silenceSince = 0;
   if (e.type === "pause") savePos(true);
   paint();
+}
+
+function maybeSkipSilence() {
+  let enabled = false;
+  try {
+    enabled = localStorage.getItem("tm-skip-silence") === "1";
+  } catch {}
+  if (!enabled || !audio || audio.paused || audio.seeking || audio.readyState < 3 || audio.currentTime < 0.5) {
+    silenceSince = 0;
+    return;
+  }
+  const now = performance.now();
+  if (now - lastSilenceSkipAt < 1600) return;
+  const analyser = mobileVisualizerAnalyser();
+  if (!analyser) {
+    silenceSince = 0;
+    return;
+  }
+  const samples = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(samples);
+  const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+  const result = silenceStep(rms, silenceSince, now);
+  silenceSince = result.since;
+  if (!result.skip) return;
+  const target = Math.min(Number.isFinite(audio.duration) ? audio.duration - 0.1 : audio.currentTime + 1.5, audio.currentTime + 1.5);
+  if (target > audio.currentTime) {
+    audio.currentTime = target;
+    lastSilenceSkipAt = now;
+    silenceSince = 0;
+  }
 }
 
 addEventListener("pagehide", () => savePos(true));
@@ -383,6 +419,7 @@ const AUDIO_EVENTS = [
   "durationchange",
   "progress",
   "seeked",
+  "seeking",
   "playing",
   "waiting",
   "ended",
@@ -697,6 +734,7 @@ export function applyEq() {
       if (!nodes) continue;
       try {
         applyStudioChain(nodes, "flat", true);
+        applyEqBands(nodes, readMobileEqBands());
       } catch {}
       try {
         // docs/audio-quality.md T2 — same Jam rule as desktop: a convolver
@@ -732,6 +770,40 @@ export function applyEq() {
   } catch {
     return false;
   }
+}
+
+function readMobileEqBands() {
+  try {
+    return parseEqBands(localStorage.getItem(MOBILE_EQ_KEY));
+  } catch {
+    return [...MOBILE_EQ_DEFAULT];
+  }
+}
+
+export function mobileEqBands() {
+  return readMobileEqBands();
+}
+
+export function setMobileEqBand(index, gain) {
+  const bandIndex = Number(index);
+  if (!Number.isInteger(bandIndex) || bandIndex < 0 || bandIndex >= MOBILE_EQ_DEFAULT.length) {
+    return readMobileEqBands();
+  }
+  const gains = readMobileEqBands();
+  gains[bandIndex] = normalizeEqBands([gain, 0, 0, 0, 0])[0];
+  try {
+    localStorage.setItem(MOBILE_EQ_KEY, JSON.stringify(gains));
+  } catch {}
+  for (const chain of eqChains.values()) applyEqBands(chain, gains);
+  return gains;
+}
+
+export function resetMobileEq() {
+  try {
+    localStorage.removeItem(MOBILE_EQ_KEY);
+  } catch {}
+  for (const chain of eqChains.values()) applyEqBands(chain, MOBILE_EQ_DEFAULT);
+  return [...MOBILE_EQ_DEFAULT];
 }
 
 // ------------------------------------------------------ loudness matching -

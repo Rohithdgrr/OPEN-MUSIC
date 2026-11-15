@@ -1,6 +1,7 @@
 # Search resilience — "Search is down right now" must not persist
 
-Status: implemented 2026-10-16 (desktop shell). Mobile parity is a later slice.
+Status: desktop behavior implemented 2026-10-16; Android mobile parity was
+implemented in the 2026-11-14 slice.
 Owners of the behaviour: `app/src/search.js` (+ pure policy `app/src/searchretry.js`),
 `app/src-tauri/src/official.rs`, `app/src-tauri/src/jiosaavn.rs`, diagnostics in
 `app/src/core.js`.
@@ -149,9 +150,31 @@ injection point. Backend `official::call` retry is unit-tested plus covered by
 the E1 live regression (real upstream through the primary source); a Rust-side
 fault was not simulated — stated limitation.
 
-## 7. Non-goals
+## 7. Android mobile parity (2026-11-14)
 
-- Mobile parity — `app/src/mobile/binders.js` has its own single-shot search;
-  next slice, same policy.
+The mobile search screen in `app/src/mobile/binders.js` should use the same
+bounded ladder for failed first-page searches, without changing its existing
+cache-first behavior or JioSaavn-first result ordering:
+
+- Reuse `searchretry.js`'s 1.5 / 4 / 15 / 45 second policy. Only thrown
+  failures retry; a successful empty result is final.
+- Keep any already-painted cached rows visible while retrying. With no rows,
+  show an explicit retrying state rather than a misleading "No results" state.
+- Stop retry timers when a new query, category, or sort supersedes the request.
+  Ignore stale timer callbacks and never retry while offline.
+- When retries are exhausted, expose a single-flight Retry action. If the
+  failure was offline, automatically re-run the current query on `online`.
+- This slice covers the first-page search request. Pagination retains its
+  existing explicit "Load more results" action.
+
+Implementation record: mobile first-page failures now use the shared bounded
+ladder, retain cached rows while retrying, stop stale attempts, expose a
+single-flight Retry action after exhaustion, and re-run on reconnection.
+Successful empty results and pagination are not retried. Focused search/
+radio regression suites passed **23/23** after this change; the full suite and
+Android device path are recorded with the final validation.
+
+## 8. Non-goals
+
 - Circuit breaker / background prefetch / request coalescing: already scoped in
   `docs/cache-architecture.md` (C3, C6).

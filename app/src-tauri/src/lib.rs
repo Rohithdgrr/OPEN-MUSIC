@@ -16,6 +16,7 @@ mod room;
 mod sha256;
 mod spotify;
 mod store;
+mod video;
 
 // Re-export Spotify commands
 pub use spotify::{spotify_import_top, spotify_is_signedin, spotify_signin, spotify_signout};
@@ -289,6 +290,34 @@ fn store_song(track: serde_json::Value, state: State<'_, Arc<AppState>>) -> Resu
         .store()
         .map_err(|e| e.clone())?
         .put_song(&track)
+}
+
+/// Persisted video match (or 24 h negative row) for a track
+/// (docs/song-video.md §4). Stream URLs are never stored — only identity.
+#[tauri::command]
+fn video_load(
+    id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<store::TrackVideoRow>, String> {
+    check_id(&id)?;
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .video_load(&id)
+}
+
+/// Cache one video match so the next paint of the same track costs no search.
+#[tauri::command]
+fn video_store(
+    row: store::TrackVideoRow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    state
+        .inner()
+        .store()
+        .map_err(|e| e.clone())?
+        .video_store(&row)
 }
 
 /// Cache many songs at once (search pages, playlist loads). Capped at 500.
@@ -1866,6 +1895,12 @@ pub fn run() {
             room::room_close,
             room::room_info,
             search_songs,
+            video::video_search,
+            video::video_player,
+            video::video_relay,
+            video::video_stats,
+            video_load,
+            video_store,
             sharelink_launch_url,
             search_entities,
             search_suggestions,

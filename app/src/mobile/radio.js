@@ -5,8 +5,9 @@
 // in JioSaavn's own order — local logic only gates eligibility (queued /
 // recently heard / just-skipped), it never re-ranks (§8.8). The queue array
 // is passed in by player.js, which owns it.
-import { invoke, load, save, FAVS_KEY, PLAYS_KEY, LIBRARY_KEY } from "./shared.js";
+import { invoke, load, save, FAVS_KEY, PLAYS_KEY, LIBRARY_KEY, pushDiag } from "./shared.js";
 import { buildSignals, pickBatch } from "../taste.js";
+import { radioFallback } from "./radiofallback.js";
 
 const RADIO_KEY = "tm-radio";
 
@@ -44,21 +45,6 @@ async function tasteSignals(queue, qi) {
   });
 }
 
-/// Last resort when the radio answers with nothing: everything else by this
-/// artist, then the day's chart.
-async function recoFallback(seed, queue) {
-  const taken = new Set(queue.map((t) => t && t.id));
-  const fresh = (list) => (list || []).filter((t) => t && t.id && !taken.has(t.id));
-  try {
-    if (seed && seed.artist) {
-      const page = await invoke("search_songs", { query: seed.artist, limit: 20, page: 1 });
-      const hits = fresh(page && page.tracks);
-      if (hits.length) return hits;
-    }
-  } catch {}
-  return [];
-}
-
 /// Top the queue up before it runs dry. Resolves with how many were added.
 export async function ensureReco(queue, qi) {
   if (radioBusy || !invoke || !isRadioOn()) return 0;
@@ -75,9 +61,13 @@ export async function ensureReco(queue, qi) {
         fresh = page.tracks || [];
       }
     } catch {}
-    if (!fresh.length) fresh = await recoFallback(seed, queue);
     const signals = await tasteSignals(queue, qi);
     added = pickBatch(fresh, signals);
+    if (!added.length) {
+      added = await radioFallback(seed, queue, invoke, (rows) => pickBatch(rows, signals), (command, error) => {
+        pushDiag("radio_fallback", false, `${command}: ${String(error).split("\n")[0].slice(0, 80)}`);
+      });
+    }
     // Three starved batches in a row: drop the exhausted station and re-seed
     // from the current track instead of dead-ending the queue.
     if (!added.length && seed && ++recoEmpty >= 3) {

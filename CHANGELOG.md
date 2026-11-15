@@ -6,6 +6,33 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Added (song video — decision plane, recogniser, live probe)
+- **Track → video matching core** (`app/src/videomatch.js`, pure and DOM-free): builds the InnerTube query from a catalog track, parses search rows, scores candidates with a version penalty (karaoke/cover/sped-up/remix), classifies the artefact (official/lyric/visualizer/live), picks one progressive H.264 rendition under a height cap, and returns a cache policy plus provenance-carrying metadata. Nothing renders it yet; the transport and UI are specified in `docs/song-video.md`.
+- **Local audio recogniser** (`app/src/fingerprint.js`): Shazam-style landmark hashing over an in-module FFT, with offset-aware matching. Measured at 1.5 ms of CPU per second of 8 kHz audio and ~6 k hashes per 30 s.
+- **`npm run video:probe`**: runs the real decision path against the live upstream — search, rank, player, then a byte-range fetch of the chosen rendition — and exits 0 for an honest "no match" too. Verified `ready` for *Kesariya* (itag 136, `206`, 1024 B) and *Believer*, and `none` for a nonsense query.
+
+### Added (song video — transport, relay, Android backdrop)
+- **Rust InnerTube transport** (`app/src-tauri/src/video.rs`): the two P0-verified POSTs (WEB_REMIX song search, iOS player), mechanical response parsing that matches `videomatch.js`, a 30-minute resolved-URL cache, and a 6-hour learned video id so an expired link self-heals. Decisions (which video, which itag, whether to cache) stay in the JS matcher — the transport only forwards what upstream returned.
+- **Loopback relay** `GET /video?id&itag&token`: the WebView never sees `googlevideo.com`. Hosts are allow-listed to `*.googlevideo.com` before every fetch and after redirects, `Range` is forwarded verbatim (206/416 pass through), and a 403/410 re-resolves once instead of failing the track.
+- **`track_video` SQLite table** with `video_load`/`video_store`: a match costs one search per track, and a track with no video is negative-cached for 24 h — so a miss costs one search, not one per paint. Stream URLs are never persisted.
+- **Android Now Playing video backdrop** (Settings → Playback & Audio → "Now Playing video", **off by default**): the video sits behind the artwork inside the existing art card, starts on `loadeddata` (never a black flash), loops muted, pauses with the audio, releases the decoder on screen exit, and is skipped on cellular data, with Data Saver, or when the OS asks for reduced motion. `app/src/videoplan.js` holds the gate + plan (pure), `mobile/videobackdrop.js` the DOM lifecycle.
+
+### Added (Android mobile playlist import)
+- Settings → Storage can import M3U, M3U8 and PLS files. Entries are matched against the supported catalog; arbitrary local paths and URLs from playlist files are never opened as media.
+
+### Added (Android mobile playback)
+- An opt-in Skip silence control skips sustained quiet audio through the existing analyser and leaves playback unchanged while paused, seeking, or buffering.
+
+### Added (Android mobile Now Playing)
+- A five-band equalizer with labeled, accessible sliders, persistent settings, and reset-to-flat. It applies to both playback chains without adding Settings toggles or changing desktop playback.
+
+### Improved (Android mobile discovery)
+- Search now retries transient first-page failures on a bounded schedule, keeps saved results visible, and recovers when connectivity returns. Endless radio falls back from an exhausted seed artist to Home-feed tracks and charts without reordering JioSaavn results.
+
+### Changed (Android mobile visual system — 2026-11-14)
+- The mobile shell now respects zoom and short viewports, aligns its fixed player and navigation to Android safe areas, and keeps content and toasts clear of both. Touch targets and keyboard focus are more legible, the mini-player seek control supports keyboard navigation, and Home shelf filters expose their selected state to assistive technology. Reduced-motion preferences remove tab/lyric movement while preserving color feedback, and the seek rail keeps a full-size hit area without a bulky visual track.
+- Home's spotlight now uses accurate playlist wording, hides unsupported codec claims and unknown counts, and stays hidden until a playable playlist is available.
+
 ### Added (mobile listening surfaces + Android build hardening)
 - **Now Playing visualizer:** a lightweight spectrum canvas reuses the active EQ audio graph and stops outside visible playback; its zero-gain analyser branch does not add an audible output path.
 - **Jam room roster:** Home can show the current room's members while hosting or joined, and clears the section in Solo mode.

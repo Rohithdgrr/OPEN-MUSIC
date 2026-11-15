@@ -391,20 +391,25 @@ function ensureWidget() {
   document.head.appendChild(hide);
   const host = document.createElement("div");
   host.innerHTML = `<div id="tm-widget" class="om-mini-player fixed bottom-0 inset-x-2.5 sm:inset-x-4 z-40 pointer-events-none hidden max-w-lg mx-auto">
-    <div class="pointer-events-auto bg-surface-container-lowest/95 dark:bg-surface-container-low backdrop-blur-2xl rounded-2xl overflow-hidden shadow-[0_16px_40px_-8px_rgba(0,0,0,0.2),0_4px_12px_rgba(0,0,0,0.06)] border border-surface-container-high/80 dark:border-white/10 transition-all duration-300">
-      <div class="w-full flex justify-center pt-1 pb-0.5 pointer-events-none" aria-hidden="true"><span class="w-7 h-1 rounded-full bg-outline-variant/40 dark:bg-white/20"></span></div>
-      <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-disabled="true" tabindex="0" class="relative h-1.5 bg-surface-container-high/70 cursor-pointer touch-none"><div id="tm-w-buf" class="absolute inset-y-0 left-0 bg-surface-container-highest rounded-full transition-all duration-150" style="width:0%"></div><div id="tm-w-fill" class="absolute inset-y-0 left-0 bg-primary dark:bg-white rounded-full transition-all duration-75" style="width:0%"></div></div>
-      <div class="flex items-center gap-2.5 px-3 py-1.5">
-        <div class="relative w-11 h-11 rounded-xl bg-surface-container-highest flex-shrink-0 overflow-hidden shadow-sm ring-1 ring-black/10 dark:ring-white/10" data-w-open><img id="tm-w-art" alt="" class="w-full h-full object-cover"><span id="tm-w-vault" aria-hidden="true" class="hidden absolute bottom-0.5 left-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white items-center justify-center shadow-xs"><span class="material-symbols-outlined text-[12px]">download</span></span></div>
-        <div class="flex flex-col min-w-0 flex-1 cursor-pointer select-none overflow-hidden pl-0.5" data-w-open>
+    <div class="pointer-events-auto relative bg-surface-container-lowest/95 dark:bg-surface-container-low backdrop-blur-2xl rounded-2xl overflow-hidden shadow-[0_12px_32px_-4px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-surface-container-high/80 dark:border-white/10 transition-all duration-300">
+      <div class="flex items-center gap-3 px-3 py-2">
+        <div class="relative w-11 h-11 rounded-xl bg-surface-container-highest flex-shrink-0 overflow-hidden shadow-xs ring-1 ring-black/10 dark:ring-white/10 cursor-pointer" data-w-open>
+          <img id="tm-w-art" alt="" class="w-full h-full object-cover">
+          <span id="tm-w-vault" aria-hidden="true" class="hidden absolute bottom-0.5 left-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white items-center justify-center shadow-xs"><span class="material-symbols-outlined text-[12px]">download</span></span>
+        </div>
+        <div class="flex flex-col min-w-0 flex-1 cursor-pointer select-none overflow-hidden" data-w-open>
           <span id="tm-w-title" class="font-body-md text-[13.5px] text-on-surface font-bold tracking-tight truncate leading-tight">Nothing playing</span>
-          <div class="flex items-center gap-1.5 min-w-0 mt-0.5 leading-tight"><span id="tm-w-artist" class="font-body-sm text-[11px] text-secondary truncate"></span><span class="font-label-mono text-[8px] font-bold px-1.5 py-0.2 rounded bg-surface-container-high dark:bg-surface-container text-on-surface-variant shrink-0 uppercase tracking-wider">320k</span></div>
+          <span id="tm-w-artist" class="font-body-sm text-[11.5px] text-secondary truncate mt-0.5 leading-tight"></span>
         </div>
         <div class="flex items-center gap-1.5 flex-shrink-0 pr-0.5">
           <button type="button" data-w-fav aria-label="Favorite" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]" data-fav-icon></span></button>
-          <button type="button" data-w-toggle aria-label="Play" class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-[0_4px_12px_rgba(0,0,0,0.22)] hover:brightness-110"><span id="tm-w-playicon" class="material-symbols-outlined text-[23px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
+          <button type="button" data-w-toggle aria-label="Play" class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-[0_3px_10px_rgba(0,0,0,0.22)] hover:brightness-110"><span id="tm-w-playicon" class="material-symbols-outlined text-[23px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
           <button type="button" data-w-next aria-label="Next" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[21px]">skip_next</span></button>
         </div>
+      </div>
+      <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-disabled="true" tabindex="0" class="cursor-pointer touch-none">
+        <div id="tm-w-buf" class="absolute left-0 bg-secondary-fixed-dim/40 transition-all duration-150" style="width:0%"></div>
+        <div id="tm-w-fill" class="absolute left-0 bg-primary dark:bg-white transition-all duration-75" style="width:0%"></div>
       </div>
     </div>
   </div>`;

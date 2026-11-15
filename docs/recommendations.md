@@ -264,6 +264,29 @@ work follows (`docs/architecture.md` §5.5).
   engine — flag it if that surface should change too.
 - Supersedes the station-batch half of §8.2 P3 / §8.6 "Unified radio".
 
+#### 8.8.1 Radio fallback completion (2026-11-14)
+
+The mobile fallback comment promised artist search followed by the day's
+chart, but the implementation returned an empty batch when artist search had
+no eligible tracks. Complete that chain without changing the radio's source
+or ranking rules:
+
+- Try the seed artist's song search first. If it has no fresh or eligible
+  rows, read the existing Home feed and try `top_tracks`, then its first three
+  chart playlists in feed order, loading each playlist's tracks only as needed.
+- Skip rows without an id and ids already queued (including duplicates within
+  the candidate page). Keep every surviving row in the upstream order; the
+  existing `taste.pickBatch` remains only the eligibility gate.
+- A failed chart lookup does not block the next chart. If every source fails or
+  is empty, the radio remains starved and the existing station re-seed policy
+  applies. This adds no local taste ranking and does not change Home's
+  separate "Made for you" surfaces.
+
+Implementation record: `mobile/radiofallback.js` now owns this fallback and
+`mobile/radio.js` feeds its result through the existing `taste.pickBatch`
+eligibility gate. Focused radio and search regression suites passed **23/23**;
+the full suite and Android device path are recorded with final validation.
+
 ### 8.9 Search: JioSaavn's own ranking, no personal boosts (2026-10-16h)
 
 Follow-up directive (2026-10-16): *for search also use the JioSaavn

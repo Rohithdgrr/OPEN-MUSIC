@@ -297,6 +297,10 @@ pub struct AppState {
     pub disk: crate::cache::DiskCache,
     /// Since-launch fetch/stale counters (`cache_stats().counters`).
     pub meters: CacheMeters,
+    /// Now Playing video transport: resolved byte URLs + learned video ids
+    /// (docs/song-video.md §4/§8.2). Decisions never live here — the relay
+    /// only forwards what `videomatch.js` picked.
+    pub video: crate::video::VideoCache,
     /// Per-CDN-host transient-failure breaker, shared by stream requests.
     cdn_circuit: CdnCircuit,
     /// SQLite vault ledger (review 4.5): WAL + prepared statements + one
@@ -370,6 +374,7 @@ impl AppState {
                 .build(),
             disk: crate::cache::DiskCache::new(cache_dir),
             meters: CacheMeters::default(),
+            video: crate::video::VideoCache::new(),
             cdn_circuit: CdnCircuit::default(),
             db,
             store,
@@ -1197,6 +1202,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/stream", get(stream))
         .route("/file", get(vault_file))
         .route("/art", get(art))
+        .route("/video", get(video_stream))
         .route_layer(axum::middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
@@ -1689,6 +1695,216 @@ async fn stream(
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
+/// Open the upstream leg for a resolved video byte URL. The host is checked
+/// before the request AND after redirects: a CDN may bounce between its own
+/// hosts, but it must never be able to steer the relay elsewhere.
+/// Clamp an incoming `Range` header against the signed `clen` carried by the
+/// CDN URL. Open-ended ranges (`bytes=0-`) and any end beyond the content
+/// length are capped so the upstream never sees a request it answers with 403.
+/// Returns the (possibly unchanged) range string to forward.
+fn clamp_video_range(range: &str, target: &str) -> String {
+    let clen: Option<u64> = url::Url::parse(target)
+        .ok()
+        .and_then(|u| {
+            u.query_pairs()
+                .find(|(k, _)| k == "clen")
+                .and_then(|(_, v)| v.parse::<u64>().ok())
+        });
+    let Some(clen) = clen else {
+        return range.to_string();
+    };
+    if clen == 0 {
+        return range.to_string();
+    }
+    let s = range.trim();
+    if !s.starts_with("bytes=") {
+        return range.to_string();
+    }
+    let spec = &s["bytes=".len()..];
+    // Suffix form `bytes=-N`: leave untouched.
+    if spec.starts_with('-') {
+        return range.to_string();
+    }
+    let parts: Vec<&str> = spec.splitn(2, '-').collect();
+    if parts.len() != 2 {
+        return range.to_string();
+    }
+    let start: u64 = match parts[0].parse() {
+        Ok(n) => n,
+        Err(_) => return range.to_string(),
+    };
+    let end = if parts[1].is_empty() {
+        clen.saturating_sub(1)
+    } else {
+        match parts[1].parse::<u64>() {
+            Ok(n) => n.min(clen.saturating_sub(1)),
+            Err(_) => return range.to_string(),
+        }
+    };
+    if start >= clen {
+        // Past the end: let upstream answer 416 honestly.
+        return format!("bytes={}-{}", start, start);
+    }
+    format!("bytes={}-{}", start, end)
+}
+
+async fn video_upstream(
+    state: &AppState,
+    target: &str,
+    headers: &HeaderMap,
+) -> Result<reqwest::Response, Response> {
+    let mut req = state.media.get(target);
+    if let Some(range) = headers.get("range").and_then(|v| v.to_str().ok()) {
+        // The CDN (googlevideo) rejects open-ended / oversized ranges with
+        // 403 for these iOS-client URLs, while bounded ranges inside `clen`
+        // succeed. The WebView's media element always opens with
+        // `Range: bytes=0-`, so clamp it here using the signed `clen` param
+        // the URL carries. The relayed `Content-Range` then teaches the
+        // element the total length.
+        let forwarded = clamp_video_range(range, target);
+        req = req.header(reqwest::header::RANGE, forwarded);
+    }
+    let resp = req.send().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            format!("video upstream failed: {e}"),
+        )
+            .into_response()
+    })?;
+    if url::Url::parse(target).is_ok_and(|w| &w != resp.url()) {
+        if let Err(e) = crate::video::video_host_ok(resp.url().as_str()) {
+            return Err((
+                StatusCode::BAD_GATEWAY,
+                format!("video redirect refused: {e}"),
+            )
+                .into_response());
+        }
+    }
+    Ok(resp)
+}
+
+/// `GET /video?id=<track>&itag=<n>&token=<session>` — the only video URL the
+/// WebView sees (docs/song-video.md §3.1). The `googlevideo.com` byte URL
+/// stays server-side, is re-validated before every fetch, and is re-resolved
+/// once when the CDN retires it.
+async fn video_stream(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let id = match params.get("id") {
+        Some(id) => id.clone(),
+        None => return bad_request("missing ?id="),
+    };
+    if let Err(e) = check_id(&id) {
+        return bad_request(e);
+    }
+    let itag: u32 = match params.get("itag").and_then(|v| v.parse::<u32>().ok()) {
+        Some(n) => n,
+        None => return bad_request("missing or invalid ?itag="),
+    };
+    let key = format!("{id}|{itag}");
+    let mut entry = state.video.prepared.get(&key).await;
+    if entry.is_none() {
+        if let Some(video_id) = state.video.known.get(&id).await {
+            if let Ok(url) = crate::video::resolve_format_url(&state.client, &video_id, itag).await {
+                let fresh = crate::video::PreparedVideo { video_id, url };
+                state.video.prepared.insert(key.clone(), fresh.clone()).await;
+                state.video.note_relay_resolve();
+                entry = Some(fresh);
+            }
+        }
+    }
+    let Some(entry) = entry else {
+        return (
+            StatusCode::CONFLICT,
+            "video not prepared — call video_relay first",
+        )
+            .into_response();
+    };
+    state.video.note_relay_hit();
+    if let Err(e) = crate::video::video_host_ok(&entry.url) {
+        return (StatusCode::BAD_GATEWAY, e).into_response();
+    }
+    let mut upstream = match video_upstream(&state, &entry.url, &headers).await {
+        Ok(resp) => resp,
+        Err(resp) => return resp,
+    };
+
+    // Aged URL: 403/410 means the byte link expired, not that the video is
+    // gone. Re-resolve once from the learned video id, then relay whatever we
+    // have (a second failure is honest).
+    if url_gone(upstream.status()) {
+        eprintln!(
+            "[cache] video url gone ({}), re-resolving {id} itag {itag}",
+            upstream.status()
+        );
+        if let Ok(fresh) = crate::video::resolve_format_url(&state.client, &entry.video_id, itag).await {
+            state
+                .video
+                .prepared
+                .insert(
+                    key,
+                    crate::video::PreparedVideo {
+                        video_id: entry.video_id.clone(),
+                        url: fresh.clone(),
+                    },
+                )
+                .await;
+            state.video.note_relay_resolve();
+            if let Ok(retry) = video_upstream(&state, &fresh, &headers).await {
+                upstream = retry;
+            }
+        }
+    }
+
+    let status =
+        StatusCode::from_u16(upstream.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    if status.is_success() {
+        if let Some(ct) = upstream
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+        {
+            if !plausible_media_type(ct) {
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    format!("upstream sent {ct} instead of video"),
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    let mut out = HeaderMap::new();
+    for name in RELAYED_HEADERS {
+        if let Some(value) = upstream.headers().get(*name) {
+            if let (Ok(k), Ok(v)) = (
+                axum::http::HeaderName::from_bytes(name.as_bytes()),
+                value.to_str(),
+            ) {
+                if let Ok(hv) = axum::http::HeaderValue::from_str(v) {
+                    out.insert(k, hv);
+                }
+            }
+        }
+    }
+    let body = Body::from_stream(futures::StreamExt::map(
+        upstream.bytes_stream(),
+        |chunk| match chunk {
+            Ok(bytes) => Ok::<_, std::io::Error>(bytes),
+            Err(e) => Err(std::io::Error::other(e)),
+        },
+    ));
+    let mut builder = Response::builder().status(status);
+    for (name, value) in out.iter() {
+        builder = builder.header(name, value);
+    }
+    builder
+        .body(body)
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
 /// Parse + guard an upstream art url: http(s) only and public hosts only.
 /// The relay is a local service, so anything that could reach the machine
 /// itself (localhost, private ranges, link-local) is refused — an SSRF guard
@@ -1900,6 +2116,17 @@ async fn art(
 /// `quality` is the resolve's requested tier — carried as `q=` so the relay
 /// serves the tier the badge names (docs/architecture.md §5.5).
 /// Includes the session token for authentication.
+/// Loopback URL for one prepared video rendition
+/// (`video_relay` → docs/song-video.md §8.2).
+pub fn video_url_for(port: u16, id: &str, itag: u32, token: &str) -> String {
+    let mut encoded = url::form_urlencoded::Serializer::new(String::new());
+    encoded
+        .append_pair("id", id)
+        .append_pair("itag", &itag.to_string())
+        .append_pair("token", token);
+    format!("http://127.0.0.1:{port}/video?{}", encoded.finish())
+}
+
 pub fn proxy_url_for(port: u16, id: &str, token: &str, quality: Option<&str>) -> String {
     let mut encoded = url::form_urlencoded::Serializer::new(String::new());
     encoded.append_pair("id", id).append_pair("token", token);
@@ -2288,6 +2515,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status().as_u16(), 400, "http must be rejected");
+    }
+
+    /// The video route only serves a rendition that `video_relay` prepared,
+    /// and it refuses to fetch anything outside the media CDN even then.
+    #[tokio::test]
+    async fn video_route_requires_a_prepared_cdn_rendition() {
+        let (base, state) = boot().await;
+        let client = reqwest::Client::new();
+        let resp = client
+            .get(format!("{base}/video"))
+            .query(&[("id", "abc123"), ("itag", "136")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 409, "nothing prepared yet");
+
+        state
+            .video
+            .prepared
+            .insert(
+                "abc123|136".into(),
+                crate::video::PreparedVideo {
+                    video_id: "NJAv_7lHUIU".into(),
+                    // Loopback is exactly what the guard must refuse.
+                    url: "http://127.0.0.1:9/steal".into(),
+                },
+            )
+            .await;
+        let resp = client
+            .get(format!("{base}/video"))
+            .query(&[("id", "abc123"), ("itag", "136")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 502, "non-CDN host refused");
     }
 
     #[tokio::test]

@@ -100,7 +100,7 @@
   function navHTML(key) {
     var active = TAB_OF[key] || "";
     return (
-      '<nav class="fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/85 backdrop-blur-2xl border-t border-surface-container-high/60 shadow-[0_-8px_24px_rgba(0,0,0,0.03)]"><div class="h-16 px-gutter flex items-center justify-around max-w-lg mx-auto">' +
+      '<nav aria-label="Primary navigation" class="om-bottom-nav fixed bottom-0 inset-x-0 z-50 pb-safe bg-surface/85 backdrop-blur-2xl border-t border-surface-container-high/60"><div class="h-16 px-gutter flex items-center justify-around max-w-lg mx-auto">' +
       TABS.map(function (t) {
         var on = t.path === active;
         return (

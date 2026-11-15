@@ -82,6 +82,7 @@ import { ensureReco, isRadioOn, setRadioOn } from "./radio.js";
 import { renderLyrics, resetLyrics, syncLyrics, setLyricOffset, setLyricTrack, lyricOffsetMs } from "./lyrics.js";
 import { getGeminiKey, setGeminiKey, hasGeminiKey, fetchAiLyrics, aiCopyright } from "./ai-lyrics.js";
 import { importCsvToPlaylist, readCsvFile } from "../importer.js";
+import { importPlaylistFile } from "../playlist-file.js";
 import { netMode } from "./net.js";
 import { licensesHTML, aboutHTML, termsHTML, APP } from "./legal.js";
 import { trackMenu, openSheet, detailsSheet } from "./menus.js";
@@ -89,6 +90,8 @@ import { trackMenu, openSheet, detailsSheet } from "./menus.js";
 // Made-for-you shelves are a windowed projection of one profile built here.
 import { buildProfile, explain, shelfPlan, trackLangs, artistInsights, filterArtists, artistEvidence, albumInsights, filterAlbums, albumEvidence } from "./recommend.js";
 import { applyArtTint } from "./arttint.js";
+import { stopVideoBackdrop, syncVideoBackdrop } from "./videobackdrop.js";
+import { VIDEO_PREF_KEY } from "../videoplan.js";
 import { hydrateArtistArt } from "./artresolve.js";
 import { similarShelf } from "../taste.js";
 import { availableYears, PLAY_EVENT_READ_LIMIT, PLAY_EVENT_STORE_CAP, summarizeYear } from "./year-summary.js";
@@ -100,6 +103,7 @@ const main = () => document.querySelector("#screen main");
 // Ordering lives in rank.js (pure + unit-tested); this shell owns the chip
 // that cycles it and the typo toast. Both reuse the desktop's helpers.
 import { nextSort, SORT_LABEL } from "./rank.js";
+import { nextRetryDelay } from "../searchretry.js";
 // Query understanding, ranking, highlighting and the cache the search screen
 // runs on — pure logic, unit-tested in tests/mobile-searchkit.test.mjs.
 import {
@@ -492,6 +496,8 @@ function paintFavorites(m) {
 async function mountHome() {
   const m = main();
   if (!m) return;
+  const hero = m.querySelector('[data-shelf="spotlight"]');
+  if (hero) hero.classList.add("hidden");
   const h1 = m.querySelector("h1");
   if (h1) {
     const hr = new Date().getHours();
@@ -526,22 +532,25 @@ async function mountHome() {
   }
   if (!feed) { clearSkeletons(m); return; }
   save(HOME_SNAP_KEY, feed); // the offline fallback for the next cold boot
-  const sections = [...m.querySelectorAll("section")];
-
   const spot = feed.spotlight;
-  const hero = sections[1];
-  if (hero && spot) {
+  if (hero && spot && spot.id) {
+    hero.classList.remove("hidden");
     if (spot.image) paintArt(hero.querySelector("img"), spot.image);
     const ht = hero.querySelector("h3");
     if (ht) ht.textContent = spot.title || ht.textContent;
     const sub = hero.querySelector("p");
     if (sub && spot.subtitle) sub.textContent = spot.subtitle;
-    const meta = [...hero.querySelectorAll("span")].find((sp) => /Tracks/i.test(sp.textContent));
-    if (meta && spot.count) meta.textContent = `${spot.count} Tracks`;
+    const meta = hero.querySelector("[data-spot-count]");
+    if (meta && spot.count) {
+      meta.textContent = `${spot.count} Tracks`;
+      meta.classList.remove("hidden");
+    }
     const pb = [...hero.querySelectorAll("button")].find((b) => b.textContent.includes("Play"));
     // The hero is a playlist: Play must load its tracks (playlist_tracks),
     // not hand its id to resolve_song as if it were a song.
     if (pb && spot.id) pb.dataset.plPlay = spot.id;
+  } else if (hero) {
+    hero.classList.add("hidden");
   }
 
   const jump = sectionFor("Jump Back In");
@@ -699,6 +708,9 @@ async function mountHome() {
         // light mode — measured, 2026-10-15).
         chips.forEach((c) => {
           c.className = CHIP_IDLE;
+          if (["all", "genres", "jump"].includes(c.dataset.homeCat)) {
+            c.setAttribute("aria-pressed", String(c === chip));
+          }
         });
         chip.className = CHIP_ON;
 
@@ -840,6 +852,8 @@ const SNAP_KEY = "tm-search-snap";
 // never removed, leaking one closure per visit; this points at whichever mount
 // is on screen instead.
 let smSuggestCtx = null;
+let mobileSearchOnlineHandler = null;
+let searchMountToken = 0;
 document.addEventListener("click", (e) => {
   const ctx = smSuggestCtx;
   if (!ctx || ctx.box.classList.contains("hidden")) return;
@@ -850,6 +864,8 @@ document.addEventListener("click", (e) => {
 async function mountSearch(query) {
   const m = main();
   if (!m) return;
+  const mountToken = ++searchMountToken;
+  if (mobileSearchOnlineHandler) window.removeEventListener("online", mobileSearchOnlineHandler);
   const q0 = (query && query.get("q")) || "";
   const cat0 = (query && query.get("cat")) || "all";
   // The sort chip rides in the URL: `go()` with an unchanged hash never
@@ -883,6 +899,9 @@ async function mountSearch(query) {
   let topPick = null; // memoized Spotify-style "Top result"
   let topKey = "";
   let seq = 0; // supersedes in-flight searches
+  let retryCount = 0;
+  let retryTimer = 0;
+  let retryExhausted = false;
   let sugSeq = 0; // supersedes in-flight autocomplete
   let sugIndex = -1;
   let liveTimer = 0;
@@ -951,6 +970,9 @@ async function mountSearch(query) {
     const unit = isEntityCat(curCat) ? "result" : "song";
     const want = esc(parsed.text || curQ);
     if (!results.length) {
+      if (statusNote === "offline") return `Offline — can’t load “${want}”`;
+      if (retryCount && statusNote.startsWith("Retrying")) return `Searching again for “${want}”`;
+      if (retryExhausted) return `Search unavailable for “${want}”`;
       // The All chip can have shelves without a single song match.
       const cards = shelves.album.length + shelves.artist.length + shelves.playlist.length;
       if (curCat === "all" && cards) return `Top matches for “${want}”${tail}`;
@@ -962,14 +984,34 @@ async function mountSearch(query) {
   const statusHTML = () => {
     const text = statusText();
     return text
-      ? `<div data-sm-status class="px-1 pt-2 pb-0.5 font-body-sm text-body-sm text-secondary">${text}</div>`
+      ? `<div data-sm-status class="flex items-center justify-between gap-2 px-1 pt-2 pb-0.5 font-body-sm text-body-sm text-secondary"><span>${text}</span>${
+          retryExhausted
+            ? '<button type="button" data-sm-retry class="min-h-[44px] shrink-0 rounded-full bg-primary px-4 font-label-md text-on-primary">Try again</button>'
+            : ""
+        }</div>`
       : "";
   };
-  const emptyHTML = () => `<div class="flex flex-col items-center gap-2 py-8 px-4 text-center">
-    <span class="material-symbols-outlined text-[28px] text-secondary">search_off</span>
-    <span class="font-body-md text-body-md text-on-surface">No results for “${esc(curQ)}”</span>
-    <span class="font-body-sm text-body-sm text-secondary">Check the spelling, or try a different keyword.</span>
-  </div>`;
+  const emptyHTML = () => {
+    const offline = statusNote === "offline";
+    const retrying = retryCount > 0 && statusNote.startsWith("Retrying");
+    let title = `No results for “${esc(curQ)}”`;
+    let detail = "Check the spelling, or try a different keyword.";
+    if (offline) {
+      title = "You're offline";
+      detail = "Reconnect to search; saved results will appear when available.";
+    } else if (retrying) {
+      title = "Trying again automatically";
+      detail = "Your search will retry shortly.";
+    } else if (retryExhausted) {
+      title = "Search is temporarily unavailable";
+      detail = "Check your connection, then try again.";
+    }
+    return `<div class="flex flex-col items-center gap-2 py-8 px-4 text-center">
+      <span class="material-symbols-outlined text-[28px] text-secondary">${offline || retrying || retryExhausted ? "cloud_off" : "search_off"}</span>
+      <span class="font-body-md text-body-md text-on-surface">${title}</span>
+      <span class="font-body-sm text-body-sm text-secondary">${detail}</span>
+    </div>`;
+  };
 
   /// The design's spotlight card, wired to whatever the best match is. Kept
   /// here (not in the fragment's script) so a chip switch or a live search can
@@ -1470,12 +1512,18 @@ async function mountSearch(query) {
   /// store.db (one fast IPC) → network. A cached page paints immediately and
   /// is revalidated in the background once it is older than RESULT_FRESH_MS,
   /// so repeat and back-navigation searches feel instant without going stale.
-  const runSearch = async ({ full = true, live = false } = {}) => {
+  const runSearch = async ({ full = true, live = false, retry = false } = {}) => {
     if (!invoke || !curQ.trim()) return;
+    if (!retry) {
+      clearTimeout(retryTimer);
+      retryTimer = 0;
+      retryCount = 0;
+      retryExhausted = false;
+    }
     parsed = parseSearch(curQ);
     tokens = queryTokens(parsed);
     topKey = "";
-    statusNote = "";
+    statusNote = retry ? "Retrying…" : "";
     shelves = { album: [], artist: [], playlist: [] };
     const mine = ++seq;
     const key = cacheKeyNow();
@@ -1511,11 +1559,15 @@ async function mountSearch(query) {
     // Typing keeps the previous rows on screen until the new page lands — a
     // skeleton flash on every keystroke reads as flicker, not as speed.
     const keepOld = !painted && live && results.length > 0;
-    if (!painted && !keepOld) paintLoading();
+    if (!painted && !keepOld && !retry) paintLoading();
+    else if (retry) render();
     try {
       if (netMode() === "offline") throw new Error("offline");
       const got = await fetchPage(mine, 1);
       if (!got || mine !== seq) return;
+      retryCount = 0;
+      retryExhausted = false;
+      statusNote = "";
       page = 1;
       pageFull = got.pageFull;
       results = shapePage(got.got);
@@ -1538,23 +1590,52 @@ async function mountSearch(query) {
     } catch (e) {
       if (mine !== seq) return;
       pushDiag("search", false, String(e).split("\n")[0].slice(0, 90));
-      if (String(e) === "Error: offline") {
+      if (String(e) === "Error: offline" || netMode() === "offline") {
+        retryCount = 0;
+        retryExhausted = false;
         statusNote = painted ? "offline copy" : "offline";
         if (!painted && !keepOld) results = [];
         render(); // repaint so the status line names the offline copy
         toast("You're offline — showing what's saved when possible", 3500, "info");
         return;
       }
+      const delay = nextRetryDelay(retryCount);
+      if (delay !== null) {
+        retryCount += 1;
+        statusNote = `Retrying in ${Math.ceil(delay / 1000)}s`;
+        if (!painted && !keepOld) results = [];
+        render();
+        retryTimer = setTimeout(() => {
+          retryTimer = 0;
+          if (mountToken !== searchMountToken || mine !== seq || !location.hash.startsWith("#/search")) return;
+          runSearch({ full, retry: true });
+        }, delay);
+        return;
+      }
+      retryExhausted = true;
+      statusNote = "Search unavailable";
       if (!painted) {
         // A live search that failed mid-typing leaves the last good page up.
         if (!keepOld) results = [];
         render();
         toast(`Search failed: ${String(e).split("\n")[0].slice(0, 70)}`, 5000, "error");
       } else {
+        render();
         toast(`Couldn't refresh: ${String(e).split("\n")[0].slice(0, 60)}`, 4000, "error");
       }
     }
   };
+
+  mobileSearchOnlineHandler = () => {
+    if (!curQ.trim() || !location.hash.startsWith("#/search")) return;
+    if (statusNote !== "offline" && statusNote !== "offline copy" && !retryExhausted) return;
+    clearTimeout(retryTimer);
+    retryTimer = 0;
+    retryCount = 0;
+    retryExhausted = false;
+    runSearch({ full: true });
+  };
+  window.addEventListener("online", mobileSearchOnlineHandler);
 
   /// Pull the next page and append it — no full repaint, so scroll and the
   /// images already decoded survive.
@@ -1600,6 +1681,10 @@ async function mountSearch(query) {
     syncHash();
     clearTimeout(upgradeTimer);
     if (!text) {
+      clearTimeout(retryTimer);
+      retryTimer = 0;
+      retryCount = 0;
+      retryExhausted = false;
       parsed = parseSearch("");
       tokens = [];
       results = [];
@@ -1616,6 +1701,11 @@ async function mountSearch(query) {
     input.addEventListener("input", () => {
       clearTimeout(liveTimer);
       clearTimeout(sugTimer);
+      clearTimeout(retryTimer);
+      retryTimer = 0;
+      retryCount = 0;
+      retryExhausted = false;
+      statusNote = "";
       const text = input.value.trim();
       liveTimer = setTimeout(liveSearch, LIVE_DEBOUNCE_MS);
       if (!invoke) return;
@@ -1720,6 +1810,10 @@ async function mountSearch(query) {
     applyChipStates();
     refreshSortChip();
     if (!curQ) {
+      clearTimeout(retryTimer);
+      retryTimer = 0;
+      retryCount = 0;
+      retryExhausted = false;
       results = [];
       render();
       return;
@@ -1793,6 +1887,10 @@ async function mountSearch(query) {
     hideSug();
     clearTimeout(liveTimer);
     clearTimeout(upgradeTimer);
+    clearTimeout(retryTimer);
+    retryTimer = 0;
+    retryCount = 0;
+    retryExhausted = false;
     curQ = "";
     syncHash();
     parsed = parseSearch("");
@@ -1805,6 +1903,12 @@ async function mountSearch(query) {
   });
   // "See all" inside the All view jumps to the chip that owns that shelf.
   box.addEventListener("click", (e) => {
+    const retryButton = e.target.closest("[data-sm-retry]");
+    if (retryButton) {
+      retryButton.disabled = true;
+      runSearch({ full: true });
+      return;
+    }
     const jump = e.target.closest("[data-cat-jump]");
     if (!jump) return;
     e.stopPropagation();
@@ -3898,6 +4002,8 @@ function paintNowplaying(st) {
     // Another screen owns <main>: drop the karaoke clock so the rAF loop
     // never scrolls a detached card.
     resetLyrics();
+    // Release the video decoder too: the element is detached with <main>.
+    stopVideoBackdrop();
     return;
   }
   const pct = st.dur ? Math.min(100, (st.pos / st.dur) * 100) : 0;
@@ -3945,6 +4051,9 @@ function paintNowplaying(st) {
     // brand mark instead of keeping the last cover (06-features batch).
     if (artImg) paintArt(artImg, t.image || "");
     if (artImg) paintNowPlayingBackdrop(artImg);
+    // Ambient video layer (docs/song-video.md §17). Off by default; the
+    // module itself re-checks the pref, metered data and reduced motion.
+    syncVideoBackdrop(t, st);
     const fi = document.getElementById("favorite-icon");
     if (fi) fi.dataset.favIcon = t.id || "";
     // The action-row Like icon mirrors the same state (paintFavs covers every
@@ -3958,6 +4067,7 @@ function paintNowplaying(st) {
       paintArt(artImg, "");
       paintNowPlayingBackdrop(artImg);
     }
+    stopVideoBackdrop();
   }
   // Eyebrow + telemetry strip (desktop `.np-art-overlay` parity). TRACK nn
   // and the length are real player state; STEREO DIRECT is desktop's exact
@@ -5106,7 +5216,9 @@ function ensureMobilePrefs(m) {
         row("explicit", "Hide explicit", "Skip explicit-tagged tracks", sw("m-explicit")) +
         row("download_for_offline", "Smart downloads", "Auto-save mixes offline", sw("m-smart")) +
         row("all_inclusive", "Gapless playback", "No pause between tracks", sw("m-gapless")) +
+        row("fast_forward", "Skip silence", "Skip sustained quiet sections", sw("m-skip-silence")) +
         row("history", "Remember position", "Resume where you stopped", sw("m-remember")) +
+        row("movie", "Now Playing video", "Ambient video behind the artwork (data heavy)", sw("m-np-video")) +
         row("speed", "Playback speed", "Applies immediately", sel("m-speed", "")),
     ) +
     sec(
@@ -5139,6 +5251,12 @@ function ensureMobilePrefs(m) {
           "Import playlist CSV",
           "Spotify Exportify export",
           `<button type="button" id="m-csv-import" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button><input type="file" id="m-csv-file" accept=".csv,text/csv" class="hidden">`,
+        ) +
+        row(
+          "queue_music",
+          "Import M3U / PLS",
+          "Match local playlist entries to the catalog",
+          `<button type="button" id="m-playlist-file-import" class="shrink-0 rounded-xl border border-surface-container-high bg-surface-container px-3 py-1.5 font-body-sm text-body-sm text-on-surface active:scale-95 transition-all">Import</button><input type="file" id="m-playlist-file" accept=".m3u,.m3u8,.pls,audio/x-mpegurl,audio/x-scpls" class="hidden">`,
         ),
     ) +
     sec(
@@ -5215,16 +5333,21 @@ function ensureMobilePrefs(m) {
   flipShared("m-datasaver", dataSaver, setDataSaver, (on) => (on ? "Data Saver on — low quality everywhere" : "Data Saver off"));
   flipShared("m-explicit", explicitHidden, setExplicitHidden, (on) => (on ? "Explicit tracks hidden" : "Explicit tracks shown"));
   flipShared("m-smart", smartDlOn, setSmartDl, (on) => (on ? "Smart downloads on" : "Smart downloads off"));
-  const flip = (id, key, msg) => {
+  const flip = (id, key, msg, defaultValue = "1") => {
     q(id)?.addEventListener("click", () => {
-      const on = mGet(key, "1") !== "1";
+      const on = mGet(key, defaultValue) !== "1";
       mSet(key, on ? "1" : "0");
       paintMobilePrefs(m);
       toast(msg(on), 3000, "success");
     });
   };
   flip("m-gapless", "tm-gapless", (on) => (on ? "Gapless on" : "Gapless off"));
+  flip("m-skip-silence", "tm-skip-silence", (on) => (on ? "Skip silence on" : "Skip silence off"), "0");
   flip("m-remember", "tm-remember-pos", (on) => (on ? "Resume on" : "Resume off"));
+  // Default OFF: best-effort, data heavy, and off by default by design (§12.2).
+  flip("m-np-video", VIDEO_PREF_KEY, (on) => (on ? "Video backdrop on — data heavy" : "Video backdrop off"), "0");
+  // Applying the switch must change the picture now, not on the next track.
+  q("m-np-video")?.addEventListener("click", () => repaint());
   flip("m-lyr-auto", "tm-lyrics-autoscroll", (on) => (on ? "Lyrics follow you" : "Lyrics stay put"));
   flip("m-lyr-kara", "tm-lyrics-gloss", (on) => (on ? "Karaoke on" : "Karaoke off"));
 
@@ -5306,6 +5429,53 @@ function ensureMobilePrefs(m) {
       pushEvent("library", `Imported playlist ${playlist.title}`, `${matched} tracks matched from ${f.name}.`);
     } catch (err) {
       toast(`Import failed: ${String(err).slice(0, 120)}`, 5000, "error");
+    }
+  });
+  q("m-playlist-file-import")?.addEventListener("click", () => q("m-playlist-file")?.click());
+  q("m-playlist-file")?.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!invoke) return toast("Playlist import needs the app backend", 4000, "error");
+    const button = q("m-playlist-file-import");
+    const originalLabel = button?.textContent || "Import";
+    const extension = (file.name.split(".").pop() || "").toLowerCase();
+    if (file.size > 2 * 1024 * 1024) return toast("Playlist files must be 2 MB or smaller", 4000, "error");
+    if (button) button.disabled = true;
+    if (button) button.textContent = "Reading…";
+    try {
+      const { playlist, matched, missed, errors } = await importPlaylistFile(
+        await file.text(),
+        `Imported ${file.name.replace(/\.(m3u8?|pls)$/i, "")}`,
+        extension,
+        invoke,
+        (done, total) => {
+          if (button) button.textContent = `Matching ${done}/${total}`;
+        },
+      );
+      if (!playlist || !playlist.tracks.length) {
+        toast(`No tracks matched${errors.length ? ` — ${errors[0]}` : ""}`, 5000, "error");
+        return;
+      }
+      const saved = load(LIBRARY_KEY, []);
+      saved.unshift({
+        ...playlist,
+        local: true,
+        kind: "playlist",
+        subtitle: `${matched} songs`,
+        image: "",
+        ts: Date.now(),
+      });
+      save(LIBRARY_KEY, saved);
+      toast(`Imported ${matched} tracks${missed ? ` — ${missed} not found` : ""}`, 5500, "success");
+      pushEvent("library", `Imported playlist ${playlist.title}`, `${matched} tracks matched from ${file.name}.`);
+    } catch (err) {
+      toast(`Import failed: ${String(err).slice(0, 120)}`, 5000, "error");
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalLabel;
+      }
     }
   });
   // ------------------------------------------- Spotify (new 2026-10-15)
@@ -5422,7 +5592,7 @@ function paintMobilePrefs(m) {
     ],
     lastCacheStats && lastCacheStats.budget_bytes ? String(Math.round(lastCacheStats.budget_bytes / (1024 * 1024))) : "100",
   );
-  for (const [id, key, dflt] of [["m-gapless", "tm-gapless", "0"], ["m-remember", "tm-remember-pos", "1"], ["m-lyr-auto", "tm-lyrics-autoscroll", "1"], ["m-lyr-kara", "tm-lyrics-gloss", "1"]]) {
+  for (const [id, key, dflt] of [["m-gapless", "tm-gapless", "0"], ["m-skip-silence", "tm-skip-silence", "0"], ["m-remember", "tm-remember-pos", "1"], ["m-np-video", VIDEO_PREF_KEY, "0"], ["m-lyr-auto", "tm-lyrics-autoscroll", "1"], ["m-lyr-kara", "tm-lyrics-gloss", "1"]]) {
     const btn = m.querySelector(`#${id}`);
     if (btn) paintSwitch(btn, mGet(key, dflt) === "1");
   }

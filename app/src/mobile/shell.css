@@ -17,10 +17,27 @@
   -webkit-font-smoothing: antialiased;
 }
 
+:root {
+  --om-nav-content-height: 4rem;
+  --om-mini-player-clearance: 6.5rem;
+  --om-touch-target: 44px;
+  --om-motion-fast: 160ms;
+  --om-focus-color: #4338ca;
+  --om-chrome-surface: rgba(255, 255, 255, 0.94);
+  --om-chrome-border: rgba(24, 24, 27, 0.08);
+  --om-chrome-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
+}
+
+html.dark {
+  --om-focus-color: #c4b5fd;
+  --om-chrome-surface: rgba(20, 20, 24, 0.94);
+  --om-chrome-border: rgba(255, 255, 255, 0.1);
+  --om-chrome-shadow: 0 -4px 20px rgba(0, 0, 0, 0.32);
+}
 
 @layer base {
   html, body {
-    width: 100vw;
+    width: 100%;
     margin: 0;
     padding: 0;
     background-color: #f9f9fb;
@@ -31,7 +48,7 @@
   }
   body {
     overscroll-behavior-y: none;
-    min-height: max(884px, 100dvh);
+    min-height: 100dvh;
     user-select: none;
     -webkit-user-select: none;
   }
@@ -61,6 +78,49 @@ main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
   padding-left: 6px;
   border-radius: 4px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mobile-eq-dialog {
+  width: min(100% - 1rem, 28rem);
+  max-width: 28rem;
+  max-height: min(85dvh, 42rem);
+  margin: auto;
+  padding: 0;
+  overflow: auto;
+  color: var(--color-on-surface, #18181b);
+  background: var(--color-surface-container-lowest, #fff);
+  border: 1px solid var(--color-surface-container-high, #e4e4e7);
+  border-radius: 1.5rem;
+}
+.mobile-eq-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(3px);
+}
+.mobile-eq-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.25rem;
+}
+.mobile-eq-bands {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.mobile-eq-band {
+  display: grid;
+  grid-template-columns: 3.75rem minmax(0, 1fr) 3.25rem;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 48px;
+}
+.mobile-eq-band input {
+  width: 100%;
+  min-height: 44px;
+  accent-color: var(--color-primary, #4f46e5);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-eq-dialog { scroll-behavior: auto; }
 }
 .lyric-word {
   background-image: linear-gradient(90deg, #18181b 0%, #18181b var(--progress, 0%), #71717a var(--progress, 0%), #71717a 100%);
@@ -358,6 +418,10 @@ button:active:not(:disabled), [role="button"]:active {
 @media (prefers-reduced-motion: reduce) {
   .skel { animation: none; }
   .screen-enter { animation: none; }
+  .tab-content.flex { animation: none !important; }
+  .lyric-line,
+  .lyric-text { transition-property: color, background-color, border-color !important; }
+  .lyric-text { transition: color 0.25s ease !important; }
   #screen button:not(:disabled):active,
   #tm-onboard button:not(:disabled):active { transform: none; }
 }
@@ -643,6 +707,30 @@ html.dark .bg-white.text-black span {
 #np-main {
   isolation: isolate;
   background-color: transparent !important;
+}
+
+/* Now Playing ambient video (docs/song-video.md §9): sits above the artwork
+   and only fades in once a frame is decoded, so a slow stream can never flash
+   a black rectangle over the cover. Artwork stays mounted underneath as the
+   poster and as the fallback for every `none`/`unavailable` plan. */
+#np-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 420ms ease;
+  pointer-events: none;
+  background: #000;
+}
+#np-video.is-live {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  #np-video {
+    transition: none;
+  }
 }
 
 #np-backdrop {
@@ -1353,4 +1441,101 @@ html body button[data-nav="settings"][data-net-state] {
 }
 html body button[data-nav="settings"][data-net-state] .material-symbols-outlined {
   color: #ffffff !important;
+}
+
+/* Shared Android chrome geometry, focus, and interaction tokens. */
+.om-bottom-nav {
+  min-height: calc(var(--om-nav-content-height) + max(0.5rem, env(safe-area-inset-bottom, 0px)));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px)) !important;
+  background: var(--om-chrome-surface) !important;
+  border-top: 1px solid var(--om-chrome-border) !important;
+  box-shadow: var(--om-chrome-shadow) !important;
+  backdrop-filter: blur(20px) saturate(140%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(140%) !important;
+  transition:
+    background-color var(--om-motion-fast) ease,
+    border-color var(--om-motion-fast) ease,
+    box-shadow var(--om-motion-fast) ease;
+}
+
+.om-bottom-nav > div {
+  min-height: var(--om-nav-content-height);
+}
+
+html:not(.dark) .om-bottom-nav a[aria-current="page"] > div,
+html.dark .om-bottom-nav a[aria-current="page"] > div {
+  box-shadow: none !important;
+}
+
+html.dark .om-bottom-nav a[aria-current="page"] > div {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+#tm-widget.om-mini-player {
+  bottom: calc(var(--om-nav-content-height) + max(0.5rem, env(safe-area-inset-bottom, 0px))) !important;
+  padding-bottom: 0 !important;
+}
+
+#tm-widget [data-w-seek] {
+  position: absolute !important;
+  inset-inline: 0 !important;
+  bottom: 0 !important;
+  height: var(--om-touch-target) !important;
+  background: transparent !important;
+  cursor: pointer;
+  z-index: 10;
+}
+
+#tm-widget [data-w-seek]::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  top: auto;
+  height: 2.5px;
+  background: rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+
+html.dark #tm-widget [data-w-seek]::before {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#tm-widget [data-w-seek] > div {
+  top: auto !important;
+  bottom: 0 !important;
+  height: 2.5px !important;
+}
+
+main.pb-36:not(#np-main) {
+  padding-bottom: calc(
+    var(--om-nav-content-height) + max(0.5rem, env(safe-area-inset-bottom, 0px)) +
+    var(--om-mini-player-clearance) + 0.75rem
+  );
+}
+
+#tm-toast-stack {
+  bottom: calc(var(--om-nav-content-height) + max(0.5rem, env(safe-area-inset-bottom, 0px)) + var(--om-mini-player-clearance) + 0.75rem) !important;
+}
+
+:where(#screen, #tm-widget, .om-bottom-nav)
+  :is(a[href], button:not(:disabled), input, select, textarea, [role="button"], [role="tab"], [role="switch"], [role="slider"]):focus-visible {
+  outline: 3px solid var(--om-focus-color) !important;
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  #screen button,
+  #screen input:not([type="checkbox"]):not([type="radio"]),
+  #screen select,
+  #screen textarea,
+  #tm-widget button {
+    min-height: var(--om-touch-target);
+  }
+
+  #screen button[aria-label],
+  #tm-widget button {
+    min-width: var(--om-touch-target);
+  }
 }

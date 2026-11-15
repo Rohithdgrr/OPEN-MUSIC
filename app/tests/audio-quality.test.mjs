@@ -86,12 +86,13 @@ test("the quality system is fully automated — no settings toggles anywhere", (
   for (const k of ["tm-eq-preset", "tm-normalize", "tm-eq-tracks", "tm-spatial-mode", "tm-spatial-int"]) {
     assert.ok(!sync.includes(k), `sync.js must not resurrect ${k}`);
   }
-  // Mobile surfaces: no per-track EQ sheet, no menu entry, no settings rows.
+  // Mobile has an in-player five-band EQ, but no legacy per-track sheet or
+  // Settings controls; normalization and spatial processing stay automatic.
   const menus = read("src/mobile/menus.js");
   assert.ok(!menus.includes("EQ for this track"), "no EQ track-menu entry");
   assert.ok(!menus.includes("__tmTrackEq"), "no per-track EQ sheet opener");
   const ap = read("src/mobile/audioplus.js");
-  assert.ok(!/tm-eq-sheet|data-eq-|data-spatial/.test(ap), "audioplus keeps only crossfade");
+  assert.ok(!/tm-eq-sheet|data-spatial/.test(ap), "no legacy EQ sheet or spatial controls");
   const binders = read("src/mobile/binders.js");
   assert.ok(!/["'?]m-eq|["'?]m-normalize/.test(binders), "no mobile EQ/normalize settings rows");
 });

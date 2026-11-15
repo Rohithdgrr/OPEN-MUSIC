@@ -141,15 +141,15 @@ Replaces the compressor-threshold "normalize" with real analysis:
 
 ---
 
-## Automation (§6) — fully automated, no settings taps
+## Automation (§6) — automatic processing, in-player EQ
 
-The quality system ships hand-free (user directive, 2026-10-18): the
-shipped behaviors are the product. No EQ, no Immersive room and no
-normalize controls exist on either surface.
+The spatial room and loudness matching stay automatic. Mobile additionally
+offers a five-band tone EQ in Now Playing; this is a player control, not a
+Settings toggle, and does not change the desktop graph.
 
 | Behavior | Shipped default |
 |---|---|
-| EQ | transparent (`AUTO_EQ = "flat"`, bands at gain 1.0) — the chain is the pipe for T2/T3, never tone-shaping on its own |
+| EQ | starts transparent (`AUTO_EQ = "flat"`, five user gains at 0 dB); mobile adjustments are persisted and applied after the automatic chain |
 | Immersive room | `hall` at intensity 60 (`AUTO_SPATIAL`), auto-bypassed in Jam rooms |
 | Loudness matching | always armed — measure, cache, correct; fails open to unity until a measurement lands |
 | Stream tier | unchanged: the T0 ladder auto-picks the best rendition and the badge reports what is actually playing |
@@ -161,18 +161,18 @@ Contract kept out of the UI:
   allowlist and wiped at boot by `clearToggleKeys()` (dsp.js) — both
   players call it at module load. Stale values from older installs or
   probes cannot resurrect any behavior.
-- Removed UI (this decision, both surfaces): desktop Settings rows
-  "Equalizer" / "Immersive room" / "Immersive intensity", the mobile
-  Immersive section + per-track EQ sheet + track-menu entry "EQ for this
-  track", the generated mobile Settings rows "EQ preset" and "Normalize
-  volume", and the settings→playback `tm-eq-changed` A/B event.
-  `mobile/audioplus.js` keeps only the crossfade selector.
+- Removed UI: desktop Settings rows "Equalizer" / "Immersive room" /
+  "Immersive intensity", the mobile Immersive section, legacy per-track EQ
+  sheet and track-menu entry "EQ for this track", generated mobile Settings
+  rows "EQ preset" and "Normalize volume", and the settings→playback
+  `tm-eq-changed` A/B event. The mobile Now Playing five-band EQ dialog is
+  intentionally retained.
 - `dsp.js`'s stored-key accessors (`resolveEqPreset`, `normalizeOnStored`,
   `spatialModeStored`, `spatialIntensityStored`) remain as a unit-tested
   library surface for future automated behaviors; no app path reads them.
 - Gates: `audio-quality.test.mjs` asserts the absence of every control +
   key + the shipped constants (8 tests), so a settings row cannot silently
-  return.
+  return. `mobile-eq.test.mjs` separately covers the Now Playing EQ contract.
 
 ---
 

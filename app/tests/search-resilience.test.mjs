@@ -42,3 +42,12 @@ test("search.js wires the ladder into the failure path (policy is not dead code)
   assert.match(src, /searchRetryTimer = setTimeout/, "F1: the scheduled attempt exists");
   assert.match(src, /addEventListener\("online"/, "F2: recovery without a click");
 });
+
+test("mobile search uses the bounded ladder, stale guards, online recovery, and a retry action", async () => {
+  const src = await readFile(new URL("../src/mobile/binders.js", import.meta.url), "utf8");
+  assert.match(src, /nextRetryDelay\(retryCount\)/, "mobile first-page failures use the shared policy");
+  assert.match(src, /retryTimer = setTimeout/, "mobile schedules a bounded follow-up attempt");
+  assert.match(src, /mountToken !== searchMountToken \|\| mine !== seq/, "stale searches cannot retry");
+  assert.match(src, /addEventListener\("online", mobileSearchOnlineHandler\)/, "offline searches recover on reconnect");
+  assert.match(src, /data-sm-retry/, "exhaustion exposes an explicit retry action");
+});

@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS smart_playlists (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS track_video (
+    track_id    TEXT PRIMARY KEY,
+    provider    TEXT NOT NULL DEFAULT 'youtube',
+    video_id    TEXT NOT NULL DEFAULT '',
+    kind        TEXT NOT NULL DEFAULT 'unknown',
+    title       TEXT NOT NULL DEFAULT '',
+    channel     TEXT NOT NULL DEFAULT '',
+    duration_s  INTEGER NOT NULL DEFAULT 0,
+    confidence  REAL NOT NULL DEFAULT 0,
+    matched_at  INTEGER NOT NULL DEFAULT 0,
+    expires_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_track_video_expiry ON track_video(expires_at);
 ";
 
 /// Search rows older than this are deleted on read. Deliberately long (was
@@ -130,9 +143,29 @@ const TAGS_PER_TRACK_CAP: i64 = 20;
 const TRACK_TAGS_CAP: i64 = 20_000;
 const SMART_PLAYLISTS_CAP: i64 = 100;
 const SMART_RULE_MAX_BYTES: usize = 2048;
+/// Video matches: one row per track, hard cap with oldest-expiry eviction.
+/// Stream URLs are never stored here (they expire) — only the identity.
+const TRACK_VIDEO_CAP: i64 = 5000;
 /// KV value size guard: prefs, not playlists (those live in localStorage +
 /// backup files). 64 KB is generous for a queue snapshot.
 pub const KV_MAX_BYTES: usize = 64 * 1024;
+
+/// One persisted "this track's video is X" fact (docs/song-video.md §4).
+/// A negative row carries `video_id: ""` and an `expires_at` 24 h out, so a
+/// track with no video costs one search, not one per paint.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TrackVideoRow {
+    pub track_id: String,
+    pub provider: String,
+    pub video_id: String,
+    pub kind: String,
+    pub title: String,
+    pub channel: String,
+    pub duration_s: u64,
+    pub confidence: f64,
+    pub matched_at: i64,
+    pub expires_at: i64,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SongRow {
@@ -766,6 +799,87 @@ impl AppStore {
                 )
             }
         }
+    }
+
+    // --------------------------------------------------------- track video ---
+
+    /// One persisted match (or negative row) for a track. Expired rows are
+    /// returned too: the freshness policy lives in
+    /// `videomatch.js::videoCachePolicy`, this layer only stores facts.
+    pub fn video_load(&self, track_id: &str) -> Result<Option<TrackVideoRow>, String> {
+        if track_id.is_empty() || track_id.len() > 64 {
+            return Err("track id 1..64 chars".into());
+        }
+        let conn = self.lock()?;
+        conn.prepare_cached(
+            "SELECT provider, video_id, kind, title, channel, duration_s, confidence, matched_at, expires_at
+               FROM track_video WHERE track_id = ?1",
+        )
+        .and_then(|mut s| {
+            s.query_row(params![track_id], |r| {
+                Ok(TrackVideoRow {
+                    track_id: track_id.to_string(),
+                    provider: r.get(0)?,
+                    video_id: r.get(1)?,
+                    kind: r.get(2)?,
+                    title: r.get(3)?,
+                    channel: r.get(4)?,
+                    duration_s: r.get::<_, i64>(5)? as u64,
+                    confidence: r.get(6)?,
+                    matched_at: r.get(7)?,
+                    expires_at: r.get(8)?,
+                })
+            })
+            .optional()
+        })
+        .map_err(|e| format!("track_video get: {e}"))
+    }
+
+    /// Upsert a match. `video_id` is empty for a negative row ("this track has
+    /// no video") — that is the row that must cost one search, not one per
+    /// paint (docs/song-video.md §4).
+    pub fn video_store(&self, row: &TrackVideoRow) -> Result<(), String> {
+        if row.track_id.is_empty() || row.track_id.len() > 64 {
+            return Err("track id 1..64 chars".into());
+        }
+        if row.video_id.len() > 32 {
+            return Err("video id too long".into());
+        }
+        let conn = self.lock()?;
+        conn.prepare_cached(
+            "INSERT INTO track_video (track_id, provider, video_id, kind, title, channel, duration_s, confidence, matched_at, expires_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(track_id) DO UPDATE SET provider=excluded.provider, video_id=excluded.video_id,
+               kind=excluded.kind, title=excluded.title, channel=excluded.channel,
+               duration_s=excluded.duration_s, confidence=excluded.confidence,
+               matched_at=excluded.matched_at, expires_at=excluded.expires_at",
+        )
+        .and_then(|mut s| {
+            s.execute(params![
+                row.track_id,
+                row.provider,
+                row.video_id,
+                row.kind,
+                row.title,
+                row.channel,
+                row.duration_s as i64,
+                row.confidence,
+                row.matched_at,
+                row.expires_at,
+            ])
+        })
+        .map_err(|e| format!("track_video put: {e}"))?;
+        let _ = conn.execute(
+            "DELETE FROM track_video WHERE expires_at < ?1",
+            params![now_secs()],
+        );
+        let _ = conn.execute(
+            "DELETE FROM track_video WHERE track_id NOT IN (
+               SELECT track_id FROM track_video ORDER BY matched_at DESC LIMIT ?1
+             )",
+            params![TRACK_VIDEO_CAP],
+        );
+        Ok(())
     }
 
     pub fn stats(&self) -> Result<StoreStats, String> {

@@ -2402,6 +2402,22 @@ Status: ✅ dark theme polished ✅ artist bug fixed ✅ grid/list setting live 
 APK 17.11 MiB ✅ 11/11 live checks ✅ docs ⏳ **uncommitted, unpushed**
 (rule 1). Emulator left running with the new build installed.
 
+## 2026-11-14i — Mobile playlist import verified; skip-silence default fixed
+
+On `Pixel6_API36`, Settings showed both new controls. A real M3U fixture
+matched and saved one catalog track; the fixture's URL was not used as media.
+The first switch test found that Skip silence's initial visual state was off
+but its generic handler assumed a stored `"1"` default, so the first tap wrote
+`"0"`. The handler now accepts a per-setting default, and Skip silence uses
+`"0"` for both interaction and initial paint.
+
+Evidence: on-device missing-key state `aria-checked=false`; tap writes `"1"`
+and paints on; next tap writes `"0"` and paints off. x86_64 debug APK
+22,169,561 bytes built, installed, and launched. `npm test` **587/587**;
+focused mobile tests **10/10**; ESLint and `git diff --check` clean. The
+threshold/state-machine is unit-tested, but an actual silence-triggered seek
+was not exercised on-device. No commit or push.
+
 ## 2026-11-13 — Dark theme: the translucent-utility bug, real artist art, glass discs (uncommitted)
 
 User (with screenshots): *"improve this home screen dark theme headers background
@@ -2883,3 +2899,82 @@ not installed, and direct `rustfmt.exe` access to
 `C:\Users\rohit\.rustup\settings.toml` was denied by the sandbox. The prior
 `cargo fmt --check` also reported an unrelated existing `proxy.rs` diff.
 No Android build/device run. Nothing committed or pushed (rule 1).
+
+## 2026-11-14g — Android mobile shell visual polish (uncommitted)
+
+Implemented the documented visual-system pass in the mobile shell only; no
+desktop application files changed. The shell now permits zoom, uses dynamic
+viewport sizing, and aligns the fixed mini-player, bottom navigation, scroll
+clearance, and toast stack with Android safe-area insets. Shared CSS tokens
+define the chrome, focus, motion, and touch treatment; coarse-pointer controls
+and the player seek rail have 44px targets, focus-visible is explicit, and
+reduced-motion removes tab/lyric movement while preserving color feedback.
+Home's spotlight uses a stable shelf selector and stays hidden until a playable
+playlist id exists; unsupported codec copy and unknown track counts are removed.
+
+**Evidence:** focused mobile visual-system + dark-layout + boot-graph tests
+**20/20**; `npm.cmd --prefix app run lint` exit 0;
+`npm.cmd --prefix app run build:mobile` exit 0; JavaScript `node --check` and
+`git diff --check` exit 0.
+The full `npm test` suite stalled without a summary in two attempts and was
+stopped; it is not claimed green. `adb devices` could not start its daemon, so
+no APK/device verification is claimed. Docs: `docs/mobile/06-features.md` and
+Unreleased `CHANGELOG.md`. Nothing committed or pushed (rule 1).
+
+## 2026-11-14h — Android bundle packaging fixed and live-verified
+
+The Android Gradle step invokes `npm run tauri -- android
+android-studio-script`; this nested command does not set `TAURI_ENV_PLATFORM`.
+The old npm wrapper therefore ran `build-mobile.mjs --clean` and removed the
+bundle before packaging. `app/scripts/tauri.mjs` now skips that cleanup only
+for this Android packaging command and retains cleanup for other Tauri
+commands.
+
+Evidence: Android debug APK build completed with
+`npm.cmd --prefix app run tauri:android -- build --debug --target x86_64 --apk
+--ci`. On `Pixel6_API36`, WebView returned HTTP 200 / `text/javascript` for
+`mobile/dist/app.js`; Search for “believer” rendered 6 rows; Now Playing EQ
+opened with 5 bands, saved a slider change, and Reset returned all bands to
+flat. The probe restored the previous EQ preference. Focused tests 18/18,
+`npm test` 580/580, lint, JavaScript syntax checks, and `git diff --check`
+passed. No commit or push; existing worktree changes remain uncommitted.
+
+## 2026-11-14i — Song video P0 shipped: decision plane + recogniser + live probe (uncommitted)
+
+Implemented the P0 slice of `docs/song-video.md` (the doc preceded the code, so
+the docs-first rule held). Nothing renders a video yet; the Rust transport and
+UI remain the P1/P2 work, blocked here by an unlinkable Rust toolchain.
+
+| Artifact | Evidence |
+|---|---|
+| `app/src/videomatch.js` (new, pure) | query building, row/format parsing, scoring, kind, rendition, cache policy, metadata merge, InnerTube request shapes |
+| `app/src/fingerprint.js` (new, pure) | hand-rolled radix-2 FFT → STFT → peaks → landmark hashes → offset match |
+| `app/tests/video-match.test.mjs` + `fingerprint.test.mjs` (new) | **37 tests, 0 fail**; `imports.test.mjs` also green → 38/38 in the three-suite run |
+| `app/scripts/video-probe.mjs` + `video:probe` script | live: Kesariya → `NJAv_7lHUIU`, 0.95, itag 136, `206`, 1024 B; Believer → `Kx7B-XvmFtE`; nonsense → `state: none` at 0.30–0.34, exit 0 |
+| Gates | `npm run lint` clean, `node --check` clean |
+
+**Two real design corrections, both evidence-driven:**
+1. **The title gate moved 0.55 → 0.70.** The first live run ranked
+   `Khairiyat (Bonus Track)` at **score 0.750 / titleSim 0.56** against a
+   *Kesariya* query — same artist, same duration. Weighted scoring alone would
+   have accepted the wrong song had the right row been absent. Correct rows
+   score 1.00 on title (variants strip brackets/suffixes), so the raise costs
+   nothing real. Regression test named after the case.
+2. **Weights now follow available evidence.** A caller that knows only a title
+   (the probe's free-text form) redistributes the artist/duration weight
+   instead of being capped under the bar — title-only Kesariya scores 0.93.
+
+**Contract refinements recorded in the doc (§16.2):** the Rust side must NOT
+re-implement scoring (two thin transport commands + relay + store, decisions
+stay in `videomatch.js`); the height cap outranks codec preference; a title
+echoed into the album slot is dropped as metadata; search parsing walks for the
+row renderer so a layout change cannot masquerade as "no video" and
+negative-cache every track.
+
+**Measured:** fingerprint is 1.5 ms per second of 8 kHz audio, ~6 k hashes per
+30 s, 16 ms to match; chosen assets are YT Music's square 720×720 song videos
+(268 s, 1.7 MB), i.e. cheap loopable backdrops.
+
+**Not verified:** no `cargo` build (link.exe absent / rust-lld lacks Windows SDK
+libs), no WebView playback, no device run; fingerprint exercised on synthetic
+PCM only (no decode path in this cut). Nothing committed, nothing pushed (rule 1).

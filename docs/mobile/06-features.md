@@ -1334,7 +1334,9 @@ Complete UI/UX overhaul of the three central mobile surfaces:
 2. **Docked Miniplayer Enhancement**:
    - Elevated glassmorphic floating pill (`#tm-widget`) with acrylic blur, subtle borders,
      and ambient depth shadow.
-   - Integrated subtle top drag-handle indicator to communicate sheet pull-up affordance.
+   - Streamlined progress rail: replaced clunky top 6px bar with an ultra-thin 2.5px hairline
+     progress track docked seamlessly to the bottom edge, eliminating excessive vertical whitespace
+     and card bloat while preserving the full 44px accessible touch target (`--om-touch-target`).
    - High-contrast typography for `#tm-w-title` and `#tm-w-artist` with streaming fidelity indicator.
    - Preserves 44px touch targets, full keyboard slider navigation, and swipe gesture controls
      (swipe up to open Now Playing, swipe left/right to skip).
