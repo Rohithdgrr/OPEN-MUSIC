@@ -1,0 +1,116 @@
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-sm transition-all"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md font-bold tracking-tight text-on-surface">Library</h1></div><div class="flex items-center gap-1"><button data-nav="settings" aria-label="Settings" class="w-10 h-10 flex items-center justify-center rounded-full text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><div data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary font-label-sm font-semibold ml-1 cursor-pointer active:scale-90 hover:opacity-90 transition-all shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="flex flex-col relative w-full pt-14 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pt-2">
+<!-- Sub-header & Action Utilities -->
+<div class="flex items-center justify-between py-2 mb-3">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-lg text-[22px] font-bold text-on-surface tracking-tight">Your Library</span>
+</div>
+<div class="flex items-center gap-1">
+<button aria-label="Search within library" class="w-9 h-9 rounded-full bg-surface-container-low border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all" onclick="toggleLibrarySearch()">
+<span class="material-symbols-outlined text-[19px]">search</span>
+</button>
+<button aria-label="Create playlist" class="w-9 h-9 rounded-full bg-surface-container-low border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all" onclick="promptCreatePlaylist()">
+<span class="material-symbols-outlined text-[20px]">add</span>
+</button>
+<button aria-label="Sort and view settings" class="w-9 h-9 rounded-full bg-surface-container-low border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all" onclick="cycleSort()">
+<span class="material-symbols-outlined text-[19px]">swap_vert</span>
+</button>
+</div>
+</div>
+<!-- Search Input Bar (Expandable Micro-interaction) -->
+<div class="hidden w-full mb-3" id="librarySearchBar">
+<div class="relative w-full flex items-center bg-surface-container-lowest border border-surface-container-high/80 rounded-2xl px-3.5 py-1 shadow-sm focus-within:border-primary/40 focus-within:shadow-md transition-all">
+<span class="material-symbols-outlined text-secondary text-[19px] mr-2">search</span>
+<input class="w-full h-9 bg-transparent text-on-surface font-body-md text-body-md placeholder-secondary focus:outline-none" id="filterInput" oninput="filterLibraryList(this.value)" placeholder="Find in Playlists, Artists, Albums..." type="text"/>
+<button class="text-secondary hover:text-on-surface w-7 h-7 flex items-center justify-center rounded-full hover:bg-surface-container active:scale-90" onclick="clearLibrarySearch()">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+<!-- Horizontal Filter Chips -->
+<div class="w-full overflow-x-auto no-scrollbar -mx-gutter px-gutter mb-4 flex items-center gap-2">
+<button class="filter-chip px-4 h-8 rounded-full bg-primary text-on-primary font-label-md text-label-md flex items-center gap-1.5 flex-shrink-0 transition-transform active:scale-95 shadow-sm font-semibold" onclick="setActiveFilter(this, 'all')">
+<span>Playlists</span>
+</button>
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1.5 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'downloaded')">
+<span class="material-symbols-outlined text-[14px]">arrow_downward</span>
+<span>Downloaded</span>
+</button>
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'albums')">
+<span>Albums</span>
+</button>
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'artists')">
+<span>Artists</span>
+</button>
+<button class="filter-chip px-4 h-8 rounded-full bg-surface-container-low border border-surface-container-high/60 text-on-surface-variant font-label-md text-label-md flex items-center gap-1 flex-shrink-0 hover:bg-surface-container transition-all active:scale-95 font-medium" onclick="setActiveFilter(this, 'podcasts')">
+<span>Podcasts</span>
+</button>
+</div>
+<!-- Quick Pinned Modules (Liked Songs & Offline Cache) -->
+<div class="grid grid-cols-2 gap-3 mb-5">
+<!-- Pinned Card: Liked Songs -->
+<div class="relative overflow-hidden bg-primary text-on-primary rounded-2xl p-4 flex flex-col justify-between h-32 shadow-sm group active:scale-[0.98] transition-transform cursor-pointer">
+<div class="flex items-center justify-between w-full">
+<div class="w-9 h-9 rounded-xl bg-surface-container-lowest/15 backdrop-blur flex items-center justify-center text-on-primary shadow-sm">
+<span class="material-symbols-outlined text-[19px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</div>
+<div class="flex items-center gap-0.5 text-on-primary/75">
+<span class="material-symbols-outlined text-[16px]" title="Auto-synced offline">offline_pin</span>
+</div>
+</div>
+<div>
+<h3 class="font-headline-md text-[16px] font-bold tracking-tight leading-tight text-on-primary">Liked Songs</h3>
+<span class="font-body-sm text-[12px] text-on-primary/75 mt-0.5">148 tracks</span>
+</div>
+<div class="absolute -right-3 -bottom-4 w-20 h-20 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
+</div>
+<!-- Pinned Card: Downloaded Music Hub -->
+<div class="relative overflow-hidden bg-surface-container-lowest text-on-surface border border-surface-container-high/70 rounded-2xl p-4 flex flex-col justify-between h-32 shadow-sm active:scale-[0.98] transition-all cursor-pointer hover:shadow-md">
+<div class="flex items-center justify-between w-full">
+<div class="w-9 h-9 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface shadow-sm">
+<span class="material-symbols-outlined text-[19px]">download_for_offline</span>
+</div>
+<span class="font-label-mono text-[11px] text-secondary font-semibold">1.8 GB</span>
+</div>
+<div>
+<h3 class="font-headline-md text-[16px] font-bold tracking-tight leading-tight text-on-surface">Downloaded</h3>
+<span class="font-body-sm text-[12px] text-secondary mt-0.5">42 songs stored</span>
+</div>
+</div>
+</div>
+<!-- Sorting & View Bar -->
+<div class="flex items-center justify-between mb-2">
+<button class="flex items-center gap-1.5 py-1 px-2 -ml-1 text-on-surface hover:text-primary transition-colors group active:scale-95" id="sortToggleBtn" onclick="toggleSortMode()">
+<span class="material-symbols-outlined text-[17px] text-secondary group-hover:text-primary transition-colors">import_export</span>
+<span class="font-label-md text-label-md font-semibold" id="currentSortLabel">Recently played</span>
+</button>
+<div class="flex items-center gap-1 text-secondary">
+<button aria-label="Grid view" class="w-8 h-8 flex items-center justify-center rounded-lg hover:text-on-surface hover:bg-surface-container/60 active:scale-90 text-secondary transition-all" id="viewGridBtn" onclick="setViewMode('grid')">
+<span class="material-symbols-outlined text-[19px]">grid_view</span>
+</button>
+<button aria-label="List view" class="w-8 h-8 flex items-center justify-center rounded-lg text-primary bg-surface-container active:scale-90 transition-all" id="viewListBtn" onclick="setViewMode('list')">
+<span class="material-symbols-outlined text-[19px]">view_agenda</span>
+</button>
+</div>
+</div>
+<!-- Library Items Container -->
+<div class="flex flex-col gap-1 transition-all duration-200" id="libraryContainer">
+<!-- Items dynamically rendered by binders.js -->
+</div>
+<!-- Empty State Placeholder when filtering returns no matches -->
+<div class="hidden flex-col items-center justify-center py-12 text-center" id="libraryEmptyState">
+<div class="w-14 h-14 rounded-2xl bg-surface-container-low flex items-center justify-center text-secondary mb-3 shadow-sm">
+<span class="material-symbols-outlined text-[26px]">library_music</span>
+</div>
+<h4 class="font-headline-md text-[16px] font-bold text-on-surface mb-1">No items found</h4>
+<p class="font-body-sm text-body-sm text-secondary max-w-[240px]">Try clearing search or filters to see all music in your collection.</p>
+</div>
+
+<!-- Toast Notification Feedback -->
+<div class="fixed top-16 inset-x-gutter z-50 pointer-events-none transform -translate-y-4 opacity-0 transition-all duration-300 flex justify-center" id="toastNotification">
+<div class="bg-primary text-on-primary font-label-md text-label-md px-4 py-2 rounded-full shadow-md flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-on-primary">check</span>
+<span id="toastMessage">Playlist created</span>
+</div>
+</div>
+</div>
+</main>

@@ -6,6 +6,19 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Fixed (Android studio shell — search bay, mini-player seek bar, artist artwork)
+- Artist browser: one card per artist — a track id and a catalog id for the same person used to produce two tiles; cards now merge by folded name, keeping the richer one (real portrait, catalog token), repointing tracks/follows, and resolving the dropped id through an alias.
+- The studio search field no longer draws a second rectangle inside its pill: the legacy shell rule that forces a border on every text input now exempts `#search-main-input` and `#library-search-input`, leaving the pill's own border and focus ring as the only chrome (light and dark).
+- The mini-player's seek bar sits on the card's top edge instead of under the track row, so progress is readable at a glance without shrinking the row.
+- Artist thumbnails: sources a browser cannot fetch (seeded design-mock ids) no longer paint the broken-image icon; an image that failed while it was still detached is now classified as failed and shows the sleeve instead of the glyph; and artist cards derived from a track resolve the catalogue's real portrait instead of reusing the track's cover (film posters and album art were used as faces). Portraits are cached by name and resolved in small background batches after hydration and when a listing opens.
+
+### Fixed (Android studio shell — real catalog + real streaming)
+- The studio shell hydrates from the backend instead of its demo catalog: `home_feed` fills Home/Charts, curated playlists load `playlist_tracks` on first open or Play, album/artist detail resolves the perma-url token and loads the real catalogue, and the Offline Vault reads `list_downloads.entries` (it is an object, not an array).
+- Search runs the three entity searches with the required `kind` argument and renders its own result state, so results are exactly what upstream returned rather than a filtered dump of the whole catalog; typing and genre/recent-search chips both commit a real query (stale answers are discarded).
+- Every track resolves through `resolve_song` at the selected tier and streams from the loopback relay. A failed resolve now stops honestly instead of starting the demo synthesizer, and lyrics read the backend's `synced` pairs (the command also requires `album` and `duration`).
+- Artwork now paints on every tile: a cached image could finish loading while a re-render still held it in a detached fragment, where the window `load` listener never saw it, so the tile kept showing its placeholder sleeve over a fully downloaded cover. Each image is now checked for `complete` and wired individually. Artist rows no longer request JioSaavn's stock `artist-default` avatar (blocked by the Android CSP) and show the app's own sleeve instead.
+- Likes and plays persist to the SQLite store (`store_fav` / `store_play`), so Liked Songs and Listening History survive a restart.
+
 ### Added (song video — decision plane, recogniser, live probe)
 - **Track → video matching core** (`app/src/videomatch.js`, pure and DOM-free): builds the InnerTube query from a catalog track, parses search rows, scores candidates with a version penalty (karaoke/cover/sped-up/remix), classifies the artefact (official/lyric/visualizer/live), picks one progressive H.264 rendition under a height cap, and returns a cache policy plus provenance-carrying metadata. Nothing renders it yet; the transport and UI are specified in `docs/song-video.md`.
 - **Local audio recogniser** (`app/src/fingerprint.js`): Shazam-style landmark hashing over an in-module FFT, with offset-aware matching. Measured at 1.5 ms of CPU per second of 8 kHz audio and ~6 k hashes per 30 s.

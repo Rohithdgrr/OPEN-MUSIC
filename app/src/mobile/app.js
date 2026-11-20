@@ -173,6 +173,11 @@ document.addEventListener("click", (e) => {
     toggle();
     return;
   }
+  const wPrev = el("[data-w-prev]");
+  if (wPrev) {
+    prev();
+    return;
+  }
   const wNext = el("[data-w-next]");
   if (wNext) {
     next();
@@ -186,10 +191,15 @@ document.addEventListener("click", (e) => {
   }
   const wSeek = el("[data-w-seek]");
   if (wSeek) {
-    const st = playerState();
-    if (st.dur > 0) {
-      const r = wSeek.getBoundingClientRect();
-      if (r.width > 0) seek(((e.clientX - r.left) / r.width) * st.dur);
+    // Pointer down/move already handles mouse and touch scrubbing. Keep a
+    // zero-detail click fallback for accessibility activation from a screen
+    // reader or keyboard-generated click.
+    if (e.detail === 0) {
+      const st = playerState();
+      if (st.dur > 0) {
+        const r = wSeek.getBoundingClientRect();
+        if (r.width > 0) seek(((e.clientX - r.left) / r.width) * st.dur);
+      }
     }
     return;
   }
@@ -379,11 +389,10 @@ document.addEventListener(
 );
 
 // ---------------------------------------------------------------- widget player
-// The desktop floating card (widget.html) rebuilt as an Android always-on
-// control: art, title/artist, prev/play/next/shuffle/repeat/fav + a
-// click-to-seek rail with buffered fill. The design's per-screen mini-player
-// markup is hidden — one player on every screen except NowPlaying, which owns
-// the full transport.
+// Compact Android mini-player. Keep the seek target in normal document flow:
+// an absolutely positioned 44px slider used to sit on top of the transport
+// buttons and steal taps. Now the card has a distinct progress row below the
+// controls, and the full player is still the owner of the expanded transport.
 function ensureWidget() {
   if (document.getElementById("tm-widget")) return;
   const hide = document.createElement("style");
@@ -391,66 +400,100 @@ function ensureWidget() {
   document.head.appendChild(hide);
   const host = document.createElement("div");
   host.innerHTML = `<div id="tm-widget" class="om-mini-player fixed bottom-0 inset-x-2.5 sm:inset-x-4 z-40 pointer-events-none hidden max-w-lg mx-auto">
-    <div class="pointer-events-auto relative bg-surface-container-lowest/95 dark:bg-surface-container-low backdrop-blur-2xl rounded-2xl overflow-hidden shadow-[0_12px_32px_-4px_rgba(0,0,0,0.18),0_2px_8px_rgba(0,0,0,0.06)] border border-surface-container-high/80 dark:border-white/10 transition-all duration-300">
-      <div class="flex items-center gap-3 px-3 py-2">
-        <div class="relative w-11 h-11 rounded-xl bg-surface-container-highest flex-shrink-0 overflow-hidden shadow-xs ring-1 ring-black/10 dark:ring-white/10 cursor-pointer" data-w-open>
+    <div class="om-mini-player__surface pointer-events-auto">
+      <div class="om-mini-player__row">
+        <div class="om-mini-player__art" data-w-open title="Open Now Playing">
           <img id="tm-w-art" alt="" class="w-full h-full object-cover">
           <span id="tm-w-vault" aria-hidden="true" class="hidden absolute bottom-0.5 left-0.5 w-4 h-4 rounded-full bg-emerald-500 text-white items-center justify-center shadow-xs"><span class="material-symbols-outlined text-[12px]">download</span></span>
         </div>
-        <div class="flex flex-col min-w-0 flex-1 cursor-pointer select-none overflow-hidden" data-w-open>
-          <span id="tm-w-title" class="font-body-md text-[13.5px] text-on-surface font-bold tracking-tight truncate leading-tight">Nothing playing</span>
-          <span id="tm-w-artist" class="font-body-sm text-[11.5px] text-secondary truncate mt-0.5 leading-tight"></span>
+        <div class="om-mini-player__meta" data-w-open title="Open Now Playing">
+          <span id="tm-w-title" class="om-mini-player__title">Nothing playing</span>
+          <span id="tm-w-artist" class="om-mini-player__artist">Choose a song to start listening</span>
         </div>
-        <div class="flex items-center gap-1.5 flex-shrink-0 pr-0.5">
-          <button type="button" data-w-fav aria-label="Favorite" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]" data-fav-icon></span></button>
-          <button type="button" data-w-toggle aria-label="Play" class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-[0_3px_10px_rgba(0,0,0,0.22)] hover:brightness-110"><span id="tm-w-playicon" class="material-symbols-outlined text-[23px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
-          <button type="button" data-w-next aria-label="Next" class="w-9 h-9 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container/60 active:scale-90 transition-all"><span class="material-symbols-outlined text-[21px]">skip_next</span></button>
+        <div class="om-mini-player__actions">
+          <button type="button" data-w-fav aria-label="Add to favorites" aria-pressed="false" class="om-mini-player__icon-btn"><span class="material-symbols-outlined" data-fav-icon>favorite_border</span></button>
+          <button type="button" data-w-prev aria-label="Previous track" class="om-mini-player__icon-btn"><span class="material-symbols-outlined">skip_previous</span></button>
+          <button type="button" data-w-toggle aria-label="Play" class="om-mini-player__play-btn"><span id="tm-w-playicon" class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">play_arrow</span></button>
+          <button type="button" data-w-next aria-label="Next track" class="om-mini-player__icon-btn"><span class="material-symbols-outlined">skip_next</span></button>
         </div>
       </div>
-      <div data-w-seek role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-disabled="true" tabindex="0" class="cursor-pointer touch-none">
-        <div id="tm-w-buf" class="absolute left-0 bg-secondary-fixed-dim/40 transition-all duration-150" style="width:0%"></div>
-        <div id="tm-w-fill" class="absolute left-0 bg-primary dark:bg-white transition-all duration-75" style="width:0%"></div>
+      <div data-w-seek role="slider" aria-label="Track progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-disabled="true" tabindex="0" class="om-mini-player__seek">
+        <span class="om-mini-player__seek-track" aria-hidden="true"></span>
+        <span id="tm-w-buf" class="om-mini-player__seek-buffer" aria-hidden="true" style="width:0%"></span>
+        <span id="tm-w-fill" class="om-mini-player__seek-fill" aria-hidden="true" style="width:0%"></span>
       </div>
     </div>
   </div>`;
   document.body.appendChild(host.firstElementChild);
-  // Swipe gestures: left = next, right = prev, up = open NowPlaying.
-  // Horizontal swipe must not fight the vertical page scroll — only fire on a
-  // clear horizontal intent.
+
+  // Scrubbing is handled on the slider itself, never by an invisible overlay
+  // across the transport row. Pointer capture keeps drag-seeking continuous.
+  const seekEl = document.querySelector("#tm-widget [data-w-seek]");
+  if (seekEl && !seekEl.dataset.pointerWired) {
+    seekEl.dataset.pointerWired = "1";
+    let dragging = false;
+    const seekAt = (clientX) => {
+      const st = playerState();
+      const rect = seekEl.getBoundingClientRect();
+      if (st.dur <= 0 || rect.width <= 0) return;
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      seek(ratio * st.dur);
+    };
+    seekEl.addEventListener("pointerdown", (e) => {
+      if (!e.isPrimary || playerState().dur <= 0) return;
+      dragging = true;
+      try { seekEl.setPointerCapture(e.pointerId); } catch {}
+      seekAt(e.clientX);
+      e.preventDefault();
+    });
+    seekEl.addEventListener("pointermove", (e) => {
+      if (dragging) seekAt(e.clientX);
+    });
+    const stopScrub = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try {
+        if (seekEl.hasPointerCapture(e.pointerId)) seekEl.releasePointerCapture(e.pointerId);
+      } catch {}
+    };
+    seekEl.addEventListener("pointerup", stopScrub);
+    seekEl.addEventListener("pointercancel", stopScrub);
+    seekEl.addEventListener("lostpointercapture", () => { dragging = false; });
+  }
+
+  // Swipe gestures: left = next, right = previous, up = open Now Playing.
+  // Controls and the seek rail own their taps/drag gestures and must not be
+  // interpreted as a card swipe.
   const w = document.getElementById("tm-widget");
   if (w && !w.dataset.swipeWired) {
     w.dataset.swipeWired = "1";
     let x0 = 0;
     let y0 = 0;
     let on = false;
-    w.addEventListener(
-      "touchstart",
-      (e) => {
-        if (e.touches.length !== 1) return;
-        on = true;
-        x0 = e.touches[0].clientX;
-        y0 = e.touches[0].clientY;
-      },
-      { passive: true },
-    );
-    w.addEventListener(
-      "touchend",
-      (e) => {
-        if (!on) return;
+    w.addEventListener("touchstart", (e) => {
+      if (e.touches.length !== 1 || e.target.closest("button, [data-w-seek]")) {
         on = false;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - x0;
-        const dy = t.clientY - y0;
-        if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.4) {
-          // Vertical swipe up opens NowPlaying (down does nothing).
-          if (dy < -48 && Math.abs(dy) > Math.abs(dx)) go("nowplaying");
-          return;
-        }
-        if (dx < 0) next();
-        else prev();
-      },
-      { passive: true },
-    );
+        return;
+      }
+      on = true;
+      x0 = e.touches[0].clientX;
+      y0 = e.touches[0].clientY;
+    }, { passive: true });
+    w.addEventListener("touchend", (e) => {
+      if (!on) return;
+      on = false;
+      const t = e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - x0;
+      const dy = t.clientY - y0;
+      if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.4) {
+        if (dy < -48 && Math.abs(dy) > Math.abs(dx)) go("nowplaying");
+        return;
+      }
+      if (dx < 0) next();
+      else prev();
+    }, { passive: true });
+    w.addEventListener("touchcancel", () => { on = false; }, { passive: true });
   }
 }
 ensureWidget();
@@ -683,12 +726,10 @@ onPaint((st) => {
   if (!st.track || onNowPlaying()) return;
   const t = st.track;
   const title = w.querySelector("#tm-w-title");
-  if (title && t.title) {
-    title.textContent = t.title;
-    // Overflowing titles scroll (keyframes live in index.html).
-    try {
-      title.classList.toggle("tm-marquee", title.scrollWidth > title.clientWidth);
-    } catch {}
+  if (title) {
+    title.textContent = t.title || "Unknown track";
+    title.setAttribute("title", t.title || "Unknown track");
+    title.classList.remove("tm-marquee");
   }
   const artist = w.querySelector("#tm-w-artist");
   if (artist) {
@@ -717,28 +758,23 @@ onPaint((st) => {
   if (buf) buf.style.width = `${Math.round(Math.min(1, st.buf || 0) * 100)}%`;
   const seekEl = w.querySelector("[data-w-seek]");
   if (seekEl) {
-    seekEl.setAttribute("aria-valuenow", String(st.dur > 0 ? Math.round((st.pos / st.dur) * 100) : 0));
+    const percent = st.dur > 0 ? Math.max(0, Math.min(100, Math.round((st.pos / st.dur) * 100))) : 0;
+    const elapsed = Number.isFinite(st.pos) ? Math.max(0, Math.floor(st.pos)) : 0;
+    const total = Number.isFinite(st.dur) ? Math.max(0, Math.floor(st.dur)) : 0;
+    const clock = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+    seekEl.setAttribute("aria-valuenow", String(percent));
+    seekEl.setAttribute("aria-valuetext", `${clock(elapsed)} of ${clock(total)}`);
     seekEl.setAttribute("aria-disabled", String(st.dur <= 0));
   }
   const icon = w.querySelector("#tm-w-playicon");
   if (icon) icon.textContent = st.paused ? "play_arrow" : "pause";
   const btn = w.querySelector("[data-w-toggle]");
   if (btn) btn.setAttribute("aria-label", st.paused ? "Play" : "Pause");
-  const rep = w.querySelector("#tm-w-repeaticon");
-  if (rep) {
-    rep.textContent = st.repeat === 2 ? "repeat_one" : "repeat";
-    rep.style.fontVariationSettings = `'FILL' ${st.repeat ? 1 : 0}`;
-    rep.classList.toggle("text-primary", !!st.repeat);
-  }
-  const sh = w.querySelector("#tm-w-shuffleicon");
-  if (sh) {
-    sh.style.fontVariationSettings = `'FILL' ${st.shuffle ? 1 : 0}`;
-    sh.classList.toggle("text-primary", !!st.shuffle);
-    sh.closest("button")?.setAttribute("aria-pressed", String(!!st.shuffle));
-  }
   const fav = w.querySelector("[data-w-fav] .material-symbols-outlined");
   if (fav) fav.dataset.favIcon = t.id || "";
   paintFavs();
+  const favButton = w.querySelector("[data-w-fav]");
+  if (favButton && fav) favButton.setAttribute("aria-pressed", String(fav.textContent === "favorite"));
 });
 
 if (invoke) {

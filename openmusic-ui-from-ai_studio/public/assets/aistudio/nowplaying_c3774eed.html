@@ -1,0 +1,387 @@
+<!-- Mockup-driven Now Playing (open_music_now_playing.html +
+     nowplaying-screen-{,chat-,jam-}chatgpt.png), mobile only.
+     Every id below is a contract (docs/mobile/06-features.md): jam.js owns
+     the room chrome, binders.js owns the player paint, screens/nowplaying.js
+     owns switchTab — all by id, none changed here. -->
+<header class="fixed top-0 w-full z-50 pt-safe bg-surface/90 backdrop-blur-md border-b border-outline-variant/30 transition-all">
+<div class="h-14 px-margin flex items-center justify-between">
+<div class="flex items-center">
+<button aria-label="Collapse player" class="w-10 h-10 -ml-1 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-all active:scale-90" onclick="history.back()" type="button">
+<span class="material-symbols-outlined text-[24px]">keyboard_arrow_down</span>
+</button>
+</div>
+<div class="flex items-center justify-center min-w-0" id="headerModeContainer">
+<div class="flex items-center bg-surface-container-high/60 dark:bg-surface-container-low/60 p-1 rounded-full border border-outline-variant/30 shadow-xs relative" id="modeToggleBtn" role="tablist" aria-label="Audio mode">
+<button type="button" id="modeSoloTab" class="px-3.5 py-1 rounded-full font-label-md text-[11px] font-semibold transition-all duration-200 active:scale-95 bg-primary text-on-primary shadow-xs" role="tab" aria-selected="true">
+Solo
+</button>
+<button type="button" id="modeSocialTab" class="px-3.5 py-1 rounded-full font-label-md text-[11px] font-semibold transition-all duration-200 active:scale-95 text-secondary hover:text-on-surface flex items-center gap-1.5" role="tab" aria-selected="false">
+<span>Social</span>
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0 hidden" id="headerModeDot"></span>
+</button>
+<span class="sr-only" id="headerSubtitle">PLAYING FROM PLAYLIST</span>
+<span class="sr-only" id="headerTitle">Not playing</span>
+</div>
+</div>
+<div class="flex items-center">
+<button aria-label="More options" class="w-10 h-10 -mr-1 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container-low dark:hover:bg-surface-container transition-all active:scale-90" id="more-options-btn" type="button">
+<span class="material-symbols-outlined text-[22px]">more_horiz</span>
+</button>
+</div>
+</div>
+</header>
+<main class="flex flex-col relative w-full pt-14 bg-transparent min-h-screen" id="np-main">
+<div aria-hidden="true" id="np-backdrop">
+<img alt="" aria-hidden="true" class="np-backdrop-art" id="np-backdrop-a"/>
+<img alt="" aria-hidden="true" class="np-backdrop-art" id="np-backdrop-b"/>
+</div>
+<div class="relative z-10 flex flex-col w-full pb-safe max-w-md mx-auto" id="np-top">
+<section class="hidden px-margin pt-2 pb-1 flex-col gap-2 transition-all duration-300" id="jamSessionBanner">
+<div class="flex items-center justify-between bg-surface-container-low/90 dark:bg-surface-container backdrop-blur-md border border-outline-variant/30 px-3 py-1.5 rounded-2xl shadow-xs gap-2">
+<div class="flex items-center gap-2 min-w-0">
+<span class="relative flex h-2 w-2 shrink-0">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-on-tertiary-container opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-on-tertiary-container"></span>
+</span>
+<span class="material-symbols-outlined text-[15px] text-on-surface shrink-0">podcasts</span>
+<span class="font-label-sm text-[10px] font-mono font-semibold text-on-surface" id="jamBannerCode">NO ROOM</span>
+<span class="text-outline-variant text-[10px]">•</span>
+<div class="flex items-center gap-1 text-secondary">
+<span class="material-symbols-outlined text-[14px]">group</span>
+<span class="font-label-sm text-[10px] font-mono font-semibold text-on-surface" id="jamBannerCount">1</span>
+</div>
+<span class="text-outline-variant text-[10px]">•</span>
+<div class="flex items-center gap-0.5 text-secondary">
+<span class="material-symbols-outlined text-[13px] text-on-tertiary-container">bolt</span>
+<span class="font-label-sm text-[10px] font-mono text-secondary" id="jamBannerDrift">—</span>
+</div>
+</div>
+<div class="flex items-center gap-1.5 shrink-0">
+<div class="flex -space-x-1.5 items-center" id="jamBannerMembers"></div>
+<button aria-label="Copy room invite" class="flex items-center gap-1 bg-surface-container-highest dark:bg-surface-container-high hover:bg-surface-container-high px-2.5 py-1 rounded-full border border-outline-variant/30 text-on-surface active:scale-95 transition-all text-[10px] font-label-sm shadow-xs" id="copyUriBtn">
+<span class="material-symbols-outlined text-[12px]">content_copy</span>
+<span class="font-label-sm text-[9px] font-mono">Link</span>
+</button>
+</div>
+</div>
+</section>
+<template id="jamMemberRow" class="hidden">
+<div class="flex items-center gap-2.5 p-2 rounded-xl bg-surface-container-low border border-outline-variant/30 shadow-xs">
+<div class="w-6 h-6 rounded-full bg-secondary flex items-center justify-center text-on-secondary text-[9px] font-mono font-semibold shrink-0"></div>
+<div class="flex flex-col min-w-0 flex-1">
+<span class="font-body-sm text-[12px] font-medium text-on-surface truncate"></span>
+<span class="font-label-sm text-[9px] text-secondary font-mono"></span>
+</div>
+<span class="font-label-sm text-[8px] bg-surface-container-highest border border-outline-variant/40 px-1.5 py-0.5 rounded-full text-secondary font-semibold"></span>
+</div>
+</template>
+<!-- Artwork: first <img> in <main> by contract (binders paints by position) -->
+<section class="px-margin pt-2 pb-1 flex justify-center">
+<div class="relative w-full aspect-square rounded-[2rem] overflow-hidden bg-surface-container-high group transition-all duration-300 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.35)] ring-1 ring-black/10 dark:ring-white/10" id="np-art-card">
+<img alt="" class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" id="np-art" src="logo.png"/>
+<video aria-hidden="true" class="np-video" id="np-video" muted loop playsinline preload="none" tabindex="-1"></video>
+</div>
+</section>
+<section class="px-margin pt-1" aria-label="Audio visualization">
+<canvas id="np-visualizer" class="block h-7 w-full text-on-surface-variant opacity-85" aria-hidden="true"></canvas>
+<span class="sr-only">Decorative audio visualization of current playback.</span>
+</section>
+<!-- Eyebrow Telemetry & Audio Fidelity Header -->
+<section class="px-margin pt-1 pb-0.5 flex items-center justify-between gap-2">
+  <div class="flex items-center gap-1.5 min-w-0">
+    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+    <span class="font-label-mono text-[10px] font-semibold text-secondary uppercase tracking-widest truncate" id="np-trackline">—</span>
+  </div>
+  <div class="flex items-center gap-1.5 shrink-0">
+    <span class="font-label-mono text-[9px] font-bold px-2 py-0.5 rounded-full bg-surface-container-high border border-outline-variant/40 text-on-surface-variant uppercase tracking-wider" id="np-quality-pill">320 KBPS</span>
+    <span class="font-label-mono text-[9px] font-bold px-2 py-0.5 rounded-full bg-surface-container-lowest dark:bg-surface-container border border-outline-variant/40 text-primary uppercase tracking-wider">HI-RES</span>
+  </div>
+</section>
+<!-- Title, Artist, Album, and Telemetry Badges -->
+<section class="px-margin pt-1 pb-1">
+  <div class="flex items-start justify-between gap-3">
+    <div class="flex flex-col min-w-0 flex-1">
+      <h2 class="font-headline-lg text-[22px] sm:text-[25px] font-extrabold text-on-surface tracking-tight leading-tight line-clamp-2" id="np-title">Not playing</h2>
+      <div class="flex items-center gap-1.5 text-secondary font-body-sm text-[13px] mt-1 flex-wrap">
+        <span class="font-medium text-on-surface hover:text-primary transition-colors cursor-pointer truncate" id="np-artist"></span>
+        <span class="text-outline-variant/60 shrink-0">•</span>
+        <span class="flex items-center gap-1 min-w-0 truncate text-secondary hover:text-on-surface transition-colors cursor-pointer">
+          <span class="material-symbols-outlined text-[14px] shrink-0">album</span>
+          <span class="truncate font-medium" id="np-album">—</span>
+        </span>
+      </div>
+    </div>
+  </div>
+  <!-- Audio Stats & Room Telemetry Chips Row -->
+  <div class="flex items-center gap-2 mt-2 pt-2 border-t border-outline-variant/20 flex-wrap">
+    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 font-label-mono text-[10.5px] text-on-surface font-medium shadow-xs">
+      <span class="material-symbols-outlined text-[13px] text-secondary">schedule</span>
+      <span class="text-secondary text-[9px] uppercase font-semibold">Length:</span>
+      <span id="np-length">—</span>
+    </div>
+    <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 font-label-mono text-[10.5px] text-on-surface font-medium shadow-xs" id="np-members-pill">
+      <span class="material-symbols-outlined text-[13px] text-secondary">group</span>
+      <span class="text-secondary text-[9px] uppercase font-semibold">Listeners:</span>
+      <span id="np-room-members">1 (you)</span>
+    </div>
+    <div class="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 font-label-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold shadow-xs">
+      <span class="material-symbols-outlined text-[13px]">graphic_eq</span>
+      <span>DIRECT STEREO</span>
+    </div>
+  </div>
+</section>
+<!-- Scrubber -->
+<section class="px-margin pt-2 flex flex-col gap-1">
+<div class="flex flex-col gap-1">
+<div class="relative w-full h-8 flex items-center touch-none cursor-pointer group" id="scrubber-container">
+<div class="absolute w-full h-1.5 bg-surface-container-highest dark:bg-surface-container rounded-full overflow-hidden shadow-inner">
+<div class="w-full h-full bg-secondary-fixed-dim/70 rounded-full"></div>
+</div>
+<div class="absolute h-1.5 bg-gradient-to-r from-primary/80 to-primary dark:from-white/80 dark:to-white rounded-full transition-all duration-75" id="scrubber-bar" style="width: 0%;"></div>
+<div class="absolute w-4 h-4 bg-on-surface rounded-full shadow-[0_2px_10px_rgba(0,0,0,0.35)] -ml-2 transition-transform hover:scale-125 active:scale-150 ring-2 ring-surface" id="scrubber-needle" style="left: calc(0% - 7px);">
+<div class="w-1.5 h-1.5 bg-surface rounded-full absolute inset-0 m-auto"></div>
+</div>
+</div>
+<div class="flex items-center justify-between font-label-md text-label-md text-on-surface-variant px-0.5">
+<span class="font-mono text-[11px] font-semibold text-on-surface tracking-wide" id="elapsed-time">--:--</span>
+<span class="font-mono text-[11px] font-medium text-secondary tracking-wide" id="remaining-time">--:--</span>
+</div>
+</div>
+</section>
+<!-- Transport -->
+<section class="px-margin pt-1 flex flex-col gap-1">
+<div class="flex items-center justify-between px-1">
+<button aria-label="Shuffle" class="w-11 h-11 flex items-center justify-center text-secondary hover:text-on-surface active:scale-90 transition-transform rounded-full hover:bg-surface-container-low" id="shuffle-btn">
+<span class="material-symbols-outlined text-[22px]">shuffle</span>
+</button>
+<button aria-label="Previous" class="w-[52px] h-[52px] flex items-center justify-center text-on-surface active:scale-90 transition-transform rounded-full hover:bg-surface-container-low">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+</button>
+<button aria-label="Play / pause" class="w-[74px] h-[74px] rounded-full bg-on-surface text-surface flex items-center justify-center shadow-[0_10px_28px_-4px_rgba(0,0,0,0.35)] hover:shadow-xl active:scale-90 hover:scale-105 transition-all" id="master-play-pause">
+<span class="material-symbols-outlined text-[36px]" id="play-pause-icon" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+</button>
+<button aria-label="Next" class="relative w-[52px] h-[52px] flex items-center justify-center text-on-surface active:scale-90 transition-transform rounded-full hover:bg-surface-container-low">
+<span class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+<span class="hidden absolute top-1 right-1 font-label-sm text-[8px] bg-surface-container-highest border border-outline-variant/40 px-1 rounded-full text-secondary font-semibold" id="skipVoteBadge">0/1</span>
+</button>
+<button aria-label="Repeat off" class="w-11 h-11 flex items-center justify-center text-secondary hover:text-on-surface active:scale-90 transition-transform rounded-full hover:bg-surface-container-low" id="repeat-btn">
+<span class="material-symbols-outlined text-[22px]">repeat</span>
+</button>
+</div>
+<p class="hidden text-center text-[10px] font-label-sm text-secondary mt-1" id="jamTransportNote">The host controls playback in this room.</p>
+<div class="hidden">
+<button id="favorite-btn" type="button"><span id="favorite-icon">favorite</span></button>
+<button id="download-btn" type="button"></button>
+<button id="playlist-add-btn" type="button"></button>
+<button id="share-utility-btn" type="button"></button>
+</div>
+</section>
+<!-- Action row -->
+<section class="px-margin pt-3">
+<div class="flex items-start justify-between px-0.5">
+<button class="flex flex-col items-center gap-1 active:scale-90 transition-transform group" id="np-action-like" type="button" aria-label="Like">
+<span class="w-12 h-12 rounded-full bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 flex items-center justify-center text-on-surface group-hover:bg-surface-container-high transition-colors shadow-xs"><span class="material-symbols-outlined text-[22px]" data-fav-icon="">favorite_border</span></span>
+<span class="font-label-sm text-[10px] text-on-surface-variant font-medium group-hover:text-on-surface transition-colors">Like</span>
+</button>
+<button class="flex flex-col items-center gap-1 active:scale-90 transition-transform group" id="np-action-lyrics" type="button" aria-label="Lyrics">
+<span class="w-12 h-12 rounded-full bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 flex items-center justify-center text-on-surface group-hover:bg-surface-container-high transition-colors shadow-xs"><span class="material-symbols-outlined text-[22px]">format_align_left</span></span>
+<span class="font-label-sm text-[10px] text-on-surface-variant font-medium group-hover:text-on-surface transition-colors">Lyrics</span>
+</button>
+<button class="flex flex-col items-center gap-1 active:scale-90 transition-transform group" id="np-action-eq" type="button" aria-label="Equalizer">
+<span class="w-12 h-12 rounded-full bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 flex items-center justify-center text-on-surface group-hover:bg-surface-container-high transition-colors shadow-xs"><span class="material-symbols-outlined text-[22px]">equalizer</span></span>
+<span class="font-label-sm text-[10px] text-on-surface-variant font-medium group-hover:text-on-surface transition-colors">Equalizer</span>
+</button>
+<button class="flex flex-col items-center gap-1 active:scale-90 transition-transform group" id="np-action-queue" type="button" aria-label="Show queue">
+<span class="relative w-12 h-12 rounded-full bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 flex items-center justify-center text-on-surface group-hover:bg-surface-container-high transition-colors shadow-xs"><span class="material-symbols-outlined text-[22px]">queue_music</span><span class="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-on-surface text-surface font-label-mono text-[10px] font-bold flex items-center justify-center shadow-xs" data-queue-count>0</span></span>
+<span class="font-label-sm text-[10px] text-on-surface-variant font-medium group-hover:text-on-surface transition-colors">Queue</span>
+</button>
+<button class="flex flex-col items-center gap-1 active:scale-90 transition-transform group" id="np-action-chat" type="button" aria-label="Chat">
+<span class="w-12 h-12 rounded-full bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 flex items-center justify-center text-on-surface group-hover:bg-surface-container-high transition-colors shadow-xs"><span class="material-symbols-outlined text-[22px]">chat_bubble_outline</span></span>
+<span class="font-label-sm text-[10px] text-on-surface-variant font-medium group-hover:text-on-surface transition-colors">Chat</span>
+</button>
+<button class="flex flex-col items-center gap-1 active:scale-90 transition-transform group" id="np-action-jam" type="button" aria-label="Jam">
+<span class="w-12 h-12 rounded-full bg-surface-container-low dark:bg-surface-container border border-outline-variant/30 flex items-center justify-center text-on-surface group-hover:bg-surface-container-high transition-colors shadow-xs" id="np-action-jam-pill"><span class="material-symbols-outlined text-[22px]">group</span></span>
+<span class="font-label-sm text-[10px] text-on-surface-variant font-medium group-hover:text-on-surface transition-colors">Jam</span>
+</button>
+</div>
+</section>
+<!-- Bottom sheet -->
+<section class="mt-3 px-margin flex flex-col gap-2.5 pb-6" id="np-sheet">
+<div class="bg-surface-container-lowest dark:bg-surface-container-low border border-outline-variant/30 rounded-3xl shadow-sm flex flex-col overflow-hidden">
+<div class="pt-2 flex justify-center"><span class="w-10 h-1 rounded-full bg-outline-variant/60"></span></div>
+<div class="flex items-center gap-1 px-3 pt-1.5" id="tabBar" role="tablist">
+<button class="tab-btn flex-1 bg-on-surface text-surface py-1.5 px-2 rounded-full font-label-md text-[11px] font-semibold flex items-center justify-center gap-1 whitespace-nowrap transition-all" data-tab="queue" role="tab">
+<span>UP NEXT</span>
+</button>
+<button class="tab-btn flex-1 text-on-surface-variant py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium flex items-center justify-center gap-1 whitespace-nowrap transition-colors" data-tab="lyrics" role="tab">
+<span>LYRICS</span>
+</button>
+<button class="tab-btn hidden flex-1 text-on-surface-variant py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium items-center justify-center gap-1 whitespace-nowrap transition-colors" data-tab="chat" id="chatTabBtn" role="tab">
+<span>CHAT</span>
+<span class="font-label-sm text-[9px] bg-on-surface text-surface px-1.5 rounded-full font-semibold" id="jamChatUnread" hidden></span>
+</button>
+<button class="tab-btn hidden flex-1 text-on-surface-variant py-1.5 px-2 rounded-full font-label-md text-[11px] font-medium items-center justify-center gap-1 whitespace-nowrap transition-colors" data-tab="jam-data" id="jamDataTabBtn" role="tab">
+<span>JAM</span>
+</button>
+</div>
+<div class="flex items-center justify-between px-4 pt-2">
+<span class="font-label-mono text-[10px] text-secondary font-semibold tracking-wider"><span id="queueTabLabel" class="sr-only">Queue</span><span id="np-queue-count">0 TRACKS</span></span>
+<button class="text-secondary active:scale-90 transition-transform" id="np-sheet-collapse" type="button" aria-label="Collapse sheet">
+<span class="material-symbols-outlined text-[20px]">keyboard_arrow_up</span>
+</button>
+</div>
+<div class="tab-content px-3 pb-3 pt-1 flex flex-col gap-2 transition-opacity duration-200" id="view-queue">
+<div class="hidden items-center gap-1 px-1">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider" id="queueHeaderLabel">Queue</span>
+<span class="hidden font-label-sm text-[10px] text-on-tertiary-container items-center gap-1 font-medium" id="queueSyncBadge">
+<span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container"></span>
+Synchronized
+</span>
+</div>
+<div class="flex flex-col gap-2 max-h-72 overflow-y-auto pr-0.5" data-upnext-list id="jamQueueList"></div>
+<div class="mt-1 flex items-center gap-2 bg-surface-container-low border-0 p-1.5 pl-3 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow">
+<span class="material-symbols-outlined text-[18px] text-secondary">search</span>
+<input class="bay-input bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-0 outline-none ring-0 shadow-none p-0" placeholder="Search tracks to append" type="text" id="jamAppendInput" aria-label="Add tracks to the queue"/>
+<button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-sm text-[10px] font-semibold uppercase tracking-wider shrink-0" id="jamAppendBtn">
++ Append
+</button>
+</div>
+<div id="jamAppendSuggest" role="listbox" aria-label="Append search results" class="mt-2 hidden flex-col rounded-xl bg-surface-container-lowest border border-surface-container shadow-md overflow-y-auto max-h-72"></div>
+<p class="text-[10px] font-label-sm text-secondary px-1" id="jamAppendNote">The host's queue is the room queue; a guest's additions stay on their own device.</p>
+</div>
+<div class="tab-content hidden px-3 pb-3 pt-1 flex-col gap-3 transition-opacity duration-200" id="view-jam-data">
+<div class="flex items-center justify-between px-0.5">
+<div class="flex items-center gap-2">
+<span class="font-headline-sm text-[17px] font-bold text-on-surface tracking-tight">Jam</span>
+<span class="flex items-center gap-1.5 font-body-sm text-[11px] text-secondary"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span><span id="jamLiveCount">Solo</span></span>
+</div>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-low p-1 rounded-full border border-outline-variant/30" id="jamSubBar" role="tablist">
+<button class="flex-1 py-1.5 rounded-full font-label-md text-[11px] font-semibold transition-all bg-on-surface text-surface" data-jam-sub="info" type="button">Session Info</button>
+<button class="flex-1 py-1.5 rounded-full font-label-md text-[11px] font-medium transition-all text-on-surface-variant" data-jam-sub="listeners" type="button">Listeners</button>
+<button class="flex-1 py-1.5 rounded-full font-label-md text-[11px] font-medium transition-all text-on-surface-variant" data-jam-sub="chat" type="button">Chat</button>
+</div>
+<div class="flex-col gap-3 flex" id="jamInfoWrap">
+<div class="hidden bg-surface-container-low border border-outline-variant/30 rounded-xl p-3 flex-col gap-2 shadow-xs" id="jamNoRoomCta">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px] text-primary shrink-0">podcasts</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-md text-[12px] font-semibold text-on-surface">Start or join a Jam</span>
+<span class="font-label-sm text-[10px] text-secondary">Same Wi-Fi. Share one invite link, or scan the host&rsquo;s QR.</span>
+</div>
+</div>
+<button class="w-full py-2.5 rounded-xl bg-primary text-on-primary font-label-md text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5" id="jamCreateBtn" type="button">
+<span class="material-symbols-outlined text-[15px]">add_circle</span>
+<span>Create a room</span>
+</button>
+<button class="w-full py-2.5 rounded-xl bg-surface-container-lowest border border-outline-variant/30 text-on-surface font-label-md text-[12px] font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5" id="jamJoinBtn" type="button">
+<span class="material-symbols-outlined text-[15px]">login</span>
+<span>Join a room</span>
+</button>
+</div>
+<div class="flex items-center justify-between pb-2 border-b border-outline-variant/20">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-on-primary shadow-xs">
+<span class="material-symbols-outlined text-[15px]">sensors</span>
+</div>
+<div class="flex flex-col">
+<div class="flex items-center gap-1.5">
+<span class="font-headline-sm text-[13px] font-semibold text-on-surface" id="jamRoomTitle">No room</span>
+<span class="font-label-sm text-[9px] bg-primary text-on-primary px-1.5 py-0.2 rounded-full font-semibold uppercase tracking-wider" id="jamRoleBadge">SOLO</span>
+</div>
+<span class="font-label-sm text-[10px] text-secondary font-mono truncate max-w-[180px]" id="jamInviteUri">Not in a room</span>
+</div>
+</div>
+<button class="flex items-center gap-1 bg-surface-container-low hover:bg-surface-container-high px-2.5 py-1 rounded-full border border-outline-variant/30 text-on-surface text-[10px] font-label-sm font-semibold uppercase active:scale-95 transition-all shadow-xs" id="jamInviteCopy" aria-label="Copy room invite">
+<span class="material-symbols-outlined text-[13px]">share</span>
+<span>Invite</span>
+</button>
+</div>
+<div class="flex flex-col items-center gap-1.5 pt-1" id="jamQrBlock">
+<canvas id="jamQr" class="w-36 h-36 rounded-xl bg-white p-1.5 shadow-xs" width="160" height="160" aria-label="Room invite QR code"></canvas>
+<span class="font-label-sm text-[10px] text-secondary text-center px-1" id="jamQrNote">Start a room — a guest can scan the invite here.</span>
+</div>
+<div class="flex flex-col gap-1.5">
+<div class="flex items-center justify-between px-0.5">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-on-tertiary-container animate-pulse"></span>Session Metrics
+</span>
+</div>
+<div class="grid grid-cols-2 gap-2 bg-surface-container-low border border-outline-variant/30 rounded-xl p-2 shadow-xs">
+<div class="flex items-center gap-2 px-1">
+<span class="material-symbols-outlined text-[16px] text-secondary">group</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-[9px] text-secondary uppercase font-semibold">Members</span>
+<span class="font-label-md text-[11px] text-on-surface font-semibold font-mono" id="jamMemberValue">1 (you)</span>
+</div>
+</div>
+<div class="flex items-center gap-2 px-1 border-l border-outline-variant/20">
+<span class="material-symbols-outlined text-[16px] text-on-tertiary-container">bolt</span>
+<div class="flex flex-col min-w-0">
+<span class="font-label-sm text-[9px] text-secondary uppercase font-semibold">Sync drift</span>
+<span class="font-label-md text-[11px] text-on-surface font-semibold font-mono" id="jamDriftValue">—</span>
+</div>
+</div>
+</div>
+<p class="text-[10px] font-label-sm text-secondary px-0.5">Drift is measured each second and corrected past ±0.4s.</p>
+</div>
+<div class="flex-col gap-2 hidden" id="jamListenersWrap">
+<div class="flex flex-col gap-2 bg-surface-container-low border border-outline-variant/30 rounded-xl p-2.5 shadow-xs">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider">In this room</span>
+<div class="flex flex-col gap-2" id="jamMembersList"></div>
+</div>
+</div>
+<div class="flex items-center gap-2 pt-1">
+<button class="flex-1 flex items-center justify-center gap-1.5 bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/30 py-2 rounded-xl text-on-surface font-label-sm text-[11px] font-semibold uppercase tracking-wider active:scale-95 transition-all shadow-xs" id="jamLeaveBtn">
+<span class="material-symbols-outlined text-[15px]">logout</span>
+<span>Leave Jam</span>
+</button>
+<button class="flex-1 flex items-center justify-center gap-1.5 bg-error text-on-error py-2 rounded-xl font-label-sm text-[11px] font-semibold uppercase tracking-wider active:scale-95 transition-all shadow-xs" id="jamEndBtn">
+<span class="material-symbols-outlined text-[15px]">stop_circle</span>
+<span>End Jam Session</span>
+</button>
+</div>
+</div>
+</div>
+<div class="tab-content hidden px-3 pb-3 pt-1 flex-col gap-2.5 transition-opacity duration-200" id="view-chat">
+<div class="flex items-center justify-between pb-1 px-0.5 border-b border-outline-variant/20">
+<div class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+<span class="font-label-sm text-[10px] text-on-surface uppercase font-semibold tracking-wider">Room Chat</span>
+</div>
+<span class="font-label-sm text-[10px] text-secondary font-mono" id="jamChatState">No room</span>
+</div>
+<div class="flex flex-col gap-2 py-1 max-h-52 overflow-y-auto pr-0.5" id="jamChatList">
+<p class="text-[11px] font-body-sm text-secondary text-center py-4" id="jamChatEmpty">No messages yet — open or join a room to chat.</p>
+</div>
+<div class="flex items-center gap-1.5 overflow-x-auto py-0.5 px-0.5 border-t border-outline-variant/15" id="jamChatReactions">
+<button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="🔥"><span>🔥</span><span>Vibe</span></button>
+<button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="❤️"><span>❤️</span><span>Love</span></button>
+<button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="🎵"><span>🎵</span><span>Banger</span></button>
+<button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="👏"><span>👏</span><span>Fire</span></button>
+<button type="button" class="chat-react-btn px-2.5 py-1 rounded-full bg-surface-container-low hover:bg-surface-container-high border border-outline-variant/25 text-[11px] font-label-md active:scale-90 transition-transform flex items-center gap-1 shrink-0" data-react="⚡"><span>⚡</span><span>Sync</span></button>
+</div>
+<div class="flex items-center gap-2 bg-surface-container-low border-0 p-1.5 pl-3 rounded-2xl shadow-sm focus-within:ring-2 focus-within:ring-primary/10 transition-shadow">
+<input class="bay-input bg-transparent flex-1 font-body-sm text-[12px] text-on-surface placeholder:text-secondary focus:outline-none min-w-0 border-0 outline-none ring-0 shadow-none p-0" placeholder="Message the room…" type="text" id="jamChatInput" maxlength="500" autocomplete="off" aria-label="Message the room"/>
+<button class="w-10 h-10 rounded-2xl bg-primary text-on-primary flex items-center justify-center active:scale-90 transition-transform shadow-sm shrink-0" id="jamChatSend" aria-label="Send message">
+<span class="material-symbols-outlined text-[18px]">send</span>
+</button>
+</div>
+</div>
+<div class="tab-content hidden px-3 pb-3 pt-1 flex-col gap-3 transition-opacity duration-200" id="view-lyrics">
+<div class="flex items-center justify-between pb-1 px-0.5 border-b border-outline-variant/20">
+<span class="font-label-sm text-[10px] text-secondary uppercase font-semibold tracking-wider">Synced Lyrics</span>
+<div class="flex items-center gap-0.5">
+<button id="lyric-offset-minus" title="Lyrics 100ms earlier" class="h-7 w-7 grid place-items-center text-on-surface text-xs font-mono hover:bg-surface-container-high rounded-full transition-colors" type="button">−</button>
+<span id="lyric-offset-label" class="text-[10px] font-mono text-on-surface-variant tabular-nums w-9 text-center select-none">+0ms</span>
+<button id="lyric-offset-plus" title="Lyrics 100ms later" class="h-7 w-7 grid place-items-center text-on-surface text-xs font-mono hover:bg-surface-container-high rounded-full transition-colors" type="button">+</button>
+<button id="lyric-offset-reset" title="Reset lyrics offset" class="h-7 w-7 grid place-items-center rounded-full hover:bg-surface-container-high text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[14px]">restart_alt</span></button>
+<button class="font-label-sm text-[10px] text-secondary hover:text-on-surface ml-1 px-2 py-0.5 rounded-full bg-surface-container-low" data-lyrics-full type="button">Full view</button>
+</div>
+</div>
+<div class="flex flex-col gap-3 py-2 text-center max-h-60 overflow-y-auto" data-lyrics></div>
+</div>
+</div>
+</section>
+</div>
+</main>

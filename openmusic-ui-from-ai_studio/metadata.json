@@ -1,0 +1,6 @@
+{
+  "name": "OpenMusic",
+  "description": "Minimalist audiophile music player with live Web Audio synthesis, 5-band equalizer, synced lyrics, offline vault, Jam rooms, and listening telemetry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -4,27 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="shell-type" content="mobile_tab">
-<title>OpenMusic</title>
+<title>OpenMusic — Studio Audiophile Player</title>
 <!-- Fonts and shell styles are bundled locally so the shell still renders
      icons and text with zero connectivity (2026-10-24 offline-boot fix). -->
 
 <link rel="stylesheet" href="/tailwind.css">
 <link rel="stylesheet" href="shell.css">
-<script src="tailwind-config.js"></script>
-
-<script>
-/* Mobile Theme Boot Engine — Evaluates tm-theme before first paint */
-try {
-  const t = localStorage.getItem("tm-theme") || "system";
-  const isDark = t === "dark" || (t === "system" && window.matchMedia?.("(prefers-color-scheme: dark)").matches);
-  if (isDark) document.documentElement.classList.add("dark");
-} catch {}
-</script>
+<link rel="stylesheet" href="studio/styles.css">
 </head>
 <body class="bg-surface text-on-surface font-body-md text-body-md flex flex-col min-h-screen antialiased">
-<div id="screen"></div>
+<div id="screen" style="display:none;" aria-hidden="true"></div>
+<div id="app" class="app-shell">
+  <div id="route-progress" class="route-progress" aria-hidden="true"></div>
+  <aside id="sidebar" class="sidebar" aria-label="Main navigation"></aside>
+  <div class="main-column">
+    <div id="screen-root" class="screen-root"></div>
+  </div>
+  <div id="desktop-dock" class="desktop-dock" aria-label="Playback bar"></div>
+  <div id="mobile-chrome" class="mobile-chrome"></div>
+  <div id="modal-root" class="modal-root"></div>
+  <div id="toast-root" class="toast-root" role="status" aria-live="polite"></div>
+</div>
 <audio id="audio" preload="metadata"></audio>
-<script src="router.js"></script>
 <!-- jsQR: scan-to-join decoder (B-T2), classic script on purpose — see
      src/vendor/README.md. Module scripts are deferred, so this executes
      before app.js can ask for window.jsQR. -->

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>OpenMusic — Studio Audiophile Player</title>
+    <meta
+      name="description"
+      content="Minimalist audiophile music player with live Web Audio synthesis, 5-band equalizer, synced lyrics, offline vault, Jam rooms, and listening telemetry."
+    />
+    <meta property="og:title" content="OpenMusic — Studio Audiophile Player" />
+    <meta
+      property="og:description"
+      content="Minimalist audiophile music player with live Web Audio synthesis, 5-band equalizer, synced lyrics, offline vault, Jam rooms, and listening telemetry."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <audio id="audio" preload="metadata"></audio>
+    <div id="app" class="app-shell">
+      <div id="route-progress" class="route-progress" aria-hidden="true"></div>
+      <aside id="sidebar" class="sidebar" aria-label="Main navigation"></aside>
+      <div class="main-column">
+        <div id="screen-root" class="screen-root"></div>
+      </div>
+      <div id="desktop-dock" class="desktop-dock" aria-label="Playback bar"></div>
+      <div id="mobile-chrome" class="mobile-chrome"></div>
+      <div id="modal-root" class="modal-root"></div>
+      <div id="toast-root" class="toast-root" role="status" aria-live="polite"></div>
+    </div>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

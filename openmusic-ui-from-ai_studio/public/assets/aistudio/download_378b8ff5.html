@@ -1,0 +1,65 @@
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Downloads</h1></div><div class="flex items-center gap-space-xs"><button data-nav="analytics" aria-label="Telemetry and Audio Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface active:scale-95 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><button data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs active:scale-95 transition-transform shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pb-8 space-y-5">
+<!-- Top Action Strip -->
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2">
+<button aria-label="Go Back" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">arrow_back</span>
+</button>
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-headline-md text-on-surface tracking-tight font-semibold">Offline Vault</span>
+<span class="font-label-mono text-[10px] text-secondary px-2 py-0.5 bg-surface-container-high rounded-full uppercase font-medium">NVMe</span>
+</div>
+</div>
+<div class="flex items-center gap-space-xs">
+<button aria-label="Refresh downloads" class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container-low/90 border border-surface-container-high/60 hover:bg-surface-container text-on-surface active:scale-90 shadow-sm transition-all" id="refreshSyncBtn">
+<span class="material-symbols-outlined text-[19px] transition-transform duration-700" id="syncIcon">sync</span>
+</button>
+<button aria-label="Storage Settings" class="w-10 h-10 flex items-center justify-center rounded-full bg-surface-container-low/90 border border-surface-container-high/60 hover:bg-surface-container text-on-surface active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[19px]">hard_drive</span>
+</button>
+</div>
+</div>
+<!-- Active In-Transit Section (hidden by binders unless items are downloading) -->
+<div class="w-full space-y-3">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<span class="font-headline-md text-body-lg text-on-surface font-semibold">In Transit</span>
+<span class="font-label-mono text-label-mono bg-primary text-on-primary px-2 py-0.5 rounded-full font-medium">2</span>
+</div>
+<button class="font-label-sm text-label-sm text-secondary hover:text-on-surface flex items-center gap-1 transition-colors" id="pauseAllBtn">
+<span class="material-symbols-outlined text-[16px]">pause_circle</span>
+<span>Pause All</span>
+</button>
+</div>
+</div>
+<!-- Downloaded Masters Section -->
+<div class="w-full space-y-3">
+<div class="flex items-center justify-between px-1">
+<span class="font-headline-md text-body-lg text-on-surface font-semibold">Downloaded Tracks</span>
+<div class="flex items-center gap-1 text-secondary font-label-mono text-[11px]">
+<span>SORT:</span>
+<button class="text-on-surface font-medium hover:underline flex items-center gap-0.5">
+<span>RECENT</span>
+<span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+</div>
+</div>
+<!-- Category Filter Pills -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-gutter px-gutter">
+<button class="filter-pill px-3.5 py-1 rounded-full bg-primary text-on-primary font-label-sm text-label-sm whitespace-nowrap shadow-sm transition-colors">
+        All
+      </button>
+<button class="filter-pill px-3.5 py-1 rounded-full bg-surface-container-low border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap active:scale-95 transition-all">
+        Albums
+      </button>
+<button class="filter-pill px-3.5 py-1 rounded-full bg-surface-container-low border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-sm text-label-sm whitespace-nowrap active:scale-95 transition-all">
+        Playlists
+      </button>
+</div>
+<!-- Downloaded Items Library List Container (matched by binders query) -->
+<div class="w-full bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-xl p-space-xs shadow-sm divide-y divide-surface-container/40">
+<div class="py-space-md text-center font-body-sm text-secondary">Loading offline vault...</div>
+</div>
+</div>
+</div>
+</main>

@@ -1,0 +1,68 @@
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-xs"><button aria-label="Go back" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">arrow_back</span></button><h1 class="font-headline-md text-headline-md font-semibold tracking-tight text-on-surface">Notifications</h1></div><div class="flex items-center gap-space-xs"><button aria-label="Clear all notifications" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">clear_all</span></button><button aria-label="Notification Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface hover:bg-surface-container active:scale-90 transition-all"><span class="material-symbols-outlined text-[20px]">settings</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pb-6">
+<!-- Dynamic Acoustic Status Strip -->
+<div class="w-full bg-surface-container-low/80 border border-surface-container-high/60 px-space-md py-2.5 rounded-2xl mb-space-sm flex items-center justify-between shadow-xs">
+<div class="flex items-center gap-2 min-w-0">
+<span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-mono text-[11px] text-on-surface font-medium truncate">EVENT FEED: 0 LOGGED</span>
+</div>
+<span class="font-label-mono text-[11px] text-secondary font-medium flex-shrink-0">0 EVENTS</span>
+</div>
+<!-- Filter Pills Bar -->
+<div class="flex items-center gap-space-xs overflow-x-auto no-scrollbar -mx-gutter px-gutter mb-space-sm py-1">
+<button class="filter-pill active-pill h-8 px-3.5 rounded-full bg-primary text-on-primary font-label-md text-[12px] font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shadow-xs" data-category="all">
+<span>All</span>
+<span class="font-label-mono text-[10px] text-surface-container-low opacity-90">0</span>
+</button>
+<button class="filter-pill h-8 px-3.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap active:scale-95" data-category="update">
+<span>Updates</span>
+<span class="font-label-mono text-[10px] text-secondary">0</span>
+</button>
+<button class="filter-pill h-8 px-3.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap active:scale-95" data-category="downloads">
+<span>Downloads</span>
+<span class="font-label-mono text-[10px] text-secondary">0</span>
+</button>
+<button class="filter-pill h-8 px-3.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 text-secondary hover:text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap active:scale-95" data-category="system">
+<span>System</span>
+<span class="font-label-mono text-[10px] text-secondary">0</span>
+</button>
+</div>
+<!-- Quick Action Strip -->
+<div class="flex items-center justify-between py-space-xs mb-space-sm px-1">
+<span class="font-label-mono text-[10px] text-secondary uppercase tracking-wider font-medium">Queue Priority: Recency</span>
+<button class="flex items-center gap-1 text-secondary hover:text-primary transition-colors py-1 px-2.5 rounded-full hover:bg-surface-container-low active:scale-95" id="markAllReadBtn">
+<span class="material-symbols-outlined text-[16px]">done_all</span>
+<span class="font-label-sm text-[12px] font-medium">Mark all read</span>
+</button>
+</div>
+<!-- Notification Stream -->
+<div class="flex flex-col gap-space-lg" id="notificationStream">
+<div class="flex flex-col items-center justify-center gap-3 py-20 text-center">
+<div class="w-14 h-14 rounded-full bg-surface-container-low flex items-center justify-center">
+<span class="material-symbols-outlined text-[32px] text-secondary">notifications_off</span>
+</div>
+<div class="font-body-md text-body-md text-on-surface font-semibold">You're all caught up</div>
+<div class="font-body-sm text-[13px] text-secondary max-w-[16rem]">Download results, update notices and backup events land here.</div>
+</div>
+</div>
+<!-- Preferences Card -->
+<section class="mt-space-lg bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 p-space-md rounded-2xl shadow-sm">
+<div class="flex items-start justify-between gap-space-md">
+<div class="flex items-start gap-3 min-w-0">
+<div class="w-10 h-10 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface flex-shrink-0 shadow-xs">
+<span class="material-symbols-outlined text-[20px]">tune</span>
+</div>
+<div class="flex flex-col min-w-0">
+<h3 class="font-headline-md text-body-lg font-semibold text-on-surface truncate">Telemetry &amp; Signal Settings</h3>
+<p class="font-body-sm text-[12px] text-secondary mt-0.5 leading-snug">
+            Configure system updates, download alerts, and backup notifications.
+          </p>
+</div>
+</div>
+<button aria-label="Configure alerts" class="h-9 px-3.5 rounded-full bg-surface-container-low border border-surface-container-high/80 hover:bg-surface-container text-on-surface font-label-md text-[12px] font-medium flex items-center gap-1 active:scale-95 transition-all flex-shrink-0">
+<span>Manage</span>
+<span class="material-symbols-outlined text-[15px]">chevron_right</span>
+</button>
+</div>
+</section>
+</div>
+</main>

@@ -2978,3 +2978,71 @@ negative-cache every track.
 **Not verified:** no `cargo` build (link.exe absent / rust-lld lacks Windows SDK
 libs), no WebView playback, no device run; fingerprint exercised on synthetic
 PCM only (no decode path in this cut). Nothing committed, nothing pushed (rule 1).
+
+## 2026-11-21 — APK built + installed + live-verified; studio UI defect found (uncommitted)
+
+User: "build apk install in emulator verify". Built from the current tree (which
+carries uncommitted studio-UI WIP); nothing committed or pushed (rule 1).
+
+| Item | Evidence |
+|---|---|
+| Build | `./build.sh android-debug` (ran the **tracked** `app/.build_lf.sh`, CRLF-safe copy — restore it if you overwrite it), `BUILD_EXIT=0`. Rust `dev` profile for `x86_64-linux-android` finished in 5m11s; symlink → `target/x86_64-linux-android/debug/libapp_lib.so`. APK `gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk` **22,574,833 B = 21.53 MiB** |
+| **P29-lookalike, not a defect** | packaged `.so` 36,287,040 B **stripped** vs target 57,141,552 B unstripped → SHA mismatch is expected (AGP strips; `keepDebugSymbols` was removed by the tuner). `llvm-strip` of the target is 36,286,560 B (480 B off AGP's flags). Do **not** call this stale: the symlink log + mtimes prove fresh packaging |
+| Install + launch | `adb install -r` Success on `emulator-5554`, `adb shell pidof` = 5208, `topResumedActivity=com.openmusic.trancemusic/.MainActivity` |
+| Live probe | `%TEMP%\opencode\verify-apk.mjs` (CDP over `adb forward tcp:9223 localabstract:webview_devtools_remote_<pid>`): **6/8 PASS** — process, page target, visible shell boot (1633 nodes), local icon font (`document.fonts.ready` first!), visible Search nav, search screen |
+
+**The real finding — new studio UI is broken, blocking all playback/search.** Two UI
+shells coexist: the visible one is `#app.app-shell` (studio SPA: `studio/{app,audio,data,screens,store}.js`,
+`entry.js`, `router.js`), while the legacy `#screen` is `display:none`. A hash change
+drives the *hidden* legacy router, so probes must tap the visible `#mobile-chrome`
+bottom nav. Root cause of both probe failures: **`store.modal.*` does not exist** —
+`renderModal` at `studio/screens.js:4111` reads `store.modal.trackMenuTrackId`, but the
+store keeps modal state as flat `this.ui.modal*` fields (`store.js:150-180`) and has
+zero `store.modal` references. 16 stale refs (9 in `app.js`, 7 in `screens.js`) throw
+on every `emit` → `renderAll`. Consequence: the `input` handler (`app.js:910-917`)
+throws at `store.setUi(...)` **before** scheduling `store.searchLive()` (260 ms
+debounce), so typing "believer" paints "No matches" and no track can play. Screenshot
+`%TEMP%\opencode\apk-final.png` confirms. Fix = align those 16 sites to `store.ui.modal*`
+(or add a `store.modal` shim), docs-first, then rebuild/re-verify. Not fixed here —
+user asked only to build/install/verify.
+
+**Probe traps:** `document.fonts.check(...)` reads false until `await document.fonts.ready`
+(first run gave a false FAIL). `studio/audio.js` exports `audioEngine` with its own
+`analyser` (built on first play); source modules ARE served in the Android build, so
+`await import('./studio/audio.js')` works in-page for output metering. Emulator left
+running with the APK installed; app on the Search screen.
+
+**Round 2 (fixed same session, uncommitted):** two studio bugs — (a) `searchLive`
+read `{items, songs}` from `search_songs`, but it returns `{tracks, page_full}`
+(`jiosaavn.rs:607`) → 0 rows; (b) `_prepareAndPlay` read `res.url`/`res.bitrate` from
+`resolve_song`, but it returns `{id, title, artist, direct_url, proxy_url, qualities,
+chosen_quality, content_length, host, range_status}` (`jiosaavn.rs:111-122`;
+`PlayableAudio`) → `streamUrl` stayed empty → `audioEngine.play()` took the
+synthesizer fallback. Fixes: `tracks || items || songs` and
+`proxy_url || direct_url`. Still open (not fixed): `search_entities` rejects — studio
+calls it as `{query, limit, page}` but Rust requires `kind` ∈ {album, artist,
+playlist} (`lib.rs:115-126`); silently swallowed by `allSettled`. Docs updated.
+
+**Round 3 — verification closed: live probe 12/12 + relay audibility proven
+(2026-11-21b, uncommitted).** The same APK (22,574,8xx B, installed) was driven
+over CDP `:9223` against the visible studio shell: boot (392 nodes, `#screen`
+still `display:none`), local icon font, Search nav, **17 result rows**, track
+menu (`mode:"track-menu"`, sheet up, zero `store.modal` exceptions), relay
+`/stream?id=1aPY9cT-&q=320+kbps+Opus`, analyser `max 247 / avg 71`.
+
+The audibility check was then re-run **adversarially**, because `readyState 0`
+at the 4.5 s mark plus analyser energy has two explanations and the engine has
+a synthesizer fallback (`audio.js:159 restartSequencer`): `audio-truth.mjs`
+read `audioEngine.stepTimer` — **null, i.e. the synth never ran** — while
+`#audio` was `same:true` with the engine, `readyState 4`, `duration 204.35 s`
+(Believer's real length) and `currentTime` advancing 37 → 46.4 s over 6 s of
+wall clock. So the meter measures the relay stream through the media-element
+source, not a fallback tone. The early zeros were cold-resolve buffering, not
+a defect.
+
+**CDP trap that cost the earlier runs:** the devtools abstract socket
+(`/proc/net/unix` → `@webview_devtools_remote_<pid>`) must exist **before**
+`adb forward` is created; a forward made against a not-yet-listening pid
+accepts TCP then closes the websocket ("other side closed"). Always
+`pidof` → confirm the socket → forward → `/json`, and re-do it after every app
+restart because the pid changes (9369 this run).

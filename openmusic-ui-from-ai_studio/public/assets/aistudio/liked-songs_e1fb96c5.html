@@ -1,0 +1,91 @@
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">Favorites</h1></div><div class="flex items-center gap-space-xs"><button data-nav="analytics" aria-label="Telemetry and Audio Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface active:scale-95 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><button data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs active:scale-95 transition-transform shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full gap-space-md">
+<!-- Top Action Bar -->
+<div class="flex items-center justify-between pt-space-xs">
+<button aria-label="Go Back" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">arrow_back</span>
+</button>
+<div class="flex items-center gap-space-xs">
+<button aria-label="Download All Vault Tracks" class="h-9 px-3.5 bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container rounded-full flex items-center gap-1.5 active:scale-95 shadow-sm transition-all" id="dl-toggle">
+<span class="material-symbols-outlined text-[17px] text-primary">download</span>
+<span class="font-label-mono text-[11px] font-semibold tracking-wider">OFFLINE</span>
+</button>
+<button data-menu-entity="liked" aria-label="Options" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">more_horiz</span>
+</button>
+</div>
+</div>
+<!-- Hero Header Section -->
+<div class="flex flex-col gap-space-md bg-surface-container-lowest/80 border border-surface-container/60 p-space-md rounded-2xl shadow-sm">
+<div class="flex gap-space-md items-center">
+<!-- High-Contrast Audiophile Badge Artwork -->
+<div class="w-24 h-24 sm:w-28 sm:h-28 bg-gradient-to-br from-primary to-surface-tint rounded-2xl flex-shrink-0 relative overflow-hidden flex flex-col justify-between p-3 shadow-md ring-1 ring-black/5">
+<div class="flex justify-between items-start">
+<span class="font-label-mono text-[9px] text-surface-container-lowest/90 tracking-widest uppercase font-semibold">VAULT 01</span>
+<span class="w-1.5 h-1.5 rounded-full bg-surface-container-lowest animate-pulse"></span>
+</div>
+<div class="flex items-center justify-center py-1">
+<span class="material-symbols-outlined text-surface-container-lowest text-[36px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</div>
+<span class="font-label-mono text-[8px] text-surface-container-lowest/80 uppercase tracking-widest text-right">MASTER REC</span>
+</div>
+<!-- Hero Metadata -->
+<div class="flex flex-col justify-center min-w-0 flex-1 py-0.5">
+<span class="font-label-mono text-[10px] uppercase tracking-wider text-secondary font-medium">CURATED COLLECTION</span>
+<h2 class="font-headline-lg text-headline-lg tracking-tight text-on-surface font-bold mt-0.5">Liked Songs</h2>
+<div class="flex items-center gap-2 mt-1.5">
+<span class="font-body-sm text-[13px] text-secondary">0 songs</span>
+<span class="text-secondary">•</span>
+<span class="font-label-mono text-label-sm text-secondary">0m</span>
+</div>
+</div>
+</div>
+<!-- Transport & Fast Search -->
+<div class="flex flex-col gap-2 pt-1 border-t border-surface-container/40">
+<div class="flex items-center gap-2">
+<button class="flex-1 h-11 bg-primary text-on-primary rounded-full flex items-center justify-center gap-2 px-space-md hover:bg-primary-container active:scale-95 shadow-md transition-all">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+<span class="font-label-md text-label-md uppercase tracking-wider font-semibold">Play All</span>
+</button>
+<button aria-label="Shuffle" class="flex-1 h-11 bg-surface-container-low border border-surface-container-high/80 text-on-surface hover:bg-surface-container rounded-full flex items-center justify-center gap-2 px-space-md active:scale-95 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[19px]">shuffle</span>
+<span class="font-label-md text-label-md uppercase tracking-wider font-medium">Shuffle</span>
+</button>
+</div>
+<!-- In-Vault Search -->
+<div class="relative w-full mt-1">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-secondary text-[17px]">search</span>
+<input id="liked-filter" class="w-full h-9 pl-9 pr-3 bg-surface-container-low/70 border border-surface-container-high/60 text-on-surface rounded-full text-body-sm placeholder:text-secondary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/10 transition-all" placeholder="Find in Liked Songs..." type="text"/>
+</div>
+</div>
+</div>
+<!-- Precision Tracklist Container -->
+<div class="flex flex-col bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-2xl p-space-xs shadow-sm divide-y divide-surface-container/40">
+<!-- Initial / Fallback Track Row for binders query -->
+<div class="flex items-center justify-between py-2 px-space-sm rounded-xl hover:bg-surface-container-low transition-colors group">
+<div class="flex items-center gap-space-sm min-w-0 flex-1 pr-2">
+<div class="w-6 h-6 flex items-center justify-center flex-shrink-0">
+<span class="material-symbols-outlined text-secondary text-[18px]">music_note</span>
+</div>
+<div class="flex flex-col min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Midnight City Lights</span>
+<span class="font-body-sm text-[12px] text-secondary truncate">Solaris &amp; Kaelen</span>
+</div>
+</div>
+<div class="flex items-center gap-1 flex-shrink-0">
+<span class="font-label-mono text-[12px] text-secondary mr-1">4:18</span>
+<button aria-label="Unlike track" class="w-8 h-8 flex items-center justify-center text-primary active:scale-90 transition-transform">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Empty state / End of Cache -->
+<div class="py-space-xl flex flex-col items-center justify-center gap-2 opacity-70">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-secondary">
+<span class="material-symbols-outlined text-[24px]">favorite_border</span>
+</div>
+<span class="font-body-sm text-secondary font-medium">No liked tracks yet</span>
+<span class="font-label-mono text-[11px] text-secondary/80">Tap the heart icon on any song to save it here</span>
+</div>
+</div>
+</main>

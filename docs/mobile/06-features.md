@@ -1350,3 +1350,35 @@ Complete UI/UX overhaul of the three central mobile surfaces:
      with distinct vibrant icon badges and live count labels.
    - Enhanced horizontal discovery rails with rounded squircle artwork cards,
      skeletons (`data-skel`), and smooth carousel scrolling.
+
+## Studio SPA modal-state contract (2026-11-21)
+
+The studio SPA (`app/src/mobile/studio/`, loaded by `mobile/entry.js`) keeps all
+ephemeral UI state on `store.ui`. Its only modal fields are `ui.modal`
+(`null | 'track-menu' | 'playlist-create' | 'eq' | 'info' | …`), `ui.modalTrackId`,
+`ui.modalPlaylistId`, `ui.modalInfoType`, and `ui.trackMenuPickPlaylist`.
+**There is no `store.modal` object.**
+
+Defect found in the 2026-11-21 APK live verification: 16 stale call sites read
+`store.modal.*`. `renderModal()` threw at `screens.js:4111` on every store emit;
+the Search input handler (`app.js:910-917`) then aborted at `store.setUi(...)`
+before scheduling `store.searchLive()`, so typing a query painted "No matches"
+and no track could play. Every `renderAll()` was affected, not just Search.
+
+Canonical mapping — all call sites must use the right-hand side:
+
+| Stale | Canonical |
+|---|---|
+| `store.modal.trackMenuTrackId` | `store.ui.modalTrackId` |
+| `store.modal.trackMenuPickPlaylist` | `store.ui.trackMenuPickPlaylist` |
+| `store.modal.createPlaylistOpen` | `store.ui.modal === 'playlist-create'` |
+| `store.modal.eqOpen` | `store.ui.modal === 'eq'` |
+| `store.modal.infoType` | `store.ui.modalInfoType` |
+
+`trackMenuPickPlaylist` is a real sub-view toggle, so it is added to `ui`, reset
+by `openTrackMenu()` and `closeModals()` — reopening a track menu must never
+restore a stale add-to-playlist subview.
+
+Acceptance: zero `store.modal` references in `studio/*.js`; track menu, create
+playlist, EQ and info dialogs render; typing in Search yields results and a tap
+starts playback; the live emulator probe passes.

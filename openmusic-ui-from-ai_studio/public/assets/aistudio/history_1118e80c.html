@@ -1,0 +1,24 @@
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md tracking-tight text-on-surface font-semibold">History</h1></div><div class="flex items-center gap-space-xs"><button data-nav="analytics" aria-label="Telemetry and Audio Settings" class="w-10 h-10 rounded-full flex items-center justify-center text-secondary hover:text-on-surface active:scale-95 transition-all"><span class="material-symbols-outlined text-[20px]">tune</span></button><button data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs active:scale-95 transition-transform shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full gap-space-md">
+<!-- Top Sub-Header & Controls (root.firstElementChild) -->
+<div class="flex items-center justify-between pt-space-xs">
+<div class="flex items-center gap-2.5">
+<button aria-label="Go Back" class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container-low/90 border border-surface-container-high/60 text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">arrow_back</span>
+</button>
+<div class="flex flex-col">
+<span class="font-headline-md text-body-lg text-on-surface font-semibold leading-tight">Listening History</span>
+<span class="font-label-mono text-[10px] text-secondary uppercase tracking-wider">Acoustic Timeline</span>
+</div>
+</div>
+<button class="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 hover:bg-surface-container text-secondary hover:text-on-surface active:scale-95 shadow-sm transition-all" id="clear-history-trigger">
+<span class="material-symbols-outlined text-[17px]">delete_sweep</span>
+<span class="font-label-sm text-label-sm font-medium">Clear</span>
+</button>
+</div>
+<!-- Fallback placeholder container (will be replaced by binders.js) -->
+<div class="py-space-xl flex flex-col items-center justify-center gap-2 opacity-70">
+<span class="material-symbols-outlined text-[32px] text-secondary">history</span>
+<span class="font-body-sm text-secondary">Loading history...</span>
+</div>
+</div>
+</main>

@@ -107,6 +107,17 @@ function remember(name, image, token) {
 /// Resolve one artist through the caller's invoke. Resolves to a joined
 /// {image, token} or null (miss / no backend / upstream error — never
 /// cached as a hit, so a flaky window retries next mount).
+export async function resolveArtistArt(name, doInvoke) {
+  const cached = cachedArtistArt(name);
+  if (cached && cached.image) return cached;
+  const remote = await resolveOne(name, doInvoke);
+  if (remote && remote.image) {
+    remember(name, remote.image, remote.token);
+    return remote;
+  }
+  return null;
+}
+
 async function resolveOne(name, doInvoke) {
   if (!doInvoke || !name) return null;
   try {

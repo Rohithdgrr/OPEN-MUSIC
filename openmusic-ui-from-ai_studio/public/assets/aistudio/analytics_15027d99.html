@@ -1,0 +1,141 @@
+<header class="fixed top-0 w-full z-50 bg-surface/85 backdrop-blur-xl pt-safe border-b border-surface-container-high/40 shadow-[0_2px_12px_rgba(0,0,0,0.03)]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm"><h1 class="font-headline-md text-headline-md font-semibold tracking-tight text-on-surface">Telemetry</h1></div><div class="flex items-center gap-space-xs"><button data-nav="settings" class="w-8 h-8 rounded-full bg-primary flex items-center justify-center ml-space-xs active:scale-95 transition-transform shadow-sm"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></button></div></div></header><main class="flex flex-col relative w-full pt-16 pb-36 px-gutter bg-surface min-h-screen"><div class="flex flex-col w-full pb-6 space-y-space-md">
+<!-- Sub-Header & Period Switcher -->
+<div class="flex items-center justify-between pt-space-xs">
+<div class="flex items-center gap-2">
+<button aria-label="Go Back" class="w-10 h-10 rounded-full bg-surface-container-low/90 border border-surface-container-high/60 flex items-center justify-center text-on-surface hover:bg-surface-container active:scale-90 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[20px]">arrow_back</span>
+</button>
+<div>
+<span class="font-label-mono text-[10px] text-secondary tracking-widest uppercase block font-medium">Telemetry Bay</span>
+<h2 class="font-headline-md text-body-lg text-on-surface font-bold tracking-tight">Listening Insights</h2>
+</div>
+</div>
+<div class="flex items-center bg-surface-container-low/90 border border-surface-container-high/60 rounded-full p-1 shadow-xs" id="period-selector">
+<button data-period="week" aria-pressed="true" class="px-3 py-1 rounded-full bg-primary text-on-primary font-label-sm text-[12px] font-semibold transition-all shadow-xs">Week</button>
+<button data-period="month" aria-pressed="false" class="px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all">Month</button>
+<button data-period="year" aria-pressed="false" class="px-3 py-1 rounded-full text-secondary hover:text-on-surface font-label-sm text-[12px] font-medium transition-all">Year</button>
+</div>
+</div>
+<!-- Section 1: Monitored Listening Overview Card -->
+<section class="bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-2xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-start">
+<div>
+<div class="flex items-center gap-space-xs">
+<span class="font-label-mono text-[11px] uppercase tracking-wider text-secondary font-medium">Acoustic Exposure</span>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-container font-label-mono text-[9px] text-on-surface font-semibold">REAL-TIME</span>
+</div>
+<div class="flex items-baseline gap-space-sm mt-1">
+<span class="font-headline-xl text-headline-xl text-on-surface font-bold tracking-tight">48<span class="text-secondary text-headline-md font-normal">h</span> 12<span class="text-secondary text-headline-md font-normal">m</span></span>
+<span class="flex items-center font-label-mono text-[11px] text-on-surface bg-surface-container-low px-2 py-0.5 rounded-full font-medium">
+<span class="material-symbols-outlined text-[14px] text-primary mr-0.5">trending_up</span>+14%
+</span>
+</div>
+</div>
+<div class="w-11 h-11 rounded-xl bg-surface-container-low flex items-center justify-center text-on-surface shadow-xs">
+<span class="material-symbols-outlined text-[22px]">graphic_eq</span>
+</div>
+</div>
+</section>
+<section id="year-summary" data-year-summary class="hidden bg-surface-container-lowest/90 border border-surface-container/60 rounded-2xl p-space-md shadow-sm space-y-space-md" aria-labelledby="year-summary-title">
+<div class="flex items-center justify-between gap-3">
+  <div>
+    <span class="font-label-mono text-[11px] uppercase tracking-wider text-secondary font-medium">Listening history</span>
+    <h3 id="year-summary-title" class="font-headline-md text-headline-md text-on-surface font-semibold">Year in review</h3>
+  </div>
+  <label class="sr-only" for="year-summary-select">Choose year</label>
+  <select id="year-summary-select" class="max-w-28 rounded-xl border border-surface-container-high bg-surface px-3 py-2 text-on-surface font-label-md text-label-md"></select>
+</div>
+<div class="grid grid-cols-2 gap-2">
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Plays</span><strong data-year-plays class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Estimated playhead time</span><strong data-year-time class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Unique tracks</span><strong data-year-tracks class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+  <div class="rounded-xl bg-surface-container-low p-3"><span class="block font-label-mono text-[10px] uppercase text-secondary">Lead artists</span><strong data-year-artists class="mt-1 block font-headline-md text-on-surface">—</strong></div>
+</div>
+<p data-year-empty class="hidden rounded-xl bg-surface-container-low p-3 text-body-sm text-secondary">No play events are recorded for this year on this device.</p>
+<p data-year-coverage class="text-body-sm text-secondary" role="status" aria-live="polite">Loading saved play history…</p>
+<p class="text-[11px] text-secondary">History is stored locally, capped at 3,000 recent events, and may not cover a full calendar year. Time is estimated from the saved playhead position; seeking can overstate listening.</p>
+</section>
+<!-- Section 2: Daily Listening Rhythm -->
+<section class="bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-2xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-center">
+<div>
+<span class="font-label-mono text-[11px] uppercase tracking-wider text-secondary font-medium">Acoustic Immersion</span>
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Daily Rhythm</h3>
+</div>
+<div class="text-right">
+<span class="font-label-mono text-[10px] text-secondary block uppercase font-medium">Peak Session</span>
+<span class="font-label-mono text-[13px] text-on-surface font-semibold">Sat • 9.4 hrs</span>
+</div>
+</div>
+<!-- Bar Chart Canvas -->
+<div class="pt-2">
+<div class="h-28 flex items-end justify-between gap-2 px-1">
+<!-- Mon -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary">5.2h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 55%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">M</span>
+</div>
+<!-- Tue -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary">6.8h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 72%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">T</span>
+</div>
+<!-- Wed -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary">4.1h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 43%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">W</span>
+</div>
+<!-- Thu -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary">7.5h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 80%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">T</span>
+</div>
+<!-- Fri -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary">8.1h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 86%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">F</span>
+</div>
+<!-- Sat -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-primary font-semibold">9.4h</span>
+<div class="w-full bg-primary rounded-t shadow-xs" style="height: 100%;"></div>
+<span class="font-label-mono text-[10px] text-on-surface font-semibold">S</span>
+</div>
+<!-- Sun -->
+<div class="flex-1 flex flex-col items-center gap-1 group">
+<span class="font-label-mono text-[10px] text-secondary">6.9h</span>
+<div class="w-full bg-surface-container-highest rounded-t hover:bg-secondary transition-all" style="height: 73%;"></div>
+<span class="font-label-mono text-[10px] text-secondary">S</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Section 3: Top Artists -->
+<section class="bg-surface-container-lowest/90 backdrop-blur-sm border border-surface-container/60 rounded-2xl p-space-md shadow-sm space-y-space-md">
+<div class="flex justify-between items-center">
+<div>
+<span class="font-label-mono text-[11px] uppercase tracking-wider text-secondary font-medium">Acoustic Residency</span>
+<h3 class="font-headline-md text-headline-md text-on-surface font-semibold">Top Artists</h3>
+</div>
+</div>
+<div class="space-y-space-xs">
+<div class="font-body-sm text-secondary py-6 text-center">Loading stats...</div>
+</div>
+<!-- Export & Share Micro-CTA -->
+<div class="pt-space-xs flex gap-2">
+<button class="flex-1 h-11 px-space-sm bg-surface-container-low border border-surface-container-high/80 hover:bg-surface-container rounded-full text-on-surface font-label-md text-label-md font-semibold flex items-center justify-center gap-2 active:scale-95 shadow-sm transition-all">
+<span class="material-symbols-outlined text-[18px]">file_download</span>
+<span>Export Telemetry Log</span>
+</button>
+<button aria-label="Share Insights" class="w-11 h-11 bg-surface-container-low border border-surface-container-high/80 hover:bg-surface-container rounded-full text-on-surface flex items-center justify-center active:scale-90 shadow-sm transition-all flex-shrink-0">
+<span class="material-symbols-outlined text-[19px]">share</span>
+</button>
+</div>
+</section>
+</div>
+</main>
