@@ -3158,3 +3158,30 @@ User: *"use the proper icon . also make sure the widget in lockscreen and homesc
 | **Downloads Status** | Downloads screen now shows a status summary banner (`X Songs Downloaded · Y MB · OFFLINE READY`) and tags each track with its download status (`DOWNLOADED`, `Saved offline`) |
 
 
+
+## 2026-11-21i/j — Studio UX batch + Android widget/signing, PUSHED (c713788)
+
+User asks (two batches): search suggestions + recent-search history + NP
+drag-down + no mock library rows + fix downloads w/ status & parallel;
+then genre fields, drag reorder, bottom toast, real analytics, dark
+theme, slimmer nav. Most scaffolding already existed in the Studio shell
+(`990655f` + uncommitted WIP); this session closed the gaps.
+
+| Item | Evidence |
+|---|---|
+| Download root cause | `queueDownload` sent BOTH `onProgress` and `on_progress` for one `Channel` param — dropped the snake twin; Channel now `__TAURI__.core.Channel` w/ `../../core.js` fallback |
+| Download status | failures keep a `FAILED` row (error + Retry/Dismiss); `isDownloading` ignores failed; pause→`pause_download`, resume→fresh `download_song`, in-transit close→`cancel_download` (was wrongly `remove_download`) |
+| Live proof | debug APK on `Pixel6_API36`: track-menu Download → toast "Vaulted: Tu Mil Jaaye", Downloads row `DOWNLOADED`; 16/16 CDP checks PASS (`tests/_live-studio-verify.mjs`, untracked driver) |
+| Search | Enter commits via `applySearch`; entity-result taps record `recentSearches`; `clear-search` clears suggestions |
+| Library mock | Playlists "Yours" fallback to `store.playlists` removed → empty state |
+| Drag reorder | added `liked` type → `store.reorderLiked(fromId,toId)`; queue+playlist already had it |
+| Analytics | all figures computed from `store.history` windows; no multipliers/hardcoded bars; `analyticsPeriod` default was `'30d'` (matched no segment) → `'Week'` |
+| Dark theme | Home+NP forced-`#FFFFFF` blocks (92 selectors) scoped to `html:not(.dark)`; `.dark` is on `<html>`; NP verified `rgb(14,15,17)` dark / `rgb(255,255,255)` light |
+| Toast/nav | `.toast-root` top→bottom 148px+safe-area; `.topbar-inner` 56→48px; `.mobile-tabs` 64→52px |
+| Languages | settings `allLangs` + `DEFAULT_SETTINGS.languages` → English/Telugu/Hindi/Tamil/Malayalam/Bhojpuri |
+| Gates | `npm test` 665/665, eslint clean, `npm run css` rebuilt, `node --check` clean; also fixed pre-existing dup `reorderQueue` (lint error) |
+| Push | `dc7319b` android widget/signing + `c713788` studio UX batch → `origin/main`; excluded `nul`, `screenshots/`, `tests/_*.mjs` drivers |
+
+Docs: `docs/mobile/studio-real-data.md` (2026-11-21i/j sections),
+`docs/mobile/07-changelog.md` Unreleased filled, `docs/mobile/README.md`
+indexes the spec, root `CHANGELOG.md` entry added.

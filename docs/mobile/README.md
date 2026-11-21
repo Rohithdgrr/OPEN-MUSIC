@@ -16,6 +16,7 @@
 | 08 | [Future Scope](08-future-scope.md) | Planned mobile work, explicitly out of scope |
 | 09 | [Problems & Solutions](09-problems-solutions.md) | Known mobile bugs/gotchas + fixes |
 | 10 | [Do's & Don'ts](10-dos-donts.md) | What to do / what not to do when touching mobile |
+| + | [Studio real-data spec](studio-real-data.md) | The live Studio SPA (`studio/`): real-data contract, per-batch change log, live-verification notes |
 
 **Also relevant** (repo root / `docs/`):
 
