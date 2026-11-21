@@ -307,3 +307,132 @@ WebView. `gen/` is wiped by `tauri android init`, so the attribute is
 injected by `build.sh inject_android_permissions` (guarded on its own
 absence, same pattern as the permission lines) and therefore lands on every
 `android` / `android-universal` build.
+
+## Release signing on a workstation (2026-11-21)
+
+**Symptom:** `tauri android build --target aarch64 armv7 x86_64 --apk --ci`
+finishes with exit 0, but the artifact is
+`app-universal-release-unsigned.apk` and a phone answers
+*"App not installed as package appears to be invalid."*
+
+**Cause (measured, not inferred):** Android refuses an APK with no
+signature. `gen/android/app/build.gradle.kts` shipped with a `release`
+buildType that has `optimization` + `proguardFiles` but **no
+`signingConfig`**, and no release keystore was present in the checkout
+(`find` over the clone and `~/.android` → only `debug.keystore`). Gradle
+therefore emits the `-unsigned` variant, and `apksigner` is never invoked.
+
+**The key is not lost — it just lives outside the repo.** The real
+OpenMusic release key (the signer of the published v0.5.1 APK, SHA-256
+`8ad4da6fc72a7e75bcf8188ee89f3c1f6e0261b6ca80f044283f6b804d8cadfb`) is
+kept at:
+
+| Path | What |
+|---|---|
+| `%LOCALAPPDATA%\trance-music-signing\release.keystore` | PKCS12, alias `trance-music`, `CN=TRANCE MUSIC, OU=Dev, O=OpenMusic`, valid to 2056 |
+| `%LOCALAPPDATA%\trance-music-signing\keystore.properties` | alias + store/key password |
+| `%LOCALAPPDATA%\trance-music-signing\trancemusic.pfx` | the unrelated **Windows Authenticode** cert (`CN=TRANCE MUSIC`, thumbprint `378383F5…`) |
+
+It sits next to the `.pfx` on purpose: one folder holds every signing secret
+for the project, and nothing under `gen/` (which `tauri android init` deletes)
+is the only copy.
+
+**Fix — `app/scripts/android-signing.mjs`, called from `build.sh` on both
+release paths (`android`, `android-universal`).** `gen/` is gitignored and
+wiped by `tauri android init`, so this is per-build, exactly like the
+permission/media injections. Key material resolves in this order:
+
+1. `gen/android/keystore.properties` already present → use it as-is.
+2. `%LOCALAPPDATA%\trance-music-signing\` has one → **copy** the keystore into
+   `gen/android/release.keystore` and regenerate the properties there. This is
+   the normal path after any `tauri android init`.
+3. Nothing anywhere → mint a PKCS12 key once (RSA 4096, 10000 days) **and back
+   it up to the same LOCALAPPDATA folder**, so step 2 restores it next time.
+   The key is never rotated silently: a new certificate makes every future
+   update fail with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
+4. **Patch the gradle file idempotently** between
+   `// openmusic-signing:start` / `:end` markers: a `signingConfigs`
+   `create("release")` reading `keystore.properties`, wired into
+   `buildTypes.getByName("release")`. Re-running replaces the block instead
+   of appending a second one. If a *non-managed* `signingConfigs` block
+   already exists (CI's `tauri android init` mints its own run-ephemeral
+   key), the script leaves it alone — no duplicate `create("release")`.
+5. **Collapses the duplicated empty `jniLibs { }` blocks** that the old
+   `sed` insertion in `tune_android_build` accumulated (48 of them on
+   2026-11-21). Harmless to Gradle, but they made the file unreadable and
+   would eventually have been copied into a bug report as evidence.
+
+`storeFile` in `keystore.properties` is resolved with gradle's `file()`
+semantics, i.e. relative to the **app module** (`gen/android/app`), so
+`../release.keystore` means `gen/android/release.keystore` — the shape
+`tauri android init` itself writes.
+
+**Trap (cost one Gradle run):** inside `android { }` the identifier `java`
+resolves to the Android DSL's `java` extension, **not** the JDK package, so
+`java.util.Properties()` fails with `Unresolved reference 'util'` and every
+following line cascades. Use the file's top-level `import
+java.util.Properties` and write plain `Properties()`.
+
+**Proof the wiring is live** (no full build needed):
+`./gradlew :app:signingReport` must print, under `Variant: universalRelease`,
+`Config: release` and the keystore path — not `Config: debug`. With the real
+key it prints `SHA-256: 8A:D4:DA:6F:…:AD:FB`.
+
+**Consequence for devices:** a build signed with the **debug** key (every
+emulator APK built before this change) cannot be upgraded in place, and
+neither can one signed by CI's run-ephemeral key (every GitHub release
+artifact, which rotates by design until `ANDROID_KEYSTORE_*` secrets land).
+Those need one uninstall — `adb uninstall com.openmusic.trancemusic` or
+Settings → Apps → OpenMusic → Uninstall — then install this APK. Every build
+from here keeps the v0.5.1 certificate, so in-place updates work again.
+
+**Verify:** `apksigner verify --print-certs <apk>` must report `Verifies`,
+the v2/v3 scheme flags, and
+`CN=TRANCE MUSIC, OU=Dev, O=OpenMusic, L=Local, ST=Local, C=IN`.
+
+## What `--target` actually does (2026-11-21, measured)
+
+Two consecutive builds on Tauri CLI 2.x:
+
+| Invocation | Rust actually compiled | ABIs inside the APK |
+|---|---|---|
+| `android build --target aarch64 armv7 x86_64 --apk --ci` | **aarch64 only** — `Compiling trance-music` appears **once**, `Finished release … 7m 16s`; `target/x86_64-linux-android/release/` was never created | arm64-v8a, armeabi-v7a, x86_64 |
+| `android build --target x86_64 --apk --ci` | x86_64 only (5m 13s) | **x86_64 only** (11.4 MB APK) |
+
+So the flag has two jobs, and only one of them is obvious:
+
+1. **It sets the ABI filter for the packaged APK.** A one-target invocation
+   produces a one-ABI APK even though `jniLibs/` still holds all three.
+2. **The CLI compiles only the first target in the list.** The remaining ABIs
+   are packaged from whatever
+   `gen/android/app/src/main/jniLibs/<abi>/libapp_lib.so` symlinks currently
+   point at.
+
+**The failure this causes.** The first universal build here compiled aarch64
+and then packaged:
+
+```
+jniLibs/x86_64/libapp_lib.so -> target/x86_64-linux-android/debug/libapp_lib.so
+```
+
+— the leftover from the preceding debug build, because no release lib for
+x86_64 existed yet. The APK therefore carried a **debug** native library in a
+release build: 36.3 MB unstripped / 14.2 MB deflated, against 20.1 MB / 10.4 MB
+for the real release lib. That is 3.8 MB of pure debug bloat, and it also means
+an emulator run exercises different native code than a phone does.
+
+**Rule:** build each ABI at least once, then run the multi-target packaging
+pass. `build.sh` enforces this with `ensure_android_release_libs`, which checks
+every `jniLibs/<abi>/libapp_lib.so` symlink and, for any that does not resolve
+to `target/<triple>/release/libapp_lib.so`, rebuilds that ABI alone before the
+packaging pass. A healthy tree costs nothing (no cargo work).
+
+**Trap — ad-hoc `npm run tauri --` deletes the mobile bundle.**
+`scripts/tauri.mjs` runs `build-mobile.mjs --clean` for every command except the
+nested `android android-studio-script` call, so a direct
+`npm run tauri -- android build …` prints *"Removed generated mobile bundle;
+source entry will be used"* and packages the **source** entry instead of the
+esbuild bundle. `build.sh` calls the CLI directly (`tauri_cli`), which is why
+its path is correct; only hand-typed npm invocations are affected. Frontend
+assets are embedded in `libapp_lib.so` by `tauri-codegen`, not stored as files
+in the APK, so `unzip -l` cannot show this — the build log line is the tell.

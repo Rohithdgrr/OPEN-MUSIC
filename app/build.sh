@@ -135,6 +135,59 @@ tune_android_build() {
   fi
 }
 
+ensure_android_icons() {
+  local script="scripts/sync-android-icons.mjs"
+  [[ -f "$script" ]] || return 0
+  if have node; then node "$script"
+  elif [[ -f "$WIN_NODE" ]]; then "$WIN_NODE" "$script"
+  fi
+}
+
+ensure_android_signing() {
+  # `tauri android build --apk` emits app-universal-release-unsigned.apk unless
+  # the release buildType carries a signingConfig, and Android refuses to
+  # install an unsigned APK ("package appears to be invalid"). gen/ is
+  # gitignored and wiped by `tauri android init`, so the key + the gradle
+  # wiring are re-applied per build, exactly like the injections below.
+  # Idempotent: an existing key is reused, never rotated (a new certificate
+  # would break every future in-place update).
+  # Docs: docs/android-universal-release.md § "Release signing on a workstation".
+  local script="scripts/android-signing.mjs"
+  [[ -f "$script" ]] || die "$script is missing — cannot sign the release APK"
+  if have node; then node "$script"
+  elif [[ -f "$WIN_NODE" ]]; then "$WIN_NODE" "$script"
+  else die "node is missing — cannot wire Android release signing"; fi
+}
+
+ensure_android_release_libs() {
+  # `tauri android build --target a b c` compiles ONLY the first target and
+  # packages the remaining ABIs from whatever
+  # `jniLibs/<abi>/libapp_lib.so` symlinks currently point at. A debug build
+  # leaves those symlinks on `target/<triple>/debug/`, so a later release
+  # build silently ships a DEBUG native library (2026-11-21: x86_64 was
+  # 36.3 MB debug instead of 20.1 MB release — +3.8 MB in the APK, and the
+  # emulator ran non-release native code).
+  # Repair: build any ABI whose symlink is not its release lib, one at a time.
+  # Cargo is incremental, so a healthy tree costs nothing here.
+  # Docs: docs/android-universal-release.md § "What --target actually does".
+  local jni="src-tauri/gen/android/app/src/main/jniLibs"
+  local entry target abi triple link want
+  for entry in "aarch64:arm64-v8a:aarch64-linux-android" \
+               "armv7:armeabi-v7a:armv7-linux-androideabi" \
+               "x86_64:x86_64:x86_64-linux-android"; do
+    target="${entry%%:*}"; entry="${entry#*:}"
+    abi="${entry%%:*}"; triple="${entry##*:}"
+    link="$jni/$abi/libapp_lib.so"
+    want="src-tauri/target/$triple/release/libapp_lib.so"
+    if [[ -f "$want" ]] \
+       && [[ "$(readlink -f "$link" 2>/dev/null)" == "$(readlink -f "$want" 2>/dev/null)" ]]; then
+      continue
+    fi
+    echo "↻ $abi: jniLibs -> $(readlink "$link" 2>/dev/null || echo missing); rebuilding the release lib"
+    tauri_android android build --target "$target" --apk --ci || return 1
+  done
+}
+
 inject_android_permissions() {
   local manifest="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
   if [[ ! -f "$manifest" ]]; then
@@ -284,11 +337,14 @@ inject_android_mediahub() {
   fi
 
   local pkg="java/com/openmusic/trancemusic"
-  mkdir -p "$main/$pkg" "$main/res/xml" "$main/res/layout" "$main/res/values"
+  mkdir -p "$main/$pkg" "$main/res/xml" "$main/res/layout" "$main/res/values" "$main/res/drawable"
   cp "$overlay/kotlin/"*.kt "$main/$pkg/"
   cp "$overlay/res/xml/"*.xml "$main/res/xml/"
   cp "$overlay/res/layout/"*.xml "$main/res/layout/"
   cp "$overlay/res/values/"*.xml "$main/res/values/"
+  if [[ -d "$overlay/res/drawable" ]]; then
+    cp "$overlay/res/drawable/"*.xml "$main/res/drawable/"
+  fi
   echo "✓ MediaHub sources + widget resources copied"
 
   # Permissions, each guarded on its own absence.
@@ -331,7 +387,10 @@ cmd_android() {
   npm_run build:mobile
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
+  ensure_android_icons
   tune_android_build || die "Failed to tune the Android build"
+  ensure_android_signing || die "Failed to wire Android release signing"
+  ensure_android_release_libs || die "Failed to build a release lib for every ABI"
   local args=(android build --target aarch64 x86_64 --split-per-abi --apk --ci)
   tauri_android "${args[@]}"
 }
@@ -344,6 +403,7 @@ cmd_android_debug() {
   npm_run build:mobile
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
+  ensure_android_icons
   tune_android_build || die "Failed to tune the Android build"
   # AGP's incremental packager leaves a zero-filled alignment placeholder
   # (roughly the size of the COMPRESSED .so) inside the APK on a rebuild —
@@ -365,7 +425,10 @@ cmd_android_universal() {
   npm_run build:mobile
   inject_android_permissions || die "Failed to inject Android permissions"
   inject_android_mediahub || die "Failed to inject Android media layer"
+  ensure_android_icons
   tune_android_build || die "Failed to tune the Android build"
+  ensure_android_signing || die "Failed to wire Android release signing"
+  ensure_android_release_libs || die "Failed to build a release lib for every ABI"
   local args=(android build --target aarch64 armv7 x86_64 --apk --ci)
   tauri_android "${args[@]}"
 }

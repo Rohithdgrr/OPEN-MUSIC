@@ -102,6 +102,21 @@ no `androidx.media` / media3 — framework only, so offline gradle stays green.
   has no `(PendingIntent, CharSequence)` addAction — `Notification.Action`
   (API 23+, minSdk 24) via a `notifAction` helper.
 
+## Proper icon + widget layout (2026-11-21)
+
+- **Notification small icon**: it used `android.R.drawable.ic_media_play`, a
+  system glyph that renders as a generic triangle. A monochrome
+  `tm_notif_icon` vector (music note) is now shipped in the overlay's
+  `res/drawable` and used by `setSmallIcon`; the build injector copies that
+  directory too.
+- **Widget layout**: the root is now a vertical card — artwork/title/artist
+  and the three transport buttons in one row, with the progress bar as a
+  full-width strip at the bottom of the card instead of being squeezed under
+  the artist line. `tm_w_progress` is still visible only once a duration is
+  known, and the ticker refreshes it every second while playing. All three
+  buttons keep their `PendingIntent`s (`PREV`/`TOGGLE`/`NEXT`) and the body
+  still opens Now Playing.
+
 ## Seek bar ticks while playing (2026-10-24)
 
 Report: the seek bar in the notification center, on the widget and on the

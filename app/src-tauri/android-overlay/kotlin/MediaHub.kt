@@ -157,10 +157,15 @@ object MediaHub {
 
   fun onState(isPlaying: Boolean, pos: Long, dur: Long, @Suppress("UNUSED_PARAMETER") rate: Float) {
     main.post {
+      val durChanged = (dur != durMs)
       playing = isPlaying
       posMs = pos
       durMs = dur
-      publishSession()
+      if (durChanged) {
+        publishSession()
+      } else {
+        publishPlayback()
+      }
       ensureService()
       postNotif()
       refreshWidgets()
@@ -440,6 +445,11 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
   /// one shared `window.__tmRemote` and stash only if it did not act (atomic
   /// check-and-call in JS). Dead page: stash for consumeAction().
   fun deliver(action: String, argMs: Long = 0L) {
+    if (action.endsWith("SEEK_TO") && argMs >= 0L) {
+      posMs = argMs
+      publishPlayback()
+      refreshWidgets()
+    }
     val call =
       when {
         action.endsWith("TOGGLE") -> "toggle()"
@@ -500,6 +510,9 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
         .putString(MediaMetadata.METADATA_KEY_TITLE, metaTitle.ifEmpty { "OpenMusic" })
         .putString(MediaMetadata.METADATA_KEY_ARTIST, metaArtist)
         .putString(MediaMetadata.METADATA_KEY_ALBUM, metaAlbum)
+      if (durMs > 0L) {
+        mb.putLong(MediaMetadata.METADATA_KEY_DURATION, durMs)
+      }
       val bmp = art
       if (bmp != null) mb.putBitmap(MediaMetadata.METADATA_KEY_ART, bmp)
       s.setMetadata(mb.build())
@@ -556,7 +569,7 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
         @Suppress("DEPRECATION")
         Notification.Builder(app)
       }
-    b.setSmallIcon(android.R.drawable.ic_media_play)
+    b.setSmallIcon(R.drawable.tm_notif_icon)
       .setContentTitle(metaTitle.ifEmpty { "OpenMusic" })
       .setContentText(metaArtist)
       .setSubText(metaAlbum.ifEmpty { null })
@@ -569,7 +582,15 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
       .addAction(notifAction(if (playing) "Pause" else "Play", toggleIcon, ACTION_TOGGLE, 1003))
       .addAction(notifAction("Next", android.R.drawable.ic_media_next, ACTION_NEXT, 1004))
     val bmp = art
-    if (bmp != null) b.setLargeIcon(bmp)
+    if (bmp != null) {
+      b.setLargeIcon(bmp)
+    } else {
+      try {
+        val defIcon = BitmapFactory.decodeResource(app.resources, R.mipmap.ic_launcher)
+        if (defIcon != null) b.setLargeIcon(defIcon)
+      } catch (_: Exception) {
+      }
+    }
     if (token != null) {
       b.setStyle(
         Notification.MediaStyle().setMediaSession(token).setShowActionsInCompactView(0, 1, 2),

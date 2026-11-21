@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome status-bar icon: Android renders notification small icons as a
+     white silhouette, so a system media glyph (a generic triangle) is not the
+     app's mark. Standard Material music-note path. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3v10.55A4,4 0,1 0,14 17V7h4V3z" />
+</vector>
