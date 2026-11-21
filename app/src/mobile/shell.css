@@ -581,7 +581,13 @@ html:not(.dark) input.bay-input:focus,
 html:not(.dark) #search-main-input,
 html:not(.dark) #search-main-input:focus,
 html:not(.dark) #library-search-input,
-html:not(.dark) #library-search-input:focus {
+html:not(.dark) #library-search-input:focus,
+html:not(.dark) #liked-filter-input,
+html:not(.dark) #liked-filter-input:focus,
+html:not(.dark) #playlist-filter-input,
+html:not(.dark) #playlist-filter-input:focus,
+html:not(.dark) #album-filter-input,
+html:not(.dark) #album-filter-input:focus {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;
@@ -1265,6 +1271,12 @@ html.dark select:focus {
 .dark #search-main-input:focus,
 .dark #library-search-input,
 .dark #library-search-input:focus,
+.dark #liked-filter-input,
+.dark #liked-filter-input:focus,
+.dark #playlist-filter-input,
+.dark #playlist-filter-input:focus,
+.dark #album-filter-input,
+.dark #album-filter-input:focus,
 html.dark #search-input,
 html.dark #search-input:focus,
 html.dark input.bay-input,
@@ -1272,7 +1284,13 @@ html.dark input.bay-input:focus,
 html.dark #search-main-input,
 html.dark #search-main-input:focus,
 html.dark #library-search-input,
-html.dark #library-search-input:focus {
+html.dark #library-search-input:focus,
+html.dark #liked-filter-input,
+html.dark #liked-filter-input:focus,
+html.dark #playlist-filter-input,
+html.dark #playlist-filter-input:focus,
+html.dark #album-filter-input,
+html.dark #album-filter-input:focus {
   background: transparent !important;
   border: 0 !important;
   box-shadow: none !important;

@@ -1,6 +1,6 @@
 // OpenMusic pure vanilla JS controller: DOM mounting, event delegation, live visualizer & QR canvas
 import { audioEngine } from './audio.js';
-import { formatTime } from './data.js';
+import { escapeHtml, formatTime } from './data.js';
 import {
   renderDesktopDock,
   renderMobileChrome,
@@ -11,6 +11,7 @@ import {
   renderToast,
 } from './screens.js';
 import { store } from './store.js';
+import { initNativeBridge } from './native.js';
 
 const elApp = document.getElementById('app');
 const elRouteProgress = document.getElementById('route-progress');
@@ -372,7 +373,47 @@ function applyKineticEffects({ routeChanged, hydratedFromSkeleton, trackChanged,
   }
 }
 
+/**
+ * One screen failing to render must not take the shell down with it: without
+ * this, a single bad value throws inside `renderAll`, the subscriber unwinds,
+ * and every later state change is silent — the app looks frozen with no way
+ * back. The boundary paints a recoverable card instead.
+ */
+let lastRenderError = null;
+
+function paintRenderFailure(error) {
+  const message = escapeHtml(String(error && (error.message || error)) || 'Unknown error');
+  elScreenRoot.innerHTML = `
+    <main class="container section-stack" style="padding-top:48px;">
+      <div class="surface-card" style="padding:24px;border-radius:20px;">
+        <div class="section-meta">SCREEN ERROR</div>
+        <h1 class="page-title" style="margin:6px 0 8px;">This screen hit a snag</h1>
+        <p class="page-subtitle" style="margin:0 0 6px;">The rest of OpenMusic keeps working.</p>
+        <p class="page-subtitle" style="opacity:.7;word-break:break-word;">${message}</p>
+        <div style="display:flex;gap:10px;margin-top:18px;">
+          <button class="btn btn-primary" data-action="nav" data-route="home">Go home</button>
+          <button class="btn btn-secondary" data-action="reload-app">Reload</button>
+        </div>
+      </div>
+    </main>
+  `;
+}
+
 function renderAll(isSkeletonPass = false) {
+  try {
+    renderAllUnsafe(isSkeletonPass);
+    lastRenderError = null;
+  } catch (error) {
+    console.error('[studio] render failed', error);
+    // Report once, then keep the card up rather than spamming a toast per tick.
+    if (lastRenderError !== String(error && error.message)) {
+      lastRenderError = String(error && error.message);
+      paintRenderFailure(error);
+    }
+  }
+}
+
+function renderAllUnsafe(isSkeletonPass = false) {
   const active = document.activeElement;
   let focusSnapshot = null;
   if (active && active.id && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -395,8 +436,17 @@ function renderAll(isSkeletonPass = false) {
   const artistTabChanged = !isSkeletonPass && route.name === 'artist' && !routeChanged && store.ui.artistDiscogTab !== lastArtistTab;
   const homeCatChanged = !isSkeletonPass && route.name === 'home' && !routeChanged && store.ui.homeCategory !== lastHomeCat;
 
+  const isHome = route.name === 'home';
   elScreenRoot.classList.toggle('is-nowplaying', isNowPlaying);
+  elScreenRoot.classList.toggle('is-home', isHome);
+  elScreenRoot.setAttribute('data-screen', route.name);
   elDesktopDock.classList.toggle('hidden', isNowPlaying);
+
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.toggle('route-is-nowplaying', isNowPlaying);
+    document.body.classList.toggle('route-is-home', isHome);
+    document.body.setAttribute('data-screen', route.name);
+  }
 
   elSidebar.innerHTML = renderSidebar(store);
   elScreenRoot.innerHTML = isSkeletonPass ? renderRouteSkeleton(store) : renderScreen(store);
@@ -607,9 +657,21 @@ elApp.addEventListener('click', (event) => {
       const route = target.getAttribute('data-route');
       const id = target.getAttribute('data-id') || undefined;
       const query = target.getAttribute('data-query');
+      // Leaving Search for an entity detail counts as a search too — the
+      // query belongs in Recent searches just like a played song does.
+      if (
+        store.getRoute().name === 'search' &&
+        (route === 'album' || route === 'artist' || route === 'playlist') &&
+        store.ui.searchQuery
+      ) {
+        store.addRecentSearch(store.ui.searchQuery);
+      }
       store.navigate(route, { ...(id ? { id } : {}), ...(query !== null ? { query } : {}) });
       break;
     }
+    case 'reload-app':
+      window.location.reload();
+      break;
     case 'nav-from-modal': {
       const route = target.getAttribute('data-route');
       const id = target.getAttribute('data-id') || undefined;
@@ -639,6 +701,11 @@ elApp.addEventListener('click', (event) => {
       const trackId = target.getAttribute('data-track-id');
       const queueStr = target.getAttribute('data-queue');
       const queue = queueStr ? queueStr.split(',').filter(Boolean) : null;
+      if (store.getRoute().name === 'search') {
+        const t = store.getTrackById(trackId);
+        if (t && t.title) store.addRecentSearch(t.title);
+        else if (store.ui.searchQuery) store.addRecentSearch(store.ui.searchQuery);
+      }
       store.playTrack(trackId, queue);
       break;
     }
@@ -814,6 +881,9 @@ elApp.addEventListener('click', (event) => {
       store.queueBulkDownloads(ids, label);
       break;
     }
+    case 'download-all-parallel':
+      store.downloadAllParallel();
+      break;
     case 'remove-download':
       store.removeDownload(target.getAttribute('data-track-id'));
       if (store.ui.modalTrackId) store.closeModals();
@@ -823,6 +893,12 @@ elApp.addEventListener('click', (event) => {
       break;
     case 'toggle-download-pause':
       store.toggleSingleDownloadPause(target.getAttribute('data-track-id'));
+      break;
+    case 'cancel-download':
+      store.cancelDownload(target.getAttribute('data-track-id'));
+      break;
+    case 'dismiss-download':
+      store.dismissDownload(target.getAttribute('data-track-id'));
       break;
     case 'refresh-downloads':
       store.refreshDownloads();
@@ -835,10 +911,22 @@ elApp.addEventListener('click', (event) => {
     }
     case 'clear-search':
       store.setUi({ searchQuery: '' });
+      store.clearSuggestions();
       break;
     case 'apply-search': {
       // Commit the query through the store so the real search actually runs.
       store.applySearch(target.getAttribute('data-query') || '');
+      break;
+    }
+    case 'fill-search': {
+      const q = target.getAttribute('data-query') || '';
+      store.setUi({ searchQuery: q });
+      const inp = document.getElementById('search-main-input');
+      if (inp) {
+        inp.value = q;
+        inp.focus();
+      }
+      store.fetchSuggestions(q);
       break;
     }
     case 'remove-recent-search':
@@ -918,7 +1006,12 @@ elApp.addEventListener('click', (event) => {
       break;
     case 'share-link':
       store.shareLink(target.getAttribute('data-label') || 'OpenMusic');
-      if (store.ui.modalTrackId) store.closeModals();
+      break;
+    case 'system-share':
+      store.triggerSystemShare();
+      break;
+    case 'copy-share-link':
+      store.copyShareLink();
       break;
     case 'close-modals':
       store.closeModals();
@@ -951,7 +1044,8 @@ elApp.addEventListener('input', (event) => {
         if (liveSearchDebounceTimer) window.clearTimeout(liveSearchDebounceTimer);
         liveSearchDebounceTimer = window.setTimeout(() => {
           store.searchLive(el.value);
-        }, 260);
+          store.fetchSuggestions(el.value);
+        }, 220);
       }
     }
     return;
@@ -1046,6 +1140,15 @@ window.addEventListener('keydown', (event) => {
     return;
   }
 
+  // Enter in the catalog search box commits the query (records it in Recent
+  // searches and runs the live search) instead of doing nothing.
+  if (event.key === 'Enter' && document.activeElement?.id === 'search-main-input') {
+    event.preventDefault();
+    const q = (document.activeElement.value || '').trim();
+    if (q) store.applySearch(q);
+    return;
+  }
+
   if (event.code === 'Space' && !typing) {
     event.preventDefault();
     store.togglePlay();
@@ -1064,7 +1167,12 @@ window.addEventListener('keydown', (event) => {
 
 store.subscribe((type) => {
   if (type === 'tick') {
-    updatePlaybackDom();
+    try {
+      updatePlaybackDom();
+    } catch (error) {
+      // A missing playback node is cosmetic; never let it stop the tick loop.
+      console.error('[studio] playback dom update failed', error);
+    }
   } else if (type === 'toast') {
     elToastRoot.innerHTML = renderToast(store);
   } else if (type === 'route-load') {
@@ -1082,23 +1190,260 @@ if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
   try {
     navigator.mediaSession.setActionHandler('play', () => store.togglePlay());
     navigator.mediaSession.setActionHandler('pause', () => store.togglePlay());
-    navigator.mediaSession.setActionHandler('previoustrack', () => store.prevTrack());
+    navigator.mediaSession.setActionHandler('previoustrack', () => store.previousTrack());
     navigator.mediaSession.setActionHandler('nexttrack', () => store.nextTrack());
     navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime !== undefined) store.seekTo(details.seekTime);
+      if (details.seekTime !== undefined) store.seek(details.seekTime);
     });
     navigator.mediaSession.setActionHandler('seekbackward', (details) => {
       const skip = details.seekOffset || 10;
-      store.seekTo(Math.max(0, store.currentTime - skip));
+      store.seek(Math.max(0, store.currentTime - skip));
     });
     navigator.mediaSession.setActionHandler('seekforward', (details) => {
       const skip = details.seekOffset || 10;
       const dur = store.getCurrentTrack()?.duration || 300;
-      store.seekTo(Math.min(dur, store.currentTime + skip));
+      store.seek(Math.min(dur, store.currentTime + skip));
     });
   } catch (err) {
     console.warn('mediaSession action handler error:', err);
   }
 }
 
+/* ============================================================================
+ * NOW PLAYING DRAG-DOWN TO COLLAPSE TO MINIPLAYER
+ * ========================================================================== */
+let npDragStartY = 0;
+let npDragStartX = 0;
+let npDragging = false;
+let npWrapEl = null;
+
+document.addEventListener(
+  'touchstart',
+  (e) => {
+    const route = store.getRoute();
+    if (route.name !== 'nowplaying') return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    if (e.target.closest('input, textarea, [data-bind-range], .lyric-line, .np-stage-lyric-line, button, [data-action], .scrubber-input')) return;
+    const wrap = document.querySelector('.np-wrap');
+    if (!wrap) return;
+    npWrapEl = wrap;
+    npDragStartY = t.clientY;
+    npDragStartX = t.clientX;
+    npDragging = true;
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    if (!npDragging || !npWrapEl) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const dy = t.clientY - npDragStartY;
+    const dx = t.clientX - npDragStartX;
+    if (dy > 0 && Math.abs(dy) > Math.abs(dx) * 1.2) {
+      npWrapEl.style.transform = `translateY(${dy}px)`;
+      npWrapEl.style.opacity = `${Math.max(0.35, 1 - dy / 400)}`;
+      npWrapEl.style.transition = 'none';
+    }
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  'touchend',
+  (e) => {
+    if (!npDragging || !npWrapEl) return;
+    npDragging = false;
+    const t = e.changedTouches && e.changedTouches[0];
+    const dy = t ? t.clientY - npDragStartY : 0;
+    if (dy > 65) {
+      npWrapEl.style.transition = 'transform 0.22s ease-out, opacity 0.22s ease-out';
+      npWrapEl.style.transform = 'translateY(100vh)';
+      npWrapEl.style.opacity = '0';
+      setTimeout(() => {
+        if (npWrapEl) {
+          npWrapEl.style.transform = '';
+          npWrapEl.style.opacity = '';
+          npWrapEl.style.transition = '';
+        }
+        store.goBack();
+      }, 190);
+    } else {
+      npWrapEl.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+      npWrapEl.style.transform = '';
+      npWrapEl.style.opacity = '';
+      setTimeout(() => {
+        if (npWrapEl) npWrapEl.style.transition = '';
+      }, 210);
+    }
+    npWrapEl = null;
+  },
+  { passive: true }
+);
+
+/* ============================================================================
+ * DRAG TO REORDER (QUEUE & PLAYLISTS) - HTML5 & TOUCH
+ * ========================================================================== */
+
+let dragSrcType = null;
+let dragSrcIdx = null;
+let dragSrcPlaylistId = null;
+
+document.addEventListener('dragstart', (e) => {
+  const row = e.target.closest('[data-drag-type]');
+  if (!row) return;
+  dragSrcType = row.getAttribute('data-drag-type');
+  if (dragSrcType === 'queue') {
+    dragSrcIdx = Number(row.getAttribute('data-queue-idx'));
+  } else if (dragSrcType === 'playlist') {
+    dragSrcIdx = Number(row.getAttribute('data-playlist-idx'));
+    dragSrcPlaylistId = row.getAttribute('data-playlist-id');
+  } else if (dragSrcType === 'liked') {
+    dragSrcIdx = row.getAttribute('data-liked-id');
+  }
+  row.classList.add('is-dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(dragSrcIdx));
+  }
+});
+
+document.addEventListener('dragover', (e) => {
+  const row = e.target.closest('[data-drag-type]');
+  if (!row || !dragSrcType || row.getAttribute('data-drag-type') !== dragSrcType) return;
+  e.preventDefault();
+  row.classList.add('drag-over');
+});
+
+document.addEventListener('dragleave', (e) => {
+  const row = e.target.closest('[data-drag-type]');
+  if (row) row.classList.remove('drag-over');
+});
+
+document.addEventListener('drop', (e) => {
+  const row = e.target.closest('[data-drag-type]');
+  if (!row || !dragSrcType || row.getAttribute('data-drag-type') !== dragSrcType) return;
+  e.preventDefault();
+  row.classList.remove('drag-over');
+  if (dragSrcType === 'queue') {
+    const targetIdx = Number(row.getAttribute('data-queue-idx'));
+    if (Number.isInteger(dragSrcIdx) && Number.isInteger(targetIdx) && dragSrcIdx !== targetIdx) {
+      store.reorderQueue(dragSrcIdx, targetIdx);
+    }
+  } else if (dragSrcType === 'playlist') {
+    const targetIdx = Number(row.getAttribute('data-playlist-idx'));
+    if (Number.isInteger(dragSrcIdx) && Number.isInteger(targetIdx) && dragSrcIdx !== targetIdx) {
+      store.reorderPlaylist(dragSrcPlaylistId, dragSrcIdx, targetIdx);
+    }
+  } else if (dragSrcType === 'liked') {
+    const targetId = row.getAttribute('data-liked-id');
+    if (dragSrcIdx && targetId && dragSrcIdx !== targetId) {
+      store.reorderLiked(dragSrcIdx, targetId);
+    }
+  }
+});
+
+document.addEventListener('dragend', () => {
+  document.querySelectorAll('.is-dragging, .drag-over').forEach((el) => {
+    el.classList.remove('is-dragging', 'drag-over');
+  });
+  dragSrcType = null;
+  dragSrcIdx = null;
+  dragSrcPlaylistId = null;
+});
+
+// Touch Drag to Reorder for Mobile via .np-grip handle
+let touchDragState = null;
+
+document.addEventListener(
+  'touchstart',
+  (e) => {
+    const handle = e.target.closest('[data-drag-handle]');
+    if (!handle) return;
+    const row = handle.closest('[data-drag-type]');
+    if (!row) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const type = handle.getAttribute('data-drag-handle');
+    const idx = Number(handle.getAttribute('data-queue-idx') ?? handle.getAttribute('data-playlist-idx'));
+    const plId = handle.getAttribute('data-playlist-id') || null;
+    const likedId = handle.getAttribute('data-liked-id') || null;
+    touchDragState = {
+      type,
+      fromIdx: idx,
+      fromId: likedId,
+      plId,
+      row,
+      startY: t.clientY,
+      currentOverRow: null,
+    };
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  'touchmove',
+  (e) => {
+    if (!touchDragState) return;
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    const dy = t.clientY - touchDragState.startY;
+    if (Math.abs(dy) > 8) {
+      touchDragState.row.classList.add('is-dragging');
+      touchDragState.row.style.transform = `translateY(${dy}px)`;
+      touchDragState.row.style.zIndex = '50';
+      touchDragState.row.style.opacity = '0.9';
+
+      const under = document.elementFromPoint(t.clientX, t.clientY);
+      const targetRow = under ? under.closest(`[data-drag-type="${touchDragState.type}"]`) : null;
+      document.querySelectorAll('.drag-over').forEach((r) => r.classList.remove('drag-over'));
+      if (targetRow && targetRow !== touchDragState.row) {
+        targetRow.classList.add('drag-over');
+        touchDragState.currentOverRow = targetRow;
+      } else {
+        touchDragState.currentOverRow = null;
+      }
+    }
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  'touchend',
+  () => {
+    if (!touchDragState) return;
+    const { type, fromIdx, fromId, plId, row, currentOverRow } = touchDragState;
+    row.classList.remove('is-dragging');
+    row.style.transform = '';
+    row.style.zIndex = '';
+    row.style.opacity = '';
+    document.querySelectorAll('.drag-over').forEach((r) => r.classList.remove('drag-over'));
+
+    if (currentOverRow) {
+      if (type === 'queue') {
+        const toIdx = Number(currentOverRow.getAttribute('data-queue-idx'));
+        if (Number.isInteger(fromIdx) && Number.isInteger(toIdx) && fromIdx !== toIdx) {
+          store.reorderQueue(fromIdx, toIdx);
+        }
+      } else if (type === 'playlist') {
+        const toIdx = Number(currentOverRow.getAttribute('data-playlist-idx'));
+        if (Number.isInteger(fromIdx) && Number.isInteger(toIdx) && fromIdx !== toIdx) {
+          store.reorderPlaylist(plId, fromIdx, toIdx);
+        }
+      } else if (type === 'liked') {
+        const toId = currentOverRow.getAttribute('data-liked-id');
+        if (fromId && toId && fromId !== toId) {
+          store.reorderLiked(fromId, toId);
+        }
+      }
+    }
+    touchDragState = null;
+  },
+  { passive: true }
+);
+
 renderAll(false);
+initNativeBridge(store);

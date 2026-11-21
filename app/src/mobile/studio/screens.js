@@ -19,6 +19,26 @@ function icon(name, { filled = false, size = 20, cls = '' } = {}) {
   return `<span class="material-symbols-outlined ${filled ? 'icon-filled' : ''} ${cls}" style="font-size:${size}px;" aria-hidden="true">${name}</span>`;
 }
 
+/**
+ * The one grid card used by every "browse" surface (albums, playlists, more by
+ * artist, featuring…). It used to be copy-pasted eight times, so a change to
+ * the card shape had to be made eight times and the copies had already drifted
+ * (`curator` vs `subtitle`, `trackCount || trackIds.length` vs `trackIds.length`).
+ * `subtitle` stays a caller-built string because each surface counts a
+ * different thing; everything else is fixed here.
+ */
+function mediaCard({ route, id, title, subtitle = '', artwork = '', seed = '', stagger = null }) {
+  const style = stagger === null ? '' : ` style="--stagger-i:${stagger};"`;
+  const classes = `media-card${stagger === null ? '' : ' stagger-item'}`;
+  return `
+    <button class="${classes}"${style} data-action="nav" data-route="${escapeHtml(route)}" data-id="${escapeHtml(id)}">
+      ${renderArtwork({ src: artwork, alt: title, seed, square: true, round: 'round-md' })}
+      <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(title)}</div>
+      <div class="list-row-sub truncate">${subtitle}</div>
+    </button>
+  `;
+}
+
 function renderTopBar({ title = '', showBack = true, narrow = false, rightHtml = '', brandMode = false }) {
   return `
     <header class="topbar ${narrow ? 'topbar-narrow' : ''}">
@@ -120,6 +140,9 @@ function renderTrackRow(
     subtitleOverride = '',
     showRank = false,
     rankDelta = '',
+    statusTag = '',
+    draggable = false,
+    likedDrag = false,
   } = {}
 ) {
   const current = store.getCurrentTrack();
@@ -139,14 +162,14 @@ function renderTrackRow(
         : 'is-flat';
 
   return `
-    <div class="song-row stagger-item ${isCurrent ? 'is-current' : ''}" ${staggerAttr}>
+    <div class="song-row stagger-item ${isCurrent ? 'is-current' : ''}" ${staggerAttr} ${likedDrag ? `draggable="true" data-drag-type="liked" data-liked-id="${escapeHtml(track.id)}"` : draggable ? `draggable="true" data-drag-type="playlist" data-playlist-id="${escapeHtml(playlistId)}" data-playlist-idx="${index}"` : ''}>
       ${
         showRank && typeof index === 'number'
           ? `<div class="chart-rank-col" aria-label="Rank ${index + 1}">
                <span class="chart-rank-num ${index < 3 ? 'is-top' : ''}">${String(index + 1).padStart(2, '0')}</span>
                ${rankDelta ? `<span class="chart-delta ${deltaClass}">${escapeHtml(rankDelta)}</span>` : ''}
              </div>`
-          : `<span class="np-grip" aria-hidden="true">${icon('drag_indicator', { size: 17 })}</span>`
+          : `<span class="np-grip" aria-hidden="true" style="${draggable || likedDrag ? 'cursor:grab;touch-action:none;' : ''}" ${likedDrag ? `data-drag-handle="liked" data-liked-id="${escapeHtml(track.id)}"` : draggable ? `data-drag-handle="playlist" data-playlist-id="${escapeHtml(playlistId)}" data-playlist-idx="${index}"` : ''}>${icon('drag_indicator', { size: 17 })}</span>`
       }
       <button class="list-row-main" style="gap:11px;" data-action="${isCurrent ? 'toggle-play' : 'play-track'}" data-track-id="${escapeHtml(track.id)}" ${queueAttr}>
         ${renderArtwork({
@@ -167,6 +190,7 @@ function renderTrackRow(
             }
             ${track.hiRes ? `<span class="tag-mono">HI-RES</span>` : ''}
             ${downloaded && !showRemoveDownload ? `<span class="tag-mono">OFFLINE</span>` : ''}
+            ${statusTag ? `<span class="tag-mono">${escapeHtml(statusTag)}</span>` : ''}
           </div>
         </div>
       </button>
@@ -505,6 +529,58 @@ function renderHomeScreen(store) {
     .sort((a, b) => a.chartRank - b.chartRank);
   const quickPicks = store.tracks.slice(0, 6);
   const quickPickIds = quickPicks.map((t) => t.id).join(',');
+
+  // 1. Most Played (aggregated by play occurrences in store.history, enriched with catalog)
+  const historyFreq = new Map();
+  for (const h of store.history) {
+    if (h && h.trackId) {
+      historyFreq.set(h.trackId, (historyFreq.get(h.trackId) || 0) + 1);
+    }
+  }
+  const scoredCatalog = store.tracks.map((t) => ({
+    track: t,
+    plays: historyFreq.get(t.id) || 0,
+  }));
+  scoredCatalog.sort((a, b) => b.plays - a.plays);
+  const mostPlayedTracks = scoredCatalog.map((x) => x.track).slice(0, 8);
+  const mostPlayedIds = mostPlayedTracks.map((t) => t.id).join(',');
+
+  // 2. Favorite Playlists (user created + top curated playlists)
+  const favPlaylists = store.playlists.slice(0, 6);
+
+  // 3. Top 10 Chart Countdown
+  const top10Tracks = [...store.tracks]
+    .sort((a, b) => {
+      const ra = typeof a.chartRank === 'number' ? a.chartRank : 999;
+      const rb = typeof b.chartRank === 'number' ? b.chartRank : 999;
+      return ra - rb;
+    })
+    .slice(0, 10);
+  const top10Ids = top10Tracks.map((t) => t.id).join(',');
+
+  // 4. Top 100 Anthems Countdown
+  const top100Tracks = [...store.tracks]
+    .sort((a, b) => {
+      const ra = typeof a.chartRank === 'number' ? a.chartRank : 999;
+      const rb = typeof b.chartRank === 'number' ? b.chartRank : 999;
+      return ra - rb;
+    })
+    .slice(0, 100);
+  const top100Ids = top100Tracks.map((t) => t.id).join(',');
+
+  // 5. Daily Mix & Fresh Drops (seeded deterministically by date string)
+  const todayDateStr = new Date().toISOString().slice(0, 10);
+  let dailySeed = 0;
+  for (let i = 0; i < todayDateStr.length; i++) {
+    dailySeed = (dailySeed * 33 + todayDateStr.charCodeAt(i)) >>> 0;
+  }
+  const dailyTracks = [...store.tracks]
+    .map((t, idx) => ({ t, k: ((idx + 1) * 997 + dailySeed) % 10007 }))
+    .sort((a, b) => a.k - b.k)
+    .map((x) => x.t)
+    .slice(0, 8);
+  const dailyTrackIds = dailyTracks.map((t) => t.id).join(',');
+
   const show = (section) => cat === 'All' || cat === section;
   const ambientArt = (currentTrack && currentTrack.artwork) || (spotlight && spotlight.artwork) || '';
 
@@ -759,6 +835,169 @@ function renderHomeScreen(store) {
         }
 
         ${
+          (cat === 'All' || cat === 'Playlists' || cat === 'Heavy Rotation') && dailyTracks.length > 0
+            ? `
+          <section class="block-stack">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Daily Mix &amp; Fresh Drops</h2>
+                <span class="section-meta">UPDATED TODAY FOR YOU</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button class="btn btn-secondary btn-sm" data-action="shuffle-queue" data-queue="${escapeHtml(dailyTrackIds)}">
+                  ${icon('shuffle', { size: 16 })} Shuffle
+                </button>
+                <button class="btn btn-primary btn-sm" data-action="play-queue" data-queue="${escapeHtml(dailyTrackIds)}">
+                  ${icon('play_arrow', { filled: true, size: 16 })} Play Daily
+                </button>
+              </div>
+            </div>
+            <div class="h-scroll no-scrollbar">
+              ${dailyTracks
+                .map((t, idx) => {
+                  const isCurrent = currentTrack && currentTrack.id === t.id;
+                  const isPlayingHere = isCurrent && store.isPlaying;
+                  return `
+                <button
+                  class="track-tile home-tile stagger-item ${isCurrent ? 'is-current' : ''}"
+                  style="--stagger-i:${idx};"
+                  data-action="${isCurrent ? 'toggle-play' : 'play-track'}"
+                  data-track-id="${escapeHtml(t.id)}"
+                  data-queue="${escapeHtml(dailyTrackIds)}"
+                >
+                  <div class="tile-art-wrap">
+                    ${renderArtwork({
+                      src: t.artwork,
+                      alt: t.title,
+                      seed: t.artworkSeed,
+                      square: true,
+                      round: 'round-md',
+                      badge: 'DAILY',
+                      playing: isPlayingHere,
+                    })}
+                    <span class="tile-play-fab ${isCurrent ? 'is-visible' : ''}" aria-hidden="true">
+                      ${icon(isPlayingHere ? 'pause' : 'play_arrow', { filled: true, size: 19 })}
+                    </span>
+                  </div>
+                  <div class="list-row-title truncate" style="margin-top:9px;">${escapeHtml(t.title)}</div>
+                  <div class="list-row-sub truncate">${escapeHtml(t.artistName)}</div>
+                </button>
+              `;
+                })
+                .join('')}
+            </div>
+          </section>
+        `
+            : ''
+        }
+
+        ${
+          (cat === 'All' || cat === 'Heavy Rotation') && mostPlayedTracks.length > 0
+            ? `
+          <section class="block-stack">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Most Played</h2>
+                <span class="section-meta">YOUR HEAVY ROTATION</span>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="play-queue" data-queue="${escapeHtml(mostPlayedIds)}">
+                ${icon('play_arrow', { filled: true, size: 16 })} Play All
+              </button>
+            </div>
+            <div class="h-scroll no-scrollbar">
+              ${mostPlayedTracks
+                .map((t, idx) => {
+                  const isCurrent = currentTrack && currentTrack.id === t.id;
+                  const isPlayingHere = isCurrent && store.isPlaying;
+                  const plays = historyFreq.get(t.id) || 0;
+                  return `
+                <button
+                  class="track-tile home-tile stagger-item ${isCurrent ? 'is-current' : ''}"
+                  style="--stagger-i:${idx};"
+                  data-action="${isCurrent ? 'toggle-play' : 'play-track'}"
+                  data-track-id="${escapeHtml(t.id)}"
+                  data-queue="${escapeHtml(mostPlayedIds)}"
+                >
+                  <div class="tile-art-wrap">
+                    ${renderArtwork({
+                      src: t.artwork,
+                      alt: t.title,
+                      seed: t.artworkSeed,
+                      square: true,
+                      round: 'round-md',
+                      badge: plays > 0 ? `${plays}x` : 'TOP',
+                      playing: isPlayingHere,
+                    })}
+                    <span class="tile-play-fab ${isCurrent ? 'is-visible' : ''}" aria-hidden="true">
+                      ${icon(isPlayingHere ? 'pause' : 'play_arrow', { filled: true, size: 19 })}
+                    </span>
+                  </div>
+                  <div class="list-row-title truncate" style="margin-top:9px;">${escapeHtml(t.title)}</div>
+                  <div class="list-row-sub truncate">${escapeHtml(t.artistName)}</div>
+                </button>
+              `;
+                })
+                .join('')}
+            </div>
+          </section>
+        `
+            : ''
+        }
+
+        ${
+          (cat === 'All' || cat === 'Charts') && top10Tracks.length > 0
+            ? `
+          <section class="block-stack">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Top 10 Chart</h2>
+                <span class="section-meta">OFFICIAL GLOBAL RANKINGS</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <button class="text-link-btn" data-action="nav" data-route="charts">All Charts ${icon('chevron_right', { size: 16 })}</button>
+                <button class="btn btn-primary btn-sm" data-action="play-queue" data-queue="${escapeHtml(top10Ids)}">
+                  ${icon('play_arrow', { filled: true, size: 16 })} Play Top 10
+                </button>
+              </div>
+            </div>
+            <div class="list-card list-sheet">
+              ${top10Tracks.map((t, i) => renderTrackRow(store, t, { index: i, contextQueue: top10Tracks.map((x) => x.id), showAlbum: true, showRank: true })).join('')}
+            </div>
+          </section>
+        `
+            : ''
+        }
+
+        ${
+          (cat === 'All' || cat === 'Charts') && top100Tracks.length > 0
+            ? `
+          <section class="block-stack">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Top 100 Anthems</h2>
+                <span class="section-meta">FULL 100 COUNTDOWN</span>
+              </div>
+              <button class="text-link-btn" data-action="nav" data-route="charts">View 100 Chart ${icon('chevron_right', { size: 16 })}</button>
+            </div>
+            <div class="home-top100-card stagger-item" style="--stagger-i:2;">
+              <div class="home-top100-badge">TOP 100 PLAYLIST</div>
+              <h3 class="home-top100-headline">Global Top 100 Studio Recordings</h3>
+              <p class="home-top100-desc">${top100Tracks.length} lossless masters ranked and ready for continuous playback.</p>
+              <div class="home-top100-btn-row">
+                <button class="btn btn-primary btn-sm" data-action="play-queue" data-queue="${escapeHtml(top100Ids)}">
+                  ${icon('play_arrow', { filled: true, size: 18 })} Play Top 100
+                </button>
+                <button class="btn btn-secondary btn-sm" data-action="shuffle-queue" data-queue="${escapeHtml(top100Ids)}">
+                  ${icon('shuffle', { size: 16 })} Shuffle All
+                </button>
+              </div>
+            </div>
+          </section>
+        `
+            : ''
+        }
+
+        ${
           show('Heavy Rotation') && recentTracks.length > 0
             ? `
           <section class="block-stack">
@@ -860,11 +1099,14 @@ function renderHomeScreen(store) {
             ? `
           <section class="block-stack">
             <div class="section-header">
-              <h2 class="section-title">Featured Playlists</h2>
+              <div>
+                <h2 class="section-title">Favorite Playlists</h2>
+                <span class="section-meta">CURATED ROTATION</span>
+              </div>
               <button class="text-link-btn" data-action="nav" data-route="playlists">All Playlists ${icon('chevron_right', { size: 16 })}</button>
             </div>
             <div class="card-grid-4">
-              ${store.playlists
+              ${favPlaylists
                 .slice(0, 4)
                 .map((pl, idx) => {
                   const isPlPlaying = Boolean(currentTrack) && pl.trackIds.includes(currentTrack.id) && store.isPlaying;
@@ -885,7 +1127,7 @@ function renderHomeScreen(store) {
                   </div>
                   <button class="home-media-meta-btn" data-action="nav" data-route="playlist" data-id="${escapeHtml(pl.id)}">
                     <div class="list-row-title truncate">${escapeHtml(pl.title)}</div>
-                    <div class="list-row-sub truncate">${escapeHtml(pl.subtitle)} · ${pl.trackIds.length} tracks</div>
+                    <div class="list-row-sub truncate">${escapeHtml(pl.subtitle || '')} · ${pl.trackIds.length} tracks</div>
                   </button>
                 </article>
               `;
@@ -1101,22 +1343,70 @@ function renderSearchScreen(store) {
     ${renderTopBar({ title: 'Search Catalog', showBack: true })}
     <main class="container section-stack">
       <div class="block-stack">
-        <div class="search-box">
-          ${icon('search', { size: 20 })}
-          <input
-            id="search-main-input"
-            type="text"
-            placeholder="Search tracks, albums, artists, genres..."
-            value="${escapeHtml(store.ui.searchQuery)}"
-            data-input-ui="searchQuery"
-            autocomplete="off"
-          />
+        <div class="search-box-wrap" style="position:relative;width:100%;">
+          <div class="search-box">
+            ${icon('search', { size: 20 })}
+            <input
+              id="search-main-input"
+              type="text"
+              placeholder="Search tracks, albums, artists, genres..."
+              value="${escapeHtml(store.ui.searchQuery)}"
+              data-input-ui="searchQuery"
+              autocomplete="off"
+            />
+            ${
+              store.ui.searchQuery
+                ? `<button class="icon-btn icon-btn-sm" data-action="clear-search" aria-label="Clear search">${icon('close', { size: 18 })}</button>`
+                : ''
+            }
+          </div>
+
           ${
-            store.ui.searchQuery
-              ? `<button class="icon-btn icon-btn-sm" data-action="clear-search" aria-label="Clear search">${icon('close', { size: 18 })}</button>`
+            store.searchSuggestions && store.searchSuggestions.length > 0
+              ? `
+            <div class="search-suggestions-dropdown" style="position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:90;background:var(--surface-container-lowest, #fff);border:1px solid var(--outline-variant, #e4e4e7);border-radius:14px;box-shadow:0 12px 32px rgba(0,0,0,0.12);overflow:hidden;">
+              ${store.searchSuggestions
+                .map(
+                  (s) => `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--outline-variant, #f4f4f5);gap:10px;">
+                  <button style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-align:left;background:none;border:none;cursor:pointer;font-size:14px;font-weight:600;color:var(--on-surface,#18181b);" data-action="apply-search" data-query="${escapeHtml(s)}">
+                    ${icon('search', { size: 17, cls: 'text-muted' })}
+                    <span class="truncate">${escapeHtml(s)}</span>
+                  </button>
+                  <button class="icon-btn icon-btn-sm" style="width:28px;height:28px;" data-action="fill-search" data-query="${escapeHtml(s)}" title="Complete search">
+                    ${icon('north_west', { size: 15 })}
+                  </button>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+          `
               : ''
           }
         </div>
+
+        ${
+          store.recentSearches.length > 0
+            ? `
+          <div class="recent-searches-subbar" style="display:flex;align-items:center;gap:8px;overflow-x:auto;padding:2px 0;" class="no-scrollbar">
+            <span style="font-size:11.5px;font-weight:700;color:var(--on-surface-variant,#71717a);display:flex;align-items:center;gap:4px;white-space:nowrap;">
+              ${icon('history', { size: 14 })} Recent:
+            </span>
+            ${store.recentSearches.slice(0, 8).map((term) => `
+              <span class="chip chip-sm" style="padding:4px 8px;font-size:12px;gap:6px;flex-shrink:0;">
+                <button data-action="apply-search" data-query="${escapeHtml(term)}">${escapeHtml(term)}</button>
+                <button class="icon-btn" style="width:16px;height:16px;" data-action="remove-recent-search" data-query="${escapeHtml(term)}" aria-label="Remove ${escapeHtml(term)}">
+                  ${icon('close', { size: 11 })}
+                </button>
+              </span>
+            `).join('')}
+            <button class="text-link-btn" style="font-size:11px;white-space:nowrap;margin-left:auto;" data-action="clear-recent-searches">Clear</button>
+          </div>
+        `
+            : ''
+        }
+
         <div class="chip-row no-scrollbar">
           ${filters
             .map(
@@ -1284,11 +1574,14 @@ function renderSearchScreen(store) {
                 ${matchedAlbums
                   .map(
                     (al) => `
-                  <button class="media-card" data-action="nav" data-route="album" data-id="${escapeHtml(al.id)}">
-                    ${renderArtwork({ src: al.artwork, alt: al.title, seed: al.artworkSeed, square: true, round: 'round-md' })}
-                    <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(al.title)}</div>
-                    <div class="list-row-sub truncate">${escapeHtml(al.artistName)}${al.year ? ` · ${al.year}` : ''}</div>
-                  </button>
+                  ${mediaCard({
+                    route: 'album',
+                    id: al.id,
+                    title: al.title,
+                    artwork: al.artwork,
+                    seed: al.artworkSeed,
+                    subtitle: `${escapeHtml(al.artistName)}${al.year ? ` · ${al.year}` : ''}`,
+                  })}
                 `
                   )
                   .join('')}
@@ -1307,11 +1600,14 @@ function renderSearchScreen(store) {
                 ${matchedPlaylists
                   .map(
                     (pl) => `
-                  <button class="media-card" data-action="nav" data-route="playlist" data-id="${escapeHtml(pl.id)}">
-                    ${renderArtwork({ src: pl.artwork, alt: pl.title, seed: pl.artworkSeed, square: true, round: 'round-md' })}
-                    <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(pl.title)}</div>
-                    <div class="list-row-sub truncate">${pl.trackCount || pl.trackIds.length} tracks · ${escapeHtml(pl.curator || 'Playlist')}</div>
-                  </button>
+                  ${mediaCard({
+                    route: 'playlist',
+                    id: pl.id,
+                    title: pl.title,
+                    artwork: pl.artwork,
+                    seed: pl.artworkSeed,
+                    subtitle: `${pl.trackCount || pl.trackIds.length} tracks · ${escapeHtml(pl.curator || 'Playlist')}`,
+                  })}
                 `
                   )
                   .join('')}
@@ -1336,17 +1632,19 @@ function renderLibraryScreen(store) {
 
   let items = [];
   if (filter === 'All' || filter === 'Playlists') {
-    store.playlists.forEach((pl) => {
-      items.push({
-        type: 'playlist',
-        id: pl.id,
-        title: pl.title,
-        subtitle: `Playlist · ${pl.trackIds.length} tracks · ${pl.curator}`,
-        artwork: pl.artwork,
-        seed: pl.artworkSeed,
-        round: 'round-md',
+    store.playlists
+      .filter((pl) => pl.isUserCreated === true)
+      .forEach((pl) => {
+        items.push({
+          type: 'playlist',
+          id: pl.id,
+          title: pl.title,
+          subtitle: `Playlist · ${pl.trackIds.length} tracks · ${pl.curator || 'You'}`,
+          artwork: pl.artwork,
+          seed: pl.artworkSeed,
+          round: 'round-md',
+        });
       });
-    });
   }
   if (filter === 'All' || filter === 'Albums') {
     store.albums.forEach((al) => {
@@ -1600,18 +1898,7 @@ function renderNowPlayingScreen(store) {
                   <div class="np-lyrics-stage-head">
                     <div class="np-lyrics-badge">
                       <span class="np-status-dot ${store.isPlaying ? 'live' : ''}"></span>
-                      <span>LYRICS</span>
-                    </div>
-                    <div class="np-lyrics-head-controls">
-                      <button class="np-lyrics-chip" data-action="lyric-offset" data-delta="-100" title="Shift lyrics -100ms">-100ms</button>
-                      <span class="mono" style="font-size:10px;opacity:0.7;">${store.ui.npLyricOffsetMs >= 0 ? '+' : ''}${store.ui.npLyricOffsetMs}ms</span>
-                      <button class="np-lyrics-chip" data-action="lyric-offset" data-delta="100" title="Shift lyrics +100ms">+100ms</button>
-                      <button class="np-lyrics-icon-btn" data-action="toggle-ui-bool" data-key="npLyricsFullView" aria-label="Full screen lyrics" title="Expand Full Screen">
-                        ${icon('open_in_full', { size: 15 })}
-                      </button>
-                      <button class="np-lyrics-chip np-lyrics-close" data-action="toggle-ui-bool" data-key="npShowLyrics" aria-label="Show album artwork" title="Show Album Cover">
-                        ${icon('image', { size: 14 })} Cover
-                      </button>
+                      <span>SYNCED LYRICS</span>
                     </div>
                   </div>
                   ${
@@ -1624,7 +1911,11 @@ function renderNowPlayingScreen(store) {
                   `
                       : `
                     <div class="np-lyrics-stage-scroll no-scrollbar" data-lyrics-scroller="stage" data-track-id="${escapeHtml(track.id)}">
-                      ${renderWordSyncedLyrics(track, activeLyricIdx, 'np-stage-lyric-line')}
+                      ${
+                        Array.isArray(track.lyrics) && track.lyrics.length > 0
+                          ? renderWordSyncedLyrics(track, activeLyricIdx, 'np-stage-lyric-line')
+                          : `<div class="empty-state" style="padding:48px 16px;"><p style="color:#71717a;font-size:15px;text-align:center;">Listening for synced vocals &amp; acoustic cadence…</p></div>`
+                      }
                     </div>
                   `
                   }
@@ -1844,8 +2135,8 @@ function renderNowPlayingDefaultSheet(store, track, tab, appendCandidates, relat
             if (!t) return '';
             const isCur = idx === store.queueIndex;
             return `
-              <div class="np-queue-row ${isCur ? 'is-current' : ''}">
-                <span class="np-grip" aria-hidden="true">${icon('drag_indicator', { size: 18 })}</span>
+              <div class="np-queue-row ${isCur ? 'is-current' : ''}" draggable="true" data-drag-type="queue" data-queue-idx="${idx}">
+                <span class="np-grip" aria-hidden="true" style="cursor:grab;touch-action:none;" data-drag-handle="queue" data-queue-idx="${idx}">${icon('drag_indicator', { size: 18 })}</span>
                 <button class="list-row-main" style="gap:11px;" data-action="play-queue-index" data-index="${idx}">
                   ${renderArtwork({
                     src: t.artwork,
@@ -1872,32 +2163,25 @@ function renderNowPlayingDefaultSheet(store, track, tab, appendCandidates, relat
     `
         : tab === 'lyrics'
           ? `
-      <div class="sheet-body" style="padding-top:4px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;gap:6px;">
-            <button class="btn btn-secondary btn-sm" data-action="lyric-offset" data-delta="-100">-100ms</button>
-            <span class="section-meta" style="min-width:68px;text-align:center;">${store.ui.npLyricOffsetMs >= 0 ? '+' : ''}${store.ui.npLyricOffsetMs}ms</span>
-            <button class="btn btn-secondary btn-sm" data-action="lyric-offset" data-delta="100">+100ms</button>
-          </div>
-          <button class="btn btn-secondary btn-sm" data-action="toggle-ui-bool" data-key="npLyricsFullView">
-            ${icon('fullscreen', { size: 16 })} Full View
-          </button>
-        </div>
-
+      <div class="sheet-body" style="padding-top:8px;">
         ${
           !store.settings.syncedLyrics
             ? `<div class="empty-state"><p>Synced Lyrics are turned off in Settings.</p><button class="btn btn-secondary btn-sm" data-action="nav" data-route="settings">Open Settings</button></div>`
             : `
           <div class="lyric-scroll">
-            ${track.lyrics
-              .map(
-                (line, idx) => `
-              <button class="lyric-line ${idx === activeLyricIdx ? 'active' : ''}" data-lyric-idx="${idx}" data-action="seek-to" data-time="${line.time}">
-                ${escapeHtml(line.text)}
-              </button>
-            `
-              )
-              .join('')}
+            ${
+              Array.isArray(track.lyrics) && track.lyrics.length > 0
+                ? track.lyrics
+                    .map(
+                      (line, idx) => `
+                    <button class="lyric-line ${idx === activeLyricIdx ? 'active' : ''}" data-lyric-idx="${idx}" data-action="seek-to" data-time="${line.time}">
+                      ${escapeHtml(line.text)}
+                    </button>
+                  `
+                    )
+                    .join('')
+                : '<div class="empty-state" style="padding:40px 16px;"><p style="color:#71717a;font-size:15px;text-align:center;">Listening for synced vocals &amp; acoustic cadence…</p></div>'
+            }
           </div>
         `
         }
@@ -2215,7 +2499,6 @@ function renderAlbumScreen(store, albumId) {
               </button>
               <span class="section-meta">${allTracks.length} tracks · ${formatDurationLong(totalSec)}</span>
             </div>
-            ${album.description ? `<p class="page-subtitle album-liner-copy">${escapeHtml(album.description)}</p>` : ''}
             <div class="detail-actions">
               <button class="btn btn-primary" data-action="${isPlayingAlbum ? 'toggle-play' : 'play-queue'}" data-queue="${escapeHtml(allTracks.map((t) => t.id).join(','))}">
                 ${icon(isPlayingAlbum ? 'pause' : 'play_arrow', { filled: true, size: 19 })} ${isPlayingAlbum ? 'Pause' : 'Play Album'}
@@ -2233,39 +2516,27 @@ function renderAlbumScreen(store, albumId) {
           </div>
         </div>
 
-        <div class="album-specs-strip" aria-label="Release technical specifications">
-          <div class="album-spec-item">
-            <span class="section-meta">MASTERING</span>
-            <strong class="mono">${hiResCount > 0 ? '24-Bit / 192 kHz' : '320 kbps Opus'}</strong>
-          </div>
-          <div class="album-spec-item">
-            <span class="section-meta">IMPRINT</span>
-            <strong>${escapeHtml(album.label || '—')}</strong>
-          </div>
-          <div class="album-spec-item">
-            <span class="section-meta">RELEASED</span>
-            <strong class="mono">${escapeHtml(album.releaseDate)}</strong>
-          </div>
-          <div class="album-spec-item">
-            <span class="section-meta">RUNTIME</span>
-            <strong class="mono">${formatDurationLong(totalSec)}</strong>
-          </div>
-        </div>
       </div>
     </section>
 
     <main class="container section-stack album-body-stack">
       <section class="block-stack">
         <div class="tracklist-toolbar">
-          <div class="search-box search-box-pill" style="flex:1;min-width:190px;max-width:340px;">
-            ${icon('search', { size: 17 })}
+          <div class="search-box" style="flex:1;min-width:190px;max-width:340px;">
+            ${icon('search', { size: 19 })}
             <input
               id="album-filter-input"
               type="text"
               placeholder="Filter tracks in album..."
               value="${escapeHtml(store.ui.albumFilter)}"
               data-input-ui="albumFilter"
+              autocomplete="off"
             />
+            ${
+              store.ui.albumFilter
+                ? `<button class="icon-btn icon-btn-sm" data-action="set-ui" data-key="albumFilter" data-value="" aria-label="Clear filter">${icon('close', { size: 18 })}</button>`
+                : ''
+            }
           </div>
           <button class="btn btn-secondary btn-sm" data-action="cycle-album-sort">
             ${icon('sort', { size: 16 })} Sort: ${store.ui.albumSort === 'track' ? 'Track Order' : store.ui.albumSort === 'alpha' ? 'A–Z' : 'Duration'}
@@ -2295,11 +2566,15 @@ function renderAlbumScreen(store, albumId) {
             ${moreByArtist
               .map(
                 (al, idx) => `
-              <button class="media-card stagger-item" style="--stagger-i:${idx};" data-action="nav" data-route="album" data-id="${escapeHtml(al.id)}">
-                ${renderArtwork({ src: al.artwork, alt: al.title, seed: al.artworkSeed, square: true, round: 'round-md' })}
-                <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(al.title)}</div>
-                <div class="list-row-sub truncate">${escapeHtml(al.releaseType)} · ${al.year}</div>
-              </button>
+              ${mediaCard({
+                route: 'album',
+                id: al.id,
+                title: al.title,
+                artwork: al.artwork,
+                seed: al.artworkSeed,
+                subtitle: `${escapeHtml(al.releaseType)} · ${al.year}`,
+                stagger: idx,
+              })}
             `
               )
               .join('')}
@@ -2321,11 +2596,15 @@ function renderAlbumScreen(store, albumId) {
             ${similarAlbums
               .map(
                 (al, idx) => `
-              <button class="media-card stagger-item" style="--stagger-i:${idx};" data-action="nav" data-route="album" data-id="${escapeHtml(al.id)}">
-                ${renderArtwork({ src: al.artwork, alt: al.title, seed: al.artworkSeed, square: true, round: 'round-md' })}
-                <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(al.title)}</div>
-                <div class="list-row-sub truncate">${escapeHtml(al.artistName)}${al.year ? ` · ${al.year}` : ''}</div>
-              </button>
+              ${mediaCard({
+                route: 'album',
+                id: al.id,
+                title: al.title,
+                artwork: al.artwork,
+                seed: al.artworkSeed,
+                subtitle: `${escapeHtml(al.artistName)}${al.year ? ` · ${al.year}` : ''}`,
+                stagger: idx,
+              })}
             `
               )
               .join('')}
@@ -2367,9 +2646,7 @@ function renderPlaylistScreen(store, playlistId) {
       <section class="detail-hero">
         ${renderArtwork({ src: pl.artwork, alt: pl.title, seed: pl.artworkSeed, round: 'round-lg', extraClass: 'detail-hero-art' })}
         <div class="detail-hero-meta">
-          <span class="section-meta">${pl.isPrivate ? 'PRIVATE PLAYLIST' : 'CURATED PLAYLIST'} · ${escapeHtml(String(pl.curator || 'OpenMusic').toUpperCase())}</span>
           <h1 class="page-title">${escapeHtml(pl.title)}</h1>
-          <p class="page-subtitle">${escapeHtml(pl.description)}</p>
           <div class="section-meta">${allTracks.length} tracks · ${allTracks.length ? formatDurationLong(totalSec) : '0 min'}</div>
           <div class="detail-actions">
             <button class="btn btn-primary" ${allTracks.length === 0 ? 'disabled' : ''} data-action="play-playlist" data-id="${escapeHtml(pl.id)}">
@@ -2394,15 +2671,21 @@ function renderPlaylistScreen(store, playlistId) {
       </section>
 
       <section class="block-stack">
-        <div class="search-box search-box-pill" style="max-width:340px;">
-          ${icon('search', { size: 17 })}
+        <div class="search-box" style="max-width:420px;">
+          ${icon('search', { size: 19 })}
           <input
             id="playlist-filter-input"
             type="text"
             placeholder="Find in playlist..."
             value="${escapeHtml(store.ui.playlistFilter)}"
             data-input-ui="playlistFilter"
+            autocomplete="off"
           />
+          ${
+            store.ui.playlistFilter
+              ? `<button class="icon-btn icon-btn-sm" data-action="set-ui" data-key="playlistFilter" data-value="" aria-label="Clear filter">${icon('close', { size: 18 })}</button>`
+              : ''
+          }
         </div>
 
         ${
@@ -2423,6 +2706,7 @@ function renderPlaylistScreen(store, playlistId) {
                   contextQueue: tracks.map((x) => x.id),
                   playlistId: pl.isUserCreated ? pl.id : null,
                   showAlbum: true,
+                  draggable: Boolean(pl.isUserCreated),
                 })
               )
               .join('')}
@@ -2489,16 +2773,16 @@ function renderArtistScreen(store, artistId) {
           </div>
           <div style="min-width:0;flex:1;">
             <div class="artist-verified-line">
-              ${artist.verified ? `${icon('verified', { filled: true, size: 16 })} <span>Verified Artist</span>` : '<span>Independent Studio Artist</span>'}
-              <span aria-hidden="true">·</span>
-              <span>${escapeHtml(artist.origin)}</span>
+              ${[
+                artist.verified
+                  ? `${icon('verified', { filled: true, size: 16 })} <span>Verified Artist</span>`
+                  : '<span>Independent Studio Artist</span>',
+                artist.origin ? `<span>${escapeHtml(artist.origin)}</span>` : '',
+              ]
+                .filter(Boolean)
+                .join('<span aria-hidden="true">·</span>')}
             </div>
             <h1 class="artist-hero-name">${escapeHtml(artist.name)}</h1>
-            <div class="artist-hero-meta mono">
-              ${artist.monthlyListeners ? `<span>${escapeHtml(artist.monthlyListeners)} monthly listeners</span>` : ''}
-              ${artist.monthlyListeners && artist.globalRank ? `<span aria-hidden="true">·</span>` : ''}
-              ${artist.globalRank ? `<span>${escapeHtml(artist.globalRank)}</span>` : ''}
-            </div>
           </div>
         </div>
       </div>
@@ -2522,20 +2806,6 @@ function renderArtistScreen(store, artistId) {
           </button>
         </div>
 
-        <div class="artist-stats-bar">
-          <div class="artist-stat-cell">
-            <span class="section-meta">LISTENERS</span>
-            <strong class="mono">${escapeHtml(artist.monthlyListeners)}</strong>
-          </div>
-          <div class="artist-stat-cell">
-            <span class="section-meta">IMPRINT</span>
-            <strong>${escapeHtml(artist.primaryLabel)}</strong>
-          </div>
-          <div class="artist-stat-cell">
-            <span class="section-meta">CATALOG</span>
-            <strong class="mono">${artistAlbums.length} releases · ${artistTracks.length} tracks</strong>
-          </div>
-        </div>
       </section>
 
       <!-- POPULAR TRACKS (EDGE-ATTACHED) -->
@@ -2609,11 +2879,15 @@ function renderArtistScreen(store, artistId) {
               ${filteredAlbums
                 .map(
                   (al, idx) => `
-                <button class="media-card stagger-item" style="--stagger-i:${idx};" data-action="nav" data-route="album" data-id="${escapeHtml(al.id)}">
-                  ${renderArtwork({ src: al.artwork, alt: al.title, seed: al.artworkSeed, square: true, round: 'round-md' })}
-                  <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(al.title)}</div>
-                  <div class="list-row-sub truncate">${escapeHtml(al.releaseType)} · ${al.year}</div>
-                </button>
+                ${mediaCard({
+                  route: 'album',
+                  id: al.id,
+                  title: al.title,
+                  artwork: al.artwork,
+                  seed: al.artworkSeed,
+                  subtitle: `${escapeHtml(al.releaseType)} · ${al.year}`,
+                  stagger: idx,
+                })}
               `
                 )
                 .join('')}
@@ -2632,11 +2906,15 @@ function renderArtistScreen(store, artistId) {
             ${featuringPlaylists
               .map(
                 (pl, idx) => `
-              <button class="media-card stagger-item" style="--stagger-i:${idx};" data-action="nav" data-route="playlist" data-id="${escapeHtml(pl.id)}">
-                ${renderArtwork({ src: pl.artwork, alt: pl.title, seed: pl.artworkSeed, square: true, round: 'round-md' })}
-                <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(pl.title)}</div>
-                <div class="list-row-sub truncate">${escapeHtml(pl.subtitle)}</div>
-              </button>
+              ${mediaCard({
+                route: 'playlist',
+                id: pl.id,
+                title: pl.title,
+                artwork: pl.artwork,
+                seed: pl.artworkSeed,
+                subtitle: `${escapeHtml(pl.subtitle)}`,
+                stagger: idx,
+              })}
             `
               )
               .join('')}
@@ -2652,9 +2930,7 @@ function renderArtistScreen(store, artistId) {
           ${renderArtwork({ src: artist.banner, alt: artist.name, seed: artist.artworkSeed, extraClass: 'fill-abs' })}
           <div class="media-scrim"></div>
           <div class="artist-about-caption">
-            <span class="mono" style="font-size:11px;opacity:0.82;">${escapeHtml(artist.origin.toUpperCase())}</span>
-            <strong style="font-size:18px;font-weight:800;">${escapeHtml(artist.monthlyListeners)}</strong>
-            <span style="font-size:12px;opacity:0.84;">Monthly Listeners</span>
+            <span class="mono" style="font-size:11px;opacity:0.82;">${escapeHtml(artist.origin ? artist.origin.toUpperCase() : 'STUDIO ARCHIVE')}</span>
           </div>
         </div>
         <div class="artist-about-copy">
@@ -2741,11 +3017,14 @@ function renderAlbumsBrowser(store) {
           ${albums
             .map(
               (al) => `
-            <button class="media-card" data-action="nav" data-route="album" data-id="${escapeHtml(al.id)}">
-              ${renderArtwork({ src: al.artwork, alt: al.title, seed: al.artworkSeed, square: true, round: 'round-md' })}
-              <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(al.title)}</div>
-              <div class="list-row-sub truncate">${escapeHtml(al.artistName)}${al.year ? ` · ${al.year}` : ''}</div>
-            </button>
+            ${mediaCard({
+              route: 'album',
+              id: al.id,
+              title: al.title,
+              artwork: al.artwork,
+              seed: al.artworkSeed,
+              subtitle: `${escapeHtml(al.artistName)}${al.year ? ` · ${al.year}` : ''}`,
+            })}
           `
             )
             .join('')}
@@ -2814,8 +3093,9 @@ function renderPlaylistsBrowser(store) {
   let playlists = [...store.playlists];
 
   if (tab === 'Yours') {
-    playlists = playlists.filter((p) => p.isUserCreated || p.curator === 'You' || p.curator === store.settings.displayName);
-    if (playlists.length === 0) playlists = store.playlists;
+    // Only playlists the user created — never fall back to the curated feed,
+    // which would pose as "Yours" (the mock-data complaint).
+    playlists = playlists.filter((p) => p.isUserCreated === true || p.curator === 'You' || p.curator === store.settings.displayName);
   } else if (tab === 'Featured') {
     playlists = playlists.filter((p) => p.featured);
   } else if (tab === 'Downloaded') {
@@ -2836,19 +3116,35 @@ function renderPlaylistsBrowser(store) {
           )
           .join('')}
       </div>
+      ${
+        playlists.length === 0
+          ? `
+        <div class="empty-state surface-card">
+          <div class="empty-icon">${icon('queue_music', { size: 24 })}</div>
+          <h3 class="section-title">${tab === 'Yours' ? 'No playlists yet' : 'Nothing here'}</h3>
+          <p class="page-subtitle">${tab === 'Yours' ? 'Create a playlist to keep your favorite tracks together.' : 'Try another tab.'}</p>
+          ${tab === 'Yours' ? '<button class="btn btn-primary btn-sm" data-action="open-create-playlist">New Playlist</button>' : ''}
+        </div>
+      `
+          : `
       <div class="card-grid-4">
         ${playlists
           .map(
             (pl) => `
-          <button class="media-card" data-action="nav" data-route="playlist" data-id="${escapeHtml(pl.id)}">
-            ${renderArtwork({ src: pl.artwork, alt: pl.title, seed: pl.artworkSeed, square: true, round: 'round-md' })}
-            <div class="list-row-title truncate" style="margin-top:10px;">${escapeHtml(pl.title)}</div>
-            <div class="list-row-sub truncate">${pl.trackIds.length} tracks · ${escapeHtml(pl.curator)}</div>
-          </button>
+          ${mediaCard({
+            route: 'playlist',
+            id: pl.id,
+            title: pl.title,
+            artwork: pl.artwork,
+            seed: pl.artworkSeed,
+            subtitle: `${pl.trackIds.length} tracks · ${escapeHtml(pl.curator)}`,
+          })}
         `
           )
           .join('')}
       </div>
+      `
+      }
     </main>
   `;
 }
@@ -2858,9 +3154,15 @@ function renderChartsScreen(store) {
   const activeTab = store.ui.chartsTab || 'Global Top 10';
   const chartTabs = ['Global Top 10', 'Hi-Res 24-Bit', 'Trending Now', 'Ambient & Trance'];
 
-  const baseRanked = store.tracks
-    .filter((t) => typeof t.chartRank === 'number')
-    .sort((a, b) => a.chartRank - b.chartRank);
+  // Once the chart playlist has loaded, its own order is the ranking; the
+  // five `chartRank` rows are only Home's countdown, not the full chart.
+  const chartIds = Array.isArray(store.chartTrackIds) ? store.chartTrackIds : [];
+  const fullChart = chartIds.map((id) => store.getTrackById(id)).filter(Boolean);
+  const baseRanked = fullChart.length
+    ? fullChart
+    : store.tracks
+        .filter((t) => typeof t.chartRank === 'number')
+        .sort((a, b) => a.chartRank - b.chartRank);
 
   let ranked = [...baseRanked];
   if (activeTab === 'Hi-Res 24-Bit') {
@@ -3059,15 +3361,21 @@ function renderLikedSongsScreen(store) {
         </div>
       </section>
 
-      <div class="search-box search-box-pill" style="max-width:360px;">
-        ${icon('search', { size: 17 })}
+      <div class="search-box" style="max-width:420px;">
+        ${icon('search', { size: 19 })}
         <input
           id="liked-filter-input"
           type="text"
           placeholder="Search inside Liked Songs..."
           value="${escapeHtml(store.ui.likedFilter)}"
           data-input-ui="likedFilter"
+          autocomplete="off"
         />
+        ${
+          store.ui.likedFilter
+            ? `<button class="icon-btn icon-btn-sm" data-action="set-ui" data-key="likedFilter" data-value="" aria-label="Clear filter">${icon('close', { size: 18 })}</button>`
+            : ''
+        }
       </div>
 
       ${
@@ -3075,7 +3383,7 @@ function renderLikedSongsScreen(store) {
           ? `<div class="empty-state surface-card"><div class="empty-icon">${icon('favorite_border', { size: 24 })}</div><p>${allLiked.length === 0 ? 'Tap the heart on any track to save it here.' : 'No liked tracks match your filter.'}</p></div>`
           : `
         <div class="list-card">
-          ${tracks.map((t, i) => renderTrackRow(store, t, { index: i, contextQueue: tracks.map((x) => x.id), showAlbum: true })).join('')}
+          ${tracks.map((t, i) => renderTrackRow(store, t, { index: i, contextQueue: tracks.map((x) => x.id), showAlbum: true, likedDrag: !q })).join('')}
         </div>
       `
       }
@@ -3086,7 +3394,6 @@ function renderLikedSongsScreen(store) {
 // 13. OFFLINE DOWNLOADS VAULT
 function renderDownloadsScreen(store) {
   const downloadedTracks = store.downloadedTrackIds.map((id) => store.getTrackById(id)).filter(Boolean);
-  const totalMb = downloadedTracks.reduce((s, t) => s + t.sizeMb, 0);
   const filter = store.ui.downloadsFilter;
   const sort = store.ui.downloadsSort;
 
@@ -3098,12 +3405,15 @@ function renderDownloadsScreen(store) {
   if (sort === 'alpha') filtered.sort((a, b) => a.title.localeCompare(b.title));
   if (sort === 'size') filtered.sort((a, b) => b.sizeMb - a.sizeMb);
 
-  const anyRunning = store.activeDownloads.some((d) => !d.paused);
+  const anyRunning = store.activeDownloads.some((d) => !d.paused && d.status !== 'failed');
   const top8Ids = store.tracks.slice(0, 8).map((t) => t.id);
 
   const rightHtml = `
     <button class="icon-btn" data-action="refresh-downloads" aria-label="Verify Offline Vault">
       ${icon('sync', { size: 20, cls: store.downloadsRefreshing ? 'spin' : '' })}
+    </button>
+    <button class="btn btn-secondary btn-sm" data-action="download-all-parallel" title="Download library tracks in parallel">
+      ${icon('bolt', { size: 16 })} Parallel Bulk Sync
     </button>
     <button class="btn btn-primary btn-sm" data-action="download-bulk" data-queue="${escapeHtml(top8Ids.join(','))}" data-label="Top 8">
       ${icon('download', { size: 16 })} Sync Top 8
@@ -3113,54 +3423,28 @@ function renderDownloadsScreen(store) {
   return `
     ${renderTopBar({ title: 'Offline Vault', rightHtml })}
     <main class="container container-narrow section-stack">
-      <section class="detail-hero">
-        ${renderVaultHeroArt(downloadedTracks, { iconName: 'download_done', code: 'V-02', label: 'Offline Vault' })}
-        <div class="detail-hero-meta">
-          <span class="section-meta">VAULT 02 · LOCAL LOSSLESS STORAGE</span>
-          <h1 class="page-title">Downloaded Songs</h1>
-          <p class="page-subtitle">Cached locally for uninterrupted offline playback at ${escapeHtml(store.settings.downloadQuality)}.</p>
-          <div class="section-meta">${downloadedTracks.length} masters · ${totalMb.toFixed(1)} MB stored</div>
-          <div class="detail-actions">
-            <button class="btn btn-primary" ${downloadedTracks.length === 0 ? 'disabled' : ''} data-action="play-queue" data-queue="${escapeHtml(downloadedTracks.map((t) => t.id).join(','))}">
-              ${icon('play_arrow', { filled: true, size: 19 })} Play All
-            </button>
-            <button class="btn btn-secondary" ${downloadedTracks.length === 0 ? 'disabled' : ''} data-action="shuffle-queue" data-queue="${escapeHtml(downloadedTracks.map((t) => t.id).join(','))}">
-              ${icon('shuffle', { size: 18 })} Shuffle
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <div class="stat-grid stat-grid-3">
-        <div class="stat-card">
-          <span class="section-meta">LOCAL STORAGE USED</span>
-          <span class="stat-value">${totalMb.toFixed(1)} MB</span>
-        </div>
-        <div class="stat-card">
-          <span class="section-meta">VERIFIED TRACKS</span>
-          <span class="stat-value">${downloadedTracks.length}</span>
-        </div>
-        <div class="stat-card">
-          <span class="section-meta">TARGET CODEC</span>
-          <span class="stat-value" style="font-size:15px;margin-top:8px;">${escapeHtml(store.settings.downloadQuality)}</span>
-        </div>
-      </div>
-
       ${
         store.activeDownloads.length > 0
           ? `
         <section class="block-stack">
           <div class="section-header">
             <h2 class="section-title">In Transit (${store.activeDownloads.length})</h2>
-            <button class="btn btn-secondary btn-sm" data-action="toggle-pause-all-downloads">
-              ${icon(anyRunning ? 'pause' : 'play_arrow', { size: 16 })} ${anyRunning ? 'Pause All' : 'Resume All'}
-            </button>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="btn btn-secondary btn-sm" data-action="toggle-pause-all-downloads">
+                ${icon(anyRunning ? 'pause' : 'play_arrow', { size: 16 })} ${anyRunning ? 'Pause All' : 'Resume All'}
+              </button>
+            </div>
           </div>
           <div class="list-card">
             ${store.activeDownloads
               .map((d) => {
                 const t = store.getTrackById(d.trackId);
                 if (!t) return '';
+                const recMb = d.received ? (d.received / (1024 * 1024)).toFixed(1) : '0.0';
+                const totMb = d.total ? (d.total / (1024 * 1024)).toFixed(1) : null;
+                const failed = d.status === 'failed';
+                const statusLabel = failed ? 'FAILED' : d.paused ? 'PAUSED' : d.progress >= 100 ? 'SAVING' : 'DOWNLOADING';
+                const statusColor = failed ? 'color:#f87171;' : '';
                 return `
                   <div class="list-row" style="flex-direction:column;align-items:stretch;gap:8px;">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
@@ -3168,19 +3452,35 @@ function renderDownloadsScreen(store) {
                         ${renderArtwork({ src: t.artwork, alt: t.title, seed: t.artworkSeed, size: '40px', round: 'round-sm' })}
                         <div style="min-width:0;">
                           <div class="list-row-title truncate">${escapeHtml(t.title)}</div>
-                          <div class="list-row-sub truncate">${escapeHtml(t.artistName)} · ${d.paused ? 'Paused' : `${d.progress}%`}</div>
+                          <div class="list-row-sub truncate" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                            <span class="tag-mono" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--surface-container-high);font-weight:700;${statusColor}">
+                              ${statusLabel}
+                            </span>
+                            <span>${escapeHtml(t.artistName)} · ${failed ? escapeHtml(d.error || 'Download failed') : d.paused ? 'Paused' : `${d.progress}%`}${totMb && !failed ? ` (${recMb}/${totMb} MB)` : ''}</span>
+                          </div>
                         </div>
                       </div>
                       <div class="list-row-right">
+                        ${
+                          failed
+                            ? `
+                        <button class="btn btn-secondary btn-sm" data-action="queue-download" data-track-id="${escapeHtml(t.id)}">Retry</button>
+                        <button class="icon-btn icon-btn-sm" data-action="dismiss-download" data-track-id="${escapeHtml(t.id)}" aria-label="Dismiss">
+                          ${icon('close', { size: 18 })}
+                        </button>
+                        `
+                            : `
                         <button class="icon-btn icon-btn-sm" data-action="toggle-download-pause" data-track-id="${escapeHtml(t.id)}" aria-label="${d.paused ? 'Resume' : 'Pause'}">
                           ${icon(d.paused ? 'play_arrow' : 'pause', { size: 18 })}
                         </button>
-                        <button class="icon-btn icon-btn-sm" data-action="remove-download" data-track-id="${escapeHtml(t.id)}" aria-label="Cancel download">
+                        <button class="icon-btn icon-btn-sm" data-action="cancel-download" data-track-id="${escapeHtml(t.id)}" aria-label="Cancel download">
                           ${icon('close', { size: 18 })}
                         </button>
+                        `
+                        }
                       </div>
                     </div>
-                    <div class="progress-bar"><div class="progress-fill" style="width:${d.progress}%;"></div></div>
+                    ${failed ? '' : `<div class="progress-bar"><div class="progress-fill" style="width:${Math.max(4, d.progress)}%;"></div></div>`}
                   </div>
                 `;
               })
@@ -3192,6 +3492,14 @@ function renderDownloadsScreen(store) {
       }
 
       <section class="block-stack">
+        <div class="downloads-status-summary" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--surface-container-low);border-radius:14px;border:1px solid var(--outline-variant, rgba(255,255,255,0.06));">
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${icon('cloud_done', { size: 19 })}
+            <span style="font-size:13px;font-weight:700;">${downloadedTracks.length} Songs Downloaded</span>
+          </div>
+          <span class="tag-mono" style="font-size:10.5px;padding:3px 8px;border-radius:6px;background:var(--surface-container-high);font-weight:600;">${downloadedTracks.reduce((acc, t) => acc + (t.sizeMb || 0), 0).toFixed(1)} MB · OFFLINE READY</span>
+        </div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
           <div class="chip-row">
             ${['All', 'Hi-Res', 'Standard']
@@ -3217,6 +3525,8 @@ function renderDownloadsScreen(store) {
                 renderTrackRow(store, t, {
                   contextQueue: filtered.map((x) => x.id),
                   showRemoveDownload: true,
+                  statusTag: 'DOWNLOADED',
+                  trailingMeta: 'Saved offline',
                   subtitleOverride: `${t.artistName} · ${t.bitrate} · ${t.sizeMb.toFixed(1)} MB`,
                 })
               )
@@ -3281,50 +3591,102 @@ function renderHistoryScreen(store) {
 
 // 15. ANALYTICS / TELEMETRY BAY
 function renderAnalyticsScreen(store) {
-  const period = store.ui.analyticsPeriod;
-  const multiplier = period === 'Week' ? 1 : period === 'Month' ? 4.2 : 18.5;
-  const baseSec = store.history.reduce((s, h) => s + h.listenedSec, 0) || 1800;
-  const exposureHours = ((baseSec * multiplier) / 3600).toFixed(1);
-  const totalPlays = Math.round(store.history.length * multiplier);
-  const uniqueTracks = new Set(store.history.map((h) => h.trackId)).size;
+  const period = store.ui.analyticsPeriod || 'Week';
+  const now = Date.now();
+  const DAY = 86400000;
+  const windowMs = period === 'Week' ? 7 * DAY : period === 'Month' ? 30 * DAY : 365 * DAY;
+  const cutoff = now - windowMs;
 
+  // Everything below is computed from local listening telemetry — no
+  // multipliers, no seeded bars, no hardcoded ratios.
+  const entries = store.history.filter((h) => h.playedAt >= cutoff);
+  const playCount = new Map(); // trackId -> { count, sec }
+  const artistSec = new Map(); // artistId -> listened seconds
+  const genreSec = new Map(); // genre -> listened seconds
+  const hourSec = new Array(24).fill(0);
+  const dowSec = new Array(7).fill(0); // index = getDay(), 0 = Sunday
+  const monthSec = new Array(12).fill(0); // calendar-month buckets, oldest → newest
+  const weekSec = new Array(4).fill(0); // 7-day buckets, oldest → newest
+  let exposureSec = 0;
+  let hiResSec = 0;
+
+  for (const h of entries) {
+    const sec = Number(h.listenedSec) || 0;
+    exposureSec += sec;
+    const d = new Date(h.playedAt);
+    hourSec[d.getHours()] += sec;
+    dowSec[d.getDay()] += sec;
+    const daysAgo = Math.floor((now - h.playedAt) / DAY);
+    weekSec[Math.min(3, Math.floor(daysAgo / 7))] += sec;
+    const monthIdx = Math.min(11, Math.max(0, 11 - ((now.getFullYear() * 12 + now.getMonth()) - (d.getFullYear() * 12 + d.getMonth()))));
+    monthSec[monthIdx] += sec;
+
+    const t = store.getTrackById(h.trackId);
+    const pc = playCount.get(h.trackId) || { count: 0, sec: 0 };
+    pc.count += 1;
+    pc.sec += sec;
+    playCount.set(h.trackId, pc);
+    if (t) {
+      if (t.hiRes) hiResSec += sec;
+      const g = (t.genre || '').trim() || 'Music';
+      genreSec.set(g, (genreSec.get(g) || 0) + sec);
+      artistSec.set(t.artistId, (artistSec.get(t.artistId) || 0) + sec);
+    }
+  }
+
+  const totalPlays = entries.length;
+  const uniqueTracks = playCount.size;
+  const exposureHours = (exposureSec / 3600).toFixed(1);
+  const hiResPct = exposureSec > 0 ? Math.round((hiResSec / exposureSec) * 100) : 0;
+
+  const toMinutes = (sec) => Math.round(sec / 60);
+  const barsFrom = (secs, labels) => {
+    const max = Math.max(...secs, 1);
+    return secs.map((sec, i) => ({
+      label: labels[i],
+      val: toMinutes(sec),
+      pct: Math.max(sec > 0 ? 6 : 2, Math.round((sec / max) * 100)),
+      peak: sec === max && max > 0,
+    }));
+  };
+
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthLabels = monthSec.map((_, i) => {
+    const total = now.getFullYear() * 12 + now.getMonth() - (11 - i);
+    return MON[((total % 12) + 12) % 12];
+  });
   const rhythmBars =
     period === 'Week'
-      ? [
-          { label: 'Mon', val: 44 },
-          { label: 'Tue', val: 62 },
-          { label: 'Wed', val: 51 },
-          { label: 'Thu', val: 78 },
-          { label: 'Fri', val: 94, peak: true },
-          { label: 'Sat', val: 85 },
-          { label: 'Sun', val: 68 },
-        ]
+      ? barsFrom([1, 2, 3, 4, 5, 6, 0].map((dow) => dowSec[dow]), ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'])
       : period === 'Month'
-        ? [
-            { label: 'W1', val: 58 },
-            { label: 'W2', val: 74 },
-            { label: 'W3', val: 92, peak: true },
-            { label: 'W4', val: 81 },
-          ]
-        : [
-            { label: 'Q1', val: 64 },
-            { label: 'Q2', val: 76 },
-            { label: 'Q3', val: 88 },
-            { label: 'Q4', val: 96, peak: true },
-          ];
+        ? barsFrom([...weekSec].reverse(), ['W1', 'W2', 'W3', 'W4'])
+        : barsFrom(monthSec, monthLabels);
 
-  // Top artists residency
-  const artistScores = new Map();
-  store.history.forEach((h) => {
-    const t = store.getTrackById(h.trackId);
-    if (!t) return;
-    artistScores.set(t.artistId, (artistScores.get(t.artistId) || 0) + h.listenedSec);
-  });
-  const topArtists = store.artists
-    .map((a) => ({ artist: a, sec: Math.round((artistScores.get(a.id) || 240) * multiplier) }))
+  const topArtists = [...artistSec.entries()]
+    .map(([id, sec]) => ({ artist: store.getArtistById(id), sec }))
+    .filter((x) => x.artist)
     .sort((a, b) => b.sec - a.sec)
     .slice(0, 4);
   const maxArtistSec = topArtists[0]?.sec || 1;
+
+  const topGenre = [...genreSec.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  // Busiest contiguous 3-hour window, computed from the hour histogram.
+  let bestStart = -1;
+  let bestSec = 0;
+  for (let s = 0; s < 24; s++) {
+    const win = hourSec[s] + hourSec[(s + 1) % 24] + hourSec[(s + 2) % 24];
+    if (win > bestSec) {
+      bestSec = win;
+      bestStart = s;
+    }
+  }
+  const pad = (n) => String(n).padStart(2, '0');
+  const peakWindow = bestStart >= 0 && bestSec > 0 ? `${pad(bestStart)}:00–${pad((bestStart + 3) % 24)}:00` : '';
+  const topMixIds = [...playCount.entries()]
+    .sort((a, b) => b[1].count - a[1].count || b[1].sec - a[1].sec)
+    .slice(0, 6)
+    .map(([id]) => id)
+    .filter((id) => store.getTrackById(id));
 
   const rightHtml = `
     <button class="btn btn-secondary btn-sm" data-action="export-telemetry">
@@ -3366,25 +3728,29 @@ function renderAnalyticsScreen(store) {
         </div>
         <div class="stat-card">
           <span class="section-meta">HI-RES RATIO</span>
-          <span class="stat-value">84%</span>
+          <span class="stat-value">${exposureSec > 0 ? `${hiResPct}%` : '—'}</span>
         </div>
       </div>
 
       ${
-        period === 'Year'
+        period === 'Year' && entries.length > 0
           ? `
         <section class="surface-card" style="padding:20px;background:var(--primary);color:var(--on-primary);">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
             <div>
-              <span class="section-meta" style="color:inherit;opacity:0.75;">YEAR IN REVIEW · ${store.ui.analyticsYear}</span>
-              <h2 style="font-size:22px;font-weight:800;margin-top:4px;">Your Signature Genre: Progressive Trance</h2>
+              <span class="section-meta" style="color:inherit;opacity:0.75;">YEAR IN REVIEW · ${new Date().getFullYear()}</span>
+              <h2 style="font-size:22px;font-weight:800;margin-top:4px;">${topGenre ? `Your Signature Genre: ${escapeHtml(topGenre)}` : 'Your Signature Genre'}</h2>
               <p style="font-size:13.5px;opacity:0.85;margin-top:4px;">
-                Peak listening window between 22:00 and 01:30 · Top artist ${escapeHtml(topArtists[0]?.artist.name || 'Solaris & Kaelen')}.
+                ${peakWindow ? `Peak listening window ${peakWindow} · ` : ''}Top artist ${escapeHtml(topArtists[0]?.artist.name || '—')}.
               </p>
             </div>
-            <button class="btn btn-secondary btn-sm" data-action="play-queue" data-queue="${escapeHtml(store.tracks.slice(0, 6).map((t) => t.id).join(','))}">
+            ${
+              topMixIds.length > 0
+                ? `<button class="btn btn-secondary btn-sm" data-action="play-queue" data-queue="${escapeHtml(topMixIds.join(','))}">
               ${icon('play_arrow', { filled: true, size: 17 })} Replay Top Mix
-            </button>
+            </button>`
+                : ''
+            }
           </div>
         </section>
       `
@@ -3396,6 +3762,10 @@ function renderAnalyticsScreen(store) {
           <h2 class="section-title">Daily Rhythm</h2>
           <span class="section-meta">${period.toUpperCase()} DISTRIBUTION</span>
         </div>
+        ${
+          entries.length === 0
+            ? `<div class="empty-state" style="padding:32px 16px;"><p class="page-subtitle">No listening recorded in this period yet.</p></div>`
+            : `
         <div class="bar-chart">
           ${rhythmBars
             .map(
@@ -3403,14 +3773,15 @@ function renderAnalyticsScreen(store) {
             <div class="bar-col">
               <span class="section-meta">${b.val}m</span>
               <div class="bar-track">
-                <div class="bar-fill ${b.peak ? 'peak' : ''}" style="height:${b.val}%;"></div>
+                <div class="bar-fill ${b.peak ? 'peak' : ''}" style="height:${b.pct}%;"></div>
               </div>
               <span class="section-meta">${b.label}</span>
             </div>
           `
             )
             .join('')}
-        </div>
+        </div>`
+        }
       </section>
 
       <section class="block-stack">
@@ -3418,6 +3789,10 @@ function renderAnalyticsScreen(store) {
           <h2 class="section-title">Top Artists Residency</h2>
           <span class="section-meta">BY LISTENING TIME</span>
         </div>
+        ${
+          topArtists.length === 0
+            ? `<div class="empty-state surface-card"><p class="page-subtitle">Play some music to build your artist residency.</p></div>`
+            : `
         <div class="list-card">
           ${topArtists
             .map(
@@ -3428,7 +3803,7 @@ function renderAnalyticsScreen(store) {
                   ${renderArtwork({ src: artist.avatar, alt: artist.name, seed: artist.artworkSeed, size: '42px', round: 'round-full' })}
                   <div>
                     <div class="list-row-title">${escapeHtml(artist.name)}</div>
-                    <div class="list-row-sub">${escapeHtml(artist.origin)}</div>
+                    <div class="list-row-sub">${escapeHtml(artist.origin || '')}</div>
                   </div>
                 </button>
                 <span class="section-meta">${formatDurationLong(sec)}</span>
@@ -3438,7 +3813,8 @@ function renderAnalyticsScreen(store) {
           `
             )
             .join('')}
-        </div>
+        </div>`
+        }
       </section>
     </main>
   `;
@@ -3515,7 +3891,7 @@ function renderSettingsScreen(store) {
   const tab = store.ui.settingsTab || 'All';
   const q = (store.ui.settingsSearch || '').trim().toLowerCase();
 
-  const allLangs = ['English', 'Swedish', 'German', 'Japanese', 'Instrumental'];
+  const allLangs = ['English', 'Telugu', 'Hindi', 'Tamil', 'Malayalam', 'Bhojpuri'];
   const countries = ['Sweden (SE)', 'Germany (DE)', 'United States (US)', 'United Kingdom (UK)', 'Japan (JP)', 'Iceland (IS)'];
   const qualityOptions = [
     { value: '128 kbps Opus', label: '128k Opus', tag: 'COMPACT', note: '~3.2 MB / track' },
@@ -4157,6 +4533,108 @@ export function renderScreen(store) {
  * ========================================================================== */
 
 export function renderModal(store) {
+  // 0. Share Drawer Sheet
+  if (store && store.ui && store.ui.shareDrawerOpen && store.ui.shareItem) {
+    const { label, url, text } = store.ui.shareItem;
+    const encodedText = encodeURIComponent(text);
+    const encodedUrl = encodeURIComponent(url);
+    const encodedTitle = encodeURIComponent(label);
+
+    const shareOptions = [
+      {
+        id: 'whatsapp',
+        name: 'WhatsApp',
+        iconName: 'chat',
+        desc: 'Share to WhatsApp chat or status',
+        href: `https://api.whatsapp.com/send?text=${encodedText}`,
+      },
+      {
+        id: 'telegram',
+        name: 'Telegram',
+        iconName: 'send',
+        desc: 'Share to Telegram chat or channel',
+        href: `https://t.me/share/url?url=${encodedUrl}&text=${encodedTitle}`,
+      },
+      {
+        id: 'twitter',
+        name: 'X (Twitter)',
+        iconName: 'tag',
+        desc: 'Post update to X / Twitter',
+        href: `https://twitter.com/intent/tweet?text=${encodedTitle}&url=${encodedUrl}`,
+      },
+      {
+        id: 'email',
+        name: 'Email',
+        iconName: 'mail',
+        desc: 'Send via Email app',
+        href: `mailto:?subject=${encodedTitle}&body=${encodedText}`,
+      },
+      {
+        id: 'sms',
+        name: 'Messages / SMS',
+        iconName: 'sms',
+        desc: 'Send text message',
+        href: `sms:?body=${encodedText}`,
+      },
+      {
+        id: 'system',
+        name: 'More Apps (System Share)',
+        iconName: 'share',
+        desc: 'Open Android / system application chooser',
+        action: 'system-share',
+      },
+      {
+        id: 'copy',
+        name: 'Copy Link',
+        iconName: 'content_copy',
+        desc: 'Copy share link to clipboard',
+        action: 'copy-share-link',
+      },
+    ];
+
+    return `
+      <div class="modal-backdrop" data-action="backdrop-close">
+        <div class="modal-sheet share-drawer" role="dialog" aria-label="Share options">
+          <div class="sheet-handle"></div>
+          <div class="section-header" style="padding-bottom:10px;">
+            <div style="min-width:0;flex:1;">
+              <span class="section-meta">SHARE WITH APPLICATION</span>
+              <h2 class="section-title truncate" style="margin-top:2px;">${escapeHtml(label)}</h2>
+            </div>
+            <button class="icon-btn icon-btn-sm" data-action="close-modals" aria-label="Close">${icon('close', { size: 19 })}</button>
+          </div>
+          <div class="share-options-list">
+            ${shareOptions
+              .map(
+                (opt) => `
+              ${
+                opt.href
+                  ? `<a class="share-app-row" href="${opt.href}" target="_blank" rel="noopener noreferrer" data-action="close-modals">
+                      <span class="share-app-icon">${icon(opt.iconName, { size: 20 })}</span>
+                      <div class="share-app-info">
+                        <div class="share-app-name">${escapeHtml(opt.name)}</div>
+                        <div class="share-app-desc">${escapeHtml(opt.desc)}</div>
+                      </div>
+                      ${icon('chevron_right', { size: 18, cls: 'share-app-chevron' })}
+                    </a>`
+                  : `<button class="share-app-row" data-action="${opt.action}">
+                      <span class="share-app-icon">${icon(opt.iconName, { size: 20 })}</span>
+                      <div class="share-app-info">
+                        <div class="share-app-name">${escapeHtml(opt.name)}</div>
+                        <div class="share-app-desc">${escapeHtml(opt.desc)}</div>
+                      </div>
+                      ${icon('chevron_right', { size: 18, cls: 'share-app-chevron' })}
+                    </button>`
+              }
+            `
+              )
+              .join('')}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   // 1. Fullscreen Lyrics Overlay
   if (store.ui.npLyricsFullView) {
     const track = store.getCurrentTrack();
@@ -4173,9 +4651,6 @@ export function renderModal(store) {
               </div>
             </div>
             <div class="topbar-right">
-              <button class="btn btn-secondary btn-sm" data-action="lyric-offset" data-delta="-100">-100ms</button>
-              <span class="section-meta">${store.ui.npLyricOffsetMs >= 0 ? '+' : ''}${store.ui.npLyricOffsetMs}ms</span>
-              <button class="btn btn-secondary btn-sm" data-action="lyric-offset" data-delta="100">+100ms</button>
               <button class="icon-btn icon-btn-bordered" data-action="close-modals" aria-label="Close full screen lyrics">
                 ${icon('close', { size: 20 })}
               </button>

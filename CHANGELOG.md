@@ -6,6 +6,34 @@ Platforms shipped: **Windows** (MSI + NSIS), **Linux** (deb + AppImage), **Andro
 
 ## [Unreleased]
 
+### Added & Fixed (Studio mobile UX — search, downloads, analytics, dark theme, nav)
+- **Search UX**: live completion suggestions while typing (Enter commits), recent searches recorded for played songs *and* entity-result taps, stale suggestions cleared with the query.
+- **Downloads fixed on Android**: `download_song` was invoked with both `onProgress` and `on_progress` for one Channel parameter — now sends a single `onProgress` channel (verified end-to-end on emulator: "Vaulted" + file in vault). Failures stay visible as `FAILED` rows with the backend error, Retry and Dismiss; pause/resume/cancel now hit `pause_download`/`cancel_download` for real; bulk parallel sync unchanged.
+- **Library mock data**: Playlists "Yours" tab no longer falls back to curated feed cards; shows an empty state instead.
+- **Drag reorder**: added to Liked Songs (id-based `reorderLiked`), joining queue and user-playlist rows.
+- **Analytics on real telemetry**: exposure, plays, unique tracks, HI-RES ratio, rhythm chart, top artists, signature genre and peak window all computed from `store.history` — no more multipliers or hardcoded bars.
+- **Dark theme**: Home and Now Playing were hard-forced to `#FFFFFF`; both are now scoped to light mode only, so dark mode renders the token palette (verified `rgb(14,15,17)` on device).
+- **Toast & nav**: toasts moved to the bottom above the chrome; top bar 56→48px, bottom tabs 64→52px.
+- **Music Languages** settings chips now offer the six catalog languages (English, Telugu, Hindi, Tamil, Malayalam, Bhojpuri).
+
+### Added & Fixed (Branded icon, lockscreen/homescreen widget controls & seekbar, share drawer, downloads status)
+- **Branded launcher & notification icon**: `sync-android-icons.mjs` runs on every build, syncing branded OpenMusic mipmaps into the Android resource root instead of falling back to default Tauri glyphs. Notification uses `R.drawable.tm_notif_icon` (monochrome vector) and fallback large icon uses `@mipmap/ic_launcher`.
+- **Lockscreen & notification seekbar**: `MediaMetadata` now sets `METADATA_KEY_DURATION` so Android's lockscreen scrubber and system notification progress bars know the track duration and position. Seeking via lockscreen controls calls `deliver("SEEK_TO")` which dispatches instantly to the player.
+- **Homescreen widget controls & layout**: Connected Studio to the native `TMNative` bridge via `window.__tmRemote` (`play`, `pause`, `toggle`, `next`, `prev`, `seekTo`, `stop`). All three transport buttons and tap-to-open now work reliably with responsive state updates. The progress bar renders horizontally across the widget bottom with live ticker progress.
+- **Clean album, playlist, and artist headers**: Removed clutter description paragraphs, mock liner notes, and stats metadata (`LISTENERS`, `CATALOG`, `monthlyListeners`) from album, playlist, and artist screens.
+- **Share drawer modal**: Tapping Share on any screen (album, playlist, artist, track menu) opens a dedicated bottom drawer with direct sharing options (WhatsApp, Telegram, X / Twitter, Email, SMS, System Share Sheet chooser, and Copy Link).
+- **Downloads status**: Downloads screen now displays a verified download status summary bar (`X Songs Downloaded · Y MB · OFFLINE READY`) and tags each song with its download status (`DOWNLOADED`, `Saved offline`).
+
+### Fixed (Android studio shell — library, Downloads, filter search boxes)
+- Library no longer lists the design-mock albums (`Monolith Sessions`, …): hydration drops non-derived albums that are not in the feed, keeping only feed cards and albums derived from a real track row.
+- Downloads drops the decorative hero (`VAULT 02 · LOCAL LOSSLESS STORAGE`, "Downloaded Songs", the cached-locally sentence, `0 masters · 0.0 MB stored`) and the three live-total stat cards, which always read zero on a fresh install. The top bar, filters and track list remain.
+- The Liked Songs, playlist and album filter fields now look and behave like the Search screen: the same `search-box` chrome with a clear button, and the legacy shell no longer paints its own border/background into those inputs (that produced the divider and square left edge).
+
+### Fixed (Android studio shell — playlist, album and chart track lists)
+- Playlist and album detail no longer open on "No matching tracks": both in-page filter inputs defaulted to the literal `"all"`, which the screens used as a title/artist substring filter and dropped almost every real song. They now start empty, so a freshly opened list shows its full track set.
+- Charts now lists the whole chart (50 tracks for the current global chart) instead of Home's five countdown rows: the shell remembers `home_feed.chart_id`, loads that playlist through `playlist_tracks` once, and ranks by its order. A failed load still falls back to the five `chartRank` rows.
+- The Charts tab state defaults to a real tab (`Global Top 10`) rather than the unused `global` key.
+
 ### Fixed (Android studio shell — search bay, mini-player seek bar, artist artwork)
 - Artist browser: one card per artist — a track id and a catalog id for the same person used to produce two tiles; cards now merge by folded name, keeping the richer one (real portrait, catalog token), repointing tracks/follows, and resolving the dropped id through an alias.
 - The studio search field no longer draws a second rectangle inside its pill: the legacy shell rule that forces a border on every text input now exempts `#search-main-input` and `#library-search-input`, leaving the pill's own border and focus ring as the only chrome (light and dark).

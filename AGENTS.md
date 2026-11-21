@@ -3046,3 +3046,115 @@ a defect.
 accepts TCP then closes the websocket ("other side closed"). Always
 `pidof` → confirm the socket → forward → `/json`, and re-do it after every app
 restart because the pid changes (9369 this run).
+
+## 2026-11-21b — Release APK that actually installs: signing key restored + `--target` semantics (uncommitted)
+
+User: *"build universal apk … it says app not installed as package appears to
+be invalid"*, then *"use the old signing key"*. Prompt restated (rule 5): the
+ask is *"produce a signed universal release APK, signed with the same
+certificate as the published v0.5.1 build so it installs and updates in
+place"* — not merely "build an APK". An unsigned APK is not installable, and a
+freshly minted key would install once and then block every future update.
+
+| Item | Evidence |
+|---|---|
+| **Root cause** | `gen/android/app/build.gradle.kts` had **no** `signingConfig` on the release buildType → Gradle emitted `app-universal-release-unsigned.apk`. `gen/` is gitignored and re-created by `tauri android init`, so a hand edit is not durable |
+| **Key** | user's `Document from Røhíth` (PKCS12, alias `trance-music`) verified SHA-256 `8ad4da6f…cadfb` = **exactly** the published v0.5.1 APK signer → in-place updates preserved |
+| Canonical key home | `%LOCALAPPDATA%\trance-music-signing\{release.keystore,keystore.properties}` — outside the repo so `tauri android init` cannot delete it. The throwaway key minted earlier in `gen/android/` was deleted |
+| New `app/scripts/android-signing.mjs` | resolves the key (gen props → LOCALAPPDATA home → mint+backup), patches gradle idempotently between `// openmusic-signing:start` / `:end`, skips if a **foreign** `signingConfigs` block exists (CI's ephemeral key), collapses the 48 duplicated empty `jniLibs { }` blocks, prints the cert fingerprint |
+| Wired into `build.sh` | `ensure_android_signing` runs in `cmd_android`, `cmd_android_universal`, `cmd_android_debug` — re-applied every build, exactly like the permission injections |
+| Proof | `./gradlew :app:signingReport` → `Variant: universalRelease` / `Config: release` / `Alias: trance-music` / `SHA-256: 8A:D4:DA:6F:…:AD:FB` |
+| Artifact | `app-universal-release.apk` **31,498,639 B (30.04 MiB)**, three ABIs, signed v2, `CN=TRANCE MUSIC, OU=Dev, O=OpenMusic` |
+| Install | `adb uninstall` (the device held a debug-signed build) → `adb install` **Success** — the user's blocker is resolved |
+| Device probe | **10/10**: 1747-node boot, studio shell visible, `TMNative` bridge survives R8, search 20 rows, trusted tap on `[data-action="play-track"]`, relay `/stream`, analyser `max=221 / avg=39.2 / ctx=running`, `stepTimer=false` (no synth fallback), playhead 1.1 → 3.7 s of 204 s |
+
+**`--target` has two effects (measured, docs/android-universal-release.md):**
+it sets the packaged ABI filter **and** the CLI compiles **only the first
+target** in the list; the remaining ABIs are packaged from whatever
+`jniLibs/<abi>/libapp_lib.so` symlinks point at. The first universal build here
+therefore shipped a **debug** x86_64 `.so` (36.3 MB / 14.2 MB deflated vs
+20.1 MB / 10.4 MB release). New `ensure_android_release_libs` in `build.sh`
+repairs any symlink that does not resolve to
+`target/<triple>/release/libapp_lib.so` before packaging (no cargo work on a
+healthy tree).
+
+**Second trap: `npm run tauri -- android build` deletes the mobile bundle.**
+`scripts/tauri.mjs` runs `build-mobile.mjs --clean` for every command except
+the nested `android android-studio-script`, so an ad-hoc npm invocation prints
+*"Removed generated mobile bundle; source entry will be used"* and compiles the
+**source** entry. `build.sh` calls the CLI directly, which is correct. Frontend
+assets are embedded in `libapp_lib.so` by `tauri-codegen`, so `unzip -l` cannot
+detect this — the log line is the only tell.
+
+**Probe bug worth remembering:** `[data-track-id]` matches the row's like and
+more buttons too, so `querySelector('[data-track-id="…"]')` can tap the wrong
+control and the tap silently does nothing. Always
+`[data-action="play-track"][data-track-id="…"]` and assert
+`elementFromPoint(...).closest('[data-action]')` before tapping. The emulator
+also pauses playback when the screen sleeps — `adb shell svc power stayon true`
+before a playback probe.
+
+Status: ✅ signed + installed + 10/10 on-device ✅ docs (android-universal-release
+§ signing + § `--target`) ⏳ **uncommitted, unpushed** (rule 1).
+
+## 2026-11-21f — Studio playlist/album/chart lists fixed (device-verified, uncommitted)
+
+User: *"songs are not listing properly in playlists, albums, charts. fix that
+make it properly list and stream."* Measured on `Pixel6_API36` over CDP
+before changing anything.
+
+| Defect | Evidence / cause |
+|---|---|
+| Playlist detail painted 2 rows from 56 loaded tracks | `ui.playlistFilter` defaulted to `"all"`; the screen uses it as a title/artist substring filter → "No matching tracks" |
+| Album detail same | `ui.albumFilter: 'all'`, identical filter code (`screens.js:2199`) |
+| Charts listed 5 rows, chart declares 50 | hydration keeps only `home_feed.top_tracks` (five countdown rows); nothing fetched the chart playlist |
+| Charts tab state never matched a chip | `ui.chartsTab` defaulted to `'global'`, tabs are `Global Top 10…` |
+
+Fixes: both text filters default to `''`; `store.chartId` is kept from
+`home_feed`, `ensureChartTracks()` loads the chart through `playlist_tracks`
+and is called by `navigate('charts')`; `renderChartsScreen` ranks
+`store.chartTrackIds` when present and still falls back to the five
+`chartRank` rows; `chartsTab` defaults to `Global Top 10`. Docs +
+CHANGELOG updated first.
+
+**Verified on the rebuilt debug APK** (22,594,233 B, clean install after a
+signature clash): charts `chartTrackIds=50`, "50 RANKED TRACKS", Play Chart
+→ 50-track queue `readyState 4` t 8.9 s; playlist 56 ids, filter `""`, 56
+rows painted, Play → relay stream `readyState 4` t 6.6 s; album 5 ids, 5
+rows, first row → `readyState 4` t 7.3 s. 0 exceptions. `node --check` +
+eslint clean on both files; `tests/studio-stability` + `studio-persist`
+**22/22**. Nothing committed or pushed (rule 1).
+
+## 2026-11-21g — Library mock removal, Downloads header, filter boxes (uncommitted)
+
+User: remove mock data from Library, remove the hero/stat cards on Downloads
+(images), and make the filter search box match the Search screen (image).
+
+| Ask | Fix |
+|---|---|
+| Library mock albums | hydrate kept every non-feed album, so the demo `ALBUMS` (`Monolith Sessions`, …) survived hydration and listed in Library. Now keeps only `derived` albums (built from a real track row) + feed cards |
+| Downloads hero/stats | removed the `detail-hero` (`VAULT 02 … / Downloaded Songs / … / 0 masters · 0.0 MB stored`) and the 3 `stat-grid` cards; filters/list stay |
+| Filter box chrome | `shell.css` paints every `input[type=text]` with an inner border/background; exemption list only had the Search/Library ids, so Liked/Playlist/Album filters drew a divider + square edge. Added the 3 ids to both theme blocks; the 3 boxes now use the Search screen's `search-box` markup with a clear button |
+
+**On-device (rebuilt debug APK, `adb install -r`):** albums 22 with 0 demo
+titles and no `Monolith Sessions` in DOM; Downloads has no `VAULT 02` /
+`Downloaded Songs` / stat-card text, only chips + empty state; computed
+liked/playlist/album filter input `border 0px`, `background transparent`,
+box radius 16px, no `search-box-pill`, clear button present when non-empty.
+0 exceptions; `node --check` + eslint clean; studio tests **22/22**. Nothing
+committed or pushed (rule 1).
+
+## 2026-11-21h — Proper icons, lockscreen/widget controls & seekbar, share drawer, downloads status (uncommitted)
+
+User: *"use the proper icon . also make sure the widget in lockscreen and homescreen work properly with all button with proper layout . with proper seekbar(progress bar ) at correct point .check images and remove that from album ,playlist and artist screen.when clicked on share it should open a drawer to select option to sharewith through which  application.in downloads add download status of the songs."*
+
+| Item | Root cause & Fix |
+|---|---|
+| **Proper App & Notification Icon** | (1) `sync-android-icons.mjs` was never run during build, leaving generic Tauri placeholder icons; wired `ensure_android_icons` into `build.sh` so branded OpenMusic icons sync to `res/mipmap-*`. (2) `inject_android_mediahub` in `build.sh` now creates `res/drawable` and copies `tm_notif_icon.xml` + `tm_widget_bg.xml`. (3) `buildNotif` falls back to `@mipmap/ic_launcher` when album art is absent |
+| **Lockscreen MediaSession Seekbar** | `publishSession()` in `MediaHub.kt` never set `MediaMetadata.METADATA_KEY_DURATION`, causing the lockscreen and notification scrubber to have no duration scale (frozen/missing seekbar). Fixed: sets `mb.putLong(METADATA_KEY_DURATION, durMs)`; `onSeekTo` immediately publishes position and invokes `window.__tmRemote.seekTo` |
+| **Homescreen Widget Layout & Controls** | `tm_widget.xml` has proper horizontal transport buttons with full-width bottom seekbar; `app/src/mobile/studio/native.js` wires Studio to `window.__tmRemote` (`play`, `pause`, `toggle`, `next`, `prev`, `seekTo`, `stop`), `consumeAction`, and `consumeRoute`; widget buttons now work responsively |
+| **Clean Headers (Album / Playlist / Artist)** | Checked user images: removed descriptive clutter paragraphs (`album.description` / `album-liner-copy`, `pl.description`), and removed `monthlyListeners` / `CATALOG` / stats clutter |
+| **Share Drawer Modal** | Tapping Share now opens a bottom sheet drawer with options for WhatsApp, Telegram, X / Twitter, Email, SMS, System Share (ACTION_SEND / chooser), and Copy Link |
+| **Downloads Status** | Downloads screen now shows a status summary banner (`X Songs Downloaded · Y MB · OFFLINE READY`) and tags each track with its download status (`DOWNLOADED`, `Saved offline`) |
+
+

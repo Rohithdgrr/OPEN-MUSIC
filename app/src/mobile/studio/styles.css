@@ -443,7 +443,7 @@ select:focus-visible {
 .topbar-inner {
   max-width: 1120px;
   margin: 0 auto;
-  height: 56px;
+  height: 48px;
   padding: 0 16px;
   display: flex;
   align-items: center;
@@ -2069,7 +2069,7 @@ select:focus-visible {
     color-mix(in srgb, var(--surface) 88%, transparent) 58%,
     transparent 100%
   );
-  padding-top: 12px;
+  padding-top: 8px;
 }
 
 @media (min-width: 1024px) {
@@ -2158,8 +2158,8 @@ select:focus-visible {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  min-height: 64px;
-  padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px));
+  min-height: 52px;
+  padding: 4px 12px calc(4px + env(safe-area-inset-bottom, 0px));
   background: color-mix(in srgb, var(--surface-lowest) 92%, transparent);
   backdrop-filter: blur(22px) saturate(1.3);
   -webkit-backdrop-filter: blur(22px) saturate(1.3);
@@ -2176,8 +2176,8 @@ select:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  min-height: 50px;
+  gap: 2px;
+  min-height: 44px;
   padding: 2px 4px;
   color: var(--secondary);
   border-radius: 14px;
@@ -2189,8 +2189,8 @@ select:focus-visible {
 }
 
 .mobile-tab-pill {
-  width: 56px;
-  height: 30px;
+  width: 48px;
+  height: 26px;
   border-radius: var(--radius-pill);
   display: inline-flex;
   align-items: center;
@@ -2298,6 +2298,77 @@ select:focus-visible {
   transition: background 0.14s ease;
 }
 
+/* Share Drawer Sheet */
+.share-drawer {
+  max-width: 480px;
+}
+
+.share-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.share-app-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-container-low);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.04));
+  text-align: left;
+  text-decoration: none;
+  color: var(--on-surface);
+  cursor: pointer;
+  transition: background 0.16s ease, transform 0.12s ease;
+  width: 100%;
+}
+
+.share-app-row:hover,
+.share-app-row:active {
+  background: var(--surface-container);
+  transform: translateY(-1px);
+}
+
+.share-app-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--surface-container-high);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-surface);
+  flex-shrink: 0;
+}
+
+.share-app-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.share-app-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+  line-height: 1.25;
+}
+
+.share-app-desc {
+  font-size: 11.5px;
+  color: var(--secondary);
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+.share-app-chevron {
+  color: var(--secondary);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
 .menu-action-btn:hover {
   background: var(--surface-low);
 }
@@ -2375,10 +2446,10 @@ select:focus-visible {
   color: var(--on-surface);
 }
 
-/* Toast */
+/* Toast — floats above the bottom chrome (miniplayer + tab bar) */
 .toast-root {
   position: fixed;
-  top: 66px;
+  bottom: calc(148px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 80;
@@ -4712,7 +4783,7 @@ select:focus-visible {
 }
 
 @keyframes toastDropIn {
-  from { opacity: 0; transform: translateY(-10px) scale(0.95); }
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -5553,6 +5624,472 @@ select:focus-visible {
     transform: none !important;
   }
 }
+
+/* ============================================================================
+ * #FFFFFF BACKGROUND FOR HOME & NOW PLAYING SCREENS WITH RELEVANCY
+ * ========================================================================== */
+
+/* 1. HOME SCREEN (#FFFFFF) */
+html:not(.dark) body[data-screen="home"],
+html:not(.dark) .route-is-home,
+html:not(.dark) .route-is-home #app,
+html:not(.dark) .route-is-home .app-shell,
+html:not(.dark) .route-is-home .main-column,
+html:not(.dark) .screen-root.is-home,
+html:not(.dark) .screen-root[data-screen="home"] {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+html:not(.dark) .screen-root.is-home .topbar {
+  background: #FFFFFF !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07) !important;
+}
+
+html:not(.dark) .screen-root.is-home .topbar .brand-title,
+html:not(.dark) .screen-root.is-home .topbar-title {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .topbar .icon-btn {
+  color: #18181b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-header-bleed {
+  background-color: #FFFFFF !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06) !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-header-bleed::after {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(255, 255, 255, 0.76) 60%,
+    #FFFFFF 100%
+  ) !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-greeting-title {
+  color: #09090b !important;
+  font-weight: 800 !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-greeting-sub {
+  color: #52525b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-search-trigger {
+  background: #F4F4F5 !important;
+  border: 1px solid #E4E4E7 !important;
+  color: #52525b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-search-trigger:hover {
+  background: #E4E4E7 !important;
+  color: #18181b !important;
+}
+
+html:not(.dark) .screen-root.is-home .chip {
+  background: #F4F4F5 !important;
+  border: 1px solid #E4E4E7 !important;
+  color: #27272a !important;
+}
+
+html:not(.dark) .screen-root.is-home .chip:hover {
+  background: #E4E4E7 !important;
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .chip.active {
+  background: #09090b !important;
+  color: #FFFFFF !important;
+  border-color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-quick-item {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-quick-title {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-quick-meta {
+  color: #64748b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-resume-card {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-resume-title {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-resume-bar {
+  background: #E2E8F0 !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-resume-bar-fill {
+  background: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .home-resume-times {
+  color: #71717a !important;
+}
+
+html:not(.dark) .screen-root.is-home .section-title {
+  color: #09090b !important;
+  font-weight: 800 !important;
+}
+
+html:not(.dark) .screen-root.is-home .section-meta {
+  color: #71717a !important;
+}
+
+html:not(.dark) .screen-root.is-home .list-card,
+html:not(.dark) .screen-root.is-home .list-sheet {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+}
+
+html:not(.dark) .screen-root.is-home .list-row {
+  border-bottom: 1px solid #F1F5F9 !important;
+}
+
+html:not(.dark) .screen-root.is-home .list-row:hover {
+  background: rgba(0, 0, 0, 0.02) !important;
+}
+
+html:not(.dark) .screen-root.is-home .list-row-title {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .list-row-sub {
+  color: #64748b !important;
+}
+
+html:not(.dark) .screen-root.is-home .media-card {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+}
+
+html:not(.dark) .screen-root.is-home .media-card .list-row-title,
+html:not(.dark) .screen-root.is-home .track-tile .list-row-title {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-home .media-card .list-row-sub,
+html:not(.dark) .screen-root.is-home .track-tile .list-row-sub {
+  color: #64748b !important;
+}
+
+/* 2. NOW PLAYING SCREEN (#FFFFFF) */
+html:not(.dark) body[data-screen="nowplaying"],
+html:not(.dark) .route-is-nowplaying,
+html:not(.dark) .route-is-nowplaying #app,
+html:not(.dark) .route-is-nowplaying .app-shell,
+html:not(.dark) .route-is-nowplaying .main-column,
+html:not(.dark) .screen-root.is-nowplaying,
+html:not(.dark) .screen-root[data-screen="nowplaying"],
+html:not(.dark) .screen-root.is-nowplaying .np-wrap {
+  background-color: #FFFFFF !important;
+  color: #111827 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-backdrop {
+  opacity: 0.12 !important;
+  filter: blur(64px) !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .topbar {
+  background: transparent !important;
+  border-bottom: none !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .topbar .icon-btn {
+  background: #F4F4F5 !important;
+  color: #18181b !important;
+  border: 1px solid #E4E4E7 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-topbar-status {
+  color: #71717a !important;
+  font-weight: 700 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-title {
+  color: #09090b !important;
+  font-weight: 850 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-sub,
+html:not(.dark) .screen-root.is-nowplaying .np-sub a {
+  color: #52525b !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-codec-pill {
+  background: #F4F4F5 !important;
+  color: #18181b !important;
+  border: 1px solid #E4E4E7 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-seek-rail {
+  background: #E4E4E7 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-seek-fill {
+  background: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-seek-thumb {
+  background: #09090b !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25) !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-time-val {
+  color: #71717a !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-btn-play {
+  background: #09090b !important;
+  color: #FFFFFF !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-transport .icon-btn {
+  color: #18181b !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-action-circle {
+  background: #F4F4F5 !important;
+  border: 1px solid #E4E4E7 !important;
+  color: #27272a !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-action-circle.active,
+html:not(.dark) .screen-root.is-nowplaying .np-action-circle:hover {
+  background: #09090b !important;
+  color: #FFFFFF !important;
+  border-color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-sheet-elevated {
+  background: #FFFFFF !important;
+  border-top: 1px solid #E4E4E7 !important;
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.06) !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-sheet-nav {
+  border-bottom: 1px solid #F4F4F5 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-tab-btn {
+  color: #71717a !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-tab-btn.active {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-sheet-body {
+  color: #111827 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-queue-row {
+  border-bottom: 1px solid #F4F4F5 !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-queue-title {
+  color: #09090b !important;
+}
+
+html:not(.dark) .screen-root.is-nowplaying .np-queue-sub {
+  color: #71717a !important;
+}
+
+/* 3. SYNCED LYRICS IMPROVEMENTS (CLEAN, ELEGANT, NO CONTROLS) */
+html:not(.dark) .np-lyrics-stage {
+  background: transparent !important;
+  border: none !important;
+}
+
+html:not(.dark) .np-lyrics-stage-head {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+html:not(.dark) .np-lyrics-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  background: #F4F4F5;
+  border: 1px solid #E4E4E7;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #18181b;
+}
+
+html:not(.dark) .lyric-scroll,
+html:not(.dark) .np-lyrics-stage-scroll {
+  max-height: 440px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+html:not(.dark) .route-is-nowplaying .np-stage-lyric-line,
+html:not(.dark) .screen-root.is-nowplaying .np-stage-lyric-line,
+html:not(.dark) .lyric-line {
+  color: #94a3b8 !important;
+  font-size: 18.5px;
+  line-height: 1.6;
+  font-weight: 600;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 10px 16px;
+  border-radius: 12px;
+  text-align: center;
+  width: 100%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+html:not(.dark) .route-is-nowplaying .np-stage-lyric-line:hover,
+html:not(.dark) .screen-root.is-nowplaying .np-stage-lyric-line:hover,
+html:not(.dark) .lyric-line:hover {
+  color: #475569 !important;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+html:not(.dark) .route-is-nowplaying .np-stage-lyric-line.active,
+html:not(.dark) .screen-root.is-nowplaying .np-stage-lyric-line.active,
+html:not(.dark) .lyric-line.active {
+  color: #09090b !important;
+  font-size: 24px !important;
+  font-weight: 850 !important;
+  transform: scale(1.025);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+html:not(.dark) .route-is-nowplaying .np-stage-lyric-line.active .lyric-word.is-sung,
+html:not(.dark) .screen-root.is-nowplaying .np-stage-lyric-line.active .lyric-word.is-sung {
+  color: #09090b !important;
+}
+
+html:not(.dark) .route-is-nowplaying .np-stage-lyric-line.active .lyric-word.is-speaking,
+html:not(.dark) .screen-root.is-nowplaying .np-stage-lyric-line.active .lyric-word.is-speaking {
+  background-image: linear-gradient(
+    90deg,
+    #09090b var(--w-pct, 0%),
+    #94a3b8 var(--w-pct, 0%)
+  ) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+}
+
+/* 4. NEW HOME SECTIONS STYLING (TOP 100, MOST PLAYED, ETC) */
+.home-top100-card {
+  padding: 24px;
+  border-radius: 20px;
+  background: var(--surface-low);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.home-top100-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: #09090b;
+  color: #FFFFFF;
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.home-top100-headline {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--on-surface);
+  letter-spacing: -0.015em;
+}
+
+.home-top100-sub {
+  font-size: 13.5px;
+  color: var(--secondary);
+  line-height: 1.5;
+}
+
+.home-top100-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+/* Drag to reorder styling */
+.is-dragging {
+  opacity: 0.82 !important;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2) !important;
+  background: var(--surface-container-high, #f4f4f5) !important;
+  border-radius: 12px !important;
+}
+
+.drag-over {
+  border-top: 2.5px solid var(--on-surface) !important;
+  background: color-mix(in srgb, var(--on-surface) 6%, transparent) !important;
+}
+
+/* Dark-mode polish for the screens whose light treatment is now scoped to
+   html:not(.dark) above: deepen surfaces, keep the Now Playing backdrop
+   atmospheric, and give drag targets a visible indicator. */
+html.dark .screen-root.is-home .home-search-trigger {
+  background: var(--surface-container) !important;
+  border-color: var(--border) !important;
+}
+
+html.dark .np-wrap {
+  background: var(--surface) !important;
+}
+
+html.dark .np-backdrop {
+  opacity: 0.3 !important;
+}
+
+html.dark .np-sheet-elevated {
+  background: var(--surface-low) !important;
+  border-top: 1px solid var(--border) !important;
+}
+
+html.dark .np-queue-row {
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06)) !important;
+}
+
+html.dark .drag-over {
+  border-top-color: var(--primary) !important;
+  background: color-mix(in srgb, var(--primary) 10%, transparent) !important;
+}
+
+
 
 
 

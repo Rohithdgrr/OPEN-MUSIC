@@ -21,6 +21,14 @@ import {
 } from './data.js';
 import { audioEngine } from './audio.js';
 import { resolveArtistArt } from '../artresolve.js';
+import {
+  LIMITS,
+  asText,
+  sanitizeBackup,
+  sanitizeEq,
+  sanitizePersisted,
+  sanitizeSettings,
+} from './persist.js';
 
 const STORAGE_KEY = 'openmusic_vanilla_v1';
 const STREAM_TTL_MS = 6 * 60 * 60 * 1000;
@@ -36,7 +44,7 @@ const getInvoke = () => {
 const DEFAULT_SETTINGS = {
   displayName: 'Alex Mercer',
   darkMode: false,
-  languages: ['English', 'Instrumental'],
+  languages: ['English'],
   country: 'Sweden (SE)',
   downloadQuality: '320 kbps Opus',
   syncedLyrics: true,
@@ -57,8 +65,9 @@ function loadPersisted() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
+    // Untrusted even when we wrote it: an older build, a partial write or a
+    // hand-edit must not reach the renderer as a wrong-typed value.
+    return sanitizePersisted(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -86,6 +95,12 @@ class OpenMusicStore {
     this.playlists = savedUserPlaylists.length
       ? savedUserPlaylists.map((p) => ({ ...p, trackIds: Array.isArray(p.trackIds) ? [...p.trackIds] : [] }))
       : INITIAL_PLAYLISTS.map((p) => ({ ...p, trackIds: [...p.trackIds] }));
+
+    // The chart the backend recommends on the Home feed, and its full track
+    // order once opened. `tracks` only ever carries the five countdown rows,
+    // so the Charts screen needs its own list rather than the home slice.
+    this.chartId = '';
+    this.chartTrackIds = [];
 
     this.likedTrackIds = Array.isArray(saved?.likedTrackIds)
       ? saved.likedTrackIds
@@ -118,18 +133,8 @@ class OpenMusicStore {
       ? saved.recentSearches
       : ['Solaris & Kaelen', 'Monolith Sessions', 'Progressive Trance', 'Midnight City Lights'];
 
-    this.settings = {
-      ...DEFAULT_SETTINGS,
-      ...(saved?.settings || {}),
-    };
-
-    this.eq = {
-      enabled: saved?.eq?.enabled ?? DEFAULT_EQ.enabled,
-      preset: saved?.eq?.preset ?? DEFAULT_EQ.preset,
-      bands: Array.isArray(saved?.eq?.bands) && saved.eq.bands.length === 5
-        ? [...saved.eq.bands]
-        : [...DEFAULT_EQ.bands],
-    };
+    this.settings = sanitizeSettings(saved?.settings, DEFAULT_SETTINGS);
+    this.eq = sanitizeEq(saved?.eq, DEFAULT_EQ);
 
     // Playback state
     this.queue = this.tracks.slice(0, 8).map((t) => t.id);
@@ -181,15 +186,15 @@ class OpenMusicStore {
       librarySort: 'recent',
       librarySearchOpen: false,
       libraryView: 'list',
-      chartsTab: 'global',
+      chartsTab: 'Global Top 10',
       chartsScope: 'all',
       librarySearchQuery: '',
       npAppendQuery: '',
       npAppendOpen: false,
-      albumFilter: 'all',
+      albumFilter: '', // text filter: an empty box lists every track
       albumSort: 'recent',
       albumsTab: 'all',
-      playlistFilter: 'all',
+      playlistFilter: '', // text filter: an empty box lists every track
       playlistsTab: 'all',
       likedFilter: '',
       settingsSearch: '',
@@ -199,7 +204,7 @@ class OpenMusicStore {
       createPlaylistDesc: '',
       createPlaylistPrivate: false,
       analyticsRange: '30d',
-      analyticsPeriod: '30d',
+      analyticsPeriod: 'Week',
       analyticsYear: 2026,
       notifFilter: 'all',
       notificationsCategory: 'all',
@@ -228,6 +233,8 @@ class OpenMusicStore {
       modalPlaylistId: null,
       modalInfoType: null,
       trackMenuPickPlaylist: false,
+      shareDrawerOpen: false,
+      shareItem: null,
       sleepTimerSec: 0,
       sleepTimerRemainingSec: 0,
       volumeSliderActive: false,
@@ -250,6 +257,8 @@ class OpenMusicStore {
       loading: false,
       error: '',
     };
+    this.searchSuggestions = [];
+    this._suggestSeq = 0;
     this._loading = new Map();
     this._hydrated = false;
     this._hydrateFailures = 0;
@@ -605,7 +614,8 @@ class OpenMusicStore {
   }
 
   isDownloading(trackId) {
-    return this.activeDownloads.some((d) => d.trackId === trackId);
+    // A failed row stays listed for Retry/Dismiss but must not block it.
+    return this.activeDownloads.some((d) => d.trackId === trackId && d.status !== 'failed');
   }
 
   getUnreadCount() {
@@ -843,6 +853,34 @@ class OpenMusicStore {
   }
 
   /**
+   * The Charts screen shows the whole chart, not Home's five-row countdown.
+   * The chart is an ordinary playlist in the feed, so it uses the same
+   * `playlist_tracks` path and order. A failed fetch leaves the five
+   * `chartRank` rows the shell already has.
+   */
+  async ensureChartTracks() {
+    if (this._chartLoaded || this._chartLoading) return this.chartTrackIds;
+    const cardId = this.playlists.find((p) => p.isChart)?.id || '';
+    const chartId = this.chartId && this.getPlaylistById(this.chartId) ? this.chartId : cardId;
+    if (!chartId) return this.chartTrackIds;
+    this._chartLoading = true;
+    try {
+      const pl = await this.ensurePlaylistTracks(chartId);
+      const ids = pl ? pl.trackIds.filter((id) => this.getTrackById(id)) : [];
+      if (ids.length > 0) {
+        this.chartTrackIds = ids;
+        this._chartLoaded = true;
+        this.emit('state');
+      }
+    } catch (err) {
+      console.warn('chart tracks failed', chartId, err);
+    } finally {
+      this._chartLoading = false;
+    }
+    return this.chartTrackIds;
+  }
+
+  /**
    * `album_tracks` needs the perma-url token, while a track row only carries a
    * numeric `album_id`. Derived cards resolve their token through the album
    * entity search, matched on the folded title (and artist as a tiebreak).
@@ -985,6 +1023,7 @@ class OpenMusicStore {
   applySearch(query) {
     const q = String(query || '').trim();
     this.ui.searchQuery = q;
+    this.searchSuggestions = [];
     if (q) {
       this.addRecentSearch(q);
       this.searchLive(q);
@@ -1014,6 +1053,12 @@ class OpenMusicStore {
       if (feedRes.status === 'fulfilled' && feedRes.value) {
         const feed = feedRes.value;
         feedOk = true;
+
+        // Remember which playlist is "the chart": Home only carries its five
+        // countdown rows, while the Charts screen wants the whole list.
+        this.chartId = String(feed.chart_id || feed.charts?.[0]?.id || '');
+        this.chartTrackIds = [];
+        this._chartLoaded = false;
 
         const chartTracks = [];
         (Array.isArray(feed.top_tracks) ? feed.top_tracks : []).forEach((raw, idx) => {
@@ -1062,7 +1107,12 @@ class OpenMusicStore {
 
         const feedAlbums = (feed.albums || []).map(mapFeedAlbum).filter(Boolean);
         if (feedAlbums.length > 0) {
-          this.albums = [...feedAlbums, ...this.albums.filter((a) => !feedAlbums.some((f) => f.id === a.id))];
+          // Drop the design-mock albums entirely; only albums derived from a
+          // real track row survive alongside the feed's own cards.
+          this.albums = [
+            ...feedAlbums,
+            ...this.albums.filter((a) => a.derived && !feedAlbums.some((f) => f.id === a.id)),
+          ];
           changed = true;
         }
 
@@ -1219,6 +1269,8 @@ class OpenMusicStore {
     if (name === 'playlist' && opts.id) this.ensurePlaylistTracks(opts.id);
     if (name === 'album' && opts.id) this.ensureAlbumTracks(opts.id);
     if (name === 'artist' && opts.id) this.ensureArtistTracks(opts.id);
+    // Charts: load the full chart playlist instead of the five home rows.
+    if (name === 'charts') this.ensureChartTracks();
 
     window.scrollTo({ top: 0, behavior: 'instant' });
 
@@ -1698,15 +1750,6 @@ class OpenMusicStore {
     this.emit('state');
   }
 
-  reorderQueue(fromIndex, toIndex) {
-    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= this.queue.length || toIndex >= this.queue.length) return;
-    const currentId = this.queue[this.queueIndex];
-    const item = this.queue.splice(fromIndex, 1)[0];
-    this.queue.splice(toIndex, 0, item);
-    this.queueIndex = this.queue.indexOf(currentId);
-    this.emit('state');
-  }
-
   /* ------------------------------------------------------------------------
    * USER LIBRARY (LIKES, FOLLOWS, PLAYLISTS)
    * ---------------------------------------------------------------------- */
@@ -1746,14 +1789,16 @@ class OpenMusicStore {
   }
 
   createPlaylist(title, description = '', isPrivate = false) {
-    const clean = (title || '').trim();
+    // Bounded at the boundary: a pasted paragraph is not a playlist name.
+    const clean = asText(title, LIMITS.title);
     if (!clean) return null;
+    const blurb = asText(description, LIMITS.description);
     const id = `pl-user-${Date.now()}`;
     const newPl = {
       id,
       title: clean,
       subtitle: 'Your playlist',
-      description: description.trim() || 'Your personal collection.',
+      description: blurb || 'Your personal collection.',
       author: this.settings.displayName || 'You',
       curator: 'You',
       isUserCreated: true,
@@ -1830,48 +1875,195 @@ class OpenMusicStore {
       this.showToast(`Downloading: ${track.title}`);
       return;
     }
+    // A previous attempt's FAILED row must not shadow the new one's progress.
+    this.activeDownloads = this.activeDownloads.filter(
+      (d) => !(d.trackId === trackId && d.status === 'failed')
+    );
     const invoke = getInvoke();
     this.activeDownloads.push({
       trackId,
       progress: 0,
       paused: false,
-      // Real downloads report progress through completion, not a fake ticker.
+      status: 'downloading',
+      received: 0,
+      total: null,
+      error: '',
       real: Boolean(invoke),
     });
     this.showToast(`Downloading: ${track.title}`);
     this.emit('state');
     if (invoke) {
+      let channel = null;
       try {
-        await invoke("download_song", {
+        channel = await this._downloadChannel((msg) => {
+          if (!msg) return;
+          const dl = this.activeDownloads.find((d) => d.trackId === trackId);
+          if (!dl) return;
+          dl.received = Number(msg.received) || dl.received;
+          dl.total = msg.total != null ? Number(msg.total) : dl.total;
+          if (dl.total > 0) dl.progress = Math.min(100, Math.round((dl.received / dl.total) * 100));
+          else if (msg.done) dl.progress = 100;
+          if (msg.quality) dl.quality = msg.quality;
+          dl.status = msg.done ? 'completed' : 'downloading';
+          this.emit('state');
+        });
+
+        // `download_song` declares `on_progress: Channel` — Tauri maps the
+        // camelCase `onProgress` key onto it. Sending the snake_case twin as
+        // well produced two args for one parameter.
+        const out = await invoke("download_song", {
           id: track.id,
           quality: qualityTier(this.settings.downloadQuality),
+          onProgress: channel,
         });
-        this.activeDownloads = this.activeDownloads.filter(d => d.trackId !== trackId);
+        if (out && out.path) track.path = out.path;
+        this.activeDownloads = this.activeDownloads.filter((d) => d.trackId !== trackId);
         if (!this.downloadedTrackIds.includes(trackId)) {
           this.downloadedTrackIds.push(trackId);
         }
         this.persist();
         this.showToast(`Vaulted: ${track.title}`);
         this.emit('state');
+        this.loadVaultDownloads().catch(() => {});
       } catch (err) {
-        this.activeDownloads = this.activeDownloads.filter((d) => d.trackId !== trackId);
         console.warn("Download error:", err);
-        this.showToast('Download failed — try again');
+        const errMsg = String(err || '').split('\n')[0].slice(0, 120);
+        // Keep the row: Downloads shows FAILED + the reason, with Retry and
+        // Dismiss, instead of the failure living only in a toast.
+        const dl = this.activeDownloads.find((d) => d.trackId === trackId);
+        if (dl) {
+          dl.status = 'failed';
+          dl.error = errMsg || 'Download failed';
+          dl.progress = 0;
+        } else {
+          this.activeDownloads.push({
+            trackId,
+            progress: 0,
+            paused: false,
+            status: 'failed',
+            received: 0,
+            total: null,
+            error: errMsg || 'Download failed',
+            real: true,
+          });
+        }
+        this.showToast(`Download failed — ${errMsg}`);
         this.emit('state');
+      } finally {
+        try {
+          channel?.cleanup?.();
+        } catch {}
       }
     }
   }
 
-  queueBulkDownloads(trackIds, label = 'tracks') {
+  /// Ordered-buffer progress Channel for `download_song`. Prefers the global
+  /// Tauri API (`withGlobalTauri` exposes `core.Channel`); falls back to the
+  /// vendored implementation in `src/core.js`, which is what desktop vault.js
+  /// uses — plain objects cannot receive ordered channel messages.
+  async _downloadChannel(onMessage) {
+    const GlobalChannel = window.__TAURI__?.core?.Channel;
+    if (GlobalChannel) {
+      const ch = new GlobalChannel();
+      ch.onmessage = onMessage;
+      return ch;
+    }
+    const { Channel } = await import('../../core.js');
+    const ch = new Channel();
+    ch.onmessage = onMessage;
+    return ch;
+  }
+
+  /// Drop a finished/failed in-transit row without touching the vault.
+  dismissDownload(trackId) {
+    this.activeDownloads = this.activeDownloads.filter((d) => d.trackId !== trackId);
+    this.emit('state');
+  }
+
+  /// Cancel an in-flight download backend-side (`.part` is deleted), then
+  /// drop the row. Distinct from `removeDownload`, which deletes a vaulted file.
+  async cancelDownload(trackId) {
+    const invoke = getInvoke();
+    if (invoke) {
+      try {
+        await invoke("cancel_download", { id: trackId });
+      } catch (err) {
+        console.warn("cancel_download error:", err);
+      }
+    }
+    this.activeDownloads = this.activeDownloads.filter((d) => d.trackId !== trackId);
+    this.emit('state');
+  }
+
+  queueBulkDownloads(trackIds, label = 'tracks', concurrency = 3) {
     const toAdd = trackIds.filter((id) => !this.isDownloaded(id) && !this.isDownloading(id));
     if (toAdd.length === 0) {
       this.showToast('All tracks already in Offline Vault');
       return;
     }
-    for (const id of toAdd) {
-      this.queueDownload(id);
+    this.showToast(`Queued ${toAdd.length} ${label} for parallel download (${concurrency} concurrent)`);
+    let idx = 0;
+    let active = 0;
+    const runNext = () => {
+      while (active < concurrency && idx < toAdd.length) {
+        const id = toAdd[idx++];
+        active++;
+        this.queueDownload(id).finally(() => {
+          active--;
+          runNext();
+        });
+      }
+    };
+    runNext();
+  }
+
+  downloadAllParallel(concurrency = 4) {
+    const candidateIds = this.queue.concat(this.tracks.map((t) => t.id));
+    const unique = [...new Set(candidateIds)].filter((id) => !this.isDownloaded(id) && !this.isDownloading(id));
+    if (unique.length === 0) {
+      this.showToast('All eligible tracks already in Offline Vault');
+      return;
     }
-    this.showToast(`Queued ${toAdd.length} ${label} for offline vault`);
+    this.queueBulkDownloads(unique.slice(0, 20), 'library songs', concurrency);
+  }
+
+  reorderQueue(fromIdx, toIdx) {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+    if (fromIdx >= this.queue.length || toIdx >= this.queue.length) return;
+    const [moved] = this.queue.splice(fromIdx, 1);
+    this.queue.splice(toIdx, 0, moved);
+    if (this.queueIndex === fromIdx) {
+      this.queueIndex = toIdx;
+    } else if (fromIdx < this.queueIndex && toIdx >= this.queueIndex) {
+      this.queueIndex--;
+    } else if (fromIdx > this.queueIndex && toIdx <= this.queueIndex) {
+      this.queueIndex++;
+    }
+    this.persist();
+    this.emit('state');
+  }
+
+  reorderPlaylist(playlistId, fromIdx, toIdx) {
+    const pl = this.getPlaylistById(playlistId);
+    if (!pl || fromIdx === toIdx) return;
+    if (fromIdx < 0 || toIdx < 0 || fromIdx >= pl.trackIds.length || toIdx >= pl.trackIds.length) return;
+    const [moved] = pl.trackIds.splice(fromIdx, 1);
+    pl.trackIds.splice(toIdx, 0, moved);
+    this.persist();
+    this.emit('state');
+  }
+
+  /// Manual ordering for Liked Songs — resolves by track id so filtered or
+  /// unresolved rows can't shift the indices.
+  reorderLiked(fromTrackId, toTrackId) {
+    if (!fromTrackId || !toTrackId || fromTrackId === toTrackId) return;
+    const fromIdx = this.likedTrackIds.indexOf(fromTrackId);
+    const toIdx = this.likedTrackIds.indexOf(toTrackId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [moved] = this.likedTrackIds.splice(fromIdx, 1);
+    this.likedTrackIds.splice(toIdx, 0, moved);
+    this.persist();
+    this.emit('state');
   }
 
   async removeDownload(trackId) {
@@ -1894,19 +2086,43 @@ class OpenMusicStore {
   }
 
   togglePauseAllDownloads() {
-    const anyRunning = this.activeDownloads.some((d) => !d.paused);
-    for (const d of this.activeDownloads) {
-      d.paused = anyRunning;
+    const running = this.activeDownloads.filter((d) => !d.paused && d.status !== 'failed');
+    const paused = this.activeDownloads.filter((d) => d.paused);
+    const invoke = getInvoke();
+    if (running.length > 0) {
+      for (const d of running) {
+        d.paused = true;
+        // The backend keeps the `.part` prefix; resume re-enters download_song.
+        if (invoke) invoke("pause_download", { id: d.trackId }).catch(() => {});
+      }
+      this.showToast(`Paused ${running.length} download${running.length === 1 ? '' : 's'}`);
+    } else if (paused.length > 0) {
+      const ids = paused.map((d) => d.trackId);
+      this.activeDownloads = this.activeDownloads.filter((d) => !d.paused);
+      this.showToast('Resuming downloads');
+      for (const id of ids) this.queueDownload(id);
+      return;
+    } else {
+      this.showToast('No active downloads');
+      return;
     }
-    this.showToast(anyRunning ? 'Paused all active downloads' : 'Resumed downloads');
     this.emit('state');
   }
 
   toggleSingleDownloadPause(trackId) {
     const item = this.activeDownloads.find((d) => d.trackId === trackId);
-    if (!item) return;
-    item.paused = !item.paused;
-    this.emit('state');
+    if (!item || item.status === 'failed') return;
+    const invoke = getInvoke();
+    if (!item.paused) {
+      item.paused = true;
+      if (invoke) invoke("pause_download", { id: trackId }).catch(() => {});
+      this.emit('state');
+      return;
+    }
+    // Resume: drop the paused row and re-enter download_song — the backend
+    // picks the kept `.part` prefix back up (Range request or clean restart).
+    this.activeDownloads = this.activeDownloads.filter((d) => d.trackId !== trackId);
+    this.queueDownload(trackId);
   }
 
   async refreshDownloads() {
@@ -1924,11 +2140,54 @@ class OpenMusicStore {
    * SEARCH & HISTORY
    * ---------------------------------------------------------------------- */
 
+  async fetchSuggestions(query) {
+    const q = String(query || '').trim();
+    if (q.length < 2) {
+      this.searchSuggestions = [];
+      this.emit('state');
+      return;
+    }
+    const invoke = getInvoke();
+    if (!invoke) return;
+    const seq = ++this._suggestSeq;
+    try {
+      const res = await invoke("search_suggestions", { query: q });
+      if (this._suggestSeq !== seq) return;
+      const suggestions = [];
+      if (res) {
+        for (const s of (res.songs || [])) {
+          if (s.title && !suggestions.includes(s.title)) suggestions.push(s.title);
+        }
+        for (const a of (res.albums || [])) {
+          if (a.title && !suggestions.includes(a.title)) suggestions.push(a.title);
+        }
+        for (const a of (res.artists || [])) {
+          const name = a.title || a.name;
+          if (name && !suggestions.includes(name)) suggestions.push(name);
+        }
+        for (const p of (res.playlists || [])) {
+          if (p.title && !suggestions.includes(p.title)) suggestions.push(p.title);
+        }
+      }
+      this.searchSuggestions = suggestions.slice(0, 8);
+      this.emit('state');
+    } catch (err) {
+      console.warn("fetchSuggestions error:", err);
+    }
+  }
+
+  clearSuggestions() {
+    this.searchSuggestions = [];
+    this._suggestSeq++;
+    this.emit('state');
+  }
+
   addRecentSearch(query) {
     const clean = (query || '').trim();
     if (!clean) return;
     this.recentSearches = [clean, ...this.recentSearches.filter((q) => q.toLowerCase() !== clean.toLowerCase())].slice(0, 10);
     this.persist();
+    this.emit('state');
   }
 
   removeRecentSearch(query) {
@@ -2157,7 +2416,7 @@ class OpenMusicStore {
    * ---------------------------------------------------------------------- */
 
   updateSettings(patch) {
-    Object.assign(this.settings, patch);
+    this.settings = sanitizeSettings({ ...this.settings, ...patch }, DEFAULT_SETTINGS);
     if ('darkMode' in patch) this.applyTheme();
     this.persist();
     this.emit('state');
@@ -2230,38 +2489,90 @@ class OpenMusicStore {
   }
 
   importBackupJson(text) {
+    let parsed;
     try {
-      const data = JSON.parse(text);
-      if (Array.isArray(data.playlists)) this.playlists = data.playlists;
-      if (Array.isArray(data.likedTrackIds)) this.likedTrackIds = data.likedTrackIds;
-      if (Array.isArray(data.followedArtistIds)) this.followedArtistIds = data.followedArtistIds;
-      if (data.settings && typeof data.settings === 'object') {
-        Object.assign(this.settings, data.settings);
-      }
-      if (data.eq && Array.isArray(data.eq.bands)) {
-        this.eq = data.eq;
-        audioEngine.setEq(this.eq);
-      }
-      this.applyTheme();
-      this.persist();
-      this.showToast('Backup restored successfully');
-      this.closeModals();
-      this.emit('state');
+      parsed = JSON.parse(text);
     } catch {
       this.showToast('Invalid backup JSON file');
+      return false;
     }
+    const result = sanitizeBackup(parsed);
+    if (!result.ok) {
+      this.showToast(result.reason);
+      return false;
+    }
+    const data = result.value;
+    // Replace, never merge: a restore must not leave the old library mixed in.
+    this.playlists = data.playlists;
+    this.likedTrackIds = data.likedTrackIds;
+    this.followedArtistIds = data.followedArtistIds;
+    if (data.settings) this.settings = sanitizeSettings(data.settings, DEFAULT_SETTINGS);
+    if (data.eq) {
+      this.eq = sanitizeEq(data.eq, DEFAULT_EQ);
+      audioEngine.setEq(this.eq);
+    }
+    this.applyTheme();
+    this.persist();
+    this.showToast('Backup restored successfully');
+    this.closeModals();
+    this.emit('state');
+    return true;
   }
 
   shareLink(label) {
-    const url = window.location.href;
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).then(() => {
-        this.showToast(`Copied ${label} share link to clipboard`);
-      });
+    this.openShareDrawer(label);
+  }
+
+  openShareDrawer(label, customUrl = null) {
+    const url = customUrl || 'https://rohithdgrr.github.io/OPEN-MUSIC/';
+    const text = `${label}\n${url}`;
+    this.ui.shareDrawerOpen = true;
+    this.ui.shareItem = { label, url, text };
+    this.emit('modal');
+  }
+
+  closeShareDrawer() {
+    this.ui.shareDrawerOpen = false;
+    this.ui.shareItem = null;
+    this.emit('modal');
+  }
+
+  copyShareLink() {
+    const item = this.ui.shareItem;
+    const text = item ? item.text : 'https://rohithdgrr.github.io/OPEN-MUSIC/';
+    const label = item ? item.label : 'OpenMusic';
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => this.showToast(`Copied ${label} share link to clipboard`),
+        () => this.showToast('Could not copy the share link')
+      );
     } else {
-      this.showToast(`Shared ${label}`);
+      this.showToast(`Link copied: ${label}`);
     }
-    this.closeModals();
+    this.closeShareDrawer();
+  }
+
+  triggerSystemShare() {
+    const item = this.ui.shareItem;
+    if (!item) return;
+    const bridge = typeof window !== 'undefined' ? window.TMNative : null;
+    if (bridge && typeof bridge.share === 'function') {
+      try {
+        bridge.share(item.text);
+        this.showToast('Choose an app to share with');
+        this.closeShareDrawer();
+        return;
+      } catch {}
+    }
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      navigator
+        .share({ title: item.label, text: item.text, url: item.url })
+        .then(() => this.showToast(`Shared ${item.label}`))
+        .catch(() => {});
+      this.closeShareDrawer();
+      return;
+    }
+    this.copyShareLink();
   }
 
   openTrackMenu(trackId) {
@@ -2288,14 +2599,14 @@ class OpenMusicStore {
   }
 
   closeModals() {
-    if (this.ui.modal !== null) {
-      this.ui.modal = null;
-      this.ui.modalTrackId = null;
-      this.ui.modalPlaylistId = null;
-      this.ui.modalInfoType = null;
-      this.ui.trackMenuPickPlaylist = false;
-      this.emit('modal');
-    }
+    this.ui.modal = null;
+    this.ui.modalTrackId = null;
+    this.ui.modalPlaylistId = null;
+    this.ui.modalInfoType = null;
+    this.ui.trackMenuPickPlaylist = false;
+    this.ui.shareDrawerOpen = false;
+    this.ui.shareItem = null;
+    this.emit('modal');
   }
 
   /* ------------------------------------------------------------------------

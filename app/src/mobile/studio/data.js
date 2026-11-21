@@ -910,65 +910,15 @@ export const TRACKS = [
   },
 ];
 
-export const INITIAL_PLAYLISTS = [
-  {
-    id: 'pl-late-night',
-    title: 'Late Night Resonance',
-    subtitle: 'Atmospheric & deep',
-    description:
-      'Deep atmospheric synths, midnight downtempo, and hypnotic progressive grooves for late night sessions.',
-    curator: 'OpenMusic Curation',
-    featured: true,
-    isPrivate: false,
-    artwork: IMG.lateNightHero,
-    artworkSeed: 'LN',
-    trackIds: ['trk-1', 'trk-2', 'trk-3', 'trk-4', 'trk-11', 'trk-7'],
-  },
-  {
-    id: 'pl-nordic-minimal',
-    title: 'Nordic Monolith',
-    subtitle: 'Brutalist studio sessions',
-    description:
-      'Precision Scandinavian electronic masters recorded across Berlin, Stockholm, and Copenhagen.',
-    curator: 'OpenMusic Curation',
-    featured: true,
-    artwork: IMG.monolithCover,
-    artworkSeed: 'NM',
-    trackIds: ['trk-5', 'trk-6', 'trk-1', 'trk-8', 'trk-9', 'trk-16'],
-  },
-  {
-    id: 'pl-trance-elevation',
-    title: 'Nocturne Elevation',
-    subtitle: 'Uplifting & vocal trance',
-    description:
-      'High-energy uplifting melodies, shimmering vocals, and rolling 134+ BPM trance horizons.',
-    curator: 'OpenMusic Curation',
-    featured: true,
-    artwork: IMG.nocturneSingle,
-    artworkSeed: 'NE',
-    trackIds: ['trk-10', 'trk-13', 'trk-14', 'trk-8', 'trk-15'],
-  },
-  {
-    id: 'pl-focus-ambient',
-    title: 'Pure Acoustic Stillness',
-    subtitle: '24-bit ambient architecture',
-    description: 'Uncluttered ambient studies and granular piano textures engineered for deep focus.',
-    curator: 'You',
-    isUserCreated: true,
-    isPrivate: true,
-    artwork: IMG.crystalline,
-    artworkSeed: 'PA',
-    trackIds: ['trk-3', 'trk-4', 'trk-12', 'trk-7'],
-  },
-];
+export const INITIAL_PLAYLISTS = [];
 
 export const GENRE_CARDS = [
-  { label: 'Progressive Trance', query: 'progressive trance', icon: 'waves', bg: 'linear-gradient(135deg, #1a237e, #0d47a1)' },
-  { label: 'Uplifting Trance', query: 'uplifting trance', icon: 'light_mode', bg: 'linear-gradient(135deg, #d84315, #ef6c00)' },
-  { label: 'Tech Trance', query: 'tech trance', icon: 'hexagon', bg: 'linear-gradient(135deg, #263238, #102027)' },
-  { label: 'Ambient', query: 'ambient', icon: 'all_inclusive', bg: 'linear-gradient(135deg, #004d40, #00796b)' },
-  { label: 'Vocal Trance', query: 'vocal trance', icon: 'bar_chart', bg: 'linear-gradient(135deg, #4a148c, #7b1fa2)' },
-  { label: 'Psy Trance', query: 'psy trance', icon: 'album', bg: 'linear-gradient(135deg, #880e4f, #ad1457)' },
+  { label: 'Telugu Songs', query: 'telugu songs', icon: 'music_note', bg: 'linear-gradient(135deg, #1565c0, #0d47a1)' },
+  { label: 'Hindi Songs', query: 'hindi songs', icon: 'music_note', bg: 'linear-gradient(135deg, #d84315, #ef6c00)' },
+  { label: 'Tamil Songs', query: 'tamil songs', icon: 'music_note', bg: 'linear-gradient(135deg, #00695c, #00897b)' },
+  { label: 'English Songs', query: 'english songs', icon: 'music_note', bg: 'linear-gradient(135deg, #4a148c, #7b1fa2)' },
+  { label: 'Malayalam Songs', query: 'malayalam songs', icon: 'music_note', bg: 'linear-gradient(135deg, #004d40, #00796b)' },
+  { label: 'Bhojpuri Songs', query: 'bhojpuri songs', icon: 'music_note', bg: 'linear-gradient(135deg, #880e4f, #ad1457)' },
 ];
 
 export const INITIAL_HISTORY = [

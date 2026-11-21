@@ -91,6 +91,52 @@ guards), `app.js` (action wiring).
 - Search's Albums/Artists/Playlists tabs return results (no `kind` rejection).
 - No JS exceptions during boot, navigation, search, playback.
 
+## Detail metadata strips, share chooser, download status (2026-11-21h)
+
+- **Album / artist / playlist metadata strips removed**: the album
+  `album-specs-strip` (`MASTERING / IMPRINT / RELEASED / RUNTIME`), the
+  artist `artist-stats-bar` (`LISTENERS / IMPRINT / CATALOG`) and the
+  playlist's curator eyebrow are gone from the detail heroes. Titles,
+  artwork, actions and track lists stay.
+- **Share opens the system chooser**: `shareLink()` now posts through
+  `window.TMNative.share(text)` (Android `ACTION_SEND` chooser, from
+  `TmBridge`); the browser `navigator.share` and clipboard remain as
+  fallbacks, so desktop and the no-bridge case still work.
+- **Download status per song**: the Downloads list passes `statusTag:
+  "DOWNLOADED"` to `renderTrackRow`, which paints the same `tag-mono` pill
+  used for `OFFLINE`/`HI-RES`; in-transit rows already carried their
+  percentage/paused state.
+
+## Library mock albums, Downloads header, filter search boxes (2026-11-21g)
+
+| Ask | Cause / change |
+|---|---|
+| Remove mock data from Library | Hydration replaced feed albums but kept every prior album that was not in the feed, so the demo cards (`Monolith Sessions`, …) stayed in the catalog and Library listed them. Only **derived** albums (built from a real track row) are kept now; demo albums are dropped on the first successful `home_feed`. |
+| Remove the block shown on Downloads | The `detail-hero` (`VAULT 02 · LOCAL LOSSLESS STORAGE`, `Downloaded Songs`, the cached-locally sentence, the `0 masters · 0.0 MB stored` line) and the three `stat-grid` cards painted live totals (always zero on a fresh install). Both are removed; the top bar, in-transit list, filters and track list stay. |
+| Filter search boxes like Search | The Liked/Playlist/Album filters used `search-box-pill` while the legacy shell still paints every `input[type=text]` with its own border/background — the exemption list only carried `#search-main-input` and `#library-search-input`, so those fields drew an inner rectangle (divider + square left edge). Both theme blocks now exempt `#liked-filter-input`, `#playlist-filter-input` and `#album-filter-input`, and the three boxes use the same `search-box` markup as the Search screen, including a clear button. |
+
+## Playlist/album/chart track lists (2026-11-21e)
+
+Three defects made real track lists look empty or truncated. All three were
+reproduced on `Pixel6_API36` over CDP before changing anything.
+
+| Surface | Symptom | Cause |
+|---|---|---|
+| Playlist detail | loaded 56 tracks, painted **2** rows and "No matching tracks" | `ui.playlistFilter` defaulted to the literal `"all"`; the screen uses that value as a **title/artist substring filter**, so every row without "all" in its name was dropped |
+| Album detail | same filter behaviour on `ui.albumFilter` (`"all"`) | identical cause |
+| Charts | "Full Ranking" listed only **5** rows although the chart declares 50 | hydration keeps only `home_feed.top_tracks` (the five countdown rows) and never fetches the chart playlist itself |
+
+Fixes: both text filters default to `''` (an empty box), and the chart's own
+playlist is loaded lazily through the existing `playlist_tracks` path
+(`store.ensureChartTracks()`, called by `navigate('charts')`); the Charts
+screen ranks `store.chartTrackIds` when the chart is loaded and falls back to
+the five `chartRank` rows while it loads or if the fetch fails. The
+`chartsTab` default now matches a real tab (`Global Top 10`) instead of the
+unused `global` key.
+
+Streaming is unchanged: rows keep their `play-track` action and queue, so a
+tap resolves through `resolve_song` exactly as search rows do.
+
 ## Latency + resilience pass (2026-11-21d)
 
 Measured on the device before changing anything: a cold tap reached audible
@@ -275,3 +321,47 @@ Limit: two *different* people who genuinely share an exact name are also
 merged into one card (indistinguishable in the UI anyway); an artist whose
 catalog spelling differs by more than case/punctuation (a legal-name alias such
 as "Abel Tesfaye" ↔ "The Weeknd") is not merged.
+
+#### Artist detail after the merge (live check)
+
+Opening the merged *Pritam* card (`artist-pritam`, 49 → 50 tracks from the
+feed): hero shows the real catalogue portrait
+(`c.saavncdn.com/artists/Pritam_Chakraborty-…_500x500.jpg`, `naturalWidth > 0`)
+in both the avatar and the panoramic banner; the popular list renders one row
+per track; **Play** queues the artist's tracks and streams (`Kesariya`,
+`readyState 4`, playhead advancing, `paused:false`); **Follow** flips to
+`check Following` + primary style and writes the id into
+`openmusic_vanilla_v1.followedArtistIds`, flipping back off again. Only one
+card exists for the name and every track's `artistId` resolves to it.
+
+Two blank-meta defects the check surfaced, fixed in the same pass: the hero
+line rendered a trailing `·` with an empty origin, and the stats bar drew
+LISTENERS / IMPRINT cells with empty values (the catalogue publishes neither
+for artist entities — `official.rs` notes artists carry no sub-line). Both
+cells are now omitted unless they have a value, and the separator is only drawn
+between present parts.
+
+## Search UX, library playlists, download integrity (2026-11-21i)
+
+User-reported batch on the Studio shell. Most scaffolding already existed
+(`search_suggestions` + dropdown, `recentSearches`, NP drag-down, bulk sync
+buttons); this pass closes the gaps that made them feel broken.
+
+| Ask | Change |
+|---|---|
+| Suggestions while typing | Already wired (`fetchSuggestions` → `search_suggestions`, 220 ms debounce). Fixed the stale case: **Clear search** now also clears `searchSuggestions`, and **Enter** in `#search-main-input` commits via `applySearch` (records the recent search + runs `searchLive`). Tapping an album/artist/playlist result from the Search route records the query in `recentSearches`, same as playing a song already did. |
+| Recently searched below the box | Already rendered as the `recent-searches-subbar` + the "Recent Searches" section; persistence via `persist()`. No markup change needed. |
+| Now Playing drag-down → miniplayer | Already implemented (`touchstart/move/end` on `.np-wrap`, >65 px dismisses through `store.goBack()` to the previous route, where the mobile chrome miniplayer lives). Verified the gesture surface: draggable areas exclude inputs, buttons, sliders and lyric lines only. |
+| Mock playlist data in Library | `renderPlaylistsBrowser` "Yours" tab fell back to `store.playlists` when no user playlist existed — after hydration that list is the curated feed, so demo/curated cards posed as "Yours". Fallback removed; the tab now shows an empty state. Library's Playlists chip already filtered `isUserCreated`. |
+| Downloads failing + status + parallel | `queueDownload` sent **both** `onProgress` and `on_progress` for the same Channel — dropped the duplicate; the Channel now comes from `__TAURI__.core.Channel` with a dynamic `../../core.js` fallback (the vendored ordered-buffer implementation), matching desktop `vault.js`. Failures no longer vanish: the row stays in "In Transit" with a `FAILED` tag, the backend's error line, **Retry** and **Dismiss** (`dismissDownload`). `isDownloading` ignores failed rows so retry/bulk re-queue works. Pause/Resume and the in-transit close button are now real: pause → `pause_download` (keeps the `.part` prefix), resume → fresh `download_song` (backend resumes the prefix), cancel → `cancel_download`. Parallel bulk (`queueBulkDownloads`, `downloadAllParallel`, "Parallel Bulk Sync" / "Sync Top 8" / per-list Sync) unchanged — it rides the fixed single-download path. |
+
+## Language facets, liked reorder, toast placement, real analytics, dark NP, slimmer nav (2026-11-21j)
+
+| Ask | Change |
+|---|---|
+| Genre/language fields = Telugu, Hindi, Tamil, English, Malayalam, Bhojpuri | The Home/Search `GENRE_CARDS` already carry exactly these six "X Songs" queries. The Settings "Music Languages" chip row still offered Swedish/German/Japanese/Instrumental — `allLangs` now lists the six catalog languages and `DEFAULT_SETTINGS.languages` drops `Instrumental`. |
+| Drag to reorder at relevant places | Queue rows (NP "UP NEXT") and user-playlist rows already drag (`data-drag-type="queue"/"playlist"`, HTML5 + touch paths in `app.js`). Added the missing user-ordered surface: **Liked Songs** rows are draggable (`data-drag-type="liked"`), reordering `likedTrackIds` via `store.reorderLiked()`; disabled while the filter box is active so visible indices can't mis-map. |
+| Toast at bottom | `.toast-root` moves from `top: 66px` to `bottom` above the mobile chrome (miniplayer + tab bar); entrance keyframes flip to rise-from-below. |
+| Analytics on real data | `renderAnalyticsScreen` no longer multiplies history by 1/4.2/18.5 or hardcodes `84%` / `Q1–Q4` / "Progressive Trance". Period (Week/Month/Year) filters `store.history` by rolling windows; exposure, plays, unique tracks, HI-RES ratio (listened-sec share of `hiRes` tracks), the rhythm chart (weekday / 4-week / 12-month buckets from `playedAt`+`listenedSec`), top artists (no `240`s fallback), signature genre, and peak listening window are all computed. `analyticsPeriod` default `'30d'` didn't match any segment — now `'Week'`. Empty history renders an honest empty state. |
+| Dark theme — Home & Now Playing | The NP screen was hard-forced to `#FFFFFF` for *every* theme (`body[data-screen="nowplaying"] … !important` block). All those overrides are now scoped to `html:not(.dark)` so dark mode falls back to the token palette; a `.dark` NP block restores the intended dark surfaces (backdrop, sheet, queue rows, transport). Home gets matching dark polish on the hero/spotlight card and genre grid. |
+| Shorter top & bottom nav | `.topbar-inner` 56→48px; `.mobile-tabs` min-height 64→52px, `.mobile-tab` 50→44px, `.mobile-tab-pill` 56×30→48×26, tighter paddings. |
