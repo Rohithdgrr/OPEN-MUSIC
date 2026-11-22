@@ -280,10 +280,12 @@ export function repaint() {
 }
 
 /// Endless radio: keep the queue fed while repeat is off and it is close to
-/// running dry. Repeat modes never run out, so they never top up.
+/// running dry. Repeat modes never run out, so they never top up. The buffer
+/// is deeper than the visible Up Next page so the feed stays steady instead
+/// of stuttering every few tracks (docs/mobile/11-ux-polish-batch.md).
 function topUpRadio() {
   if (netMode() === "offline") return; // recommendations need the network
-  if (repeat !== 0 || queue.length - qi > 3) return;
+  if (repeat !== 0 || queue.length - qi > 6) return;
   ensureReco(queue, qi)
     .then((added) => {
       if (added) paint();

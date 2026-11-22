@@ -12,9 +12,11 @@ const app = read("app.js");
 const home = read("screens/home.html");
 const binders = read("binders.js");
 
-test("mobile shell respects user zoom and short device viewports", () => {
-  assert.match(entry, /name="viewport" content="width=device-width, initial-scale=1\.0, viewport-fit=cover"/);
-  assert.doesNotMatch(entry, /user-scalable\s*=\s*no|maximum-scale\s*=\s*1/);
+test("mobile shell locks pinch-zoom and respects short device viewports", () => {
+  // User call 2026-11-22 (docs/mobile/11-ux-polish-batch.md): the app must
+  // feel like a native player — no pinch zoom, no overscroll stretch.
+  assert.match(entry, /name="viewport" content="width=device-width, initial-scale=1\.0, maximum-scale=1\.0, user-scalable=no, viewport-fit=cover"/);
+  assert.match(shell, /overscroll-behavior:\s*none/);
   assert.match(shell, /min-height:\s*100dvh/);
   assert.doesNotMatch(shell, /max\(884px,\s*100dvh\)/);
 });

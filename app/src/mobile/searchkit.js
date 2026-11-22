@@ -156,9 +156,11 @@ export function rankForQuery(list, parsed, sort = "relevance", opts = {}) {
 }
 
 // --------------------------------------------------------- top result picker -
-// Text match dominates; the kind weight only settles near-ties (a track named
-// exactly like an album leads), popularity nudges the rest.
-const KIND_WEIGHT = { song: 1.08, artist: 1.04, album: 1, playlist: 0.94 };
+// Text match dominates; the kind weight only settles near-ties. Songs lead
+// deliberately (2026-11-22): the "Top result" card answers with a playable
+// track unless an entity is a dramatically better text match — the exact-
+// title bonus below still lets a literal artist/album name win its own kind.
+const KIND_WEIGHT = { song: 1.5, artist: 1.04, album: 1, playlist: 0.94 };
 const TOP_POOL = 6;
 
 /// Spotify's "Top result": the single best match across kinds, or null when

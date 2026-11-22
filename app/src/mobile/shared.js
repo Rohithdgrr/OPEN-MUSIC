@@ -137,6 +137,8 @@ export function clearDiag() {
 // dismiss. `ms` stays the second argument so every existing caller holds.
 // `action` ({ label, fn }) appends a tappable shortcut — "added to X → Open".
 let toastStack = null;
+let toastSig = "";
+let toastAt = 0;
 export function toast(msg, ms = 3200, kind = "info", action = null) {
   if (!toastStack) {
     toastStack = document.createElement("div");
@@ -145,6 +147,19 @@ export function toast(msg, ms = 3200, kind = "info", action = null) {
     toastStack.setAttribute("aria-live", "polite");
     document.body.appendChild(toastStack);
   }
+  // One toast at a time, and an identical one never re-fires inside 1.5 s —
+  // callers on paint loops used to stack the same pill repeatedly
+  // (docs/mobile/11-ux-polish-batch.md).
+  const sig = `${kind}|${msg}`;
+  const now = Date.now();
+  const cur = toastStack.firstElementChild;
+  if (sig === toastSig && now - toastAt < 1500 && cur) {
+    toastAt = now;
+    cur.classList.remove("tm-out");
+    return;
+  }
+  toastSig = sig;
+  toastAt = now;
   const el = document.createElement("div");
   el.className = "tm-toast";
   el.dataset.kind = kind === "error" || kind === "success" ? kind : "info";
@@ -188,12 +203,13 @@ export async function shareThing({ title, text, url }) {
   if (url) payload.url = url;
   const line = [title, text, url].filter(Boolean).join(" — ");
   // Android first: the WebView does not implement `navigator.share`, so the
-  // native bridge fires the real share sheet (ACTION_SEND + chooser). Without
-  // this the tap silently degraded to "copied to clipboard" (2026-11-13).
+  // native bridge fires the real share sheet (ACTION_SEND + chooser). The
+  // payload is JSON so MediaHub can set EXTRA_TITLE/EXTRA_SUBJECT properly —
+  // plain strings still parse-fail into the legacy text path there.
   try {
     const native = typeof window !== "undefined" ? window.TMNative : null;
     if (native && typeof native.share === "function") {
-      native.share(line);
+      native.share(JSON.stringify({ title: title || "", text: text || "", url: url || "" }));
       return;
     }
   } catch (e) {

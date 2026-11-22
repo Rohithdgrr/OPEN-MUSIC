@@ -45,12 +45,22 @@ html.dark {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    /* Native-app feel: no pull-to-refresh / overscroll stretch anywhere in
+       the WebView (docs/mobile/11-ux-polish-batch.md). */
+    overscroll-behavior: none;
   }
   body {
     overscroll-behavior-y: none;
     min-height: 100dvh;
     user-select: none;
     -webkit-user-select: none;
+  }
+  #app, #screen-root, #screen, main {
+    overscroll-behavior: contain;
+  }
+  /* Long titles/artist lines wrap instead of overflowing their cards. */
+  h1, h2, h3, .font-headline-lg, .font-headline-md, .font-headline-xl {
+    overflow-wrap: anywhere;
   }
   input, textarea {
     user-select: text;
@@ -69,6 +79,12 @@ main.pt-14 { padding-top: calc(3.5rem + env(safe-area-inset-top, 0px)); }
 main.pt-16 { padding-top: calc(4rem + env(safe-area-inset-top, 0px)); }
 ::-webkit-scrollbar { display: none; }
 * { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Now Playing: pin the queue/lyrics sheet to the bottom of the screen so a
+   short track page doesn't leave dead space under it (docs/mobile/11). */
+#np-main { display: flex; flex-direction: column; }
+#np-top { flex: 1 0 auto; }
+#np-sheet { margin-top: auto; }
 
 /* Lyrics karaoke — port of the desktop's styles.css (mobile loads no
    styles.css, so the .lyric-* rules live here). JS toggles lyric-active /

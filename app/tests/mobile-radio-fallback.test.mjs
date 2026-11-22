@@ -102,5 +102,5 @@ test("ineligible artist results do not prevent an eligible chart fallback", asyn
 test("the radio applies its existing eligibility gate to each fallback source", async () => {
   const src = await readFile(new URL("../src/mobile/radio.js", import.meta.url), "utf8");
   assert.match(src, /import \{ radioFallback \} from "\.\/radiofallback\.js"/);
-  assert.match(src, /radioFallback\(seed, queue, invoke, \(rows\) => pickBatch\(rows, signals\)/);
+  assert.match(src, /radioFallback\(seed, queue, invoke, \(rows\) => pickBatch\(rows, signals/);
 });

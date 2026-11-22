@@ -11,6 +11,7 @@ import { isMenuTrigger, handleMenuTrigger, trackMenu } from "./menus.js";
 import "./native.js"; // Android media surfaces: notification, lockscreen, widget, headset/car
 import "./ux.js"; // Spotify-feel gestures: tab swipe, queue drag, mini-art tap, transitions
 import "./homeplus.js"; // Personal Home: streaks + new-from-follows
+import "./releasealerts.js"; // Followed-artist release alerts → Notifications + system
 import "./audioplus.js"; // Crossfade UI + per-track EQ sheet
 import "./collab.js"; // Shared playlists: export/import without accounts
 

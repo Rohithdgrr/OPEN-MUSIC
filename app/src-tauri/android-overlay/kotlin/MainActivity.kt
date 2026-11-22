@@ -35,6 +35,13 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
+    // Native-app feel: kill the WebView overscroll glow/stretch at the
+    // view level too — overscroll-behavior CSS covers the page, this covers
+    // the container (docs/mobile/11-ux-polish-batch.md).
+    try {
+      webView.overScrollMode = android.view.View.OVER_SCROLL_NEVER
+    } catch (_: Exception) {
+    }
     try {
       webView.addJavascriptInterface(TmBridge(MediaHub), "TMNative")
     } catch (_: Exception) {

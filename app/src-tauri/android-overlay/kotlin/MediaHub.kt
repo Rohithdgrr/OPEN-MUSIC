@@ -194,21 +194,93 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
   /// Fire the real Android share sheet for `text` (ACTION_SEND + chooser).
   /// The WebView has no `navigator.share`, so the JS side calls this over the
   /// bridge instead of silently degrading to "copied to clipboard"
-  /// (2026-11-13).
+  /// (2026-11-13). shareThing() now sends a JSON payload
+  /// {title,text,url} so receiving apps get a proper subject/title instead
+  /// of one flat blob; plain strings fall through to the legacy path
+  /// (docs/mobile/11-ux-polish-batch.md).
   fun share(text: String) {
-    val payload = text.trim()
-    if (payload.isEmpty()) return
+    val raw = text.trim()
+    if (raw.isEmpty()) return
+    var shareTitle = ""
+    var subject = ""
+    var body = raw
+    try {
+      val o = JSONObject(raw)
+      val t = o.optString("title", "").trim()
+      val tx = o.optString("text", "").trim()
+      val u = o.optString("url", "").trim()
+      if (t.isNotEmpty() || tx.isNotEmpty() || u.isNotEmpty()) {
+        shareTitle = t.take(120)
+        subject = t.take(200)
+        body = listOf(t, tx, u).filter { it.isNotEmpty() }.joinToString("\n").take(4000)
+      }
+    } catch (_: Exception) {
+      // Not JSON — legacy plain-text share.
+    }
+    if (body.isEmpty()) return
     main.post {
       try {
         val send = Intent(Intent.ACTION_SEND).apply {
           type = "text/plain"
-          putExtra(Intent.EXTRA_TEXT, payload)
+          putExtra(Intent.EXTRA_TEXT, body)
+          if (subject.isNotEmpty()) {
+            putExtra(Intent.EXTRA_TITLE, shareTitle.ifEmpty { subject })
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+          }
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val chooser = Intent.createChooser(send, null).apply {
+        val chooser = Intent.createChooser(send, shareTitle.ifEmpty { null }).apply {
           addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         app.startActivity(chooser)
+      } catch (_: Exception) {
+      }
+    }
+  }
+
+  // ------------------------------------------------------- alert channel ---
+  // Non-media notifications (followed-artist releases etc.) live on their
+  // own channel so they never fight the ongoing media notification.
+  private const val ALERT_CHANNEL = "tm_alerts"
+  private var alertSeq = 0
+
+  private fun ensureAlertChannel() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+    try {
+      val nm = app.getSystemService(NotificationManager::class.java) ?: return
+      if (nm.getNotificationChannel(ALERT_CHANNEL) == null) {
+        nm.createNotificationChannel(
+          NotificationChannel(ALERT_CHANNEL, "Artist alerts", NotificationManager.IMPORTANCE_DEFAULT),
+        )
+      }
+    } catch (_: Exception) {
+    }
+  }
+
+  /// Post a tappable alert (tap opens the Notifications screen). Called from
+  /// the JS release-check bridge; safe no-op before init().
+  fun notify(title: String, body: String) {
+    if (!this::app.isInitialized) return
+    val t = title.trim().take(120)
+    val b = body.trim().take(300)
+    if (t.isEmpty() && b.isEmpty()) return
+    main.post {
+      try {
+        ensureAlertChannel()
+        val n =
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(app, ALERT_CHANNEL)
+          } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(app)
+          }
+        n.setSmallIcon(R.drawable.tm_notif_icon)
+          .setContentTitle(t.ifEmpty { "OpenMusic" })
+          .setContentText(b)
+          .setStyle(Notification.BigTextStyle().bigText(b))
+          .setContentIntent(openApp(app, "notification", 2000 + (alertSeq++ % 400)))
+          .setAutoCancel(true)
+        notifManager()?.notify(4300 + (alertSeq % 50), n.build())
       } catch (_: Exception) {
       }
     }
@@ -432,6 +504,9 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
       metaArtUrl = ""
       art = null
       playing = false
+      // The widget must drop the dead track too — without this it kept the
+      // last song's art/title after Stop (docs/mobile/11-ux-polish-batch.md).
+      refreshWidgets()
       try {
         app.stopService(Intent(app, MediaService::class.java))
       } catch (_: Exception) {

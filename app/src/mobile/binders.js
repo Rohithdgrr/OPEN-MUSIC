@@ -4885,9 +4885,14 @@ async function mountAnalytics() {
 // A real feed over the EVENTS_KEY log (downloads, updates, restores). The
 // design ships six fictional cards with no way to clear them.
 
+// `type` must equal a filter-pill category (all/update/downloads/system) —
+// the pill counter and the generated screen's card filter both compare
+// data-type against it. "releases"/"drops" matched no pill, so Updates and
+// Downloads always read 0 (2026-11-22).
 const EV_META = {
-  update: { type: "releases", icon: "system_update", tag: "UPDATE" },
-  downloads: { type: "drops", icon: "download_done", tag: "VAULT" },
+  update: { type: "update", icon: "system_update", tag: "UPDATE" },
+  release: { type: "update", icon: "album", tag: "NEW" },
+  downloads: { type: "downloads", icon: "download_done", tag: "VAULT" },
   restore: { type: "system", icon: "settings_backup_restore", tag: "BACKUP" },
   system: { type: "system", icon: "info", tag: "SYSTEM" },
 };

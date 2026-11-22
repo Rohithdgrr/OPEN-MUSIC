@@ -6,6 +6,26 @@ changes only.
 
 ## [Unreleased]
 
+### Fixed — UX polish batch (2026-11-22, docs/mobile/11-ux-polish-batch.md)
+
+- **Shell**: pinch-zoom locked (`user-scalable=no`), overscroll stretch
+  killed (CSS `overscroll-behavior` + WebView `OVER_SCROLL_NEVER`), Now
+  Playing sheet pinned to bottom (no dead space), headline overflow-wrap.
+- **Search**: input gets search keyboard hints; "Top result" biases songs
+  (`KIND_WEIGHT.song` 1.5); padding tightened.
+- **Toasts**: identical toast+kind deduped inside 1.5 s — no repeat stacking.
+- **Up Next**: radio keeps a persisted served-id set (`tm-radio-seen`),
+  batches grow to 20 with a per-artist cap of 2, top-up buffer deepened —
+  steady, non-repeating feed.
+- **Share**: `shareThing` sends `{title,text,url}` JSON; `MediaHub.share`
+  sets EXTRA_TITLE/SUBJECT + titled chooser (plain text still works).
+- **Notifications**: `releasealerts.js` diffs followed artists'
+  `artist_overview` every 12 h → `release` events in the feed + Android
+  `tm_alerts` notification (`TMNative.notify`); EV_META types aligned to
+  the filter pills (Updates/Downloads counted correctly).
+- **Android overlay**: `MediaHub.dismiss()` refreshes widgets; `notify()`
+  + alert channel added. Portrait lock was already injected by build.sh.
+
 ### Added — Studio shell on real backend data (`990655f`)
 
 - `mobile/entry.js` now boots `studio/app.js` — the Studio SPA replaces the
