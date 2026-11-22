@@ -62,6 +62,11 @@ class TmBridge(private val hub: MediaHub) {
     hub.notify(title, body)
   }
 
+  /// Ask Android to pin the homescreen widget; returns a line protocol
+  /// consumed by studio/native.js pinWidget() (`ok`/`unsupported`/`err: …`).
+  @JavascriptInterface
+  fun pinWidget(): String = hub.pinWidget()
+
   /// "Save to local" (menus.js trackMenu): copy one vaulted song file into the
   /// device's MediaStore (Music/OpenMusic/) so other players see it. Distinct
   /// from "Download", which vaults into the app-private folder only OpenMusic

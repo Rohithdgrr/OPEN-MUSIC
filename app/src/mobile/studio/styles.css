@@ -1131,6 +1131,23 @@ select:focus-visible {
   max-width: 100%;
 }
 
+/* Coverflow shelves (carousel.js, docs/mobile/11 §4): the scroller keeps
+   native touch momentum; JS only writes per-card rotateY/scale/z-index.
+   Transform transitions are dropped so scroll frames stay 1:1. */
+.h-scroll.cf-on {
+  perspective: 1400px;
+}
+.h-scroll.cf-on > * {
+  transition: opacity 0.12s ease;
+  will-change: transform;
+  transform-origin: center center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .h-scroll.cf-on > * {
+    transition: none;
+  }
+}
+
 .track-tile {
   width: 148px;
   flex-shrink: 0;

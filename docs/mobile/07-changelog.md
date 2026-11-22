@@ -26,6 +26,24 @@ changes only.
 - **Android overlay**: `MediaHub.dismiss()` refreshes widgets; `notify()`
   + alert channel added. Portrait lock was already injected by build.sh.
 
+### Fixed — Studio-shell follow-up (2026-11-22b, docs/mobile/11 §Studio)
+
+The live Android UI is `studio/` (`entry.js` boots `studio/app.js`); the
+legacy `mobile/*.js` bundle above is not what ships. Same asks, live shell:
+
+- **Search typing**: per-keystroke `innerHTML` re-render destroyed the
+  Android IME composition — all `data-input-ui` fields now write
+  silently and repaint on a 320 ms pause; search keeps its 220 ms live
+  debounce; `/` shortcut focuses the real input id; input gets
+  `enterkeyhint`/`inputmode`/`autocapitalize`/`spellcheck`.
+- **Top result**: prefers a matching track (with artwork) over artists.
+- **Widget**: `TMNative.pinWidget()` → `AppWidgetManager.
+  requestPinAppWidget`; Settings → Backup & System "Add Widget" row;
+  notification gains `CATEGORY_TRANSPORT` for the lockscreen surface
+  (Android 12+ has no lockscreen app-widgets — media notification is it).
+- **Home carousels**: `studio/carousel.js` coverflow (native scroll +
+  rAF rotateY/scale) on Daily Mix, Most Played, Jump Back In, Top Charts.
+
 ### Added — Studio shell on real backend data (`990655f`)
 
 - `mobile/entry.js` now boots `studio/app.js` — the Studio SPA replaces the

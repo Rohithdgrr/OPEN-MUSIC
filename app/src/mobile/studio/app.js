@@ -11,7 +11,8 @@ import {
   renderToast,
 } from './screens.js';
 import { store } from './store.js';
-import { initNativeBridge } from './native.js';
+import { initNativeBridge, pinWidget } from './native.js';
+import { initCarousels } from './carousel.js';
 
 const elApp = document.getElementById('app');
 const elRouteProgress = document.getElementById('route-progress');
@@ -490,6 +491,7 @@ function renderAllUnsafe(isSkeletonPass = false) {
     startVisualizerIfPresent();
     startLyricsSyncIfPresent();
     drawJamQrIfPresent();
+    initCarousels();
   }
 
   lastRouteKey = routeKey;
@@ -1010,6 +1012,13 @@ elApp.addEventListener('click', (event) => {
     case 'system-share':
       store.triggerSystemShare();
       break;
+    case 'pin-widget': {
+      const r = pinWidget();
+      if (r === 'ok') store.showToast('Pick a home screen to place the widget');
+      else if (r === 'unsupported') store.showToast('Home screen widgets need Android 8.0 or newer');
+      else store.showToast('Could not add the widget on this device');
+      break;
+    }
     case 'copy-share-link':
       store.copyShareLink();
       break;
@@ -1029,6 +1038,13 @@ const SILENT_UI_INPUTS = new Set([
   'createPlaylistDesc',
 ]);
 
+// Every other text input writes silently and repaints once typing pauses.
+// A full innerHTML replace per keystroke destroyed the Android IME
+// composition — the keyboard literally stopped taking input
+// (docs/mobile/11-ux-polish-batch.md §Studio follow-up).
+const UI_RENDER_DEBOUNCE_MS = 320;
+let uiRenderTimer = null;
+
 let liveSearchDebounceTimer = null;
 
 elApp.addEventListener('input', (event) => {
@@ -1036,15 +1052,18 @@ elApp.addEventListener('input', (event) => {
 
   const uiKey = el.getAttribute('data-input-ui');
   if (uiKey) {
+    const value = el.value;
     if (SILENT_UI_INPUTS.has(uiKey)) {
-      store.ui[uiKey] = el.value;
+      store.ui[uiKey] = value;
     } else {
-      store.setUi({ [uiKey]: el.value });
+      store.ui[uiKey] = value;
+      if (uiRenderTimer) window.clearTimeout(uiRenderTimer);
+      uiRenderTimer = window.setTimeout(() => store.emit('state'), UI_RENDER_DEBOUNCE_MS);
       if (uiKey === 'searchQuery') {
         if (liveSearchDebounceTimer) window.clearTimeout(liveSearchDebounceTimer);
         liveSearchDebounceTimer = window.setTimeout(() => {
-          store.searchLive(el.value);
-          store.fetchSuggestions(el.value);
+          store.searchLive(value);
+          store.fetchSuggestions(value);
         }, 220);
       }
     }
@@ -1156,7 +1175,7 @@ window.addEventListener('keydown', (event) => {
     event.preventDefault();
     store.navigate('search');
     window.setTimeout(() => {
-      document.getElementById('search-input')?.focus();
+      document.getElementById('search-main-input')?.focus();
     }, 60);
   }
 });

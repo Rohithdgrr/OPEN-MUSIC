@@ -60,6 +60,18 @@ export function pushState(isPlaying, posSec, durSec, force = false) {
   }
 }
 
+/// Ask Android to pin the homescreen widget (AppWidgetManager
+/// .requestPinAppWidget). Returns 'ok' | 'unsupported' | 'none' | 'err: …'.
+export function pinWidget() {
+  const b = bridge();
+  if (!b || typeof b.pinWidget !== 'function') return 'none';
+  try {
+    return String(b.pinWidget() || 'err');
+  } catch {
+    return 'err';
+  }
+}
+
 export function initNativeBridge(store) {
   if (typeof window === 'undefined') return;
 

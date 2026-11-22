@@ -852,7 +852,7 @@ function renderHomeScreen(store) {
                 </button>
               </div>
             </div>
-            <div class="h-scroll no-scrollbar">
+            <div class="h-scroll no-scrollbar" data-cf>
               ${dailyTracks
                 .map((t, idx) => {
                   const isCurrent = currentTrack && currentTrack.id === t.id;
@@ -904,7 +904,7 @@ function renderHomeScreen(store) {
                 ${icon('play_arrow', { filled: true, size: 16 })} Play All
               </button>
             </div>
-            <div class="h-scroll no-scrollbar">
+            <div class="h-scroll no-scrollbar" data-cf>
               ${mostPlayedTracks
                 .map((t, idx) => {
                   const isCurrent = currentTrack && currentTrack.id === t.id;
@@ -1007,7 +1007,7 @@ function renderHomeScreen(store) {
               </div>
               <button class="text-link-btn" data-action="nav" data-route="history">History ${icon('chevron_right', { size: 16 })}</button>
             </div>
-            <div class="h-scroll no-scrollbar">
+            <div class="h-scroll no-scrollbar" data-cf>
               ${recentTracks
                 .map((t, idx) => {
                   const isCurrent = currentTrack && currentTrack.id === t.id;
@@ -1055,7 +1055,7 @@ function renderHomeScreen(store) {
               </div>
               <button class="text-link-btn" data-action="nav" data-route="charts">View All ${icon('chevron_right', { size: 16 })}</button>
             </div>
-            <div class="h-scroll no-scrollbar">
+            <div class="h-scroll no-scrollbar" data-cf>
               ${chartTracks
                 .map((t, idx) => {
                   const isCurrent = currentTrack && currentTrack.id === t.id;
@@ -1325,12 +1325,14 @@ function renderSearchScreen(store) {
         )
       : [];
 
+  // Top result answers with a playable song first — an artist card only
+  // wins when no track matched at all (docs/mobile/11 §Studio follow-up).
   const topResult =
     qLow
-      ? matchedArtists[0]
-        ? { type: 'artist', item: matchedArtists[0] }
-        : matchedTracks[0]
-          ? { type: 'track', item: matchedTracks[0] }
+      ? matchedTracks[0]
+        ? { type: 'track', item: matchedTracks[0] }
+        : matchedArtists[0]
+          ? { type: 'artist', item: matchedArtists[0] }
           : matchedAlbums[0]
             ? { type: 'album', item: matchedAlbums[0] }
             : null
@@ -1353,6 +1355,11 @@ function renderSearchScreen(store) {
               value="${escapeHtml(store.ui.searchQuery)}"
               data-input-ui="searchQuery"
               autocomplete="off"
+              autocapitalize="none"
+              autocorrect="off"
+              spellcheck="false"
+              enterkeyhint="search"
+              inputmode="search"
             />
             ${
               store.ui.searchQuery
@@ -4428,6 +4435,17 @@ function renderSettingsScreen(store) {
                 </div>
               </div>
               <button class="btn btn-secondary btn-sm" data-action="check-updates">Check Updates</button>
+            </div>
+
+            <div class="settings-row">
+              <div style="display:flex;align-items:center;gap:12px;">
+                <span class="settings-icon">${icon('widgets', { size: 19 })}</span>
+                <div>
+                  <div class="list-row-title">Home Screen Widget</div>
+                  <div class="list-row-sub">Pin the playback widget — play, pause, next from your home screen</div>
+                </div>
+              </div>
+              <button class="btn btn-secondary btn-sm" data-action="pin-widget">Add Widget</button>
             </div>
 
             <div class="settings-row danger-zone-row" style="flex-wrap:wrap;">

@@ -48,3 +48,38 @@ screenshots (720x1600). Spec first per AGENTS.md rule 3; evidence per item.
 - Artist-release detection reuses `artist_overview` (same source as the
   Home "New from artists you follow" shelf) — it can only see what that
   endpoint returns.
+
+## Studio follow-up (2026-11-22b) — the live shell
+
+`mobile/entry.js` boots `studio/app.js`, NOT the legacy `mobile/*.js`
+bundle — so the fixes above that touched `binders.js`/`radio.js`/
+`shared.js`/`searchkit.js`/`releasealerts.js` apply to the legacy shell
+only. This section covers the same asks against the live Studio SPA.
+
+1. **Search typing (root cause).** Every keystroke ran
+   `store.setUi({searchQuery})` → `emit('state')` → `renderAll()` →
+   `elScreenRoot.innerHTML = renderScreen(store)`. The whole screen,
+   including the focused `<input>`, was destroyed and recreated per
+   character; the focus-restore snapshot keeps focus but kills the
+   Android IME composition — "the keyboard stops taking input".
+   Fix: all non-draft `data-input-ui` keys now write silently and repaint
+   once typing pauses (320 ms debounce → `store.emit('state')`); the
+   search query additionally keeps its 220 ms `searchLive`/
+   `fetchSuggestions` debounce. `/` shortcut now focuses the real id
+   (`search-main-input`, was `search-input`). Input gets
+   `enterkeyhint`/`inputmode`/`autocapitalize`/`spellcheck` attrs.
+2. **Top result = song.** `renderSearchScreen` preferred
+   `matchedArtists[0]`; it now prefers `matchedTracks[0]` (track art was
+   already rendered via `renderArtwork`).
+3. **Widget reachability.** `AppWidgetManager.requestPinAppWidget` is
+   exposed as `TMNative.pinWidget()` → `MediaHub.pinWidget()`; Settings →
+   Backup & System gains an "Add Widget" row (`data-action="pin-widget"`)
+   that toasts the system pin sheet result. Lockscreen: Android 12+
+   removed lockscreen app-widgets — the media notification IS the
+   lockscreen surface; `buildNotif` now sets
+   `CATEGORY_TRANSPORT` so it presents as a transport control there.
+4. **Home carousels.** `studio/carousel.js` upgrades `.h-scroll[data-cf]`
+   shelves (Daily Mix, Most Played, Jump Back In, Top Charts) into a
+   coverflow: native touch scroll + rAF-driven `rotateY/scale/z-index`
+   per card — the vanilla-JS equivalent of the 21st.dev cover-flow /
+   card-deck effects, no dependencies.

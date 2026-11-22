@@ -286,6 +286,21 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
     }
   }
 
+  /// Ask the launcher to pin the homescreen widget (API 26+). Returns a
+  /// line protocol for the JS caller: `ok` / `unsupported` / `err: …`.
+  fun pinWidget(): String {
+    if (!this::app.isInitialized) return "err: app not ready"
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return "unsupported"
+    return try {
+      val mgr = AppWidgetManager.getInstance(app)
+      if (!mgr.isRequestPinAppWidgetSupported) return "unsupported"
+      val cn = ComponentName(app, TmWidget::class.java)
+      if (mgr.requestPinAppWidget(cn, null, null)) "ok" else "err: pin request declined"
+    } catch (e: Exception) {
+      "err: ${e.message}"
+    }
+  }
+
   fun shareImage(dataUrl: String, title: String, text: String): String {
     if (!this::app.isInitialized) return "err: app not ready"
     if (dataUrl.length > MAX_SHARE_CARD_DATA_URL_CHARS) return "err: share image too large"
@@ -651,6 +666,10 @@ private fun fail(uri: Uri, cr: ContentResolver, name: String) {
       .setContentIntent(openApp(app, "nowplaying", 1001))
       .setDeleteIntent(action(app, ACTION_DISMISS, 1005, 0L))
       .setVisibility(Notification.VISIBILITY_PUBLIC)
+      // Lockscreen presents transport-style media controls (title/artist +
+      // prev/pause/next) instead of a plain text row — the lockscreen
+      // "widget" surface on Android 12+ (docs/mobile/11 §Studio follow-up).
+      .setCategory(Notification.CATEGORY_TRANSPORT)
       .setOngoing(playing)
       .setShowWhen(false)
       .addAction(notifAction("Previous", android.R.drawable.ic_media_previous, ACTION_PREV, 1002))
