@@ -548,6 +548,47 @@ function renderHomeScreen(store) {
   // 2. Favorite Playlists (user created + top curated playlists)
   const favPlaylists = store.playlists.slice(0, 6);
 
+  // 2b. Language shelves — the feed doesn't tag playlists with `language`
+  // (verified live: all 32 rows empty), so resolve it from the playlist's
+  // own language field first, then from title/subtitle keywords
+  // ("Hindi Hit Songs", "Telugu Jukebox", …). Top 4 languages with at
+  // least 2 playlists each get a coverflow row (docs/mobile/11 §2c).
+  const LANG_KEYWORDS = [
+    ['hindi', /\bhindi\b|\bbollywood\b/i],
+    ['telugu', /\btelugu\b|\btollywood\b/i],
+    ['tamil', /\btamil\b/i],
+    ['malayalam', /\bmalayalam\b|\bmollywood\b/i],
+    ['kannada', /\bkannada\b|\bsandalwood\b/i],
+    ['punjabi', /\bpunjabi\b|\bpollywood\b/i],
+    ['bengali', /\bbengali\b|\bbangla\b/i],
+    ['english', /\benglish\b|\bhollywood\b|\binternational\b/i],
+  ];
+  const playlistLanguage = (pl) => {
+    const declared = String(pl.language || '').trim().toLowerCase();
+    if (declared) return declared;
+    const hay = `${pl.title || ''} ${pl.subtitle || ''}`;
+    for (const [lang, re] of LANG_KEYWORDS) {
+      if (re.test(hay)) return lang;
+    }
+    return '';
+  };
+  const langGroups = new Map();
+  for (const pl of store.playlists) {
+    if (!pl.curated || pl.isUserCreated) continue;
+    const lang = playlistLanguage(pl);
+    if (!lang) continue;
+    if (!langGroups.has(lang)) langGroups.set(lang, []);
+    langGroups.get(lang).push(pl);
+  }
+  const langShelves = [...langGroups.entries()]
+    .filter(([, pls]) => pls.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 4)
+    .map(([key, pls]) => ({
+      label: key.charAt(0).toUpperCase() + key.slice(1),
+      playlists: pls.slice(0, 10),
+    }));
+
   // 3. Top 10 Chart Countdown
   const top10Tracks = [...store.tracks]
     .sort((a, b) => {
@@ -1140,6 +1181,53 @@ function renderHomeScreen(store) {
         }
 
         ${
+          show('Playlists') && langShelves.length > 0
+            ? langShelves
+                .map(
+                  (shelf) => `
+          <section class="block-stack">
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">${escapeHtml(shelf.label)} Playlists</h2>
+                <span class="section-meta">${shelf.playlists.length} CURATED MIXES</span>
+              </div>
+            </div>
+            <div class="h-scroll no-scrollbar" data-cf>
+              ${shelf.playlists
+                .map((pl, idx) => {
+                  const isPlPlaying = Boolean(currentTrack) && pl.trackIds.includes(currentTrack.id) && store.isPlaying;
+                  return `
+                <article class="media-card home-media-card stagger-item" style="--stagger-i:${idx};width:168px;flex-shrink:0;">
+                  <div class="tile-art-wrap">
+                    <button class="home-media-cover-btn" data-action="nav" data-route="playlist" data-id="${escapeHtml(pl.id)}" aria-label="Open ${escapeHtml(pl.title)}">
+                      ${renderArtwork({ src: pl.artwork, alt: pl.title, seed: pl.artworkSeed, square: true, round: 'round-md' })}
+                    </button>
+                    <button
+                      class="tile-play-fab ${isPlPlaying ? 'is-visible' : ''}"
+                      data-action="${isPlPlaying ? 'toggle-play' : 'play-playlist'}"
+                      data-id="${escapeHtml(pl.id)}"
+                      aria-label="${isPlPlaying ? 'Pause' : 'Play'} ${escapeHtml(pl.title)}"
+                    >
+                      ${icon(isPlPlaying ? 'pause' : 'play_arrow', { filled: true, size: 19 })}
+                    </button>
+                  </div>
+                  <button class="home-media-meta-btn" data-action="nav" data-route="playlist" data-id="${escapeHtml(pl.id)}">
+                    <div class="list-row-title truncate">${escapeHtml(pl.title)}</div>
+                    <div class="list-row-sub truncate">${escapeHtml(pl.subtitle || '')} · ${pl.trackCount || pl.trackIds.length} tracks</div>
+                  </button>
+                </article>
+              `;
+                })
+                .join('')}
+            </div>
+          </section>
+        `
+                )
+                .join('')
+            : ''
+        }
+
+        ${
           show('Artists')
             ? `
           <section class="block-stack">
@@ -1637,6 +1725,20 @@ function renderLibraryScreen(store) {
   const q = (store.ui.librarySearchQuery || '').trim().toLowerCase();
   const chips = ['All', 'Playlists', 'Downloaded', 'Albums', 'Artists'];
 
+  // "Your Library" is the user's own collection, not the whole hydrated
+  // catalog: albums only appear when they contain a liked or downloaded
+  // track, artists only when followed (docs/mobile/11 §2c).
+  const ownedAlbumKeys = new Set();
+  [...store.likedTrackIds, ...store.downloadedTrackIds].forEach((id) => {
+    const t = store.getTrackById(id);
+    if (!t) return;
+    if (t.albumId) ownedAlbumKeys.add(String(t.albumId));
+    if (t.albumTitle) ownedAlbumKeys.add(String(t.albumTitle));
+  });
+  const ownedAlbums = store.albums.filter(
+    (al) => ownedAlbumKeys.has(String(al.id)) || ownedAlbumKeys.has(String(al.title))
+  );
+
   let items = [];
   if (filter === 'All' || filter === 'Playlists') {
     store.playlists
@@ -1654,7 +1756,7 @@ function renderLibraryScreen(store) {
       });
   }
   if (filter === 'All' || filter === 'Albums') {
-    store.albums.forEach((al) => {
+    ownedAlbums.forEach((al) => {
       items.push({
         type: 'album',
         id: al.id,
@@ -1668,7 +1770,7 @@ function renderLibraryScreen(store) {
   }
   if (filter === 'All' || filter === 'Artists') {
     store.artists
-      .filter((a) => store.isFollowed(a.id) || filter === 'Artists')
+      .filter((a) => store.isFollowed(a.id))
       .forEach((ar) => {
         items.push({
           type: 'artist',

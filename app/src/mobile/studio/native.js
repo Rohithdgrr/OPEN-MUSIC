@@ -154,7 +154,11 @@ export function initNativeBridge(store) {
     }
   }
 
-  // 3. Connect store events to native media hub pushes
+  // 3. Connect store events to native media hub pushes.
+  // NOTE: the store API is subscribe(fn) — there is no .on(), and it never
+  // emits a 'trackChange' type. The old .on() calls threw at boot, which
+  // silently killed every pushMeta/pushState → no notification, no
+  // lockscreen controls, no widget updates (docs/mobile/11 §2c).
   const syncToNative = (forceState = false) => {
     const track = store.getCurrentTrack();
     pushMeta(track);
@@ -162,8 +166,9 @@ export function initNativeBridge(store) {
     pushState(store.isPlaying, store.currentTime, dur, forceState);
   };
 
-  store.on('state', () => syncToNative(false));
-  store.on('trackChange', () => syncToNative(true));
+  store.subscribe((type) => {
+    if (type === 'state') syncToNative(false);
+  });
 
   // Ticker for progress bar updates on homescreen widget & lockscreen
   setInterval(() => {

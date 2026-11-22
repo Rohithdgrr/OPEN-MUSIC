@@ -3448,6 +3448,95 @@ select:focus-visible {
   margin-top: -3px;
 }
 
+/* Phones/tablets: the desktop-sized stack measured ~1311px inside a ~915px
+   viewport, pushing the queue sheet below the fold (docs/mobile/11 §2c).
+   Compact everything so player + sheet fit one screen; art scales with
+   viewport height so short screens shrink it automatically. */
+@media (max-width: 1023px) {
+  .np-grid {
+    gap: 12px;
+    padding-top: 4px;
+  }
+
+  .np-left {
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .np-art-frame {
+    width: min(100%, 33dvh);
+    margin-inline: auto;
+    border-radius: 18px;
+  }
+
+  .np-track-title {
+    font-size: 19px;
+  }
+
+  .np-track-artist {
+    font-size: 13px;
+  }
+
+  .scrubber-stage {
+    padding-top: 16px;
+    gap: 3px;
+  }
+
+  .np-transport {
+    padding: 0;
+  }
+
+  .play-master-btn {
+    width: 58px;
+    height: 58px;
+  }
+
+  .np-actions-5 {
+    gap: 4px;
+    padding: 0;
+  }
+
+  .np-act {
+    gap: 4px;
+    font-size: 10px;
+  }
+
+  .np-act-circle {
+    width: 40px;
+    height: 40px;
+  }
+
+  .np-sheet-handle-bar {
+    padding: 6px 0 2px;
+  }
+
+  .np-sheet-top {
+    padding: 2px 12px 8px;
+  }
+
+  /* The sheet's automatic minimum height was its full queue min-content
+     (~460px), inflating .np-wrap past the viewport. Pin the wrap to the
+     dynamic viewport height and zero the flex minima so the sheet shrinks
+     and the queue scrolls internally. */
+  .np-wrap {
+    /* flex:1 gives flex-basis:0%, which beats `height` and falls back to
+       content size — pin it explicitly instead. */
+    flex: none;
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .np-grid,
+  .np-grid > *,
+  .np-sheet-elevated,
+  .np-queue-list,
+  .lyric-scroll,
+  .np-chat-feed,
+  .np-composer-wrap {
+    min-height: 0;
+  }
+}
+
 /* Corner-Attached Elevated Studio Bottom / Right Sheet */
 .np-sheet-elevated {
   flex: 1;

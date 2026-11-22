@@ -44,6 +44,26 @@ legacy `mobile/*.js` bundle above is not what ships. Same asks, live shell:
 - **Home carousels**: `studio/carousel.js` coverflow (native scroll +
   rAF rotateY/scale) on Daily Mix, Most Played, Jump Back In, Top Charts.
 
+### Fixed — Studio media surfaces + library (2026-11-22c, docs/mobile/11 §2c)
+
+- **Media notification dead**: `native.js` used `store.on(...)` — the API
+  is `subscribe(fn)` and `'trackChange'` is never emitted, so the bridge
+  init threw and no `pushMeta`/`pushState` reached Kotlin. No shade
+  notification, lockscreen controls, or widget updates. Now a single
+  `store.subscribe` on `'state'`; verified live — notification id 4201,
+  `category=transport`, 3 actions, `ONGOING|PUBLIC`.
+- **Library scoped to user content**: albums only when they contain a
+  liked/downloaded track; artists only when followed. Catalog flood
+  removed.
+- **Now Playing fits the screen**: `.np-wrap` was 1311px in a 915px
+  viewport (flex-basis beat `height`; queue min-content inflated the
+  sheet). Mobile now pins `flex:none;height:100dvh` + `min-height:0`
+  chain — measured wrap=915, sheet flush at bottom, queue scrolls.
+- **Language shelves**: Home groups curated playlists by language —
+  declared `language` field is empty feed-wide, so title/subtitle
+  keywords resolve it (Hindi/Telugu/Tamil/…). Top 4 languages with ≥2
+  playlists render as `data-cf` coverflow rows.
+
 ### Added — Studio shell on real backend data (`990655f`)
 
 - `mobile/entry.js` now boots `studio/app.js` — the Studio SPA replaces the

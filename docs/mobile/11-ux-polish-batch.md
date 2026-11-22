@@ -83,3 +83,32 @@ only. This section covers the same asks against the live Studio SPA.
    coverflow: native touch scroll + rAF-driven `rotateY/scale/z-index`
    per card — the vanilla-JS equivalent of the 21st.dev cover-flow /
    card-deck effects, no dependencies.
+
+## Studio follow-up 2 (2026-11-22c) — media surfaces + library hygiene
+
+1. **Media notification was dead on Studio.** `native.js` subscribed via
+   `store.on('state'|'trackChange')` — the store API is `subscribe(fn)`
+   and it never emits a `'trackChange'` type, so `initNativeBridge`
+   threw a TypeError at boot and NO `pushMeta`/`pushState` ever reached
+   Kotlin: no shade notification, no lockscreen controls, no widget
+   updates. Verified live: `MediaService` absent from dumpsys, manual
+   `TMNative.pushMeta` started it instantly. Fix: single
+   `store.subscribe` reacting to `'state'` (progress ticker + meta dedupe
+   already throttle).
+2. **Library = user content only.** "Your Library" was listing the whole
+   hydrated catalog — every feed album and every artist — which reads as
+   mock clutter. Albums now restricted to releases containing a liked or
+   downloaded track; Artists to followed artists only; Playlists were
+   already `isUserCreated`-gated.
+3. **Now Playing mobile compaction.** Measured on emulator: `.np-wrap`
+   rendered 1311 px inside a 915 px viewport — the queue sheet started
+   below the fold. `@media (max-width:1023px)` now caps art at `33dvh`,
+   shrinks transport/actions/scrubber and tightens gaps so player +
+   sheet fit one screen.
+4. **Language playlist shelves.** Home gains dynamic per-language
+   playlist shelves (Telugu/Hindi/Tamil/etc. — whatever the feed
+   carries, top 4 languages with ≥2 playlists), each a `data-cf`
+   coverflow row. The feed's `FeedItem.language` is empty for every
+   playlist row (verified live via `home_feed`), so language resolves
+   from title/subtitle keywords ("Hindi Hit Songs", "Tollywood Jukebox")
+   after the declared field.
